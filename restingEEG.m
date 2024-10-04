@@ -121,8 +121,7 @@ while t < NrOfTrials
 %         EThndl.sendMessage(par.CD_eyeO);
         Eyelink('Message', num2str(par.CD_eyeO));
         Eyelink('command', 'record_status_message "eyeO"');
-        %sendtrigger(par.CD_eyeO,port,SITE,stayup) % no eyes open/eyes
-        %closed
+        sendtrigger(par.CD_eyeO,port,SITE,stayup)
 
         disp(['Resting EEG: ' num2str(t) ' of ' num2str(NrOfTrials) ' trials']);
 
@@ -135,7 +134,7 @@ while t < NrOfTrials
         %       EThndl.sendMessage(par.CD_eyeC);
         Eyelink('Message', num2str(par.CD_eyeC));
         Eyelink('command', 'record_status_message "eyeC"');
-        %sendtrigger(par.CD_eyeC,port,SITE,stayup)
+        sendtrigger(par.CD_eyeC,port,SITE,stayup)
 
         disp(['Resting EEG: ' num2str(tt) ' of ' num2str(NrOfTrials) ' trials']);
 

@@ -1,6 +1,6 @@
 %% dialogGKI
 
-% Create dialog box for GKI
+% Create dialog box for GKI (Keyboard input needs to be checked every time)
 defAns = {''};
 while true
     prompt = {'GKI'};

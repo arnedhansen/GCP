@@ -1,35 +1,37 @@
-%% Master script for the OCC (Lea MA) study
 
-% - Gabor matrices (400 trials)
+%% Master script for the Master's Thesis Study of Lea Bächlin %%
+
+% This script coordinats the execution of the paradigm of the Master's thesis of Lea Bächlin.
+% It includes the presentation of grating stimuli with two contrast intensities.
 
 %% General settings, screens and paths
 
 % Set up MATLAB workspace
 clear all;
 close all;
-clc; 
+clc;
 try
     Screen('CloseAll');
 end
 rootFilepath = pwd; % Retrieve the present working directory
 
-% define paths
+% Define paths
 PPDEV_PATH = '/home/methlab/Documents/MATLAB/ppdev-mex-master'; % For sending EEG triggers
 TITTA_PATH = '/home/methlab/Documents/MATLAB/Titta'; % For Tobii ET
 DATA_PATH  = [rootFilepath, '/data']; % Folder to save data
 FUNS_PATH  = rootFilepath; % Folder with all functions
 MOV_PATH  = rootFilepath; % Folder with movie files
 
-% make data dir, if doesn't exist yet
+% Make data dir, if doesn't exist yet
 mkdir(DATA_PATH)
-
-% add path to folder with functions
+   
+% Add path to folder with functions
 addpath(FUNS_PATH)
  
-% manage screens
+% Manage screens
 screenSettings
-
 AssertOpenGL;
+
 
 %% Collect ID and Age
 dialogID;
@@ -41,6 +43,7 @@ dialogGKI;
 ListenChar(2);
 
 %% Execute Tasks in randomized order
+
 % BLOCK = 1;
 % TASK = 'G';
 % TRAINING = 1; % After training, set to 0 here
@@ -54,7 +57,7 @@ end
 if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
     TRAINING = 1;
     TASK = 'G';
-    FourStaticGratingsWithTask222;
+    FourStaticGratingsWithTask;
 else
     disp('TRAINING BLOCK DATA ALREADY EXISTS');
 end
@@ -62,8 +65,12 @@ end
 if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_G_block4.mat']])
     TRAINING = 0;
     TASK = 'G';
-    FourStaticGratingsWithTask222;
+    FourStaticGratingsWithTask;
 end
+
+%% Don't forget to turn on the power again...
+PowerOn;
 
 %% Allow keyboard input into Matlab code
 ListenChar(0);
+

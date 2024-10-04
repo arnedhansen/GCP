@@ -1,9 +1,12 @@
-%% Gratings
-%
-% This script executes the paradigm with gatings of Lea's MA. 
-%
+
+%% Main Code %%
+
+% This script executes the paradigm of the Master's thesis of Lea Bächlin.
+% It includes the presentation of grating stimuli with two contrast intensities.
+
 % This code requires PsychToolbox. https://psychtoolbox.org
 % This was tested with PsychToolbox version 3.0.15, and with MATLAB R2022a.
+
 
 %% Summary
 % 1. Definition of task, trial number / durations
@@ -13,10 +16,9 @@
 % 5. End of block for loop: save block data
 
 
-%% TASK
+%% Check if mat files exist
+% in order to avoid overwriting these and start at correct block in case of breakdown
 
-% Check if mat files exist, in order to avoid overwriting these and start
-% at correct block in case of breakdown
 if TRAINING == 0
     if isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_G_block4.mat']])
         return
@@ -56,7 +58,7 @@ timing.cfiupper = 3000; % upper limit of CFI duration
 timing.cfi_task = 0.5;
 
 % For Stimulus Trial
-timing.StimuliDuration = 2; 
+timing.StimuliDuration = 2;
 
 
 %% For loop
@@ -82,13 +84,13 @@ for BLOCK = start : NumberOfBlocks
     %% Task
     HideCursor(whichScreen);
 
-    % define triggers
+    % Define TRIGGERS
     BLOCK1 = 11; % trigger for start of task (block)
     BLOCK2 = 12;
     BLOCK3 = 13;
     BLOCK4 = 14;
     BLOCK0 = 15; % trigger for start of training block
-    
+
     FIXATION0 = 16; % trigger for fixation cross
     FIXATION1 = 17; % trigger for fixation cross
     PRESENTATION1 = 21; % trigger for presentation of high horizontal
@@ -99,12 +101,10 @@ for BLOCK = start : NumberOfBlocks
     PRESENTATION6 = 26; % trigger for presentation of low vertical
     PRESENTATION7 = 27; % trigger for presentation of low 45
     PRESENTATION8 = 28; % trigger for presentation of low 115
-%     STIMOFF = 29; % trigger for change of grating to cfi
-    
+
     RESP = 87; % trigger for response yes (spacebar)
     NO_RESP = 88; % trigger for response no (no input)
-%     RESP_WRONG = 89; % trigger for wrong keyboard input response
-    
+
     BLOCK1_END = 91;
     BLOCK2_END = 92;
     BLOCK3_END = 93;
@@ -222,7 +222,6 @@ for BLOCK = start : NumberOfBlocks
 
     % Create data structure for preallocating data
     data = struct;
-    data.trialMatch(1:experiment.nGratings) = NaN;
     data.allResponses(1:experiment.nGratings) = NaN;
     data.allCorrect(1:experiment.nGratings) = NaN;
 
@@ -233,11 +232,12 @@ for BLOCK = start : NumberOfBlocks
     timing.cfi(1:experiment.nGratings) = 0;
 
     % Define grating and cross sequences
-    Shuffle;
+    shuffle;
+
     if TRAINING == 1 && BLOCK == 1
         gratingSequence = gratingSequence0;
     elseif TRAINING == 0 && BLOCK == 1
-            gratingSequence = gratingSequence1;
+        gratingSequence = gratingSequence1;
     elseif TRAINING == 0 && BLOCK == 2
         gratingSequence = gratingSequence2;
     elseif TRAINING == 0 && BLOCK == 3
@@ -273,18 +273,6 @@ for BLOCK = start : NumberOfBlocks
         [time, keyCode] = KbWait(-1,2);
         waitResponse = 0;
     end
-
-%     % Send triggers: task starts. If training, send only ET triggers
-%     if TRAINING == 1
-%         %     EThndl.sendMessage(TASK_START); % ET
-%         Eyelink('Message', num2str(BLOCK0));
-%         Eyelink('command', 'record_status_message "TASK_START"');
-%     else
-%         %     EThndl.sendMessage(TASK_START); % ET
-%         Eyelink('Message', num2str(TASK_START));
-%         Eyelink('command', 'record_status_message "TASK_START"');
-%         sendtrigger(TASK_START,port,SITE,stayup); % EEG
-%     end
 
     % Send triggers for block and output
     if TRAINING == 1 % Training condition
@@ -386,11 +374,9 @@ for BLOCK = start : NumberOfBlocks
         end
 
         if TRAINING == 1
-            %         EThndl.sendMessage(TRIGGER);
             Eyelink('Message', num2str(TRIGGER));
             Eyelink('command', 'record_status_message "PRESENTATION"');
         else
-            %         EThndl.sendMessage(TRIGGER);
             Eyelink('Message', num2str(TRIGGER));
             Eyelink('command', 'record_status_message "PRESENTATION"');
             sendtrigger(TRIGGER,port,SITE,stayup);
@@ -400,18 +386,13 @@ for BLOCK = start : NumberOfBlocks
         keyFlags = zeros(1,256); % An array of zeros
         keyFlags(spaceKeyCode) = 1; % Monitor only spaces
         % GetKeyboardIndices; % For checking keyboard number
-        %  gki = 9; % has to be checked every time, that's why we created a dialog window now
         KbQueueCreate(gki, keyFlags); % Initialize the Queue
 
 
         % Set durations for CFIs
-         if mod(thisTrial,2) == 1
+        if mod(thisTrial,2) == 1
             % CFI trial
             timing.cfi(thisCFI) = (randsample(timing.cfilower:timing.cfiupper, 1))/1000; % Randomize the jittered central fixation interval on trial
-%             maxTime = GetSecs + timing.cfi;
-%         elseif mod(thisTrial,2) == 0
-%             % Stimulus trial
-%             maxTime = GetSecs + timing.StimuliDuration; % Set maxTime to max. 2 seconds from start of video
         end
 
         % Start keyboard monitoring
@@ -448,7 +429,7 @@ for BLOCK = start : NumberOfBlocks
 
             %% Present grating depending on sequence number
 
-            % 4 different angles 
+            % Set angle
             if gratingSequence(thisGrating) == 1
                 angle = 90;
             elseif gratingSequence(thisGrating) == 2
@@ -467,33 +448,16 @@ for BLOCK = start : NumberOfBlocks
                 angle = 115;    % 35 times
             end
 
-            % Black and white grating
-            color1 = [0 0 0 1];
-            color2 = [1 1 1 1];
-            baseColor = [0.5 0.5 0.5 1];
 
-            % Defining contrast 
+            % Color Settings
             if gratingSequence(thisGrating) == 1 || gratingSequence(thisGrating) == 2 || gratingSequence(thisGrating) == 3 || gratingSequence(thisGrating) == 4
-                contrast = 1;
+                color1 = [0 0 0 1];
+                color2 = [1 1 1 1];
             elseif gratingSequence(thisGrating) == 5 || gratingSequence(thisGrating) == 6 || gratingSequence(thisGrating) == 7 || gratingSequence(thisGrating) == 8
-                contrast = 0.5;
+                color2 = [0.25 0.25 0.25 1];
+                color2 = [0.25 0.25 0.25 1];
             end
-
-            % default x + y size
-            virtualSize = 400;
-
-            % radius of the disc edge
-            radius = floor(virtualSize / 2);
-
-            % These settings are the parameters passed in directly to DrawTexture
-%           angle % set above
-            % phase
-            phase = 0;
-            % spatial frequency
-            frequency = 0.05;
-%           contrast % set above
-            % sigma < 0 is a sinusoid.
-            sigma = -1.0;
+            baseColor = [0.5 0.5 0.5 1];
 
             % Setup defaults and unit color range:
             PsychDefaultSetup(2);
@@ -502,28 +466,47 @@ for BLOCK = start : NumberOfBlocks
             % animation with constant framerate:
             ifi = Screen('GetFlipInterval', ptbWindow);
 
+            % default x + y size
+            virtualSize = 400;
+            % radius of the disc edge
+            radius = floor(virtualSize / 2);
+
             % Build a procedural texture, we also keep the shader as we will show how to
             % modify it (though not as efficient as using parameters in drawtexture)
             texture = CreateProceduralColorGrating(ptbWindow, virtualSize, virtualSize,...
                 color1, color2, radius);
 
-            % Preperatory flip
-            % showTime = 3;
+            % These settings are the parameters passed in directly to DrawTexture:
+
+            % Phase
+            phase = 0;
+
+            % Spatial frequency
+            frequency = 0.05;
+            
+            % Contrast
+            contrast = 0.5;
+
+            % Sigma < 0 is a sinusoid.
+            sigma = -1.0;
+
+            % Preperatory flip:
             vbl = Screen('Flip', ptbWindow);
-            % tstart = vbl + ifi; %start is on the next frame
             start_time = GetSecs;
 
             while (GetSecs - start_time) < timing.StimuliDuration
+
                 % Draw the shader texture with parameters
                 Screen('DrawTexture', ptbWindow, texture, [], [],...
                     angle, [], [], baseColor, [], [],...
                     [phase, frequency, contrast, sigma]);
 
                 vbl = Screen('Flip', ptbWindow, vbl * ifi);
-%               phase = phase - 15; This would be for moving the grating
+
             end
- 
-        end % Presentation of grating or cfi
+
+        end
+
 
 
         % Stop keyboard monitoring
@@ -560,27 +543,6 @@ for BLOCK = start : NumberOfBlocks
             end
         end
 
-        %     if TRAINING == 1
-        %         %     EThndl.sendMessage(TRIGGER);
-        %         Eyelink('Message', num2str(TRIGGER));
-        %         Eyelink('command', 'record_status_message "END BLOCK"');
-        %         disp('End of Training Block.');
-        %     else
-        %         %     EThndl.sendMessage(TRIGGER);
-        %         Eyelink('Message', num2str(TRIGGER));
-        %         Eyelink('command', 'record_status_message "END BLOCK"');
-        %         sendtrigger(TRIGGER,port,SITE,stayup);
-        %         disp(['End of Block ' num2str(BLOCK)]);
-        %     end
-        %     if mod(thisTrial,2) == 0
-        %         % Stop playback:
-        %         Screen('PlayMovie', movie, 0);
-        %         % Close movie:
-        %         Screen('CloseMovie', movie);
-
-        %     end
-
-
 
         if mod(thisTrial,2) == 1
             % Check if response was correct (only for Gratings)
@@ -603,20 +565,6 @@ for BLOCK = start : NumberOfBlocks
 
 
 
-        %% Fixation Check
-
-        %     % Check if subject fixate at center, give warning if not
-        %     checkFixation;
-        %     if noFixation > 2
-        %         disp('Insufficient fixation!')
-        %         noFixation = 0; % reset
-        %     end
-
-        %     Screen('DrawLines',ptbWindow,fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor,[screenCentreX screenCentreY],2); % Draw fixation cross
-        %     Screen('Flip', ptbWindow, [], 1);
-
-
-
         %% End for loop over all trials
     end % trial loop
 
@@ -628,16 +576,6 @@ for BLOCK = start : NumberOfBlocks
 
     % Send triggers to end task
     endT = Screen('Flip',ptbWindow);
-%     if TRAINING == 1
-%         %     EThndl.sendMessage(TASK_END,endT);
-%         Eyelink('Message', num2str(TASK_END));
-%         Eyelink('command', 'record_status_message "TASK_END"');
-%     else
-%         %     EThndl.sendMessage(TASK_END,endT);
-%         Eyelink('Message', num2str(TASK_END));
-%         Eyelink('command', 'record_status_message "TASK_END"');
-%         sendtrigger(TASK_END,port,SITE,stayup)
-%     end
 
     % Send triggers for block and output
     if BLOCK == 1 && TRAINING == 1
@@ -668,7 +606,7 @@ for BLOCK = start : NumberOfBlocks
     % Save data
     subjectID = num2str(subject.ID);
     filePath = fullfile(DATA_PATH, subjectID);
-    
+
     if exist(filePath,'dir') == 0 % if matlab broke down and this is a retry, path could already exist
         mkdir(filePath)
     end
@@ -678,43 +616,6 @@ for BLOCK = start : NumberOfBlocks
     elseif TRAINING == 0
         fileName = [subjectID '_', TASK, '_block' num2str(BLOCK), '.mat'];
     end
-
-    % % Compute accuracy and report after each block (no additional cash for training task)
-    % if TRAINING == 1
-    %     % Get sum of correct responses, but ignore first and last data point
-    %     totalCorrect = sum(data.allCorrect(1, 2:end-1));
-    %     totalTrials = thisTrial-2;
-    %     percentTotalCorrect = totalCorrect / totalTrials * 100;
-    %     format bank % Change format for display
-    %     feedbackBlockText = ['Your accuracy in the training task was ' num2str(percentTotalCorrect) ' %. '];
-    %     disp(['Participant ' subjectID ' had an accuracy of ' num2str(percentTotalCorrect) ' % in the training task.'])
-    %     DrawFormattedText(ptbWindow,feedbackBlockText,'center','center',color.textVal);
-    %     format default % Change format back to default
-    %     Screen('Flip',ptbWindow);
-    %     WaitSecs(5);
-    % elseif BLOCK == 1
-    %     % Get sum of correct responses, but ignore first and last data point
-    %     totalCorrect = sum(data.allCorrect(1, 2:end-1));
-    %     totalTrials = thisTrial-2;
-    %     percentTotalCorrect(BLOCK) = totalCorrect / totalTrials * 100;
-    %     format bank % Change format for display
-    %     if percentTotalCorrect(BLOCK) > 80
-    %         amountCHFextra(BLOCK) = percentTotalCorrect(BLOCK)*0.02;
-    %         feedbackBlockText = ['Your accuracy was ' num2str(percentTotalCorrect(BLOCK)) ' %. ' ...
-    %             '\n\n Because of your accuracy you have been awarded an additional ' num2str(amountCHFextra(BLOCK)) ' CHF.' ...
-    %             '\n\n Keep it up!'];
-    %     elseif percentTotalCorrect(BLOCK) < 80 && BLOCK == 1
-    %         amountCHFextra(BLOCK) = 0;
-    %         feedbackBlockText = ['Your accuracy was ' num2str(percentTotalCorrect(BLOCK)) ' %. ' ...
-    %             '\n\n Your accuracy was very low in this block. Please stay focused!'];
-    %         disp(['Low accuracy in Block ' num2str(BLOCK) '.']);
-    %     end
-    %     DrawFormattedText(ptbWindow,feedbackBlockText,'center','center',color.textVal);
-    %     disp(['Participant ' subjectID ' was awarded CHF ' num2str(amountCHFextra(BLOCK)) ' for an accuracy of ' num2str(percentTotalCorrect(BLOCK)) ' % in Block ' num2str(BLOCK) '.'])
-    %     format default % Change format back to default
-    %     Screen('Flip',ptbWindow);
-    %     WaitSecs(5);
-    % end
 
     % Save data
     saves = struct;
@@ -754,11 +655,9 @@ for BLOCK = start : NumberOfBlocks
     trigger.PRESENTATION6 = PRESENTATION6;
     trigger.PRESENTATION7 = PRESENTATION7;
     trigger.PRESENTATION8 = PRESENTATION8;
-%     trigger.STIMOFF = STIMOFF;
 
     trigger.RESP_YES = RESP;
     trigger.RESP_NO = NO_RESP;
-%     trigger.RESP_WRONG = RESP_WRONG;
 
     trigger.RESTING_END = 90;
     trigger.BLOCK1_END = BLOCK1_END;
@@ -766,9 +665,10 @@ for BLOCK = start : NumberOfBlocks
     trigger.BLOCK3_END = BLOCK3_END;
     trigger.BLOCK4_END = BLOCK4_END;
     trigger.BLOCK0_END = BLOCK0_END;
-    
+
 
     %% Stop and close EEG and ET recordings
+
     if TRAINING == 1
         disp('TRAINING FINISHED...');
     else
@@ -785,13 +685,10 @@ for BLOCK = start : NumberOfBlocks
 
 
     %% Show break instruction text
+
     if TRAINING == 1 && BLOCK == 1
-      %  if percentTotalCorrect >= THRESH
-            breakInstructionText = 'Well done! \n\n Press any key to finalize the training block.';
-     %   else
-     %      breakInstructionText = ['Score too low! ' num2str(percentTotalCorrect) ' % correct. ' ...
-     %           '\n\n Press any key to repeat the training task.'];
-     %   end
+        breakInstructionText = 'Well done! \n\n Press any key to finalize the training block.';
+
     elseif TRAINING == 0 && BLOCK == 4
         breakInstructionText = ['End of the Task! ' ...
             '\n\n Thank you very much for your participation.'...
@@ -826,82 +723,8 @@ for BLOCK = start : NumberOfBlocks
 
     Screen('Flip',ptbWindow);
 
-
-    % Wait at least 30 Seconds between Blocks (only after Block 1 has finished, not after Block 2)
-    % if TRAINING == 1 && percentTotalCorrect < THRESH
-    %     waitTime = 30;
-    %     intervalTime = 1;
-    %     timePassed = 0;
-    %     printTime = 30;
-    %
-    %     waitTimeText = ['Please wait for ' num2str(printTime) ' seconds...' ...
-    %         ' \n\n ' ...
-    %         ' \n\n You can repeat the training task afterwards.'];
-    %
-    %     DrawFormattedText(ptbWindow,waitTimeText,'center','center',color.textVal);
-    %     Screen('Flip',ptbWindow);
-    %
-    %     while timePassed < waitTime
-    %         pause(intervalTime);
-    %         timePassed = timePassed + intervalTime;
-    %         printTime = waitTime - timePassed;
-    %         waitTimeText = ['Please wait for ' num2str(printTime) ' seconds...' ...
-    %             ' \n\n ' ...
-    %             ' \n\n You can repeat the training task afterwards.'];
-    %         DrawFormattedText(ptbWindow,waitTimeText,'center','center',color.textVal);
-    %         Screen('Flip',ptbWindow);
-    %     end
-    % elseif BLOCK == 1 && TRAINING == 1
-    %     waitTime = 30;
-    %     intervalTime = 1;
-    %     timePassed = 0;
-    %     printTime = 30;
-    %
-    %     waitTimeText = ['Please wait for ' num2str(printTime) ' seconds...' ...
-    %         ' \n\n ' ...
-    %         ' \n\n The Grating task will start afterwards.'];
-    %
-    %     DrawFormattedText(ptbWindow,waitTimeText,'center','center',color.textVal);
-    %     Screen('Flip',ptbWindow);
-    %
-    %     while timePassed < waitTime
-    %         pause(intervalTime);
-    %         timePassed = timePassed + intervalTime;
-    %         printTime = waitTime - timePassed;
-    %         waitTimeText = ['Please wait for ' num2str(printTime) ' seconds...' ...
-    %             ' \n\n ' ...
-    %             ' \n\n The Grating task will start afterwards.'];
-    %         DrawFormattedText(ptbWindow,waitTimeText,'center','center',color.textVal);
-    %         Screen('Flip',ptbWindow);
-    %     end
-    % end
-
-    % Save total amount earned and display
-    % if BLOCK == 1 && TRAINING == 0
-    %     amountCHFextraTotal = sum(amountCHFextra);
-    %     saves.amountCHFextraTotal = amountCHFextraTotal;
-    %     format bank % Change format for display
-    %     endTextCash = ['Well done! You have completed the task.' ...
-    %         ' \n\n Because of your accuracy you have been awarded an additional ' num2str(amountCHFextraTotal) ' CHF in total.' ...
-    %         ' \n\n ' ...
-    %         ' \n\n ' num2str(percentTotalCorrect(1)) ' % accuracy earned you ' num2str(amountCHFextra(1)) ' CHF.' ...
-    %         ' \n\n ' ...
-    %         ' \n\n ' ...
-    %         ' \n\n Press any key to end the task.'];
-    %     DrawFormattedText(ptbWindow,endTextCash,'center','center',color.textVal); % Display output for participant
-    %     disp(['End of Block ' num2str(BLOCK) '. Participant ' num2str(subjectID) ' has earned CHF ' num2str(amountCHFextraTotal) ' extra in total.']);
-    %     statsCW = ['Participant' num2str(subjectID) ' earned ' num2str(amountCHFextra(1)) ' CHF for an accuracy of ' num2str(percentTotalCorrect(1)) '%'];
-    %     disp(statsCW)
-    %     format default % Change format back to default
-    %     Screen('Flip',ptbWindow);
-    %     waitResponse = 1;
-    %     while waitResponse
-    %         [time, keyCode] = KbWait(-1,2);
-    %         waitResponse = 0;
-    %     end
-    % end
-    %% End for loop over all blocks
-end 
+    
+end % End for loop over all blocks
 
 
 
