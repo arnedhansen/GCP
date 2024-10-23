@@ -65,11 +65,9 @@ close all
 
 % Common configuration
 cfg = [];
-load('/Volumes/methlab/Students/Arne/MA/headmodel/layANThead.mat'); % Load layout
 cfg.layout = layANThead; % your specific layout
-cfg.baseline = [-Inf -0.25]; % baseline correction window in seconds
-cfg.baselinetype = 'absolute'; % type of baseline correction
 cfg.showlabels = 'yes'; % show channel labels
+cfg.channel = channels; % specify the channels to include
 cfg.colorbar = 'yes'; % include color bar
 cfg.zlim = 'maxabs'; % color limits
 cfg.xlim = ([0 2]);
@@ -117,15 +115,15 @@ diff.powspctrm = ga_tfr_hc_all.powspctrm - ga_tfr_lc_all.powspctrm;
 
 % Define configuration for multiplot
 cfg = [];
-load('/Volumes/methlab/Students/Arne/MA/headmodel/layANThead.mat');
 cfg.layout = layANThead; % your specific layout
 cfg.channel = channels; % specify the channels to include
 cfg.showlabels = 'yes'; % show channel labels
 cfg.colorbar = 'yes'; % include color bar
-cfg.xlim = [-1 2]; 
-cfg.ylim = [10 100];
+cfg.xlim = [0 2]; 
+cfg.ylim = [30 90];
 color_map = flipud(cbrewer('div', 'RdBu', 64)); % 'RdBu' for blue to red diverging color map
-% clim = [-2.75, 2.75];
+clim = [-0.6, 0.61];
+% cliom = max(diff.powspctrm(80:120, 5:10, 81))
 
 % Plot: Difference Time-Frequency Response
 figure;
@@ -138,7 +136,7 @@ colorbar;
 colormap(color_map);
 set(gca, 'FontSize', 25);
 title('TFR Diff (High Contrast - Low Contrast)', 'FontName', 'Arial', 'FontSize', 30);
-% set(gca, 'CLim', clim);
+set(gca, 'CLim', clim);
 yline(30, 'LineWidth', 5, 'LineStyle', '-', 'Color', 'r');
 yline(90, 'LineWidth', 5, 'LineStyle', '-', 'Color', 'r');
 
