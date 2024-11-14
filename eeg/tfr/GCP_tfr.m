@@ -1,12 +1,8 @@
 %% Gamma Time Frequency Analysis for GCP data
-clear
-clc
-close all
-run startup
-path = '/Volumes/methlab/Students/Arne/GCP/data/features/';
-dirs = dir(path);
-folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
-subjects = {folders.name};
+
+%% Setup
+setup('GCP');
+
 
 %% Compute grand average time and frequency data GATFR
 % Load high contrast data
@@ -62,6 +58,7 @@ channels = occ_channels;
 
 %% Plot TFR for HIGH and LOW CONTRAT conditions
 close all
+load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat') 
 
 % Common configuration
 cfg = [];
@@ -83,10 +80,13 @@ ft_singleplotTFR(cfg, ga_tfr_hc_all);
 colormap(color_map);
 % set(gca, 'CLim', clim);
 set(gca, 'FontSize', 20)
-colorbar;
-xlabel('Time [ms]');
+colb = colorbar;
+colb.Label.String = 'Power [dB]';
+c.Label.FontSize = 25;
+xlabel('Time [s]');
 ylabel('Frequency [Hz]');
-title('High Contrast (ALL Orientations)');
+title('High Contrast');
+title('Time-Frequency Representation: High Contrast', 'FontName', 'Arial', 'FontSize', 30);
 
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_tfr_hc_all.png');
 
@@ -98,10 +98,12 @@ ft_singleplotTFR(cfg, ga_tfr_lc_all);
 colormap(color_map);
 % set(gca, 'CLim', clim);
 set(gca, 'FontSize', 20)
-colorbar;
-xlabel('Time [ms]');
+colb = colorbar;
+colb.Label.String = 'Power [dB]';
+c.Label.FontSize = 25;
+xlabel('Time [s]');
 ylabel('Frequency [Hz]');
-title('Low Contrast (ALL Orientations)');
+title('Time-Frequency Representation: Low Contrast', 'FontName', 'Arial', 'FontSize', 30);
 
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_tfr_lc_all.png');
 
@@ -123,7 +125,6 @@ cfg.xlim = [0 2];
 cfg.ylim = [30 90];
 color_map = flipud(cbrewer('div', 'RdBu', 64)); % 'RdBu' for blue to red diverging color map
 clim = [-0.6, 0.61];
-% cliom = max(diff.powspctrm(80:120, 5:10, 81))
 
 % Plot: Difference Time-Frequency Response
 figure;
@@ -132,13 +133,15 @@ set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
 ft_singleplotTFR(cfg, diff);
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
-colorbar;
+colb = colorbar;
+colb.Label.String = 'Power [dB]';
+c.Label.FontSize = 25;
 colormap(color_map);
 set(gca, 'FontSize', 25);
-title('TFR Diff (High Contrast - Low Contrast)', 'FontName', 'Arial', 'FontSize', 30);
+title('Time-Frequency Representation: Difference (High Contrast - Low Contrast)', 'FontName', 'Arial', 'FontSize', 30);
 set(gca, 'CLim', clim);
-yline(30, 'LineWidth', 5, 'LineStyle', '-', 'Color', 'r');
-yline(90, 'LineWidth', 5, 'LineStyle', '-', 'Color', 'r');
+%yline(30, 'LineWidth', 5, 'LineStyle', '-', 'Color', 'r');
+%yline(90, 'LineWidth', 5, 'LineStyle', '-', 'Color', 'r');
 
 % Save 
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_tfr_diff.png');

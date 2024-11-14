@@ -5,15 +5,7 @@
 %   TFR    
 
 %% Setup
-clear
-addpath('/Users/Arne/Documents/matlabtools/eeglab2024.2');
-eeglab
-clc
-close all
-path = '/Volumes/methlab/Students/Arne/GCP/data/features/';
-dirs = dir(path);
-folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
-subjects = {folders.name};
+[subjects, path] = setup('GCP');
 
 %% Extract TFR HIGH CONTRAST 
 % Read data, segment and convert to FieldTrip data structure
@@ -36,10 +28,10 @@ for subj = 1:length(subjects)
     cfg.output      = 'pow';
     cfg.method      = 'mtmconvol';
     cfg.taper       = 'dpss';
-    cfg.foi         = 30:4:120;                          % Analysis 30 to 90 Hz in steps of 1 Hz
+    cfg.foi         = 30:4:120;                         % Analysis 30 to 90 Hz in steps of 4 Hz
     cfg.tapsmofrq   = 11;                               % 10 tapers
     cfg.t_ftimwin   = ones(length(cfg.foi),1).*0.5;     % Length of time window = 0.5 sec
-    cfg.toi         = -1:0.05:3;                       % What time window we are interested in, rsp. to stim presentation
+    cfg.toi         = -1:0.05:3;                       
     cfg.keeptrials  = 'no';
     cfg.trials = ind1;
     tfr_hc_0 = ft_freqanalysis(cfg,dataTFRhc);
@@ -54,17 +46,22 @@ for subj = 1:length(subjects)
 
     %% Baseline
     cfg             = [];
-    cfg.baseline    = [-Inf -.25];
+    cfg.baseline    = [-.5 -.25];
     cfg.baselinetype = 'db';
-    tfr_hc_0 = ft_freqbaseline(cfg,tfr_hc_0);
-    tfr_hc_45 = ft_freqbaseline(cfg,tfr_hc_45);
-    tfr_hc_90 = ft_freqbaseline(cfg,tfr_hc_90);
-    tfr_hc_115 = ft_freqbaseline(cfg,tfr_hc_115);
-    tfr_hc_all = ft_freqbaseline(cfg,tfr_hc_all);
+    tfr_hc_0_bl = ft_freqbaseline(cfg,tfr_hc_0);
+    tfr_hc_45_bl = ft_freqbaseline(cfg,tfr_hc_45);
+    tfr_hc_90_bl = ft_freqbaseline(cfg,tfr_hc_90);
+    tfr_hc_115_bl = ft_freqbaseline(cfg,tfr_hc_115);
+    tfr_hc_all_bl = ft_freqbaseline(cfg,tfr_hc_all);
 
     %% Save data
     cd(datapath)
-    save tfr_hc tfr_hc_0 tfr_hc_45 tfr_hc_90 tfr_hc_115 tfr_hc_all
+    save tfr_hc ...
+        tfr_hc_0 tfr_hc_0_bl ...
+        tfr_hc_45 tfr_hc_45_bl ...
+        tfr_hc_90 tfr_hc_90_bl ...
+        tfr_hc_115 tfr_hc_115_bl ...
+        tfr_hc_all tfr_hc_all_bl
     fprintf('Subject %.2s / %.3d TFR HC computed \n', num2str(subj), length(subjects))
 end
 
@@ -100,10 +97,10 @@ for subj = 6:length(subjects)
     cfg.output      = 'pow';
     cfg.method      = 'mtmconvol';
     cfg.taper       = 'dpss';
-    cfg.foi         = 30:4:120;                          % Analysis 30 to 90 Hz in steps of 1 Hz
+    cfg.foi         = 30:4:120;                         % Analysis 30 to 90 Hz in steps of 4 Hz
     cfg.tapsmofrq   = 11;                               % 10 tapers
     cfg.t_ftimwin   = ones(length(cfg.foi),1).*0.5;     % Length of time window = 0.5 sec
-    cfg.toi         = -1:0.05:3;                        % What time window we are interested in, rsp. to stim presentation
+    cfg.toi         = -1:0.05:3;                        
     cfg.keeptrials  = 'no';
     cfg.trials = ind1;
     tfr_lc_0 = ft_freqanalysis(cfg,dataTFRlc);
@@ -118,16 +115,21 @@ for subj = 6:length(subjects)
 
     %% Baseline
     cfg             = [];
-    cfg.baseline    = [-Inf -.25];
+    cfg.baseline    = [-.5 -.25];
     cfg.baselinetype = 'db';
-    tfr_lc_0 = ft_freqbaseline(cfg,tfr_lc_0);
-    tfr_lc_45 = ft_freqbaseline(cfg,tfr_lc_45);
-    tfr_lc_90 = ft_freqbaseline(cfg,tfr_lc_90);
-    tfr_lc_115 = ft_freqbaseline(cfg,tfr_lc_115);
-    tfr_lc_all = ft_freqbaseline(cfg,tfr_lc_all);
+    tfr_lc_0_bl = ft_freqbaseline(cfg,tfr_lc_0);
+    tfr_lc_45_bl = ft_freqbaseline(cfg,tfr_lc_45);
+    tfr_lc_90_bl = ft_freqbaseline(cfg,tfr_lc_90);
+    tfr_lc_115_bl = ft_freqbaseline(cfg,tfr_lc_115);
+    tfr_lc_all_bl = ft_freqbaseline(cfg,tfr_lc_all);
 
     %% Save data
     cd(datapath)
-    save tfr_lc tfr_lc_0 tfr_lc_45 tfr_lc_90 tfr_lc_115 tfr_lc_all
+    save tfr_lc ...
+        tfr_lc_0 tfr_lc_0_bl ...
+        tfr_lc_45 tfr_lc_45_bl ...
+        tfr_lc_90 tfr_lc_90_bl ...
+        tfr_lc_115 tfr_lc_115_bl ...
+        tfr_lc_all tfr_lc_all_bl
     fprintf('Subject %.2s / %.3d TFR LC computed \n', num2str(subj), length(subjects))
 end
