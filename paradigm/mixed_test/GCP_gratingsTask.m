@@ -90,6 +90,8 @@ stimulus.regionEccentricity_dva = 3;     % Eccentricity of regions from central 
 
 % Set up color parameters
 color.textVal = 0;                      % Color of text (0 = black)
+color.Black = color.textVal;
+color.White = 1;
 
 %  Retrieve key code for spacebar
 spaceKeyCode = KbName('Space');            
@@ -180,6 +182,9 @@ fixHorizontal = [round(-stimulus.fixationSize_pix/2) round(stimulus.fixationSize
 fixVertical = [0 0 round(-stimulus.fixationSize_pix/2) round(stimulus.fixationSize_pix/2)];
 fixCoords = [fixHorizontal; fixVertical];
 fixPos = [screenCentreX, screenCentreY];
+
+        virtualSize = 400;  % Default x + y size
+
 
 %% Create data structure for preallocating data
 data = struct;
@@ -333,7 +338,6 @@ for trl = 1:exp.nTrials
         % Query frame duration for later use to time 'Flips' properly for an
         % animation with constant framerate:
         ifi = Screen('GetFlipInterval', ptbWindow);
-        virtualSize = 400;  % Default x + y size
         radius = floor(virtualSize / 2); % Radius of the disc edge
 
         % Build a procedural texture (but keep the shader)
@@ -494,9 +498,9 @@ for trl = 1:exp.nTrials
     overall_accuracy = round((sum(data.correct(1:trl))/trl)*100);
     reactionTime = num2str(round(data.reactionTime(trl), 2), '%.2f');
     if trl < 10
-        disp(['Response to Trial ' num2str(trl) '/' num2str(experiment.nTrials) ' in Block ' num2str(BLOCK) ' is ' feedbackText '  (Acc: ' num2str(overall_accuracy) '% | RT: ' reactionTime 's)']);
+        disp(['Response to Trial ' num2str(trl) '/' num2str(exp.nTrials) ' in Block ' num2str(BLOCK) ' is ' feedbackText '  (Acc: ' num2str(overall_accuracy) '% | RT: ' reactionTime 's)']);
     else
-        disp(['Response to Trial ' num2str(trl) '/' num2str(experiment.nTrials) ' in Block ' num2str(BLOCK) ' is ' feedbackText ' (Acc: ' num2str(overall_accuracy) '% | RT: ' reactionTime 's)']);
+        disp(['Response to Trial ' num2str(trl) '/' num2str(exp.nTrials) ' in Block ' num2str(BLOCK) ' is ' feedbackText ' (Acc: ' num2str(overall_accuracy) '% | RT: ' reactionTime 's)']);
     end
 end 
 
@@ -559,7 +563,7 @@ saves = struct;
 saves.data = data;
 saves.data.spaceKeyCode = spaceKeyCode;
 saves.data.reactionTime = reactionTime;
-saves.experiment = experiment;
+saves.experiment = exp;
 saves.screenWidth = screenWidth;
 saves.screenHeight = screenHeight;
 saves.screenCentreX = screenCentreX;
