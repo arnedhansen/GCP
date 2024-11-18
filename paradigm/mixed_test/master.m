@@ -23,10 +23,10 @@ addpath(FUNS_PATH) % Add path to folder with functions
 screenSettings % Manage screens
 
 %% Collect ID and Age
-dialogID;
-
+% dialogID;
+subject.ID = 999;
 %% Protect Matlab code from participant keyboard input
-ListenChar(2);
+% ListenChar(2);
 
 %% Check for existing files and start tasks
 

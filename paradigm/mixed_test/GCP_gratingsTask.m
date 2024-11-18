@@ -13,16 +13,17 @@ if TRAINING == 0
     disp('STARTING EEG RECORDING...');
     initEEG;
 
-    % Wait ten seconds to initialize EEG
-    disp('INITIALIZING EEG... PLEASE WAIT 10 SECONDS')
-    for i=1:15
-        waitbar(i/15, 'INITIALIZING EEG');
-        pause(1);
-    end
-    wbar = findall(0,'type','figure','tag','TMWWaitbar');
-    delete(wbar)
-    disp('EEG INITIALIZED!')
+    %     % Wait ten seconds to initialize EEG
+    %     disp('INITIALIZING EEG... PLEASE WAIT 10 SECONDS')
+    %     for i=1:15
+    %         waitbar(i/15, 'INITIALIZING EEG');
+    %         pause(1);
+    %     end
+    %     wbar = findall(0,'type','figure','tag','TMWWaitbar');
+    %     delete(wbar)
+    %     disp('EEG INITIALIZED!')
 end
+TRAINING == 1
 
 % Hide cursor on participant screen
 HideCursor(whichScreen);
@@ -78,7 +79,7 @@ equipment.gammaVals = [1 1 1];          % The gamma values for color calibration
 
 % Set up stimulus parameters Fixation
 stimulus.fixationOn = 1;                  % Toggle fixation on (1) or off (0)
-stimulus.fixationSize_dva = .3;           % Size of fixation cross in degress of visual angle
+stimulus.fixationSize_dva = .3;           % Size of fixation cross in degress of visual orientationAngle
 stimulus.fixationColor0 = [0 0 0];        % Color of fixation cross (1 = white, 0 = black, [1 0 0] = red)
 stimulus.fixationColor1 = [1 0 0];        % Red fixation cross
 stimulus.fixationLineWidth = 1.3;         % Line width of fixation cross
@@ -94,30 +95,30 @@ color.Black = color.textVal;
 color.White = 1;
 
 %  Retrieve key code for spacebar
-spaceKeyCode = KbName('Space');            
+spaceKeyCode = KbName('Space');
 
 %% Set up text parameters
 % Define startExperimentText
 if TRAINING == 1
-        loadingText = 'Loading training task...';
-        startExperimentText = ['Training task: \n\n' ...
-            'You will see a series of gratings. \n\n' ...
-            'Your task is to press SPACE if you see \n\n' ...
-            'a red fixation cross appearing for a short time. \n\n' ...
-            'Otherwise, do not press any key. \n\n' ...
-            'Please always look at the screen center \n\n' ...
-            'and use your right hand. \n\n' ...
-            'Press any key to continue.'];
-    elseif TRAINING == 0
-        loadingText = 'Loading test task...';
-        startExperimentText = [
-            'You will see a series of gratings. \n\n' ...
-            'Your task is to press SPACE if you see \n\n' ...
-            'a red fixation cross appearing for a short time. \n\n' ...
-            'Otherwise, do not press any key. \n\n' ...
-            'Please always look at the screen center \n\n' ...
-            'and use your right hand. \n\n' ...
-            'Press any key to continue.'];
+    loadingText = 'Loading training task...';
+    startExperimentText = ['Training task: \n\n' ...
+        'You will see a series of gratings. \n\n' ...
+        'Your task is to press SPACE if you see \n\n' ...
+        'a red fixation cross appearing for a short time. \n\n' ...
+        'Otherwise, do not press any key. \n\n' ...
+        'Please always look at the screen center \n\n' ...
+        'and use your right hand. \n\n' ...
+        'Press any key to continue.'];
+elseif TRAINING == 0
+    loadingText = 'Loading test task...';
+    startExperimentText = [
+        'You will see a series of gratings. \n\n' ...
+        'Your task is to press SPACE if you see \n\n' ...
+        'a red fixation cross appearing for a short time. \n\n' ...
+        'Otherwise, do not press any key. \n\n' ...
+        'Please always look at the screen center \n\n' ...
+        'and use your right hand. \n\n' ...
+        'Press any key to continue.'];
 end
 
 %% Set up temporal parameters (all in seconds)
@@ -136,6 +137,7 @@ rng('default');
 rng('shuffle');                     % Use MATLAB twister for rng
 
 %% Set up Psychtoolbox Pipeline
+global GL;
 AssertOpenGL;
 
 % Imaging set up
@@ -183,6 +185,15 @@ fixVertical = [0 0 round(-stimulus.fixationSize_pix/2) round(stimulus.fixationSi
 fixCoords = [fixHorizontal; fixVertical];
 fixPos = [screenCentreX, screenCentreY];
 virtualSize = 400;  % Default x + y size
+
+%% Set circular grating settings
+rshader = [PsychtoolboxRoot 'PsychDemos/ExpandingRingsShader.vert.txt'];
+expandingRingShader = LoadGLSLProgramFromFiles({ rshader, [PsychtoolboxRoot 'PsychDemos/ExpandingRingsShader.frag.txt'] }, 1);
+ringwidth = 8; % Width of a single ring (radius) in pixels
+ringtex = Screen('SetOpenGLTexture', ptbWindow, [], 0, GL.TEXTURE_RECTANGLE_EXT, virtualSize, virtualSize, 1, expandingRingShader);
+glUseProgram(expandingRingShader);
+glUniform2f(glGetUniformLocation(expandingRingShader, 'RingCenter'), virtualSize/2, virtualSize/2); % Center ring
+glUseProgram(0); % Done with setup, disable shader
 
 %% Create data structure for preallocating data
 data = struct;
@@ -252,53 +263,68 @@ end
 HideCursor(whichScreen);
 tic;
 timing.startTime =  datestr(now, 'dd/mm/yy-HH:MM');
+count5trials = 0;
 
 %% Experiment Loop %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 disp('GRATING TASK...');
 for trl = 1:exp.nTrials
+
+    if randi(2) == 1
+        gratingSequence(trl) = 5
+    else
+        gratingSequence(trl) = 6
+    end
+
+
+
+
+
+
+
+
+
+
+    if gratingSequence(trl) == 1
+        gratingForm = 'low contrast horizontal';
+    elseif gratingSequence(trl) == 2
+        gratingForm = 'high contrast horizontal';
+    elseif gratingSequence(trl) == 3
+        gratingForm = 'low contrast vertical';
+    elseif gratingSequence(trl) == 4
+        gratingForm = 'high contrast vertical';
+    elseif gratingSequence(trl) == 5
+        gratingForm = 'low contrast concentric';
+    elseif gratingSequence(trl) == 6
+        gratingForm = 'high contrast concentric';
+    end
+
+    % Randomized selection of task trials (33%)
+    if randi(3) == 1
+        data.redCross(trl) = 1;
+    else
+        data.redCross(trl) = 0;
+    end
+
     % Start of trial CW output
-    disp(['Start of Trial ' num2str(trl) ' in block ' num2str(BLOCK)]);
+    disp(['Start of Trial ' num2str(trl) '/' num2str(exp.nTrials) ' in Block ' num2str(BLOCK) ' (' gratingForm ')']);
 
     %% Present fixation cross
     % Set jittered trial-specific durations for CFIs
     timing.cfi(trl) = (randsample(timing.cfilower:timing.cfiupper, 1))/1000; % Randomize the jittered central fixation interval on trial
     start_time = GetSecs;
     while (GetSecs - start_time) < timing.cfi(trl)
-        % Randomized selection of task trials (33%)
-        if randi(3) == 1
-            data.redCross(trl) = 1;
-            % Task condition with red fixation cross
-            Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor1,[screenCentreX screenCentreY],2);
-            Screen('Flip', ptbWindow)
-            TRIGGER = FIXATION;
-            if TRAINING == 1
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "PRESENTATION"');
-            else
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "PRESENTATION"');
-                sendtrigger(TRIGGER,port,SITE,stayup);
-            end
-            WaitSecs(timing.cfi_task) % Show red cross for 500 ms
-            Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor0,[screenCentreX screenCentreY],2);
-            Screen('Flip', ptbWindow)
-            WaitSecs(timing.cfi(trl)-timing.cfi_task) % Show black cross for the rest of the CFI time
+        Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor0,[screenCentreX screenCentreY],2);
+        Screen('Flip', ptbWindow)
+        TRIGGER = FIXATION;
+        if TRAINING == 1
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
         else
-            data.redCross(trl) = 0;
-            % Non-task condition with normal fixation cross
-            Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor0,[screenCentreX screenCentreY],2);
-            Screen('Flip', ptbWindow)
-            TRIGGER = FIXATION;
-            if TRAINING == 1
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "PRESENTATION"');
-            else
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "PRESENTATION"');
-                sendtrigger(TRIGGER,port,SITE,stayup);
-            end
-            WaitSecs(timing.cfi(trl))
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
+            sendtrigger(TRIGGER,port,SITE,stayup);
         end
+        WaitSecs(timing.cfi(trl))
     end
 
     %% Define grating depending on sequence number
@@ -309,82 +335,85 @@ for trl = 1:exp.nTrials
     % Grating = 4 is high contrast vertical
     % Grating = 5 is low contrast concentric
     % Grating = 6 is high contrast concentric
-    baseColor = [0.5 0.5 0.5 1];
+    % Common Settings for parameters in DrawTexture
+    phase = 0; % Start phase
+    frequency = 0.05; % Radial frequency (adjust for ring spacing)
+    contrast = 0.5; % High contrast for concentric pattern
+    sigma = 1.0; % < 0 is sinusiodal; > 0 is square-wave grating
+    radius = floor(virtualSize / 2); % Radius of the disc edge
+    PsychDefaultSetup(2); % Setup defaults and unit color range
 
     %% Linear grating (horizontal, vertical) setup
     if gratingSequence(trl) < 5
 
-        % Set angle
+        % Set orientationAngle
         if gratingSequence(trl) == 1 || gratingSequence(trl) == 2
-            angle = 90;   % 90° = horizontal
+            orientationAngle = 90;   % 90° = horizontal
         elseif gratingSequence(trl) == 3 || gratingSequence(trl) == 4
-            angle = 0;    % 0° = vertical
+            orientationAngle = 0;    % 0° = vertical
         end
 
         % Color Settings
         if gratingSequence(trl) == 1 || gratingSequence(trl) == 3 % Low contrast
             color1 = [0.25 0.25 0.25 1];
             color2 = [0.75 0.75 0.75 1];
+            contrastPreMultiplicator = 0.5;
             data.contrast(trl) = 0;
         elseif gratingSequence(trl) == 2 || gratingSequence(trl) == 4 % High contrast
             color1 = [0 0 0 1];
             color2 = [1 1 1 1];
+            contrastPreMultiplicator = 1;
             data.contrast(trl) = 1;
         end
-        baseColor = [0.5 0.5 0.5 1];
-        PsychDefaultSetup(2); % Setup defaults and unit color range
 
         % Query frame duration for later use to time 'Flips' properly for an
         % animation with constant framerate:
         ifi = Screen('GetFlipInterval', ptbWindow);
-        radius = floor(virtualSize / 2); % Radius of the disc edge
 
-        % Build a procedural texture (but keep the shader)
-        texture = CreateProceduralColorGrating(ptbWindow, virtualSize, virtualSize,...
-            color1, color2, radius);
-
-        % Settings for parameters in DrawTexture
-        phase = 0; % Phase
-        frequency = 0.05; % Spatial frequency
-        contrast = 0.5; % Contrast
-        sigma = -1.0; % Sigma < 0 is a sinusoid
+        % Create linear grating texture
+        evalc(['[texture, gratingRect] = CreateProceduralSquareWaveGrating(ptbWindow, ' ...
+            'virtualSize, virtualSize, [0 0 0 1], radius, contrastPreMultiplicator)']);
     end
 
     %% Concentric grating setup
     if gratingSequence(trl) == 5 || gratingSequence(trl) == 6
-        angle = 0; % Angle is not required for concentric patterns
-        phase = 0; % Start phase
-        frequency = 0.05; % Radial frequency (adjust for ring spacing)
-        contrast = 0.5; % High contrast for concentric pattern
-        sigma = -1.0; % Standard for a sinusoidal grating
+        % Retrieve monitor refresh duration
+        ifi = Screen('GetFlipInterval', ptbWindow);
 
-        % Color Settings
-        if gratingSequence(trl) == 5 % Low contrast
-            color1 = [0.25 0.25 0.25 1];
-            color2 = [0.75 0.75 0.75 1];
-            data.contrast(trl) = 0;
-        elseif gratingSequence(trl) == 6 % High contrast
-            color1 = [0 0 0 1];
-            color2 = [1 1 1 1];
-            data.contrast(trl) = 1;
+        % Concentric colour settings
+        if gratingSequence(trl) == 5 % Low contrast (grey scale)
+            firstColor   = [0.75 0.75 0.75 1]; % Dark grey
+            secondColor  = [0.25 0.25 0.25 1]; % Light grey
+            data.contrast(trl) = 0; % Low contrast
+        elseif gratingSequence(trl) == 6 % High contrast (black and white)
+            firstColor   = [1 1 1 1]; % Black
+            secondColor  = [0 0 0 1]; % White
+            data.contrast(trl) = 1; % High contrast
         end
-
-        % Create the concentric grating texture
-        texture = CreateProceduralColorGrating(ptbWindow, virtualSize, virtualSize,...
-            color1, color2, radius);
+        shiftvalue = 0;
     end
+
 
     %% Present grating and get response
     % Suppress output from shader creation
-    evalc('texture = CreateProceduralColorGrating(ptbWindow, virtualSize, virtualSize, color1, color2, radius);');
     vbl = Screen('Flip', ptbWindow); % Preparatory flip
-    getResponse = true;
+    responseGiven = false;
     probeStartTime = GetSecs;
     maxProbeDuration = 2; % Maximum time to show the grating
 
     while (GetSecs - probeStartTime) < maxProbeDuration
         % Draw grating
-        Screen('DrawTexture', ptbWindow, texture, [], [], angle, [], [], baseColor, [], [], [phase, frequency, contrast, sigma]);
+        if gratingSequence(trl) < 5
+                dstRect = CenterRectOnPointd(gratingRect, screenCentreX, screenCentreY);
+            Screen('DrawTexture', ptbWindow, texture, [], dstRect, orientationAngle, [], [], [], [], [], [phase, frequency, contrast, sigma]);
+        else
+%             Screen('DrawTexture', ptbWindow, texture, [], dstRect, 0, [], [], [], [], [], [phase, frequency, contrast, sigma]);
+        Screen('DrawTexture', ptbWindow, ringtex, [], [], [], [], [], ...
+            firstColor, [], [], [secondColor(1), secondColor(2), secondColor(3), ...
+            secondColor(4), shiftvalue, ringwidth, radius, 0]);
+        
+        end
+
         % Send presentation triggers
         if gratingSequence(trl) == 1
             TRIGGER = PRESENTATION1;
@@ -433,87 +462,17 @@ for trl = 1:exp.nTrials
         data.reactionTime(trl) = NaN;
     end
 
-    %
-    % while getResponse
-    %     % Send presentation triggers
-    %     if gratingSequence(trl) == 1
-    %         TRIGGER = PRESENTATION1;
-    %     elseif gratingSequence(trl) == 2
-    %         TRIGGER = PRESENTATION2;
-    %     elseif gratingSequence(trl) == 3
-    %         TRIGGER = PRESENTATION3;
-    %     elseif gratingSequence(trl) == 4
-    %         TRIGGER = PRESENTATION4;
-    %     elseif gratingSequence(trl) == 5
-    %         TRIGGER = PRESENTATION5;
-    %     elseif gratingSequence(trl) == 6
-    %         TRIGGER = PRESENTATION6;
-    %     end
-    %     if TRAINING == 1
-    %         Eyelink('Message', num2str(TRIGGER));
-    %         Eyelink('command', 'record_status_message "PRESENTATION"');
-    %     else
-    %         Eyelink('Message', num2str(TRIGGER));
-    %         Eyelink('command', 'record_status_message "PRESENTATION"');
-    %         sendtrigger(TRIGGER,port,SITE,stayup);
-    %     end
-    % 
-    %     % Draw grating
-    %     if gratingSequence(trl) < 5
-    %         % Draw linear grating
-    %         Screen('DrawTexture', ptbWindow, texture, [], [],...
-    %             angle, [], [], baseColor, [], [],...
-    %             [phase, frequency, contrast, sigma]);
-    %         vbl = Screen('Flip', ptbWindow, vbl * ifi);
-    %     end
-    %     if gratingSequence(trl) == 5 || gratingSequence(trl) == 6
-    %         % Draw concentric grating
-    %         Screen('DrawTexture', ptbWindow, texture, [], [], ...
-    %             angle, [], [], baseColor, [], [],...
-    %             [phase, frequency, contrast, sigma]);
-    %         vbl = Screen('Flip', ptbWindow, vbl * ifi);
-    %     end
-    %     probePresentationTime = GetSecs;
-    % 
-    %     %% Get response
-    %     [time,keyCode] = KbWait(-1, 2, maxResponseTime); % Wait 2 seconds for response, continue afterwards if there is no input
-    %     whichKey = find(keyCode);
-    % 
-    %     % Subject pressed space button
-    %     if ~isempty(whichKey)
-    %         responseTime = GetSecs;
-    %         data.reactionTime(trl) = responseTime - probePresentationTime;
-    %         getResponse = false;
-    %         data.responses(trl) = 1;
-    %         % Send triggers
-    %         TRIGGER = RESP_YES;
-    %         if TRAINING == 1
-    %             Eyelink('Message', num2str(TRIGGER));
-    %             Eyelink('command', 'record_status_message "RESPONSE"');
-    %         else
-    %             Eyelink('Message', num2str(TRIGGER));
-    %             Eyelink('command', 'record_status_message "RESPONSE"');
-    %             sendtrigger(TRIGGER,port,SITE,stayup)
-    %         end
-    % 
-    %     % No input by participant
-    %     elseif isempty(whichKey)
-    %         data.responses(trl) = 0;
-    %         data.reactionTime(trl) = NaN;
-    %     end
-    % end
-
-       %% Check if response was correct
-        if data.redCross(trl) == 1 && data.responses(trl) == 1 % Red fixation cross + button press = correct
-            data.correct(trl) = 1;
-                    feedbackText = 'Correct!  ';
-        elseif data.redCross(trl) == 0 && data.responses(trl) == 0 % No red fixation cross + no button press = correct
-            data.correct(trl) = 1;
-                    feedbackText = 'Correct!  ';
-        else % Anything else is wrong response
-            data.correct(trl) = 0; 
-                    feedbackText = 'Incorrect!';
-        end
+    %% Check if response was correct
+    if data.redCross(trl) == 1 && data.responses(trl) == 1 % Red fixation cross + button press = correct
+        data.correct(trl) = 1;
+        feedbackText = 'Correct!  ';
+    elseif data.redCross(trl) == 0 && data.responses(trl) == 0 % No red fixation cross + no button press = correct
+        data.correct(trl) = 1;
+        feedbackText = 'Correct!  ';
+    else % Anything else is wrong response
+        data.correct(trl) = 0;
+        feedbackText = 'Incorrect!';
+    end
 
     %% Feedback for training block and CW output
     % Give feedback in training block
@@ -522,13 +481,13 @@ for trl = 1:exp.nTrials
         Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
         Screen('Flip',ptbWindow);
         WaitSecs(2);
-    % Give feedback for no response (too slow)
-    elseif TRAINING == 0 && data.correct(trl) == 0 && data.responses(trl) == 0
-        feedbackText = 'TOO SLOW! ';
-        DrawFormattedText(ptbWindow,feedbackText,'center','center',color.Black);
-        Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
-        Screen('Flip',ptbWindow);
-        WaitSecs(2);
+        % Give feedback for no response (too slow)
+        %     elseif TRAINING == 0 && data.correct(trl) == 0 && data.responses(trl) == 0
+        %         feedbackText = 'TOO SLOW! ';
+        %         DrawFormattedText(ptbWindow,feedbackText,'center','center',color.Black);
+        %         Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
+        %         Screen('Flip',ptbWindow);
+        %         WaitSecs(2);
     end
 
     %% Dynamically compute accuracy for past 10 trials and remind participant if accuracy drops below threshhold of 90%
@@ -557,7 +516,7 @@ for trl = 1:exp.nTrials
     else
         disp(['Response to Trial ' num2str(trl) '/' num2str(exp.nTrials) ' in Block ' num2str(BLOCK) ' is ' feedbackText ' (Acc: ' num2str(overall_accuracy) '% | RT: ' reactionTime 's)']);
     end
-end 
+end
 
 %% End task and save data
 
