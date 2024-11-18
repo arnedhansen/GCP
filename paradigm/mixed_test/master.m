@@ -3,7 +3,7 @@
 
 % - Resting EEG
 % - Gratings Training (10 trials)
-% - Gratings (XXX trials)
+% - Gratings (120 trials)
 
 %% General settings, screens and paths
 

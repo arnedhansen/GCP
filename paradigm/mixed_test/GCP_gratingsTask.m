@@ -60,7 +60,7 @@ TASK_END = 90; % trigger for ET cutting
 % Block and Trial Number
 blocks = 4;
 exp.nGratingsTrain = 8; % n gratings per training block
-exp.nGratingsTask = 50; % n gratings per test block 4 blocks
+exp.nGratingsTask = 30; % n gratings per test block 4 blocks
 
 if TRAINING == 1
     exp.nTrials = exp.nGratingsTrain;
@@ -77,10 +77,10 @@ equipment.whiteVal = 1;
 equipment.gammaVals = [1 1 1];          % The gamma values for color calibration of the monitor
 
 % Set up stimulus parameters Fixation
-stimulus.fixationOn = 1;                % Toggle fixation on (1) or off (0)
-stimulus.fixationSize_dva = .3;         % Size of fixation cross in degress of visual angle
-stimulus.fixationColor0 = [0 0 0];       % Color of fixation cross (1 = white, 0 = black, [1 0 0] = red)
-stimulus.fixationColor1 = [1 0 0];
+stimulus.fixationOn = 1;                  % Toggle fixation on (1) or off (0)
+stimulus.fixationSize_dva = .3;           % Size of fixation cross in degress of visual angle
+stimulus.fixationColor0 = [0 0 0];        % Color of fixation cross (1 = white, 0 = black, [1 0 0] = red)
+stimulus.fixationColor1 = [1 0 0];        % Red fixation cross
 stimulus.fixationLineWidth = 1.3;         % Line width of fixation cross
 
 % Location
@@ -182,9 +182,7 @@ fixHorizontal = [round(-stimulus.fixationSize_pix/2) round(stimulus.fixationSize
 fixVertical = [0 0 round(-stimulus.fixationSize_pix/2) round(stimulus.fixationSize_pix/2)];
 fixCoords = [fixHorizontal; fixVertical];
 fixPos = [screenCentreX, screenCentreY];
-
-        virtualSize = 400;  % Default x + y size
-
+virtualSize = 400;  % Default x + y size
 
 %% Create data structure for preallocating data
 data = struct;
@@ -311,6 +309,7 @@ for trl = 1:exp.nTrials
     % Grating = 4 is high contrast vertical
     % Grating = 5 is low contrast concentric
     % Grating = 6 is high contrast concentric
+    baseColor = [0.5 0.5 0.5 1];
 
     %% Linear grating (horizontal, vertical) setup
     if gratingSequence(trl) < 5
@@ -361,11 +360,11 @@ for trl = 1:exp.nTrials
 
         % Color Settings
         if gratingSequence(trl) == 5 % Low contrast
-            color1 = [0.25 0.25 0.25 1]; 
+            color1 = [0.25 0.25 0.25 1];
             color2 = [0.75 0.75 0.75 1];
             data.contrast(trl) = 0;
         elseif gratingSequence(trl) == 6 % High contrast
-            color1 = [0 0 0 1]; 
+            color1 = [0 0 0 1];
             color2 = [1 1 1 1];
             data.contrast(trl) = 1;
         end
@@ -376,10 +375,16 @@ for trl = 1:exp.nTrials
     end
 
     %% Present grating and get response
+    % Suppress output from shader creation
+    evalc('texture = CreateProceduralColorGrating(ptbWindow, virtualSize, virtualSize, color1, color2, radius);');
     vbl = Screen('Flip', ptbWindow); % Preparatory flip
     getResponse = true;
-    maxResponseTime = GetSecs + 2;
-    while getResponse
+    probeStartTime = GetSecs;
+    maxProbeDuration = 2; % Maximum time to show the grating
+
+    while (GetSecs - probeStartTime) < maxProbeDuration
+        % Draw grating
+        Screen('DrawTexture', ptbWindow, texture, [], [], angle, [], [], baseColor, [], [], [phase, frequency, contrast, sigma]);
         % Send presentation triggers
         if gratingSequence(trl) == 1
             TRIGGER = PRESENTATION1;
@@ -403,50 +408,100 @@ for trl = 1:exp.nTrials
             sendtrigger(TRIGGER,port,SITE,stayup);
         end
 
-        % Draw grating
-        if gratingSequence(trl) < 5
-            % Draw linear grating
-            Screen('DrawTexture', ptbWindow, texture, [], [],...
-                angle, [], [], baseColor, [], [],...
-                [phase, frequency, contrast, sigma]);
-            vbl = Screen('Flip', ptbWindow, vbl * ifi);
+        % Draw fixation cross on top of the grating
+        if data.redCross(trl) == 1 % Red fixation cross (task condition)
+            Screen('DrawLines', ptbWindow, fixCoords, stimulus.fixationLineWidth, stimulus.fixationColor1, [screenCentreX screenCentreY], 2);
+        else % Normal fixation cross
+            Screen('DrawLines', ptbWindow, fixCoords, stimulus.fixationLineWidth, stimulus.fixationColor0, [screenCentreX screenCentreY], 2);
         end
-        if gratingSequence(trl) == 5 || gratingSequence(trl) == 6
-            % Draw concentric grating
-            Screen('DrawTexture', ptbWindow, texture, [], [], ...
-                angle, [], [], baseColor, [], [],...
-                [phase, frequency, contrast, sigma]);
-            vbl = Screen('Flip', ptbWindow, vbl * ifi);
-        end
-        probePresentationTime = GetSecs;
+        vbl = Screen('Flip', ptbWindow, vbl + ifi);
 
-        %% Get response
-        [time,keyCode] = KbWait(-1, 2, maxResponseTime); % Wait 2 seconds for response, continue afterwards if there is no input
-        whichKey = find(keyCode);
-
-        % Subject pressed space button
-        if ~isempty(whichKey)
-            responseTime = GetSecs;
-            data.reactionTime(trl) = responseTime - probePresentationTime;
-            getResponse = false;
-            data.responses(trl) = 1;
-            % Send triggers
-            TRIGGER = RESP_YES;
-            if TRAINING == 1
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "RESPONSE"');
-            else
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "RESPONSE"');
-                sendtrigger(TRIGGER,port,SITE,stayup)
+        % Check for participant response
+        if ~responseGiven
+            [keyIsDown, responseTime, keyCode] = KbCheck;
+            if keyIsDown
+                responseGiven = true;
+                data.reactionTime(trl) = responseTime - probeStartTime;
+                data.responses(trl) = 1; % Response made
             end
-
-        % No input by participant
-        elseif isempty(whichKey)
-            data.responses(trl) = 0;
-            data.reactionTime(trl) = NaN;
         end
     end
+
+    % If no response is given, record default
+    if ~responseGiven
+        data.responses(trl) = 0; % No response
+        data.reactionTime(trl) = NaN;
+    end
+
+    %
+    % while getResponse
+    %     % Send presentation triggers
+    %     if gratingSequence(trl) == 1
+    %         TRIGGER = PRESENTATION1;
+    %     elseif gratingSequence(trl) == 2
+    %         TRIGGER = PRESENTATION2;
+    %     elseif gratingSequence(trl) == 3
+    %         TRIGGER = PRESENTATION3;
+    %     elseif gratingSequence(trl) == 4
+    %         TRIGGER = PRESENTATION4;
+    %     elseif gratingSequence(trl) == 5
+    %         TRIGGER = PRESENTATION5;
+    %     elseif gratingSequence(trl) == 6
+    %         TRIGGER = PRESENTATION6;
+    %     end
+    %     if TRAINING == 1
+    %         Eyelink('Message', num2str(TRIGGER));
+    %         Eyelink('command', 'record_status_message "PRESENTATION"');
+    %     else
+    %         Eyelink('Message', num2str(TRIGGER));
+    %         Eyelink('command', 'record_status_message "PRESENTATION"');
+    %         sendtrigger(TRIGGER,port,SITE,stayup);
+    %     end
+    % 
+    %     % Draw grating
+    %     if gratingSequence(trl) < 5
+    %         % Draw linear grating
+    %         Screen('DrawTexture', ptbWindow, texture, [], [],...
+    %             angle, [], [], baseColor, [], [],...
+    %             [phase, frequency, contrast, sigma]);
+    %         vbl = Screen('Flip', ptbWindow, vbl * ifi);
+    %     end
+    %     if gratingSequence(trl) == 5 || gratingSequence(trl) == 6
+    %         % Draw concentric grating
+    %         Screen('DrawTexture', ptbWindow, texture, [], [], ...
+    %             angle, [], [], baseColor, [], [],...
+    %             [phase, frequency, contrast, sigma]);
+    %         vbl = Screen('Flip', ptbWindow, vbl * ifi);
+    %     end
+    %     probePresentationTime = GetSecs;
+    % 
+    %     %% Get response
+    %     [time,keyCode] = KbWait(-1, 2, maxResponseTime); % Wait 2 seconds for response, continue afterwards if there is no input
+    %     whichKey = find(keyCode);
+    % 
+    %     % Subject pressed space button
+    %     if ~isempty(whichKey)
+    %         responseTime = GetSecs;
+    %         data.reactionTime(trl) = responseTime - probePresentationTime;
+    %         getResponse = false;
+    %         data.responses(trl) = 1;
+    %         % Send triggers
+    %         TRIGGER = RESP_YES;
+    %         if TRAINING == 1
+    %             Eyelink('Message', num2str(TRIGGER));
+    %             Eyelink('command', 'record_status_message "RESPONSE"');
+    %         else
+    %             Eyelink('Message', num2str(TRIGGER));
+    %             Eyelink('command', 'record_status_message "RESPONSE"');
+    %             sendtrigger(TRIGGER,port,SITE,stayup)
+    %         end
+    % 
+    %     % No input by participant
+    %     elseif isempty(whichKey)
+    %         data.responses(trl) = 0;
+    %         data.reactionTime(trl) = NaN;
+    %     end
+    % end
 
        %% Check if response was correct
         if data.redCross(trl) == 1 && data.responses(trl) == 1 % Red fixation cross + button press = correct
