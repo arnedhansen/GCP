@@ -292,42 +292,34 @@ for trl = 1:exp.nTrials
     % Start of trial CW output
     disp(['Start of Trial ' num2str(trl) '/' num2str(exp.nTrials) ' in Block ' num2str(BLOCK) ' (' gratingForm ')']);
 
-    %% Present fixation cross (red for task condition)
+    %% Present fixation cross
     % Set jittered trial-specific durations for CFIs
     timing.cfi(trl) = (randsample(timing.cfilower:timing.cfiupper, 1))/1000; % Randomize the jittered central fixation interval on trial
     start_time = GetSecs;
     while (GetSecs - start_time) < timing.cfi(trl)
-        TRIGGER = FIXATION;
-        if data.redCross(trl) == 0 % No task condition
-            Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor0,[screenCentreX screenCentreY],2);
-            Screen('Flip', ptbWindow)
-            if TRAINING == 1
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-            else
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-                sendtrigger(TRIGGER,port,SITE,stayup);
-            end
-            WaitSecs(timing.cfi(trl))
-        elseif data.redCross(trl) == 1 % Task condition
-            Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor1,[screenCentreX screenCentreY],2);
-            Screen('Flip', ptbWindow)
-            if TRAINING == 1
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-            else
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-                sendtrigger(TRIGGER,port,SITE,stayup);
-            end
-            WaitSecs(timing.cfi_task) % Show red cross for 500 ms
-            Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor0,[screenCentreX screenCentreY],2);
-            Screen('Flip', ptbWindow)
-            WaitSecs(timing.cfi(trl)-timing.cfi_task) % Show black cross for the rest of the CFI time
-        end
-    end
 
+
+
+if data.redCross(trl) == 1 % Red fixation cross (task condition)
+            Screen('DrawLines', ptbWindow, fixCoords, stimulus.fixationLineWidth, stimulus.fixationColor1, [screenCentreX screenCentreY], 2);
+        else % Normal fixation cross
+            Screen('DrawLines', ptbWindow, fixCoords, stimulus.fixationLineWidth, stimulus.fixationColor0, [screenCentreX screenCentreY], 2);
+        end        
+        
+        
+        Screen('Flip', ptbWindow)
+        TRIGGER = FIXATION;
+        if TRAINING == 1
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
+        else
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
+            sendtrigger(TRIGGER,port,SITE,stayup);
+        end
+        WaitSecs(timing.cfi(trl))
+    end
+        
     %% Define grating depending on sequence number
     data.grating(trl) = gratingSequence(trl);
     % Grating = 1 is low contrast horizontal
@@ -394,6 +386,7 @@ for trl = 1:exp.nTrials
         shiftvalue = 0;
     end
 
+
     %% Present grating and get response
     % Suppress output from shader creation
     vbl = Screen('Flip', ptbWindow); % Preparatory flip
@@ -411,7 +404,7 @@ for trl = 1:exp.nTrials
                 firstColor, [], [], [secondColor(1), secondColor(2), secondColor(3), ...
                 secondColor(4), shiftvalue, ringwidth, radius, 0]);
         end
-        vbl = Screen('Flip', ptbWindow, vbl + ifi);
+                vbl = Screen('Flip', ptbWindow, vbl + ifi);
 
         % Send presentation triggers
         if gratingSequence(trl) == 1
@@ -435,6 +428,8 @@ for trl = 1:exp.nTrials
             Eyelink('command', 'record_status_message "PRESENTATION"');
             sendtrigger(TRIGGER,port,SITE,stayup);
         end
+
+        
 
         % Take screenshot of current screen
         screenshotFilename = sprintf('GCP_screenshot_%s_trl%d.png', gratingForm, trl);
