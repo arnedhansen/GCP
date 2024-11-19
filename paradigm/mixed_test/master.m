@@ -3,7 +3,13 @@
 
 % - Resting EEG
 % - Gratings Training (10 trials)
-% - Gratings (120 trials)
+% - Gratings (300 trials)
+%   - 50x low contrast horizontal
+%   - 50x high contrast horizontal
+%   - 50x low contrast vertical
+%   - 50x high contrast vertical
+%   - 50x low contrast concentric
+%   - 50x high contrast concentric
 
 %% General settings, screens and paths
 
