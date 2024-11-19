@@ -15,8 +15,8 @@ if TRAINING == 0
 
     %     % Wait ten seconds to initialize EEG
     %     disp('INITIALIZING EEG... PLEASE WAIT 10 SECONDS')
-    %     for i=1:15
-    %         waitbar(i/15, 'INITIALIZING EEG');
+    %     for i=1:10
+    %         waitbar(i/10, 'INITIALIZING EEG');
     %         pause(1);
     %     end
     %     wbar = findall(0,'type','figure','tag','TMWWaitbar');
@@ -269,11 +269,11 @@ count5trials = 0;
 disp('GRATING TASK...');
 for trl = 1:exp.nTrials
 
-    if randi(2) == 1
-        gratingSequence(trl) = 5
-    else
-        gratingSequence(trl) = 6
-    end
+%     if randi(2) == 1
+%         gratingSequence(trl) = 5
+%     else
+%         gratingSequence(trl) = 6
+%     end
 
 
 
@@ -407,11 +407,9 @@ for trl = 1:exp.nTrials
                 dstRect = CenterRectOnPointd(gratingRect, screenCentreX, screenCentreY);
             Screen('DrawTexture', ptbWindow, texture, [], dstRect, orientationAngle, [], [], [], [], [], [phase, frequency, contrast, sigma]);
         else
-%             Screen('DrawTexture', ptbWindow, texture, [], dstRect, 0, [], [], [], [], [], [phase, frequency, contrast, sigma]);
         Screen('DrawTexture', ptbWindow, ringtex, [], [], [], [], [], ...
             firstColor, [], [], [secondColor(1), secondColor(2), secondColor(3), ...
             secondColor(4), shiftvalue, ringwidth, radius, 0]);
-        
         end
 
         % Send presentation triggers
@@ -444,6 +442,11 @@ for trl = 1:exp.nTrials
             Screen('DrawLines', ptbWindow, fixCoords, stimulus.fixationLineWidth, stimulus.fixationColor0, [screenCentreX screenCentreY], 2);
         end
         vbl = Screen('Flip', ptbWindow, vbl + ifi);
+
+        % Take screenshot of current screen
+        screenshotFilename = sprintf('GCP_screenshot_%s_trl%d.png', gratingForm, trl);
+        imageArray = Screen('GetImage', ptbWindow);
+        imwrite(imageArray, screenshotFilename);
 
         % Check for participant response
         if ~responseGiven
