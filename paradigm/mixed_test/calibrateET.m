@@ -1,6 +1,6 @@
 %% Connect Eyetracker & Calibrate
 
-bgClr                   = 127;
+bgClr = 127;
 Screen('Preference', 'SyncTestSettings', 0.002);    % the systems are a little noisy, give the test a little more leeway
 [ptbWindow,winRect] = PsychImaging('OpenWindow', whichScreen, bgClr, [], [], [], [], 4);
 hz=Screen('NominalFrameRate', ptbWindow);
@@ -21,9 +21,9 @@ filePath = fullfile(DATA_PATH, subjectID);
 if strcmp(TASK, 'Resting')
     edfFile = [subjectID, '_Res.edf'];
 else
-    if TRAINING == 0 && strcmp(TASK, 'G')
+    if TRAINING == 0 && strcmp(TASK, 'GCP')
         edfFile = [subjectID,'_', num2str(BLOCK), '.edf']; % Naming files according to blocks
-    elseif TRAINING == 1 && strcmp(TASK, 'G')
+    elseif TRAINING == 1 && strcmp(TASK, 'GCP')
         edfFile = [subjectID,'_tr.edf']; % Naming files according to blocks
     end
 
@@ -36,7 +36,7 @@ try
         disp('creating edf file');
         status=Eyelink('Openfile', edfFile);
     catch
-        disp('Error creating the file on Tracker');
+        disp('ERROR creating the edf file on Eye-Tracker');
     end
 
     EL_Calibrate
