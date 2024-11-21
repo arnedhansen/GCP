@@ -60,13 +60,13 @@ TASK_END = 90; % trigger for ET cutting
 %% Set up experiment parameters
 % Block and Trial Number
 blocks = 4;
-exp.nGratingsTrain = 8; % n gratings per training block
-exp.nGratingsTask = 30; % n gratings per test block 4 blocks
+exp.nTrlTrain = 10; % n gratings per training block
+exp.nTrlTask = 30; % n gratings per task block
 
 if TRAINING == 1
-    exp.nTrials = exp.nGratingsTrain;
+    exp.nTrials = exp.nTrlTrain;
 else
-    exp.nTrials = exp.nGratingsTask;
+    exp.nTrials = exp.nTrlTask;
 end
 
 % Set up equipment parameters
@@ -152,6 +152,7 @@ Screen('Preference', 'SkipSyncTests', 0); % For linux (can be 0)
 Screen('Preference','Verbosity', 0);
 
 % Window setup
+virtualSize = 400;  % Default x + y size
 [ptbWindow, winRect] = PsychImaging('OpenWindow', screenID, equipment.greyVal);
 PsychColorCorrection('SetEncodingGamma', ptbWindow, equipment.gammaVals);
 [screenWidth, screenHeight] = RectSize(winRect);
@@ -178,13 +179,12 @@ Screen('Flip',ptbWindow);
 equipment.mpd = (equipment.viewDist/2)*tan(deg2rad(2*stimulus.regionEccentricity_dva))/stimulus.regionEccentricity_dva; % Millimetres per degree
 equipment.ppd = equipment.ppm*equipment.mpd;    % Pixels per degree
 
-% Fix coordiantes for fixation cross
+% Fix coordinates for fixation cross
 stimulus.fixationSize_pix = round(stimulus.fixationSize_dva*equipment.ppd);
 fixHorizontal = [round(-stimulus.fixationSize_pix/2) round(stimulus.fixationSize_pix/2) 0 0];
 fixVertical = [0 0 round(-stimulus.fixationSize_pix/2) round(stimulus.fixationSize_pix/2)];
 fixCoords = [fixHorizontal; fixVertical];
 fixPos = [screenCentreX, screenCentreY];
-virtualSize = 400;  % Default x + y size
 
 %% Set circular grating settings
 rshader = [PsychtoolboxRoot 'PsychDemos/ExpandingRingsShader.vert.txt'];
@@ -651,7 +651,7 @@ while waitResponse
     waitResponse = 0;
 end
 
-% Create final screen
+% Show final screen
 if BLOCK == 4 && TRAINING == 0
     FinalText = ['You are done.' ...
         '\n\n Have a great day!'];
