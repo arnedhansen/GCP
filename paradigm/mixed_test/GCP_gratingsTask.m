@@ -61,7 +61,7 @@ TASK_END = 90; % trigger for ET cutting
 % Block and Trial Number
 blocks = 4;
 exp.nTrlTrain = 10; % n gratings per training block
-exp.nTrlTask = 30; % n gratings per task block
+exp.nTrlTask = 75; % n gratings per task block
 
 if TRAINING == 1
     exp.nTrials = exp.nTrlTrain;
@@ -190,7 +190,19 @@ fixPos = [screenCentreX, screenCentreY];
 rshader = [PsychtoolboxRoot 'PsychDemos/ExpandingRingsShader.vert.txt'];
 expandingRingShader = LoadGLSLProgramFromFiles({ rshader, [PsychtoolboxRoot 'PsychDemos/ExpandingRingsShader.frag.txt'] }, 1);
 ringwidth = 8; % Width of a single ring (radius) in pixels
-ringtex = Screen('SetOpenGLTexture', ptbWindow, [], 0, GL.TEXTURE_RECTANGLE_EXT, virtualSize, virtualSize, 1, expandingRingShader);
+
+
+
+
+superSamplingFactor = 4; % Scale factor
+highResVirtualSize = virtualSize * superSamplingFactor;
+ringtex = Screen('SetOpenGLTexture', ptbWindow, [], 0, GL.TEXTURE_RECTANGLE_EXT, highResVirtualSize, highResVirtualSize, 1, expandingRingShader);
+
+
+
+
+
+% ringtex = Screen('SetOpenGLTexture', ptbWindow, [], 0, GL.TEXTURE_RECTANGLE_EXT, virtualSize, virtualSize, 1, expandingRingShader);
 glUseProgram(expandingRingShader);
 glUniform2f(glGetUniformLocation(expandingRingShader, 'RingCenter'), virtualSize/2, virtualSize/2); % Center ring
 glUseProgram(0); % Done with setup, disable shader
@@ -402,14 +414,16 @@ for trl = 1:exp.nTrials
     maxProbeDuration = 2; % Maximum time to show the grating
 
     while (GetSecs - probeStartTime) < maxProbeDuration
-        % Draw grating
+        % Draw LINEAR gratings
         if gratingSequence(trl) < 5
             dstRect = CenterRectOnPointd(gratingRect, screenCentreX, screenCentreY);
             Screen('DrawTexture', ptbWindow, texture, [], dstRect, orientationAngle, [], [], [], [], [], [phase, frequency, contrast, sigma]);
+        % Draw CONCENTRIC gratings
         else
-            Screen('DrawTexture', ptbWindow, ringtex, [], [], [], [], [], ...
-                firstColor, [], [], [secondColor(1), secondColor(2), secondColor(3), ...
-                secondColor(4), shiftvalue, ringwidth, radius, 0]);
+            Screen('DrawTexture', ptbWindow, ringtex, [], CenterRect([0 0 virtualSize virtualSize], Screen('Rect', ptbWindow)));
+            % Screen('DrawTexture', ptbWindow, ringtex, [], [], [], [], [], ...
+            %     firstColor, [], [], [secondColor(1), secondColor(2), secondColor(3), ...
+            %     secondColor(4), shiftvalue, ringwidth, radius, 0]);
         end
         vbl = Screen('Flip', ptbWindow, vbl + ifi);
 
