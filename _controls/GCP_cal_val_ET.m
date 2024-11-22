@@ -4,7 +4,7 @@
 clear
 clc
 close all
-path = '/Volumes/methlab_data/GCP/data/';
+path = '/Volumes/methlab_data/OCC/GCP/data/';
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
