@@ -27,15 +27,14 @@ PPDEV_PATH = '/home/methlab/Documents/MATLAB/ppdev-mex-master'; % For sending EE
 DATA_PATH = '/home/methlab/Desktop/GCP_data'; % Folder to save data
 FUNS_PATH = '/home/methlab/Desktop/GCP' ; % Folder with all functions
 
-mkdir(DATA_PATH) % Make data dir, if doesn't exist yet
 addpath(FUNS_PATH) % Add path to folder with functions
 screenSettings % Manage screens
 
 %% Collect ID and Age
-% dialogID;
-subject.ID = 999;
+dialogID;
+% subject.ID = 999; Set to 999 for tests
 %% Protect Matlab code from participant keyboard input
-% ListenChar(2);
+ListenChar(2);
 
 %% Check for existing files and start tasks
 
@@ -45,15 +44,15 @@ subject.ID = 999;
 %     disp('RESTING EEG DATA ALREADY EXISTS');
 % end
 
-% if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
-%     TRAINING = 1;
-%     start = 1;
-%     TASK = 'GCP';
-%     BLOCK = 1;
-%     GCP_gratingsTask;
-% else
-%     disp('TRAINING BLOCK DATA ALREADY EXISTS');
-% end
+if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
+    TRAINING = 1;
+    start = 1;
+    TASK = 'GCP';
+    BLOCK = 1;
+    GCP_gratingsTask;
+else
+    disp('TRAINING BLOCK DATA ALREADY EXISTS');
+end
 
 TRAINING = 0;
 TASK = 'GCP';

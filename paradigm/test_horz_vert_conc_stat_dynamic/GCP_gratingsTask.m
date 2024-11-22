@@ -21,15 +21,15 @@ if TRAINING == 0
     disp('STARTING EEG RECORDING...');
     initEEG;
 
-    %     % Wait ten seconds to initialize EEG
-    %     disp('INITIALIZING EEG... PLEASE WAIT 10 SECONDS')
-    %     for i=1:10
-    %         waitbar(i/10, 'INITIALIZING EEG');
-    %         pause(1);
-    %     end
-    %     wbar = findall(0,'type','figure','tag','TMWWaitbar');
-    %     delete(wbar)
-    %     disp('EEG INITIALIZED!')
+        % Wait ten seconds to initialize EEG
+        disp('INITIALIZING EEG... PLEASE WAIT 10 SECONDS')
+        for i=1:10
+            waitbar(i/10, 'INITIALIZING EEG');
+            pause(1);
+        end
+        wbar = findall(0,'type','figure','tag','TMWWaitbar');
+        delete(wbar)
+        disp('EEG INITIALIZED!')
 end
 
 % Hide cursor on participant screen
@@ -273,7 +273,7 @@ timing.startTime = datestr(now, 'dd/mm/yy-HH:MM:SS');
 count5trials = 0;
 
 %% Experiment Loop %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-disp('GRATING TASK...');
+disp('GCP GRATING TASK...');
 for trl = 1:exp.nTrials
     tic;
     % Add trial grating info
@@ -357,7 +357,7 @@ for trl = 1:exp.nTrials
 
     %% Common Settings for parameters in DrawTexture
     phase = 0; % Start phase
-    frequency = 0.05; % Radial frequency (adjust for ring spacing)
+    frequency = 0.05; % Spatial frequency
     contrast = 0.5; % High contrast for concentric pattern
     sigma = 1.0; % < 0 is sinusiodal; > 0 is square-wave grating
     radius = floor(virtualSize / 2); % Radius of the disc edge
@@ -416,7 +416,7 @@ for trl = 1:exp.nTrials
     end
 
     %% Check fixation on the center of the screen just before stimulus presentation
-    noFixation = checkFixation(screenWidth, screenHeight, screenCentreX, screenCentreY);
+%     noFixation = checkFixation(screenWidth, screenHeight, screenCentreX, screenCentreY);
 
     %% Present grating and get response
     % Suppress output from shader creation
@@ -518,13 +518,13 @@ for trl = 1:exp.nTrials
         Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
         Screen('Flip',ptbWindow);
         WaitSecs(2);
-        % Give feedback for no response (too slow)
-        %     elseif TRAINING == 0 && data.correct(trl) == 0 && data.responses(trl) == 0
-        %         feedbackText = 'TOO SLOW! ';
-        %         DrawFormattedText(ptbWindow,feedbackText,'center','center',color.Black);
-        %         Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
-        %         Screen('Flip',ptbWindow);
-        %         WaitSecs(2);
+%         Give feedback for no response (too slow)
+    elseif TRAINING == 0 && data.correct(trl) == 0 && data.responses(trl) == 0
+        feedbackText = 'TOO SLOW! ';
+        DrawFormattedText(ptbWindow,feedbackText,'center','center',color.Black);
+        Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
+        Screen('Flip',ptbWindow);
+        WaitSecs(2);
     end
 
     %% Dynamically compute accuracy for past 10 trials and remind participant if accuracy drops below threshhold of 90%
@@ -546,20 +546,20 @@ for trl = 1:exp.nTrials
     end
 
     %% Fixation reminder
-    % noFixation = 0;
-    if noFixation > 0
-        Screen('TextSize', ptbWindow, 30);
-        fixText = 'ALWAYS LOOK AT THE CENTER OF THE SCREEN!';
-        DrawFormattedText(ptbWindow, fixText, 'center', 'center', color.White);
-        Screen('DrawDots', ptbWindow, backPos, backDiameter, backColor, [], 1);
-        Screen('Flip', ptbWindow);
-        disp('FIXATION REMINDER')
-        WaitSecs(3);
-        data.fixation(trl) = 0;
-        Screen('TextSize', ptbWindow, 20);
-    else
-        data.fixation(trl) = 1;
-    end
+%     noFixation = 0;
+%     if noFixation > 0
+%         Screen('TextSize', ptbWindow, 30);
+%         fixText = 'ALWAYS LOOK AT THE CENTER OF THE SCREEN!';
+%         DrawFormattedText(ptbWindow, fixText, 'center', 'center', color.White);
+%         Screen('DrawDots', ptbWindow, backPos, backDiameter, backColor, [], 1);
+%         Screen('Flip', ptbWindow);
+%         disp('FIXATION REMINDER')
+%         WaitSecs(3);
+%         data.fixation(trl) = 0;
+%         Screen('TextSize', ptbWindow, 20);
+%     else
+%         data.fixation(trl) = 1;
+%     end
 
     %% Trial Info CW output
     overall_accuracy = round((sum(data.correct(1:trl))/trl)*100);
