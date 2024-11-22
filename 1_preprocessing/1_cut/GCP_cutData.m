@@ -11,7 +11,7 @@ function  cutData(filePath)
 
 %% Extract path and filename
 splitpath = strsplit(filePath, filesep);
-subjectID = splitpath{6};
+subjectID = splitpath{7};
 filePath = fullfile(filesep, splitpath{1:end-1});
 fileName = splitpath{end};
 splitpath_str = strsplit(fileName, '_');
