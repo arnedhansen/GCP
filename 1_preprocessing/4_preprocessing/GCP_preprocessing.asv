@@ -47,83 +47,35 @@ for subj = 1:length(subjects)
         % 61 = trigger for presentation of low contrast concentric dynamic outward
         % 62 = trigger for presentation of high contrast concentric dynamic outward
         try
-            % Define the time window for epoching
-            epoch_window = epoch_window;
-
             % Horizontal
-            EEG_horz_lc = pop_epoch(alleeg{block}, {'21'}, epoch_window);
-            EEG_horz_lc = exclude_epochs(EEG_horz_lc, '15');
+            EEG_horz_lc = pop_epoch(alleeg{block},{'21'},[-2 3.5]);
             data_horz_lc{block} = eeglab2fieldtrip(EEG_horz_lc, 'raw');
-
-            EEG_horz_hc = pop_epoch(alleeg{block}, {'22'}, epoch_window);
-            EEG_horz_hc = exclude_epochs(EEG_horz_hc, '15');
+            EEG_horz_hc = pop_epoch(alleeg{block},{'21'},[-2 3.5]);
             data_horz_hc{block} = eeglab2fieldtrip(EEG_horz_hc, 'raw');
 
             % Vertical
-            EEG_vert_lc = pop_epoch(alleeg{block}, {'31'}, epoch_window);
-            EEG_vert_lc = exclude_epochs(EEG_vert_lc, '15');
+            EEG_vert_lc = pop_epoch(alleeg{block},{'31'},[-2 3.5]);
             data_vert_lc{block} = eeglab2fieldtrip(EEG_vert_lc, 'raw');
-
-            EEG_vert_hc = pop_epoch(alleeg{block}, {'32'}, epoch_window);
-            EEG_vert_hc = exclude_epochs(EEG_vert_hc, '15');
+            EEG_vert_hc = pop_epoch(alleeg{block},{'41'},[-2 3.5]);
             data_vert_hc{block} = eeglab2fieldtrip(EEG_vert_hc, 'raw');
 
             % Concentric Static
-            EEG_concentric_static_lc = pop_epoch(alleeg{block}, {'41'}, epoch_window);
-            EEG_concentric_static_lc = exclude_epochs(EEG_concentric_static_lc, '15');
+            EEG_concentric_static_lc = pop_epoch(alleeg{block},{'41'},[-2 3.5]);
             data_concentric_static_lc{block} = eeglab2fieldtrip(EEG_concentric_static_lc, 'raw');
-
-            EEG_concentric_static_hc = pop_epoch(alleeg{block}, {'42'}, epoch_window);
-            EEG_concentric_static_hc = exclude_epochs(EEG_concentric_static_hc, '15');
+            EEG_concentric_static_hc = pop_epoch(alleeg{block},{'41'},[-2 3.5]);
             data_concentric_static_hc{block} = eeglab2fieldtrip(EEG_concentric_static_hc, 'raw');
 
             % Concentric Dynamic Inward
-            EEG_concentric_dynamic_inward_lc = pop_epoch(alleeg{block}, {'51'}, epoch_window);
-            EEG_concentric_dynamic_inward_lc = exclude_epochs(EEG_concentric_dynamic_inward_lc, '15');
+            EEG_concentric_dynamic_inward_lc = pop_epoch(alleeg{block},{'51'},[-2 3.5]);
             data_concentric_dynamic_inward_lc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_inward_lc, 'raw');
-
-            EEG_concentric_dynamic_inward_hc = pop_epoch(alleeg{block}, {'52'}, epoch_window);
-            EEG_concentric_dynamic_inward_hc = exclude_epochs(EEG_concentric_dynamic_inward_hc, '15');
+            EEG_concentric_dynamic_inward_hc = pop_epoch(alleeg{block},{'51'},[-2 3.5]);
             data_concentric_dynamic_inward_hc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_inward_hc, 'raw');
 
             % Concentric Dynamic Outward
-            EEG_concentric_dynamic_outward_lc = pop_epoch(alleeg{block}, {'61'}, epoch_window);
-            EEG_concentric_dynamic_outward_lc = exclude_epochs(EEG_concentric_dynamic_outward_lc, '15');
+            EEG_concentric_dynamic_outward_lc = pop_epoch(alleeg{block},{'61'},[-2 3.5]);
             data_concentric_dynamic_outward_lc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_outward_lc, 'raw');
-
-            EEG_concentric_dynamic_outward_hc = pop_epoch(alleeg{block}, {'62'}, epoch_window);
-            EEG_concentric_dynamic_outward_hc = exclude_epochs(EEG_concentric_dynamic_outward_hc, '15');
+            EEG_concentric_dynamic_outward_hc = pop_epoch(alleeg{block},{'61'},[-2 3.5]);
             data_concentric_dynamic_outward_hc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_outward_hc, 'raw');
-
-            % % Horizontal
-            % EEG_horz_lc = pop_epoch(alleeg{block},{'21'},epoch_window);
-            % data_horz_lc{block} = eeglab2fieldtrip(EEG_horz_lc, 'raw');
-            % EEG_horz_hc = pop_epoch(alleeg{block},{'22'},epoch_window);
-            % data_horz_hc{block} = eeglab2fieldtrip(EEG_horz_hc, 'raw');
-            %
-            % % Vertical
-            % EEG_vert_lc = pop_epoch(alleeg{block},{'31'},epoch_window);
-            % data_vert_lc{block} = eeglab2fieldtrip(EEG_vert_lc, 'raw');
-            % EEG_vert_hc = pop_epoch(alleeg{block},{'32'},epoch_window);
-            % data_vert_hc{block} = eeglab2fieldtrip(EEG_vert_hc, 'raw');
-            %
-            % % Concentric Static
-            % EEG_concentric_static_lc = pop_epoch(alleeg{block},{'41'},epoch_window);
-            % data_concentric_static_lc{block} = eeglab2fieldtrip(EEG_concentric_static_lc, 'raw');
-            % EEG_concentric_static_hc = pop_epoch(alleeg{block},{'42'},epoch_window);
-            % data_concentric_static_hc{block} = eeglab2fieldtrip(EEG_concentric_static_hc, 'raw');
-            %
-            % % Concentric Dynamic Inward
-            % EEG_concentric_dynamic_inward_lc = pop_epoch(alleeg{block},{'51'},epoch_window);
-            % data_concentric_dynamic_inward_lc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_inward_lc, 'raw');
-            % EEG_concentric_dynamic_inward_hc = pop_epoch(alleeg{block},{'52'},epoch_window);
-            % data_concentric_dynamic_inward_hc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_inward_hc, 'raw');
-            %
-            % % Concentric Dynamic Outward
-            % EEG_concentric_dynamic_outward_lc = pop_epoch(alleeg{block},{'61'},epoch_window);
-            % data_concentric_dynamic_outward_lc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_outward_lc, 'raw');
-            % EEG_concentric_dynamic_outward_hc = pop_epoch(alleeg{block},{'62'},epoch_window);
-            % data_concentric_dynamic_outward_hc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_outward_hc, 'raw');
 
 
             FIXATION = 15; % trigger for fixation cross
@@ -237,39 +189,22 @@ for subj = 1:length(subjects)
     savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/');
     mkdir(savepath)
     cd(savepath)
-    save dataEEG dataEEG_horz_lc dataEEG_horz_hc dataEEG_vert_lc dataEEG_vert_hc dataEEG_concentric_static_lc ...
-        dataEEG_concentric_static_hc dataEEG_concentric_dynamic_inward_lc dataEEG_concentric_dynamic_inward_hc ...
-        dataEEG_concentric_dynamic_outward_lc dataEEG_concentric_dynamic_outward_hc
+    save dataEEG dataEEG_horz_lc dataEEG_horz_hc
+
+
+
+    
     savepathET = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/gaze/');
     mkdir(savepathET)
     cd(savepathET)
-    save dataET dataET_horz_lc dataET_horz_hc dataET_vert_lc dataET_vert_hc dataET_concentric_static_lc ...
-        dataET_concentric_static_hc dataET_concentric_dynamic_inward_lc dataET_concentric_dynamic_inward_hc ...
-        dataET_concentric_dynamic_outward_lc dataET_concentric_dynamic_outward_hc
+    save dataEThc dataethc
+    save dataETlc dataetlc
     clc
     if subj == length(subjects)
         disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. PREPROCESSING FINALIZED.'])
     else
         disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. Loading next subject...'])
     end
-end
-
-%% Function to exclude epochs with task condition
-function EEG = exclude_epochs(EEG, trigger)
-% Get the event information
-events = EEG.event;
-
-% Identify epochs to keep
-epochs_to_keep = true(1, EEG.trials);
-for i = 1:length(events)
-    if strcmp(events(i).type, trigger)
-        epoch_idx = events(i).epoch;
-        epochs_to_keep(epoch_idx) = false;
-    end
-end
-
-% Select the epochs that do not contain the specified trigger
-EEG = pop_select(EEG, 'trial', find(epochs_to_keep));
 end
 
 %% Function to update labels

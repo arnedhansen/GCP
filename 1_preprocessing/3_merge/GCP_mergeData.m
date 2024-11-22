@@ -20,7 +20,7 @@ for subjects = 1 : length(subjectIDs)
     % Check if subject files have already been merged
     if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/merged/', char(subjectID), filesep, char(subjectID), '*_merged.mat']))
         % Setup data paths
-        filePathET = ['/Volumes/methlab_data/GCP/data/', char(subjectID)];
+        filePathET = ['/Volumes/methlab_data/OCC/GCP/data/', char(subjectID)];
         filePathEEG = ['/Volumes/methlab/Students/Arne/GCP/data/automagic/',  char(subjectID)];
         resultFolder = ['/Volumes/methlab/Students/Arne/GCP/data/merged/', char(subjectID)];
         mkdir(resultFolder)
@@ -53,14 +53,14 @@ for subjects = 1 : length(subjectIDs)
                     endTrigger = 90;
                 else
                     startTriggers = 11:14;
-                    endTriggers = 91:94;
+                    endTriggers = 71:74;
                     startTriggersCell = arrayfun(@num2str, 11:14, 'UniformOutput', 0);
 
                     startTrigger = startTriggers(ismember(startTriggersCell, {EEG.event.type}));
                     endTrigger = endTriggers(ismember(startTriggersCell, {EEG.event.type}));
                 end
                 % End trigger
-                endTrigger = startTrigger + 80;
+                endTrigger = startTrigger + 60;
                 %% Merge files
                 EEG = pop_importeyetracker(EEG, ETfile,[startTrigger endTrigger],[2 3 4],{'L_GAZE_X', 'L_GAZE_Y', 'L_AREA'},1,1,1,0);
                 %% Save to disk
