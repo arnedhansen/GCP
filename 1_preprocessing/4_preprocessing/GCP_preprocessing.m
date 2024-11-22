@@ -33,6 +33,32 @@ for subj = 1:length(subjects)
         end
     end
 
+    %% Trigger sending fix
+        for block = 1:4
+    % Get the current block's EEG data
+EEG_block = alleeg{block};
+
+% Filter events to keep only the first occurrence of trigger '21'
+% Identify all events with type '21'
+event_indices = find(strcmp({EEG_block.event.type}, '21'));
+valid_event_indices = [];
+
+% Iterate over events and select the first one within 2 seconds (2000 ms) intervals
+if ~isempty(event_indices)
+    last_event_time = -Inf; % Set an initially very small last event time
+    for idx = event_indices
+        if (EEG_block.event(idx).latency - last_event_time) > 1000
+            valid_event_indices = [valid_event_indices, idx]; % Keep this event
+            last_event_time = EEG_block.event(idx).latency; % Update the last event time
+        end
+    end
+end
+
+% Create a new EEG structure with only the filtered events
+EEG_filtered = EEG_block;
+EEG_filtered.event = EEG_filtered.event(valid_event_indices);
+        end
+
     %% Segment data into epochs -2s before and 3.5s after stim onset and
     %  convert to Fieldtrip data structure
     % Define the time window for epoching
