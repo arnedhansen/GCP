@@ -9,7 +9,7 @@ close()
 cd(p)
 
 %% Define path and cut data
-d = dir(strcat('/Volumes/methlab_data/GCP/data/*/', '*cnt'));
+d = dir(strcat('/Volumes/methlab_data/OCC/GCP/data/*/', '*cnt'));
 ids = {};
 for f = 1 : size(d, 1)
     filePath = fullfile( d(f).folder, d(f).name);
@@ -23,7 +23,7 @@ end
 for id = 1 : length(ids) 
     ID = ids{id};
 
-    filePath = fullfile('/Volumes/methlab_data/GCP/data', ID);
+    filePath = fullfile('/Volumes/methlab_data/OCC/GCP/data', ID);
     d = dir([filePath, filesep, '*.asc']);
     
     if not(isempty(d))

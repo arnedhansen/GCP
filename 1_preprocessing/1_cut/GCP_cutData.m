@@ -38,21 +38,21 @@ EEGorig = pop_chanedit(EEGorig, 'lookup', locspath);
 i10 = find(ismember({EEGorig.event.type}, '10')); % Start
 i90 = find(ismember({EEGorig.event.type}, '90')); % End
 
-% Sternberg block 1
+% Block 1
 i11 = find(ismember({EEGorig.event.type}, '11'));
-i91 = find(ismember({EEGorig.event.type}, '91'));
+i71 = find(ismember({EEGorig.event.type}, '71'));
 
-% Sternberg block 2
+% Block 2
 i12 = find(ismember({EEGorig.event.type}, '12'));
-i92 = find(ismember({EEGorig.event.type}, '92'));
+i72 = find(ismember({EEGorig.event.type}, '72'));
 
-% Sternberg block 3
+% Block 3
 i13 = find(ismember({EEGorig.event.type}, '13'));
-i93 = find(ismember({EEGorig.event.type}, '93'));
+i73 = find(ismember({EEGorig.event.type}, '73'));
 
-% Sternberg block 4
+% Block 4
 i14 = find(ismember({EEGorig.event.type}, '14'));
-i94 = find(ismember({EEGorig.event.type}, '94'));
+i74 = find(ismember({EEGorig.event.type}, '74'));
 
 %% Cut
 
@@ -64,51 +64,51 @@ try
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message
-    warning('Resting is missing...')
+    warning('RESTING is missing...')
 end
 
 % Block 1
 try
-    EEG = pop_select(EEGorig, 'point', [EEGorig.event(i11(end)).latency, EEGorig.event(i91(end)).latency]);
+    EEG = pop_select(EEGorig, 'point', [EEGorig.event(i11(end)).latency, EEGorig.event(i71(end)).latency]);
     task = [subjectID, '_GCP_block1_task_EEG.mat'];
     % Save to a file
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message
-    warning('Block 1 is missing...')
+    warning('BLOCK 1 is missing...')
 end
 
 % Block 2
 try
-    EEG = pop_select(EEGorig, 'point', [EEGorig.event(i12(end)).latency, EEGorig.event(i92(end)).latency]);
+    EEG = pop_select(EEGorig, 'point', [EEGorig.event(i12(end)).latency, EEGorig.event(i72(end)).latency]);
     task = [subjectID, '_GCP_block2_task_EEG.mat'];
     % Save to a file
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message
-    warning('Block 2 is missing...')
+    warning('BLOCK 2 is missing...')
 end
 
 % Block 3
 try
-    EEG = pop_select(EEGorig, 'point', [EEGorig.event(i13(end)).latency, EEGorig.event(i93(end)).latency]);
+    EEG = pop_select(EEGorig, 'point', [EEGorig.event(i13(end)).latency, EEGorig.event(i73(end)).latency]);
     task = [subjectID, '_GCP_block3_task_EEG.mat'];
     % Save to a file
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message
-    warning('Block 3 is missing...')
+    warning('BLOCK 3 is missing...')
 end
 
 % Block 4
 try
-    EEG = pop_select(EEGorig, 'point', [EEGorig.event(i14(end)).latency, EEGorig.event(i94(end)).latency]);
+    EEG = pop_select(EEGorig, 'point', [EEGorig.event(i14(end)).latency, EEGorig.event(i74(end)).latency]);
     task = [subjectID, '_GCP_block4_task_EEG.mat'];
     % Save to a file
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message
-    warning('Block 4 is missing...')
+    warning('BLOCK 4 is missing...')
 end
 
 %% mkdir archive and move the orig files there
