@@ -35,6 +35,8 @@ for subj = 1:length(subjects)
 
     %% Segment data into epochs -2s before and 3.5s after stim onset and
     %  convert to Fieldtrip data structure
+    % Define the time window for epoching
+    epoch_window = [-2 3.5];
     for block = 1:4
         % 21 = trigger for presentation of low contrast horizontal
         % 22 = trigger for presentation of high contrast horizontal
@@ -46,10 +48,7 @@ for subj = 1:length(subjects)
         % 52 = trigger for presentation of high contrast concentric dynamic inward
         % 61 = trigger for presentation of low contrast concentric dynamic outward
         % 62 = trigger for presentation of high contrast concentric dynamic outward
-        try
-            % Define the time window for epoching
-            epoch_window = epoch_window;
-
+        %try
             % Horizontal
             EEG_horz_lc = pop_epoch(alleeg{block}, {'21'}, epoch_window);
             EEG_horz_lc = exclude_epochs(EEG_horz_lc, '15');
@@ -128,7 +127,7 @@ for subj = 1:length(subjects)
 
             FIXATION = 15; % trigger for fixation cross
 
-        end
+        %end
     end
 
     %% Remove empty blocks

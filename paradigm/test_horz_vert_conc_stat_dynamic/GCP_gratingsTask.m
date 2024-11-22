@@ -425,6 +425,37 @@ for trl = 1:exp.nTrials
     probeStartTime = GetSecs;
     maxProbeDuration = 2; % Maximum time to show the grating
 
+    % Send presentation triggers
+    if gratingSequence(trl) == 1
+        TRIGGER = PRESENTATION1;
+    elseif gratingSequence(trl) == 2
+        TRIGGER = PRESENTATION2;
+    elseif gratingSequence(trl) == 3
+        TRIGGER = PRESENTATION3;
+    elseif gratingSequence(trl) == 4
+        TRIGGER = PRESENTATION4;
+    elseif gratingSequence(trl) == 5
+        TRIGGER = PRESENTATION5;
+    elseif gratingSequence(trl) == 6
+        TRIGGER = PRESENTATION6;
+    elseif gratingSequence(trl) == 7
+        TRIGGER = PRESENTATION7;
+    elseif gratingSequence(trl) == 8
+        TRIGGER = PRESENTATION8;
+    elseif gratingSequence(trl) == 9
+        TRIGGER = PRESENTATION9;
+    elseif gratingSequence(trl) == 10
+        TRIGGER = PRESENTATION10;
+    end
+    if TRAINING == 1
+        Eyelink('Message', num2str(TRIGGER));
+        Eyelink('command', 'record_status_message "PRESENTATION"');
+    else
+        Eyelink('Message', num2str(TRIGGER));
+        Eyelink('command', 'record_status_message "PRESENTATION"');
+        sendtrigger(TRIGGER,port,SITE,stayup);
+    end
+
     % Draw gratings depending on gratingSequence
     while (GetSecs - probeStartTime) < maxProbeDuration
         % Draw LINEAR gratings
@@ -446,41 +477,10 @@ for trl = 1:exp.nTrials
         end
         vbl = Screen('Flip', ptbWindow, vbl + ifi);
 
-        % Send presentation triggers
-        if gratingSequence(trl) == 1
-            TRIGGER = PRESENTATION1;
-        elseif gratingSequence(trl) == 2
-            TRIGGER = PRESENTATION2;
-        elseif gratingSequence(trl) == 3
-            TRIGGER = PRESENTATION3;
-        elseif gratingSequence(trl) == 4
-            TRIGGER = PRESENTATION4;
-        elseif gratingSequence(trl) == 5
-            TRIGGER = PRESENTATION5;
-        elseif gratingSequence(trl) == 6
-            TRIGGER = PRESENTATION6;
-        elseif gratingSequence(trl) == 7
-            TRIGGER = PRESENTATION7;
-        elseif gratingSequence(trl) == 8
-            TRIGGER = PRESENTATION8;
-        elseif gratingSequence(trl) == 9
-            TRIGGER = PRESENTATION9;
-        elseif gratingSequence(trl) == 10
-            TRIGGER = PRESENTATION10;
-        end
-        if TRAINING == 1
-            Eyelink('Message', num2str(TRIGGER));
-            Eyelink('command', 'record_status_message "PRESENTATION"');
-        else
-            Eyelink('Message', num2str(TRIGGER));
-            Eyelink('command', 'record_status_message "PRESENTATION"');
-            sendtrigger(TRIGGER,port,SITE,stayup);
-        end
-       
         % Take screenshot of current screen
-        screenshotFilename = sprintf('GCP_screenshot_%s.png', gratingForm);
-        imageArray = Screen('GetImage', ptbWindow);
-        imwrite(imageArray, screenshotFilename);
+        % screenshotFilename = sprintf('GCP_screenshot_%s.png', gratingForm);
+        % imageArray = Screen('GetImage', ptbWindow);
+        % imwrite(imageArray, screenshotFilename);
 
         % Check for participant response
         if ~responseGiven
