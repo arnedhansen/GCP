@@ -44,7 +44,7 @@ BLOCK3 = 13;
 BLOCK4 = 14;
 BLOCK0 = 15; % trigger for start of training block (block 0)
 
-FIXATION = 15; % trigger for fixation cross
+FIXATION = 17; % trigger for fixation cross
 
 PRESENTATION1  = 21; % trigger for presentation of low contrast horizontal
 PRESENTATION2  = 22; % trigger for presentation of high contrast horizontal
