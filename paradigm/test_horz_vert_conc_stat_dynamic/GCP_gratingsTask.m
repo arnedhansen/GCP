@@ -82,7 +82,7 @@ end
 
 % Set up equipment parameters
 equipment.viewDist = 800;               % Viewing distance in millimetres
-equipment.ppm = 3.6;                    % Pixels per millimetre !! NEEDS TO BE SET. USE THE MeasureDpi FUNCTION !!
+equipment.ppm = 3.6;                    % Pixels per millimetre !NEEDS TO BE SET using the MeasureDpi function!
 equipment.greyVal = .5;
 equipment.blackVal = 0;
 equipment.whiteVal = 1;
@@ -529,7 +529,7 @@ for trl = 1:exp.nTrials
         Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
         Screen('Flip',ptbWindow);
         WaitSecs(2);
-%         Give feedback for no response (too slow)
+    % Give feedback for no response (too slow)
     elseif TRAINING == 0 && data.correct(trl) == 0 && data.responses(trl) == 0
         feedbackText = 'TOO SLOW! ';
         DrawFormattedText(ptbWindow,feedbackText,'center','center',color.Black);
@@ -679,7 +679,8 @@ trigger.BLOCK3 = BLOCK3;
 trigger.BLOCK4 = BLOCK4;
 trigger.BLOCK0 = BLOCK0;
 
-trigger.FIXATION = FIXATION;
+trigger.FIXCROSSB = FIXCROSSB;
+trigger.FIXCROSSR = FIXCROSSR;
 
 trigger.PRESENTATION1  = PRESENTATION1;
 trigger.PRESENTATION2  = PRESENTATION2;
