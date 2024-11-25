@@ -15,21 +15,16 @@ try
     Eyelink('Command', 'enable_automatic_calibration = YES');
     Eyelink('Command', 'automatic_calibration_pacing = 500');
     Eyelink('Command', 'set_idle_mode');
-    % Run Calibration, Calibration and Validation need to be accesed over the Stim computer
-    % In the End, ESC must be pressed to continue
+    % Run, Calibration, and Validation need to be accessed over the Stim computer
+    % In the end, ESC must be pressed to continue
     HideCursor(whichScreen);
-    %ListenChar(2);
     Eyelink('StartSetup',1);
-    disp('Calibration done');
-    
-%     ShowCursor(whichScreen);
-%     SetMouse(400,300,1);
-    disp('Calibration done');
+    disp('CALIBRATION DONE');
     try
         Snd('Close');
         PsychPortAudio('Close');
     catch
     end
 catch
-    disp('Error running the calibration');
+    disp('ERROR running the calibration');
 end

@@ -18,7 +18,7 @@ tic;
 for subjects = 1 : length(subjectIDs)
     subjectID = subjectIDs(subjects);
     % Check if subject files have already been merged
-    %if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/merged/', char(subjectID), filesep, char(subjectID), '*_merged.mat']))
+    if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/merged/', char(subjectID), filesep, char(subjectID), '*_merged.mat']))
         % Setup data paths
         filePathET = ['/Volumes/methlab_data/OCC/GCP/data/', char(subjectID)];
         filePathEEG = ['/Volumes/methlab/Students/Arne/GCP/data/automagic/',  char(subjectID)];
@@ -78,7 +78,7 @@ for subjects = 1 : length(subjectIDs)
                 end
             end
         end
-    %end
+    end
 end
 disp('SYNCHRONIZATION COMPLETE')
 toc

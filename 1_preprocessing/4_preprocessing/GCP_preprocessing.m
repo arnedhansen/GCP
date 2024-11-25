@@ -1,11 +1,5 @@
 %% Preprocessing GCP
 
-% Description
-% This script merges the blocks to a single data set for all participants,
-% and adds trial information corresponding to the different contrast and
-% orientation conditions. Furthermore, preprocessing is completed by
-% changing the reference to the average across electrodes.
-
 %% Setup
 clear
 addpath('/Users/Arne/Documents/matlabtools/eeglab2024.2');
@@ -34,30 +28,41 @@ for subj = 1:length(subjects)
     end
 
     %% Trigger sending fix
+    trigger_types = {'21', '22', '31', '32', '41', '42', '51', '52', '61', '62'}; % Define all trigger types to filter
+
     for block = 1:4
-        % Get the current block's EEG data
-        EEG_block = alleeg{block};
+        try
+            % Get the current block's EEG data
+            EEG_block = alleeg{block};
 
-        % Filter events to keep only the first occurrence of trigger '21'
-        % Identify all events with type '21'
-        event_indices = find(strcmp({EEG_block.event.type}, '21'));
-        valid_event_indices = [];
+            % Initialise an array to keep track of valid events
+            valid_event_indices = [];
+            last_event_times = containers.Map(trigger_types, -Inf * ones(size(trigger_types))); % Track the last occurrence of each trigger type
 
-        % Iterate over events and select the first one within 2 seconds (2000 ms) intervals
-        if ~isempty(event_indices)
-            last_event_time = -Inf; % Set an initially very small last event time
-            for idx = event_indices
-                if (EEG_block.event(idx).latency - last_event_time) > 1000
-                    valid_event_indices = [valid_event_indices, idx]; % Keep this event
-                    last_event_time = EEG_block.event(idx).latency; % Update the last event time
+            % Iterate over all events
+            for idx = 1:length(EEG_block.event)
+                event_type = EEG_block.event(idx).type;
+
+                % Check if the event type is in the list of triggers to filter
+                if ismember(event_type, trigger_types)
+                    % Only keep the event if it's more than 1000 ms from the last occurrence of the same type
+                    if (EEG_block.event(idx).latency - last_event_times(event_type)) > 999
+                        valid_event_indices = [valid_event_indices, idx];
+                        last_event_times(event_type) = EEG_block.event(idx).latency; % Update the last event time for this type
+                    end
+                else
+                    % Keep the event if it's not in the list of trigger types
+                    valid_event_indices = [valid_event_indices, idx];
                 end
             end
-        end
 
-        % Create a new EEG structure with only the filtered events
-        EEG_filtered = EEG_block;
-        EEG_filtered.event = EEG_filtered.event(valid_event_indices);
-        alleeg{block} = EEG_filtered;
+            % Create a new EEG structure with only the filtered events
+            EEG_filtered = EEG_block;
+            EEG_filtered.event = EEG_block.event(valid_event_indices);
+
+            % Save the filtered EEG structure back to the dataset
+            alleeg{block} = EEG_filtered;
+        end
     end
 
     %% Segment data into epochs -2s before and 3.5s after stim onset and
@@ -75,86 +80,53 @@ for subj = 1:length(subjects)
         % 52 = trigger for presentation of high contrast concentric dynamic inward
         % 61 = trigger for presentation of low contrast concentric dynamic outward
         % 62 = trigger for presentation of high contrast concentric dynamic outward
-        %try
+        try
             % Horizontal
             EEG_horz_lc = pop_epoch(alleeg{block}, {'21'}, epoch_window);
-            EEG_horz_lc = exclude_epochs(EEG_horz_lc, '15');
+            %EEG_horz_lc = exclude_epochs(EEG_horz_lc, '15');
             data_horz_lc{block} = eeglab2fieldtrip(EEG_horz_lc, 'raw');
 
             EEG_horz_hc = pop_epoch(alleeg{block}, {'22'}, epoch_window);
-            EEG_horz_hc = exclude_epochs(EEG_horz_hc, '15');
+            %EEG_horz_hc = exclude_epochs(EEG_horz_hc, '15');
             data_horz_hc{block} = eeglab2fieldtrip(EEG_horz_hc, 'raw');
 
             % Vertical
             EEG_vert_lc = pop_epoch(alleeg{block}, {'31'}, epoch_window);
-            EEG_vert_lc = exclude_epochs(EEG_vert_lc, '15');
+            %EEG_vert_lc = exclude_epochs(EEG_vert_lc, '15');
             data_vert_lc{block} = eeglab2fieldtrip(EEG_vert_lc, 'raw');
 
             EEG_vert_hc = pop_epoch(alleeg{block}, {'32'}, epoch_window);
-            EEG_vert_hc = exclude_epochs(EEG_vert_hc, '15');
+            %EEG_vert_hc = exclude_epochs(EEG_vert_hc, '15');
             data_vert_hc{block} = eeglab2fieldtrip(EEG_vert_hc, 'raw');
 
             % Concentric Static
             EEG_concentric_static_lc = pop_epoch(alleeg{block}, {'41'}, epoch_window);
-            EEG_concentric_static_lc = exclude_epochs(EEG_concentric_static_lc, '15');
+            %EEG_concentric_static_lc = exclude_epochs(EEG_concentric_static_lc, '15');
             data_concentric_static_lc{block} = eeglab2fieldtrip(EEG_concentric_static_lc, 'raw');
 
             EEG_concentric_static_hc = pop_epoch(alleeg{block}, {'42'}, epoch_window);
-            EEG_concentric_static_hc = exclude_epochs(EEG_concentric_static_hc, '15');
+            %EEG_concentric_static_hc = exclude_epochs(EEG_concentric_static_hc, '15');
             data_concentric_static_hc{block} = eeglab2fieldtrip(EEG_concentric_static_hc, 'raw');
 
             % Concentric Dynamic Inward
             EEG_concentric_dynamic_inward_lc = pop_epoch(alleeg{block}, {'51'}, epoch_window);
-            EEG_concentric_dynamic_inward_lc = exclude_epochs(EEG_concentric_dynamic_inward_lc, '15');
+            %EEG_concentric_dynamic_inward_lc = exclude_epochs(EEG_concentric_dynamic_inward_lc, '15');
             data_concentric_dynamic_inward_lc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_inward_lc, 'raw');
 
             EEG_concentric_dynamic_inward_hc = pop_epoch(alleeg{block}, {'52'}, epoch_window);
-            EEG_concentric_dynamic_inward_hc = exclude_epochs(EEG_concentric_dynamic_inward_hc, '15');
+            %EEG_concentric_dynamic_inward_hc = exclude_epochs(EEG_concentric_dynamic_inward_hc, '15');
             data_concentric_dynamic_inward_hc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_inward_hc, 'raw');
 
             % Concentric Dynamic Outward
             EEG_concentric_dynamic_outward_lc = pop_epoch(alleeg{block}, {'61'}, epoch_window);
-            EEG_concentric_dynamic_outward_lc = exclude_epochs(EEG_concentric_dynamic_outward_lc, '15');
+            %EEG_concentric_dynamic_outward_lc = exclude_epochs(EEG_concentric_dynamic_outward_lc, '15');
             data_concentric_dynamic_outward_lc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_outward_lc, 'raw');
 
             EEG_concentric_dynamic_outward_hc = pop_epoch(alleeg{block}, {'62'}, epoch_window);
-            EEG_concentric_dynamic_outward_hc = exclude_epochs(EEG_concentric_dynamic_outward_hc, '15');
+            %EEG_concentric_dynamic_outward_hc = exclude_epochs(EEG_concentric_dynamic_outward_hc, '15');
             data_concentric_dynamic_outward_hc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_outward_hc, 'raw');
 
-            % % Horizontal
-            % EEG_horz_lc = pop_epoch(alleeg{block},{'21'},epoch_window);
-            % data_horz_lc{block} = eeglab2fieldtrip(EEG_horz_lc, 'raw');
-            % EEG_horz_hc = pop_epoch(alleeg{block},{'22'},epoch_window);
-            % data_horz_hc{block} = eeglab2fieldtrip(EEG_horz_hc, 'raw');
-            %
-            % % Vertical
-            % EEG_vert_lc = pop_epoch(alleeg{block},{'31'},epoch_window);
-            % data_vert_lc{block} = eeglab2fieldtrip(EEG_vert_lc, 'raw');
-            % EEG_vert_hc = pop_epoch(alleeg{block},{'32'},epoch_window);
-            % data_vert_hc{block} = eeglab2fieldtrip(EEG_vert_hc, 'raw');
-            %
-            % % Concentric Static
-            % EEG_concentric_static_lc = pop_epoch(alleeg{block},{'41'},epoch_window);
-            % data_concentric_static_lc{block} = eeglab2fieldtrip(EEG_concentric_static_lc, 'raw');
-            % EEG_concentric_static_hc = pop_epoch(alleeg{block},{'42'},epoch_window);
-            % data_concentric_static_hc{block} = eeglab2fieldtrip(EEG_concentric_static_hc, 'raw');
-            %
-            % % Concentric Dynamic Inward
-            % EEG_concentric_dynamic_inward_lc = pop_epoch(alleeg{block},{'51'},epoch_window);
-            % data_concentric_dynamic_inward_lc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_inward_lc, 'raw');
-            % EEG_concentric_dynamic_inward_hc = pop_epoch(alleeg{block},{'52'},epoch_window);
-            % data_concentric_dynamic_inward_hc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_inward_hc, 'raw');
-            %
-            % % Concentric Dynamic Outward
-            % EEG_concentric_dynamic_outward_lc = pop_epoch(alleeg{block},{'61'},epoch_window);
-            % data_concentric_dynamic_outward_lc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_outward_lc, 'raw');
-            % EEG_concentric_dynamic_outward_hc = pop_epoch(alleeg{block},{'62'},epoch_window);
-            % data_concentric_dynamic_outward_hc{block} = eeglab2fieldtrip(EEG_concentric_dynamic_outward_hc, 'raw');
-
-
-            FIXATION = 15; % trigger for fixation cross
-
-        %end
+        end
     end
 
     %% Remove empty blocks
@@ -214,7 +186,7 @@ for subj = 1:length(subjects)
 
     % Concentric Dynamic Outward
     data_concentric_dynamic_outward_lc.trialinfo = zeros(numel(data_concentric_dynamic_outward_lc.trial), 1) + 61;
-    data_concentric_dynamic_outward_hc.trialinfo = zeros(numel(data_concentric_dynamic_outward_hc.trial), 1) + 61;
+    data_concentric_dynamic_outward_hc.trialinfo = zeros(numel(data_concentric_dynamic_outward_hc.trial), 1) + 62;
 
     %% Get EyeTracking data
     cfg = [];

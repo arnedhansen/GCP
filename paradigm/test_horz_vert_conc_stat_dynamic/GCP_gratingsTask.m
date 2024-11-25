@@ -38,35 +38,36 @@ HideCursor(whichScreen);
 %% Define TRIGGERS
 TASK_START = 10; % trigger for ET cutting
 
-BLOCK1 = 11; % trigger for start of block 1
+BLOCK1 = 11; % Trigger for start of block 1
 BLOCK2 = 12;
 BLOCK3 = 13;
 BLOCK4 = 14;
-BLOCK0 = 15; % trigger for start of training block (block 0)
+BLOCK0 = 15; % Trigger for start of training block (block 0)
 
-FIXATION = 17; % trigger for fixation cross
+FIXCROSSR = 16; % Trigger for black fixation cross
+FIXCROSSB = 17; % Trigger for red (task) fixation cross
 
-PRESENTATION1  = 21; % trigger for presentation of low contrast horizontal
-PRESENTATION2  = 22; % trigger for presentation of high contrast horizontal
-PRESENTATION3  = 31; % trigger for presentation of low contrast vertical
-PRESENTATION4  = 32; % trigger for presentation of high contrast vertical
-PRESENTATION5  = 41; % trigger for presentation of low contrast concentric static
-PRESENTATION6  = 42; % trigger for presentation of high contrast concentric static
-PRESENTATION7  = 51; % trigger for presentation of low contrast concentric dynamic inward
-PRESENTATION8  = 52; % trigger for presentation of high contrast concentric dynamic inward
-PRESENTATION9  = 61; % trigger for presentation of low contrast concentric dynamic outward
-PRESENTATION10 = 62; % trigger for presentation of high contrast concentric dynamic outward
+PRESENTATION1  = 21; % Trigger for presentation of low contrast horizontal
+PRESENTATION2  = 22; % Trigger for presentation of high contrast horizontal
+PRESENTATION3  = 31; % Trigger for presentation of low contrast vertical
+PRESENTATION4  = 32; % Trigger for presentation of high contrast vertical
+PRESENTATION5  = 41; % Trigger for presentation of low contrast concentric static
+PRESENTATION6  = 42; % Trigger for presentation of high contrast concentric static
+PRESENTATION7  = 51; % Trigger for presentation of low contrast concentric dynamic inward
+PRESENTATION8  = 52; % Trigger for presentation of high contrast concentric dynamic inward
+PRESENTATION9  = 61; % Trigger for presentation of low contrast concentric dynamic outward
+PRESENTATION10 = 62; % Trigger for presentation of high contrast concentric dynamic outward
 
-BLOCK1_END = 71; % end of block 1
+BLOCK1_END = 71; % End of block 1
 BLOCK2_END = 72;
 BLOCK3_END = 73;
 BLOCK4_END = 74;
-BLOCK0_END = 75; % end of block 0
+BLOCK0_END = 75; % End of block 0
 
-RESP_YES = 87; % trigger for response yes (spacebar)
-RESP_NO  = 88; % trigger for response no (no input)
+RESP_YES = 87; % Trigger for response yes (spacebar)
+RESP_NO  = 88; % Trigger for response no (no input)
 
-TASK_END = 90; % trigger for ET cutting
+TASK_END = 90; % Trigger for ET cutting
 
 %% Set up experiment parameters
 % Block and Trial Number
@@ -299,8 +300,8 @@ for trl = 1:exp.nTrials
         gratingForm = 'high contrast concentric dynamic outward';
     end
 
-    % Randomized selection of task trials (33%)
-    if randi(3) == 1
+    % Randomized selection of task trials (25%)
+    if randi(4) == 1
         data.redCross(trl) = 1;
     else
         data.redCross(trl) = 0;
@@ -311,10 +312,10 @@ for trl = 1:exp.nTrials
     timing.cfi(trl) = (randsample(timing.cfilower:timing.cfiupper, 1))/1000; % Randomize the jittered central fixation interval on trial
     start_time = GetSecs;
     while (GetSecs - start_time) < timing.cfi(trl)
-        TRIGGER = FIXATION;
         if data.redCross(trl) == 0 % No task condition
             Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor0,[screenCentreX screenCentreY],2);
             Screen('Flip', ptbWindow);
+            TRIGGER = FIXCROSSB;
             if TRAINING == 1
                 Eyelink('Message', num2str(TRIGGER));
                 Eyelink('command', 'record_status_message "FIXCROSS"');
@@ -327,6 +328,7 @@ for trl = 1:exp.nTrials
         elseif data.redCross(trl) == 1 % Task condition
             Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor1,[screenCentreX screenCentreY],2);
             Screen('Flip', ptbWindow);
+            TRIGGER = FIXCROSSR;
             if TRAINING == 1
                 Eyelink('Message', num2str(TRIGGER));
                 Eyelink('command', 'record_status_message "FIXCROSS"');
@@ -338,6 +340,15 @@ for trl = 1:exp.nTrials
             WaitSecs(timing.cfi_task); % Show red cross for 500 ms
             Screen('DrawLines', ptbWindow, fixCoords,stimulus.fixationLineWidth,stimulus.fixationColor0,[screenCentreX screenCentreY],2);
             Screen('Flip', ptbWindow);
+            TRIGGER = FIXCROSSB;
+            if TRAINING == 1
+                Eyelink('Message', num2str(TRIGGER));
+                Eyelink('command', 'record_status_message "FIXCROSS"');
+            else
+                Eyelink('Message', num2str(TRIGGER));
+                Eyelink('command', 'record_status_message "FIXCROSS"');
+                sendtrigger(TRIGGER,port,SITE,stayup);
+            end
             WaitSecs(timing.cfi(trl)-timing.cfi_task); % Show black cross for the rest of the CFI time
         end
     end

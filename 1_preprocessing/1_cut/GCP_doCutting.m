@@ -2,6 +2,8 @@
 % Automatically finds all not converted .cnt files
 
 %% EEGlab
+clear
+clc
 p = pwd;
 cd /Volumes/methlab/4marius_bdf/eeglab
 eeglab
