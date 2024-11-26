@@ -658,7 +658,7 @@ end
 saves = struct;
 saves.data = data;
 saves.data.spaceKeyCode = spaceKeyCode;
-saves.data.reactionTime = reactionTime;
+saves.data.reactionTime = data.reactionTime;
 saves.experiment = exp;
 saves.screenWidth = screenWidth;
 saves.screenHeight = screenHeight;

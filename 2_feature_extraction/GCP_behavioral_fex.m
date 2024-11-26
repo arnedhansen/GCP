@@ -7,7 +7,7 @@
 clear
 clc
 close all
-path = '/Volumes/methlab_data/GCP/data/';
+path = '/Volumes/methlab_data/OCC/GCP/data/';
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
@@ -28,8 +28,8 @@ for subj = 1:length(subjects)
     %% Read blocks
     trial_counter = 1;
     for block = 1:4
-        load(strcat(subjects{subj}, '_G_block', num2str(block), '.mat'))
-        num_trials = length(saves.data.allCorrect);
+        load(strcat(subjects{subj}, '_GCP_block', num2str(block), '.mat'))
+        num_trials = length(saves.data.correct);
 
         % Append data for this block
         subject_id = [subject_id; repmat({saves.subjectID}, num_trials, 1)];
