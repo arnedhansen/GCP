@@ -1,64 +1,85 @@
 %% Gamma Time Frequency Analysis for GCP data
 
 %% Setup
-setup('GCP');
-
+[subjects, path] = setup('GCP');
 
 %% Compute grand average time and frequency data GATFR
 % Load high contrast data
-for subj = 1:length(subjects)
+for subj = 1%:length(subjects)
     datapath = strcat(path,subjects{subj}, '/eeg');
     cd(datapath)
-    load tfr_hc
-    tfrhc_0{subj} = tfr_hc_0;
-    tfrhc_45{subj} = tfr_hc_45;
-    tfrhc_90{subj} = tfr_hc_90;
-    tfrhc_115{subj} = tfr_hc_115;
-    tfrhc_all{subj} = tfr_hc_all;
-    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' TFR HIGH CONTRAST loaded.'])
+    load('data_tfr.mat');
+
+    % Horizontal
+    tfr_horz_lc_baselined{subj}                             = tfr_horz_lc_bl;
+    tfr_horz_hc_baselined{subj}                             = tfr_horz_hc_bl;
+    
+    % Vertical
+    tfr_vert_lc_baselined{subj}                             = tfr_vert_lc_bl;
+    tfr_vert_hc_baselined{subj}                             = tfr_vert_hc_bl;
+    
+    % Concentric Static
+    tfr_concentric_static_lc_baselined{subj}                = tfr_concentric_static_lc_bl;
+    tfr_concentric_static_hc_baselined{subj}                = tfr_concentric_static_hc_bl;
+   
+    % Concentric Dynamic Inward
+    tfr_concentric_dynamic_inward_lc_baselined{subj}        = tfr_concentric_dynamic_inward_lc_bl;
+    tfr_concentric_dynamic_inward_hc_baselined{subj}        = tfr_concentric_dynamic_inward_hc_bl;
+    
+    % Concentric Dynamic Outward
+    tfr_concentric_dynamic_outward_lc_baselined{subj}       = tfr_concentric_dynamic_outward_lc_bl;
+    tfr_concentric_dynamic_outward_hc_baselined{subj}       = tfr_concentric_dynamic_outward_hc_bl;
+
+    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' TFR loaded.'])
 end
 
-% Load low contrast data
-for subj = 1:length(subjects)
-    datapath = strcat(path,subjects{subj}, '/eeg');
-    cd(datapath)
-    load tfr_lc
-    tfrlc_0{subj} = tfr_lc_0;
-    tfrlc_45{subj} = tfr_lc_45;
-    tfrlc_90{subj} = tfr_lc_90;
-    tfrlc_115{subj} = tfr_lc_115;
-    tfrlc_all{subj} = tfr_lc_all;
-    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' TFR LOW CONTRAST loaded.'])
-end
+%% Compute grand average
+% Horizontal
+gatfr_horz_lc_baselined = ft_freqgrandaverage([], tfr_horz_lc_baselined{:});
+gatfr_horz_hc_baselined = ft_freqgrandaverage([], tfr_horz_hc_baselined{:});
 
-% Compute grand average
-ga_tfr_hc_0 = ft_freqgrandaverage([],tfrhc_0{:});
-ga_tfr_hc_45 = ft_freqgrandaverage([],tfrhc_45{:});
-ga_tfr_hc_90 = ft_freqgrandaverage([],tfrhc_90{:});
-ga_tfr_hc_115 = ft_freqgrandaverage([],tfrhc_115{:});
-ga_tfr_hc_all = ft_freqgrandaverage([],tfrhc_all{:});
+% Vertical
+gatfr_vert_lc_baselined= ft_freqgrandaverage([], tfr_vert_lc_baselined{:});
+gatfr_vert_hc_baselined= ft_freqgrandaverage([], tfr_vert_hc_baselined{:});
 
-ga_tfr_lc_0 = ft_freqgrandaverage([],tfrlc_0{:});
-ga_tfr_lc_45 = ft_freqgrandaverage([],tfrlc_45{:});
-ga_tfr_lc_90 = ft_freqgrandaverage([],tfrlc_90{:});
-ga_tfr_lc_115 = ft_freqgrandaverage([],tfrlc_115{:});
-ga_tfr_lc_all = ft_freqgrandaverage([],tfrlc_all{:});
+% Concentric Static
+gatfr_concentric_static_lc_baselined = ft_freqgrandaverage([], tfr_concentric_static_lc_baselined{:});
+gatfr_concentric_static_hc_baselined = ft_freqgrandaverage([], tfr_concentric_static_hc_baselined{:});
+
+% Concentric Dynamic Inward
+gatfr_concentric_dynamic_inward_lc_baselined = ft_freqgrandaverage([], tfr_concentric_dynamic_inward_lc_baselined{:});
+gatfr_concentric_dynamic_inward_hc_baselined = ft_freqgrandaverage([], tfr_concentric_dynamic_inward_hc_baselined{:});
+
+% Concentric Dynamic Outward
+gatfr_concentric_dynamic_outward_lc_baselined = ft_freqgrandaverage([], tfr_concentric_dynamic_outward_lc_baselined{:});
+gatfr_concentric_dynamic_outward_hc_baselined = ft_freqgrandaverage([], tfr_concentric_dynamic_outward_hc_baselined{:});
 
 %% Define occipital channels
-load('tfr_hc.mat');
 % Occipital channels
 occ_channels = {};
-for i = 1:length(tfr_lc_0.label)
-    label = tfr_lc_0.label{i};
-    if contains(label, {'O'}) 
+tfrlabel = tfr_horz_lc_bl.label;
+for i = 1:length(tfrlabel)
+    label = tfrlabel{i};
+    if contains(label, {'O'}) || contains(label, {'I'})
         occ_channels{end+1} = label;
     end
 end
 channels = occ_channels;
 
-%% Plot TFR for HIGH and LOW CONTRAT conditions
+%% Plot TFR for HIGH and LOW CONTRAST conditions
 close all
-load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat') 
+load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
+gatfr_data = {gatfr_horz_lc_baselined, gatfr_horz_hc_baselined; ...
+    gatfr_vert_lc_baselined, gatfr_vert_hc_baselined; ...
+    gatfr_concentric_static_lc_baselined, gatfr_concentric_static_hc_baselined; ...
+    gatfr_concentric_dynamic_inward_lc_baselined, gatfr_concentric_dynamic_inward_hc_baselined; ...
+    gatfr_concentric_dynamic_outward_lc_baselined, gatfr_concentric_dynamic_outward_hc_baselined};
+
+% List of conditions
+conditions_list = {'horizontal', 'vertical', 'concentric_static', 'concentric_dynamic_inward', 'concentric_dynamic_outward'};
+
+% File path for saving plots
+output_path = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/';
 
 % Common configuration
 cfg = [];
@@ -72,48 +93,77 @@ cfg.ylim = [30 90];
 % clim = ([-5 5]);
 color_map = flipud(cbrewer('div', 'RdBu', 64)); % 'RdBu' for blue to red diverging color map
 
-% HIGH CONTRAST ALL
-figure;
-set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+% Loop through all conditions
+for cond_idx = 1:length(conditions_list)
+    condition = conditions_list{cond_idx};
+    gatfr_lc = gatfr_data{cond_idx, 1};
+    gatfr_hc = gatfr_data{cond_idx, 2};
 
-ft_singleplotTFR(cfg, ga_tfr_hc_all);
-colormap(color_map);
-% set(gca, 'CLim', clim);
-set(gca, 'FontSize', 20)
-colb = colorbar;
-colb.Label.String = 'Power [dB]';
-c.Label.FontSize = 25;
-xlabel('Time [s]');
-ylabel('Frequency [Hz]');
-title('High Contrast');
-title('Time-Frequency Representation: High Contrast', 'FontName', 'Arial', 'FontSize', 30);
+    % LOW CONTRAST
+    figure;
+    set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_tfr_hc_all.png');
+    ft_singleplotTFR(cfg, gatfr_lc);
+    colormap(color_map);
+    % set(gca, 'CLim', clim);
+    set(gca, 'FontSize', 20)
+    colb = colorbar;
+    colb.Label.String = 'Power [dB]';
+    c.Label.FontSize = 25;
+    xlabel('Time [s]');
+    ylabel('Frequency [Hz]');
+    title(['TFR LOW CONTRAST ', upper(condition)], 'FontSize', 30);
 
-% LOW CONTRAST ALL
-figure;
-set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+    % Save
+    saveas(gcf, strcat(output_path, 'GCP_eeg_tfr_', condition, '_lc.png'));
 
-ft_singleplotTFR(cfg, ga_tfr_lc_all);
-colormap(color_map);
-% set(gca, 'CLim', clim);
-set(gca, 'FontSize', 20)
-colb = colorbar;
-colb.Label.String = 'Power [dB]';
-c.Label.FontSize = 25;
-xlabel('Time [s]');
-ylabel('Frequency [Hz]');
-title('Time-Frequency Representation: Low Contrast', 'FontName', 'Arial', 'FontSize', 30);
+    % HIGH CONTRAST
+    figure;
+    set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_tfr_lc_all.png');
+    ft_singleplotTFR(cfg, gatfr_hc);
+    colormap(color_map);
+    % set(gca, 'CLim', clim);
+    set(gca, 'FontSize', 20)
+    colb = colorbar;
+    colb.Label.String = 'Power [dB]';
+    c.Label.FontSize = 25;
+    xlabel('Time [s]');
+    ylabel('Frequency [Hz]');
+    title(['TFR HIGH CONTRAST ', upper(condition)], 'FontSize', 30);
 
+    % Save
+    saveas(gcf, strcat(output_path, 'GCP_eeg_tfr_', condition, '_hc.png'));
 
-%% Plot the grand averages for the DIFFERENCE 
+    % Difference
+    diff = gatfr_hc;
+    diff.powspctrm = gatfr_hc.powspctrm - gatfr_lc.powspctrm;
+
+    figure;
+    set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+
+    ft_singleplotTFR(cfg, diff);
+    colormap(color_map);
+    % set(gca, 'CLim', clim);
+    set(gca, 'FontSize', 20)
+    colb = colorbar;
+    colb.Label.String = 'Power [dB]';
+    c.Label.FontSize = 25;
+    xlabel('Time [s]');
+    ylabel('Frequency [Hz]');
+    title(['TFR DIFFERENCE (HC-LC) ', upper(condition)], 'FontSize', 30);
+
+    % Save
+    saveas(gcf, strcat(output_path, 'GCP_eeg_tfr_', condition, '_diff.png'));
+
+end
+
+%% Plot the grand averages for the DIFFERENCE
 close all
 
 % Compute difference
-diff = ga_tfr_hc_all;
-diff.powspctrm = ga_tfr_hc_all.powspctrm - ga_tfr_lc_all.powspctrm;
+diff = gatfr_hc_all;
+diff.powspctrm = gatfr_hc_all.powspctrm - gatfr_lc_all.powspctrm;
 
 % Define configuration for multiplot
 cfg = [];

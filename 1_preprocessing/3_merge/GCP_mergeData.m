@@ -1,6 +1,5 @@
 %% Merge GCP ET and EEG data
-% Use data AFTER AUTOMAGIC
-% Training ET will be omitted
+% Use AFTER AUTOMAGIC
 
 %% Setup
 clear

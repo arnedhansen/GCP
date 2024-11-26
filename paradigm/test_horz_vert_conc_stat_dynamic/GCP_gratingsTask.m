@@ -44,8 +44,8 @@ BLOCK3 = 13;
 BLOCK4 = 14;
 BLOCK0 = 15; % Trigger for start of training block (block 0)
 
-FIXCROSSR = 16; % Trigger for black fixation cross
-FIXCROSSB = 17; % Trigger for red (task) fixation cross
+FIXCROSSR = 16; % Trigger for red (task) fixation cross 
+FIXCROSSB = 17; % Trigger for black fixation cross
 
 PRESENTATION1  = 21; % Trigger for presentation of low contrast horizontal
 PRESENTATION2  = 22; % Trigger for presentation of high contrast horizontal
@@ -679,8 +679,8 @@ trigger.BLOCK3 = BLOCK3;
 trigger.BLOCK4 = BLOCK4;
 trigger.BLOCK0 = BLOCK0;
 
-trigger.FIXCROSSB = FIXCROSSB;
 trigger.FIXCROSSR = FIXCROSSR;
+trigger.FIXCROSSB = FIXCROSSB;
 
 trigger.PRESENTATION1  = PRESENTATION1;
 trigger.PRESENTATION2  = PRESENTATION2;

@@ -8,7 +8,7 @@ baseline_period = [-0.5 -0.25];
 analysis_period = [0 2];
 freq_range = [30 120];
 
-for subj = 1:length(subjects)
+for subj = 1%:length(subjects)
     datapath = strcat(path, subjects{subj}, '/eeg');
     cd(datapath);
 
@@ -84,7 +84,6 @@ for subj = 1:length(subjects)
     pow_vert_hc_baselined{subj}                             = remove_time_dimension(pow_vert_hc_baselined{subj});
     pow_vert_hc_baseline_period{subj}                       = remove_time_dimension(pow_vert_hc_baseline_period{subj});
 
-
     % Concentric Static
     pow_concentric_static_lc{subj}                          = remove_time_dimension(pow_concentric_static_lc{subj});
     pow_concentric_static_lc_baselined{subj}                = remove_time_dimension(pow_concentric_static_lc_baselined{subj});
@@ -93,7 +92,6 @@ for subj = 1:length(subjects)
     pow_concentric_static_hc{subj}                          = remove_time_dimension(pow_concentric_static_hc{subj});
     pow_concentric_static_hc_baselined{subj}                = remove_time_dimension(pow_concentric_static_hc_baselined{subj});
     pow_concentric_static_hc_baseline_period{subj}          = remove_time_dimension(pow_concentric_static_hc_baseline_period{subj});
-
 
     % Concentric Dynamic Inward
     pow_concentric_dynamic_inward_lc{subj}                  = remove_time_dimension(pow_concentric_dynamic_inward_lc{subj});
@@ -104,7 +102,6 @@ for subj = 1:length(subjects)
     pow_concentric_dynamic_inward_hc_baselined{subj}        = remove_time_dimension(pow_concentric_dynamic_inward_hc_baselined{subj});
     pow_concentric_dynamic_inward_hc_baseline_period{subj}  = remove_time_dimension(pow_concentric_dynamic_inward_hc_baseline_period{subj});
 
-
     % Concentric Dynamic Outward
     pow_concentric_dynamic_outward_lc{subj}                 = remove_time_dimension(pow_concentric_dynamic_outward_lc{subj});
     pow_concentric_dynamic_outward_lc_baselined{subj}       = remove_time_dimension(pow_concentric_dynamic_outward_lc_baselined{subj});
@@ -113,7 +110,6 @@ for subj = 1:length(subjects)
     pow_concentric_dynamic_outward_hc{subj}                 = remove_time_dimension(pow_concentric_dynamic_outward_hc{subj});
     pow_concentric_dynamic_outward_hc_baselined{subj}       = remove_time_dimension(pow_concentric_dynamic_outward_hc_baselined{subj});
     pow_concentric_dynamic_outward_hc_baseline_period{subj} = remove_time_dimension(pow_concentric_dynamic_outward_hc_baseline_period{subj});
-
 
     fprintf('Subject %.3d/%.3d loaded \n', subj, length(subjects))
 end
@@ -173,7 +169,7 @@ occ_channels = {};
 pow_label = pow_horz_lc{1, 1};
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
-    if contains(label, {'O'}) && ~contains(label, {'P'})
+    if contains(label, {'O'}) || contains(label, {'I'})
         occ_channels{end+1} = label;
     end
 end

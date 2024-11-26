@@ -1,47 +1,168 @@
 %% GCP Gamma Peak Power and Frequency
 
 %% Setup
-% setup('GCP');
+[subjects, path] = setup('GCP');
 
-projectName = 'GCP'
-    baseDir = '/Volumes/methlab/Students/Arne/';
-    path = fullfile(baseDir, projectName, 'data/features/');
-    % List directories in the selected path
-    dirs = dir(path);
-    folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
-    subjects = {folders.name};
-
-    % Display the loaded subjects
-    disp('Loaded subjects:');
-    disp(subjects);
 %% Load data and convert TFR data to POWSCPTRM (channels x frequency)
-cfg             = [];
-cfg.latency     = [0 2];
-cfg.frequency   = [30 120];
-cfg.avgovertime = 'yes';
+baseline_period = [-0.5 -0.25];
+analysis_period = [0 2];
+freq_range = [30 120];
 
-for subj = 1:length(subjects)
+for subj = 1%:length(subjects)
     datapath = strcat(path, subjects{subj}, '/eeg');
     cd(datapath);
-    load('tfr_hc.mat');
-    load('tfr_lc.mat');
-    pow_hc{subj} = ft_selectdata(cfg, tfr_hc_all);
-    pow_lc{subj} = ft_selectdata(cfg, tfr_lc_all);
 
-    % Remove time dimension
-    pow_lc{subj} = rmfield(pow_lc{subj}, 'time');
-    pow_lc{subj}.dimord = 'chan_freq';
-    pow_hc{subj} = rmfield(pow_hc{subj}, 'time');
-    pow_hc{subj}.dimord = 'chan_freq';
+    % Load data
+    load('data_tfr.mat');
 
-    fprintf('Subject %.2s / %.3d loaded \n', num2str(subj), length(subjects))
+    %% Select analysis and baseline period data
+    % (1) Analysis period data, no baseline
+    % (2) Analysis period data, baselined
+    % (3) Baseline period data (to compare with (1) non-baselined data for percentage change)
+
+    % Horizontal
+    pow_horz_lc{subj}                                       = select_data(analysis_period, freq_range, tfr_horz_lc);
+    pow_horz_lc_baselined{subj}                             = select_data(analysis_period, freq_range, tfr_horz_lc_bl);
+    pow_horz_lc_baseline_period{subj}                       = select_data(baseline_period, freq_range, tfr_horz_lc);
+
+    pow_horz_hc{subj}                                       = select_data(analysis_period, freq_range, tfr_horz_hc);
+    pow_horz_hc_baselined{subj}                             = select_data(analysis_period, freq_range, tfr_horz_hc_bl);
+    pow_horz_hc_baseline_period{subj}                       = select_data(baseline_period, freq_range, tfr_horz_hc);
+
+    % Vertical
+    pow_vert_lc{subj}                                       = select_data(analysis_period, freq_range, tfr_vert_lc);
+    pow_vert_lc_baselined{subj}                             = select_data(analysis_period, freq_range, tfr_vert_lc_bl);
+    pow_vert_lc_baseline_period{subj}                       = select_data(baseline_period, freq_range, tfr_vert_lc);
+
+    pow_vert_hc{subj}                                       = select_data(analysis_period, freq_range, tfr_vert_hc);
+    pow_vert_hc_baselined{subj}                             = select_data(analysis_period, freq_range, tfr_vert_hc_bl);
+    pow_vert_hc_baseline_period{subj}                       = select_data(baseline_period, freq_range, tfr_vert_hc);
+
+    % Concentric Static
+    pow_concentric_static_lc{subj}                          = select_data(analysis_period, freq_range, tfr_concentric_static_lc);
+    pow_concentric_static_lc_baselined{subj}                = select_data(analysis_period, freq_range, tfr_concentric_static_lc_bl);
+    pow_concentric_static_lc_baseline_period{subj}          = select_data(baseline_period, freq_range, tfr_concentric_static_lc);
+
+    pow_concentric_static_hc{subj}                          = select_data(analysis_period, freq_range, tfr_concentric_static_hc);
+    pow_concentric_static_hc_baselined{subj}                = select_data(analysis_period, freq_range, tfr_concentric_static_hc_bl);
+    pow_concentric_static_hc_baseline_period{subj}          = select_data(baseline_period, freq_range, tfr_concentric_static_hc);
+
+    % Concentric Dynamic Inward
+    pow_concentric_dynamic_inward_lc{subj}                  = select_data(analysis_period, freq_range, tfr_concentric_dynamic_inward_lc);
+    pow_concentric_dynamic_inward_lc_baselined{subj}        = select_data(analysis_period, freq_range, tfr_concentric_dynamic_inward_lc_bl);
+    pow_concentric_dynamic_inward_lc_baseline_period{subj}  = select_data(baseline_period, freq_range, tfr_concentric_dynamic_inward_lc);
+
+    pow_concentric_dynamic_inward_hc{subj}                  = select_data(analysis_period, freq_range, tfr_concentric_dynamic_inward_hc);
+    pow_concentric_dynamic_inward_hc_baselined{subj}        = select_data(analysis_period, freq_range, tfr_concentric_dynamic_inward_hc_bl);
+    pow_concentric_dynamic_inward_hc_baseline_period{subj}  = select_data(baseline_period, freq_range, tfr_concentric_dynamic_inward_hc);
+
+    % Concentric Dynamic Outward
+    pow_concentric_dynamic_outward_lc{subj}                 = select_data(analysis_period, freq_range, tfr_concentric_dynamic_outward_lc);
+    pow_concentric_dynamic_outward_lc_baselined{subj}       = select_data(analysis_period, freq_range, tfr_concentric_dynamic_outward_lc_bl);
+    pow_concentric_dynamic_outward_lc_baseline_period{subj} = select_data(baseline_period, freq_range, tfr_concentric_dynamic_outward_lc);
+
+    pow_concentric_dynamic_outward_hc{subj}                 = select_data(analysis_period, freq_range, tfr_concentric_dynamic_outward_hc);
+    pow_concentric_dynamic_outward_hc_baselined{subj}       = select_data(analysis_period, freq_range, tfr_concentric_dynamic_outward_hc_bl);
+    pow_concentric_dynamic_outward_hc_baseline_period{subj} = select_data(baseline_period, freq_range, tfr_concentric_dynamic_outward_hc);
+
+    %% Remove time dimension for POWSCPTRM (channels x frequency)
+    % Horizontal
+    pow_horz_lc{subj}                                       = remove_time_dimension(pow_horz_lc{subj});
+    pow_horz_lc_baselined{subj}                             = remove_time_dimension(pow_horz_lc_baselined{subj});
+    pow_horz_lc_baseline_period{subj}                       = remove_time_dimension(pow_horz_lc_baseline_period{subj});
+
+    pow_horz_hc{subj}                                       = remove_time_dimension(pow_horz_hc{subj});
+    pow_horz_hc_baselined{subj}                             = remove_time_dimension(pow_horz_hc_baselined{subj});
+    pow_horz_hc_baseline_period{subj}                       = remove_time_dimension(pow_horz_hc_baseline_period{subj});
+
+    % Vertical
+    pow_vert_lc{subj}                                       = remove_time_dimension(pow_vert_lc{subj});
+    pow_vert_lc_baselined{subj}                             = remove_time_dimension(pow_vert_lc_baselined{subj});
+    pow_vert_lc_baseline_period{subj}                       = remove_time_dimension(pow_vert_lc_baseline_period{subj});
+
+    pow_vert_hc{subj}                                       = remove_time_dimension(pow_vert_hc{subj});
+    pow_vert_hc_baselined{subj}                             = remove_time_dimension(pow_vert_hc_baselined{subj});
+    pow_vert_hc_baseline_period{subj}                       = remove_time_dimension(pow_vert_hc_baseline_period{subj});
+
+
+    % Concentric Static
+    pow_concentric_static_lc{subj}                          = remove_time_dimension(pow_concentric_static_lc{subj});
+    pow_concentric_static_lc_baselined{subj}                = remove_time_dimension(pow_concentric_static_lc_baselined{subj});
+    pow_concentric_static_lc_baseline_period{subj}          = remove_time_dimension(pow_concentric_static_lc_baseline_period{subj});
+
+    pow_concentric_static_hc{subj}                          = remove_time_dimension(pow_concentric_static_hc{subj});
+    pow_concentric_static_hc_baselined{subj}                = remove_time_dimension(pow_concentric_static_hc_baselined{subj});
+    pow_concentric_static_hc_baseline_period{subj}          = remove_time_dimension(pow_concentric_static_hc_baseline_period{subj});
+
+
+    % Concentric Dynamic Inward
+    pow_concentric_dynamic_inward_lc{subj}                  = remove_time_dimension(pow_concentric_dynamic_inward_lc{subj});
+    pow_concentric_dynamic_inward_lc_baselined{subj}        = remove_time_dimension(pow_concentric_dynamic_inward_lc_baselined{subj});
+    pow_concentric_dynamic_inward_lc_baseline_period{subj}  = remove_time_dimension(pow_concentric_dynamic_inward_lc_baseline_period{subj});
+
+    pow_concentric_dynamic_inward_hc{subj}                  = remove_time_dimension(pow_concentric_dynamic_inward_hc{subj});
+    pow_concentric_dynamic_inward_hc_baselined{subj}        = remove_time_dimension(pow_concentric_dynamic_inward_hc_baselined{subj});
+    pow_concentric_dynamic_inward_hc_baseline_period{subj}  = remove_time_dimension(pow_concentric_dynamic_inward_hc_baseline_period{subj});
+
+
+    % Concentric Dynamic Outward
+    pow_concentric_dynamic_outward_lc{subj}                 = remove_time_dimension(pow_concentric_dynamic_outward_lc{subj});
+    pow_concentric_dynamic_outward_lc_baselined{subj}       = remove_time_dimension(pow_concentric_dynamic_outward_lc_baselined{subj});
+    pow_concentric_dynamic_outward_lc_baseline_period{subj} = remove_time_dimension(pow_concentric_dynamic_outward_lc_baseline_period{subj});
+
+    pow_concentric_dynamic_outward_hc{subj}                 = remove_time_dimension(pow_concentric_dynamic_outward_hc{subj});
+    pow_concentric_dynamic_outward_hc_baselined{subj}       = remove_time_dimension(pow_concentric_dynamic_outward_hc_baselined{subj});
+    pow_concentric_dynamic_outward_hc_baseline_period{subj} = remove_time_dimension(pow_concentric_dynamic_outward_hc_baseline_period{subj});
+
+
+    fprintf('Subject %.3d/%.3d loaded \n', subj, length(subjects))
 end
 
-% Compute grand average
-gapow_hc = ft_freqgrandaverage([], pow_hc{:});
-gapow_lc = ft_freqgrandaverage([], pow_lc{:});
-gapow_diff = gapow_hc;  
-gapow_diff.powspctrm = gapow_hc.powspctrm - gapow_lc.powspctrm;
+%% Compute grand averages
+% Horizontal
+gapow_horz_lc                                        = ft_freqgrandaverage([],pow_horz_lc{subj});
+gapow_horz_lc_baselined                              = ft_freqgrandaverage([],pow_horz_lc_baselined{subj});
+gapow_horz_lc_baseline_period                        = ft_freqgrandaverage([],pow_horz_lc_baseline_period{subj});
+
+gapow_horz_hc                                        = ft_freqgrandaverage([],pow_horz_hc{subj});
+gapow_horz_hc_baselined                              = ft_freqgrandaverage([],pow_horz_hc_baselined{subj});
+gapow_horz_hc_baseline_period                        = ft_freqgrandaverage([],pow_horz_hc_baseline_period{subj});
+
+% Vertical
+gapow_vert_lc                                        = ft_freqgrandaverage([],pow_vert_lc{subj});
+gapow_vert_lc_baselined                              = ft_freqgrandaverage([],pow_vert_lc_baselined{subj});
+gapow_vert_lc_baseline_period                        = ft_freqgrandaverage([],pow_vert_lc_baseline_period{subj});
+
+gapow_vert_hc                                        = ft_freqgrandaverage([],pow_vert_hc{subj});
+gapow_vert_hc_baselined                              = ft_freqgrandaverage([],pow_vert_hc_baselined{subj});
+gapow_vert_hc_baseline_period                        = ft_freqgrandaverage([],pow_vert_hc_baseline_period{subj});
+
+% Concentric Static
+gapow_concentric_static_lc                           = ft_freqgrandaverage([],pow_concentric_static_lc{subj});
+gapow_concentric_static_lc_baselined                 = ft_freqgrandaverage([],pow_concentric_static_lc_baselined{subj});
+gapow_concentric_static_lc_baseline_period           = ft_freqgrandaverage([],pow_concentric_static_lc_baseline_period{subj});
+
+gapow_concentric_static_hc                           = ft_freqgrandaverage([],pow_concentric_static_hc{subj});
+gapow_concentric_static_hc_baselined                 = ft_freqgrandaverage([],pow_concentric_static_hc_baselined{subj});
+gapow_concentric_static_hc_baseline_period           = ft_freqgrandaverage([],pow_concentric_static_hc_baseline_period{subj});
+
+% Concentric Dynamic Inward
+gapow_concentric_dynamic_inward_lc                   = ft_freqgrandaverage([],pow_concentric_dynamic_inward_lc{subj});
+gapow_concentric_dynamic_inward_lc_baselined         = ft_freqgrandaverage([],pow_concentric_dynamic_inward_lc_baselined{subj});
+gapow_concentric_dynamic_inward_lc_baseline_period   = ft_freqgrandaverage([],pow_concentric_dynamic_inward_lc_baseline_period{subj});
+
+gapow_concentric_dynamic_inward_hc                   = ft_freqgrandaverage([],pow_concentric_dynamic_inward_hc{subj});
+gapow_concentric_dynamic_inward_hc_baselined         = ft_freqgrandaverage([],pow_concentric_dynamic_inward_hc_baselined{subj});
+gapow_concentric_dynamic_inward_hc_baseline_period   = ft_freqgrandaverage([],pow_concentric_dynamic_inward_hc_baseline_period{subj});
+
+% Concentric Dynamic Outward
+gapow_concentric_dynamic_outward_lc                  = ft_freqgrandaverage([],pow_concentric_dynamic_outward_lc{subj});
+gapow_concentric_dynamic_outward_lc_baselined        = ft_freqgrandaverage([],pow_concentric_dynamic_outward_lc_baselined{subj});
+gapow_concentric_dynamic_outward_lc_baseline_period  = ft_freqgrandaverage([],pow_concentric_dynamic_outward_lc_baseline_period{subj});
+
+gapow_concentric_dynamic_outward_hc                  = ft_freqgrandaverage([],pow_concentric_dynamic_outward_hc{subj});
+gapow_concentric_dynamic_outward_hc_baselined        = ft_freqgrandaverage([],pow_concentric_dynamic_outward_hc_baselined{subj});
+gapow_concentric_dynamic_outward_hc_baseline_period  = ft_freqgrandaverage([],pow_concentric_dynamic_outward_hc_baseline_period{subj});
 
 %% Define channels
 subj = 1;
@@ -49,28 +170,34 @@ datapath = strcat(path, subjects{subj}, '/eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
-pow_label = pow_lc{1};
+pow_label = pow_horz_lc{1, 1};
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
-    if contains(label, {'O'})
+    if contains(label, {'O'}) && ~contains(label, {'P'})
         occ_channels{end+1} = label;
     end
 end
 channels = occ_channels;
 
 %% Plot Grand Average Topoplots for HC, LC, and Difference
+gapow_lc = pow_vert_lc_baselined{1};
+gapow_hc = pow_vert_hc_baselined{1};
+gapow_diff = gapow_hc;
+gapow_diff.powspctrm = gapow_hc.powspctrm - gapow_lc.powspctrm
+
+
 close all;
 cfg             = [];
 load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat') 
 cfg.layout = layANThead; 
 cfg.comment     = 'no';
-cfg.channels = channels;
+% cfg.channels = channels;
 cfg.gridscale   = 300;
 cfg.figure      = 'gcf';
 cfg.xlim = [30 90]; 
-% cfg.zlim = 'maxabs'; 
-cfg.zlim = [-1.1 1.1];
-cfg.marker      = 'on';
+cfg.zlim = 'maxabs'; 
+% cfg.zlim = [-1.1 1.1];
+% cfg.marker      = 'on';
 cfg.colormap = '*RdBu';
 cfg.colorbartext = 'Power [dB]';
 

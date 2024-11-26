@@ -12,7 +12,7 @@ folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
 
 %% Read data, segment and convert to FieldTrip data structure
-for subj = 1%:length(subjects)
+for subj = 1:length(subjects)
     clearvars -except subjects subj path
     datapath = strcat(path,subjects{subj});
     cd(datapath)
@@ -44,7 +44,15 @@ for subj = 1%:length(subjects)
         try
             % Horizontal
             EEG_horz_lc = pop_epoch(alleeg{block}, {'21'}, epoch_window);
+
+
+            epochs_to_exclude = find(cellfun(@(x) any(strcmp(x, '17')), {EEG.epoch.eventtype}));
+            EEG = pop_select(EEG, 'notrial', epochs_to_exclude);
+            pop_eegplot(EEG, 1, 1, 1); % Visualise the remaining epochs
+
             EEG_horz_lc = exclude_epochs(EEG_horz_lc, '16'); % exclude task condition (red fixcross) trials
+
+            
             data_horz_lc{block} = eeglab2fieldtrip(EEG_horz_lc, 'raw');
 
             EEG_horz_hc = pop_epoch(alleeg{block}, {'22'}, epoch_window);
@@ -210,6 +218,24 @@ for subj = 1%:length(subjects)
     else
         disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. Loading next subject...'])
     end
+end
+
+%% Function to exclude epochs with task condition
+function EEG = exclude_epochs(EEG, trigger)
+% Get the event information
+events = EEG.event;
+
+% Identify epochs to keep
+epochs_to_keep = true(1, EEG.trials);
+for i = 1:length(events)
+    if strcmp(events(i).type, trigger)
+        epoch_idx = events(i).epoch;
+        epochs_to_keep(epoch_idx) = false;
+    end
+end
+
+% Select the epochs that do not contain the specified trigger
+EEG = pop_select(EEG, 'trial', find(epochs_to_keep));
 end
 
 %% Function to update labels
