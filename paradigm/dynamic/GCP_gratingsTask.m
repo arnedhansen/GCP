@@ -218,7 +218,7 @@ gratingSize = 2*gratingRadius; % To prevent consistency errors, redifine grating
 
 % Frequency
 driftFreq = 2; % Every pixel of the grating completes two cycles per second (black-white-black)
-nFramesInCycle=round((1/driftFreq)/ifi); % Temporal period, in frames, of the drifting grating
+nFramesInCycle = round((1/driftFreq)/ifi); % Temporal period, in frames, of the drifting grating
 
 % Generate stimulus
 [x,y] = meshgrid(-gratingRadius:gratingRadius,-gratingRadius:gratingRadius);
@@ -397,9 +397,6 @@ for trl = 1:exp.nTrials
     % grating =  1 is low contrast concentric dynamic inward
     % grating =  2 is high contrast concentric dynamic inward
 
-    %% Check fixation on the center of the screen just before stimulus presentation
-    %     noFixation = checkFixation(screenWidth, screenHeight, screenCenterX, screenCenterY);
-
     %% Present grating and get response
     Screen('Flip', ptbWindow); % Preparatory flip
     responseGiven = false;
@@ -513,22 +510,6 @@ for trl = 1:exp.nTrials
             WaitSecs(3);
         end
     end
-
-    %% Fixation reminder
-    %     noFixation = 0;
-    %     if noFixation > 0
-    %         Screen('TextSize', ptbWindow, 30);
-    %         fixText = 'ALWAYS LOOK AT THE CENTER OF THE SCREEN!';
-    %         DrawFormattedText(ptbWindow, fixText, 'center', 'center', color.White);
-    %         Screen('DrawDots', ptbWindow, backPos, backDiameter, backColor, [], 1);
-    %         Screen('Flip', ptbWindow);
-    %         disp('FIXATION REMINDER')
-    %         WaitSecs(3);
-    %         data.fixation(trl) = 0;
-    %         Screen('TextSize', ptbWindow, 20);
-    %     else
-    %         data.fixation(trl) = 1;
-    %     end
 
     %% Trial Info CW output
     overall_accuracy = round((sum(data.correct(1:trl))/trl)*100);
