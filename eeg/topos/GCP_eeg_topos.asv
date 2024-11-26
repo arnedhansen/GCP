@@ -176,6 +176,7 @@ end
 channels = occ_channels;
 
 %% Plot Grand Average Topoplots for HC, LC, and Difference
+close all
 load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
 gapow_data = {gapow_horz_lc_baselined, gapow_horz_hc_baselined; ...
     gapow_vert_lc_baselined, gapow_vert_hc_baselined; ...
@@ -191,66 +192,92 @@ output_path = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/';
 
 % Common configuration
 cfg = [];
-load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
-cfg.layout = layANThead;
+load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat') 
+cfg.layout = layANThead; 
 cfg.comment     = 'no';
 cfg.gridscale   = 300;
 cfg.figure      = 'gcf';
-cfg.xlim = [30 90];
-cfg.zlim = 'maxabs';
+cfg.xlim = [30 90]; 
+cfg.zlim = 'maxabs'; 
 % cfg.zlim = [-1.1 1.1];
 cfg.marker      = 'off';
 cfg.colormap    = '*RdBu';
 cfg.colorbartext = 'Power [dB]';
 
+% Create figure
+figure; 
+set(gcf, 'Position', [0, 0, 2000, 800], 'Color', 'w');
+set(gca, 'Fontsize', 25);
+sgtitle('Topographical Maps', 'FontSize', 30, 'FontWeight', 'bold'); 
+
 % Loop through all conditions
 for cond_idx = 1:length(conditions_list)
-    close all
-    % Create figure
-    figure;
-    set(gcf, 'Position', [0, 0, 2000, 800], 'Color', 'w');
-    set(gca, 'Fontsize', 25);
-
-    % Set conditions and data
     condition = conditions_list{cond_idx};
     gapow_lc = gapow_data{cond_idx, 1};
     gapow_hc = gapow_data{cond_idx, 2};
 
-    % Set title
-    sgtitle(strcat('Topographical Maps - ', upper(condition)), 'FontSize', 30, 'FontWeight', 'bold');
-
     % LOW CONTRAST
-    subplot(1, 3, 1);
-    ft_topoplotER(cfg, gapow_lc);
-    title('Low Contrast', 'FontSize', 25);
-    cb = colorbar;
-    cb.FontSize = 20;
-    ylabel(cb, 'Power [dB]', 'FontSize', 25);
-    title('LOW CONTRAST', 'FontSize', 25);
+    figure;
+    set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+
+    ft_singleplotTFR(cfg, gapow_lc);
+    colormap(color_map);
+    % set(gca, 'CLim', clim);
+    set(gca, 'FontSize', 20)
+    colb = colorbar;
+    colb.Label.String = 'Power [dB]';
+    c.Label.FontSize = 25;
+    xlabel('Time [s]');
+    ylabel('Frequency [Hz]');
+    title(['TFR LOW CONTRAST ', upper(condition)], 'FontSize', 30);
+
+    % Save
+    saveas(gcf, strcat(output_path, 'GCP_eeg_tfr_', condition, '_lc.png'));
 
     % HIGH CONTRAST
-    subplot(1, 3, 2);
-    ft_topoplotER(cfg, gapow_hc);
-    title('High Contrast', 'FontSize', 25);
-    cb = colorbar;
-    cb.FontSize = 20;
-    ylabel(cb, 'Power [dB]', 'FontSize', 25);
-    title('HIGH CONTRAST', 'FontSize', 25);
+    figure;
+    set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
 
-    % DIFFERENCE
-    gapow_diff = gapow_hc;
-    gapow_diff.powspctrm = gapow_hc.powspctrm - gapow_lc.powspctrm;
-    subplot(1, 3, 3);
-    ft_topoplotER(cfg, gapow_diff);
-    title('Difference (High - Low)', 'FontSize', 25);
-    cb = colorbar;
-    cb.FontSize = 20;
-    ylabel(cb, 'Power [dB]', 'FontSize', 25);
-    title('DIFFERENCE (HC-LC)', 'FontSize', 25);
+    ft_singleplotTFR(cfg, gapow_hc);
+    colormap(color_map);
+    % set(gca, 'CLim', clim);
+    set(gca, 'FontSize', 20)
+    colb = colorbar;
+    colb.Label.String = 'Power [dB]';
+    c.Label.FontSize = 25;
+    xlabel('Time [s]');
+    ylabel('Frequency [Hz]');
+    title(['TFR HIGH CONTRAST ', upper(condition)], 'FontSize', 30);
 
-    % Save figure
-    saveas(gcf, strcat(output_path, 'GCP_eeg_topos_ga_', condition, '.png'));
+    % Save
+    saveas(gcf, strcat(output_path, 'GCP_eeg_tfr_', condition, '_hc.png'));
+
+    % Difference
+    diff = gapow_hc;
+    diff.powspctrm = gapow_hc.powspctrm - gapow_lc.powspctrm;
+
+    figure;
+    set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+
+    ft_singleplotTFR(cfg, diff);
+    colormap(color_map);
+    % set(gca, 'CLim', clim);
+    set(gca, 'FontSize', 20)
+    colb = colorbar;
+    colb.Label.String = 'Power [dB]';
+    c.Label.FontSize = 25;
+    xlabel('Time [s]');
+    ylabel('Frequency [Hz]');
+    title(['TFR DIFFERENCE (HC-LC) ', upper(condition)], 'FontSize', 30);
+
+    % Save
+    saveas(gcf, strcat(output_path, 'GCP_eeg_tfr_', condition, '_diff.png'));
+
 end
+
+
+% Save figure
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_topoplots_ga.png');
 
 %% Topoplots for Individual Subjects (HC, LC, and Difference)
 close all;
