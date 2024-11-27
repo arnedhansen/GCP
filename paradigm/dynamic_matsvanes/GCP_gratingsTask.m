@@ -36,7 +36,7 @@ end
 HideCursor(whichScreen);
 
 %% Define TRIGGERS
-TASK_START = 10; % trigger for ET cutting
+TASK_START             = 10; % trigger for ET cutting
 
 BLOCK1                 = 11; % Trigger for start of block 1
 BLOCK2                 = 12; % Trigger for start of block 2
@@ -397,8 +397,15 @@ for trl = 1:exp.nTrials
         sendtrigger(TRIGGER,port,SITE,stayup);
     end
 
+    % Create a VideoWriter object
+    videoFilename = sprintf('GCP_movie_%s.avi', gratingForm);  % Name of the video file
+    videoWriter = VideoWriter(videoFilename, 'Uncompressed AVI');
+    frameRate = Screen('NominalFrameRate', ptbWindow); % Screen's refresh rate
+    videoWriter.FrameRate = frameRate;
+    open(videoWriter);
+
     % Draw gratings depending on gratingSequence
-    while (GetSecs - probeStartTime) < maxProbeDuration        
+    while (GetSecs - probeStartTime) < maxProbeDuration
         % Update `shiftvalue` for dynamic patterns
         if gratingSequence(trl) == 1 % low contrast concentric dynamic inward
             shiftvalue = shiftvalue + 1; % Decrease size (simulate inward motion)
@@ -409,6 +416,10 @@ for trl = 1:exp.nTrials
             firstColor, [], [], [secondColor(1), secondColor(2), secondColor(3), ...
             secondColor(4), shiftvalue, ringwidth, radius, 0]);
         vbl = Screen('Flip', ptbWindow, vbl + ifi);
+
+        % Capture current frame for video
+        imageArray = Screen('GetImage', ptbWindow);
+        writeVideo(videoWriter, imageArray);
 
         % Take screenshot of current screen
         screenshotFilename = sprintf('GCP_screenshot_%s.png', gratingForm);
@@ -425,6 +436,10 @@ for trl = 1:exp.nTrials
             end
         end
     end
+
+    % Close the VideoWriter object
+    close(videoWriter);
+    disp('MOVIE SAVED SUCCESSFULLY.');
 
     % If no response is given, record default
     if ~responseGiven
@@ -572,7 +587,9 @@ saves.timing                    = timing;
 
 % Save triggers
 trigger                         = struct;
+
 trigger.TASK_START              = TASK_START;
+
 trigger.BLOCK1                  = BLOCK1;
 trigger.BLOCK2                  = BLOCK2;
 trigger.BLOCK3                  = BLOCK3;
