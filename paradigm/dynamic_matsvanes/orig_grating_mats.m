@@ -25,39 +25,6 @@ includePeriStim = 0;
 
 %% Function settings
 
-
-if nargin<1
-    fileName = 'test';
-end
-
-if isempty(fileName)
-    fileName = 'test';
-end
-
-if nargin<2
-    isLive = 0;
-end
-
-if isempty(isLive)
-    isLive = 0;
-end
-
-if nargin<3
-    language = 'nl';
-end
-
-if isempty(language)
-    language = 'nl';
-end
-
-if nargin<4
-    includePeriStim = false;
-end
-
-if isempty(includePeriStim)
-    includePeriStim = false;
-end
-
 try
     %% Standard PTB settings
     % This script calls Psychtoolbox commands available only in OpenGL-
@@ -115,25 +82,8 @@ try
     Screen('BlendFunction', window, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
     
     HideCursor;
-    
-    %% Trigger settings
-    if isLive
-        btsi = Bitsi('/dev/ttyS0');% when there is no com connected, use keyboard as input
-    else
-        btsi = Bitsi('');
-    end
-    
-    % reset all trigger such that none are in level mode
-    btsi.sendTrigger(0);
-    btsi.sendTrigger(2);
-    btsi.sendTrigger(0);
-    
-    % explicitly put trigger in pulse mode of 1 ms.
-    btsi.sendTrigger(0);
-    btsi.sendTrigger(1);
-    btsi.sendTrigger(1);
-    xp = expconstants();
-    
+
+ 
     %% Input settings
     
     KbName('UnifyKeyNames'); % converts operating specific keynames to universal keyname
@@ -301,9 +251,7 @@ try
         for jFrame = 1:nBlinkFrames
             Screen('DrawDots', window, [xCenter yCenter], 20, [127 255 0], [], 2);
             [VBLTimestamp, StimulusOnsetTime, FlipTimestamp, Missed, Beampos] = Screen('Flip', window, VBLTimestamp + (waitframes - 0.5) * ifi);
-            if jFrame==1
-                btsi.sendTrigger(xp.TRIG_ONSET_BLINK);
-            end
+      
             log.PTBtiming.blink.vblTimestamp{iTrl}(jFrame) = VBLTimestamp;
             log.PTBtiming.blink.StimulusOnsetTime{iTrl}(jFrame) = StimulusOnsetTime;
             log.PTBtiming.blink.FlipTimestamp{iTrl}(jFrame) = FlipTimestamp;
@@ -316,9 +264,6 @@ try
         for jFrame = 1:nBaselineFrames
             Screen('DrawDots', window, [xCenter yCenter], 80, [255 0 0], [], 2);
             [VBLTimestamp, StimulusOnsetTime, FlipTimestamp, Missed, Beampos] = Screen('Flip', window, VBLTimestamp + (waitframes - 0.5) * ifi);
-            if jFrame==1
-                btsi.sendTrigger(xp.TRIG_ONSET_BASELINE);
-            end
             log.PTBtiming.baseline.vblTimestamp{iTrl}(jFrame) = VBLTimestamp;
             log.PTBtiming.baseline.StimulusOnsetTime{iTrl}(jFrame) = StimulusOnsetTime;
             log.PTBtiming.baseline.FlipTimestamp{iTrl}(jFrame) = FlipTimestamp;
@@ -329,7 +274,6 @@ try
         
         [~, ~, keyCode] = KbCheck(-3); % all keyCodes should be zero at start of trial.
         flag.prevResp=0; % reset flag
-        btsi.clearResponses(); % reset Bitsi response
         t0= GetSecs; % time onset grating
         
         % Animation loop:
@@ -363,11 +307,9 @@ try
             
             [VBLTimestamp StimulusOnsetTime FlipTimestamp Missed Beampos] = Screen('Flip', window, VBLTimestamp + (waitframes - 0.5) * ifi);
             if jFrame==1
-                btsi.sendTrigger(xp.TRIG_ONSET_GRATING);
                 imwrite(Screen('GetImage', window), 'test1.jpg');
             end
             if isShiftFrame;
-                btsi.sendTrigger(xp.TRIG_SHIFT);
                 imwrite(Screen('GetImage', window), 'test2.jpg');
             end
 %             imwrite(Screen('GetImage', window), 'test.jpg');
@@ -451,11 +393,7 @@ try
     Screen('Close');
     
     % Close window:
-    Screen('CloseAll');
-    
-    btsi.sendTrigger(0);
-    btsi.sendTrigger(1);
-    btsi.sendTrigger(30);
+    Screen('CloseAll'); 
     
 catch
     %this "catch" section executes in case of an error in the "try" section

@@ -6,7 +6,8 @@ try
         PsychPortAudio('Close');
     catch
     end
-    fprintf('Starting Calibration \n' );
+    clc
+    fprintf('STARTING CALIBRATION \n' );
     Eyelink('Command', 'saccade_velocity_threshold = 35');
     Eyelink('Command', 'saccade_acceleration_threshold = 9500');
     Eyelink('Command', 'link_sample_data  = LEFT,RIGHT,GAZE,AREA');

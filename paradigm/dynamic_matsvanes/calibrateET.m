@@ -33,7 +33,7 @@ try
     % Connect the Eytracker, it needs a window
     EL_Connect;
     try % open file to record data to
-        disp('creating edf file');
+        disp('CREATING EDF FILE');
         status=Eyelink('Openfile', edfFile);
     catch
         disp('ERROR creating the edf file on Eye-Tracker');
