@@ -1,7 +1,5 @@
 %% Master script for the GCP (Gamma Contrast Perception) Study
-% Test with mixed gratings: horizontal, vertical and concentric static, 
-% concentric dynamic inward, concentric dynamic outward
-
+%
 % - Resting EEG
 % - Gratings Training (10 trials)
 % - Gratings (500 trials)

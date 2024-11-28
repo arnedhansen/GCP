@@ -247,6 +247,7 @@ data.correct(1, exp.nTrials)     = NaN; % Binary measure for correct responses
 data.reactionTime(1:exp.nTrials) = NaN; % Reaction time
 data.fixation(1:exp.nTrials)     = NaN; % Fixation check info
 data.trlDuration(1:exp.nTrials)  = NaN; % Trial duration in seconds
+count5trials                     = NaN; % Initialize accuracy reminder loop variable
 
 %% Show task instruction text
 DrawFormattedText(ptbWindow,startExperimentText,'center','center',color.textVal);
@@ -293,14 +294,12 @@ end
 % Experiment prep
 HideCursor(whichScreen); % Make sure to hide cursor from participant screen
 timing.startTime = datestr(now, 'dd/mm/yy-HH:MM:SS'); % Measure duration
-count5trials = 0; % Initialize accuracy reminder loop variable
 
 %% Experiment Loop %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clc;
 disp('GCP GRATING TASK...');
 for trl = 1:exp.nTrials
     tic;
-    disp(['Grating min: ', num2str(min(grating(:))), ', max: ', num2str(max(grating(:)))]);
     % Add trial grating info
     if gratingSequence(trl) == 1
         gratingForm = 'low contrast concentric dynamic inward';
@@ -327,6 +326,17 @@ for trl = 1:exp.nTrials
             Screen('DrawLines', ptbWindow, fixCoords,fixationLineWidth,fixationColor0,[screen.centerX screen.centerY],2);
             Screen('Flip', ptbWindow);
             TRIGGER = FIXCROSSB;
+
+
+
+        % Take screenshot of current screen
+        screenshotFilename = 'GCP_screenshot_blackcross.png';
+        imageArray = Screen('GetImage', ptbWindow);
+        imwrite(imageArray, screenshotFilename);
+        
+
+
+
             if TRAINING == 1
                 Eyelink('Message', num2str(TRIGGER));
                 Eyelink('command', 'record_status_message "FIXCROSS"');
@@ -340,6 +350,16 @@ for trl = 1:exp.nTrials
             Screen('DrawLines', ptbWindow, fixCoords,fixationLineWidth,fixationColor1,[screen.centerX screen.centerY],2);
             Screen('Flip', ptbWindow);
             TRIGGER = FIXCROSSR;
+
+
+
+        % Take screenshot of current screen
+        screenshotFilename = 'GCP_screenshot_redcross.png';
+        imageArray = Screen('GetImage', ptbWindow);
+        imwrite(imageArray, screenshotFilename);
+
+
+
             if TRAINING == 1
                 Eyelink('Message', num2str(TRIGGER));
                 Eyelink('command', 'record_status_message "FIXCROSS"');
@@ -500,7 +520,8 @@ for trl = 1:exp.nTrials
             num2str(data.redCross(trl)) ' | Acc: ' num2str(overall_accuracy) ...
             '% | RT: ' reactionTime 's | ' gratingForm ')']);
     end
-    % Save duration in seconds
+    
+    % Save trial duration in seconds
     data.trlDuration(trl) = toc;
 end
 
