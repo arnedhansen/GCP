@@ -2,15 +2,9 @@
 %
 % - Resting EEG
 % - Gratings Training (10 trials)
-% - Gratings (500 trials)
-%   - 50x low contrast horizontal
-%   - 50x high contrast horizontal
-%   - 50x low contrast concentric static
-%   - 50x high contrast concentric static
-%   - 50x low contrast concentric dynamic inward
-%   - 50x high contrast concentric dynamic inward
-%   - 50x low contrast concentric dynamic outward
-%   - 50x high contrast concentric dynamic outward
+% - Gratings (200 trials)
+%   - 100x low contrast concentric dynamic inward
+%   - 100x high contrast concentric dynamic inward
 
 %% General settings, screens and paths
 
@@ -29,29 +23,28 @@ addpath(FUNS_PATH) % Add path to folder with functions
 screenSettings % Manage screens
 
 %% Collect ID and Age
-% dialogID;
-subject.ID = 991; % Set to 991 for tests
+dialogID;
 
 %% Protect Matlab code from participant keyboard input
 ListenChar(2);
 
 %% Check for existing files and start tasks
 
-% if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_Resting.mat']])
-%     restingEEG
-% else
-%     disp('RESTING EEG DATA ALREADY EXISTS');
-% end
+if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_Resting.mat']])
+    restingEEG
+else
+    disp('RESTING EEG DATA ALREADY EXISTS');
+end
 
-% if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
-%     TRAINING = 1;
-%     start = 1;
-%     TASK = 'GCP';
-%     BLOCK = 1;
-%     GCP_gratingsTask;
-% else
-%     disp('TRAINING BLOCK DATA ALREADY EXISTS');
-% end
+if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
+    TRAINING = 1;
+    start = 1;
+    TASK = 'GCP';
+    BLOCK = 1;
+    GCP_gratingsTask;
+else
+    disp('TRAINING BLOCK DATA ALREADY EXISTS');
+end
 
 TRAINING = 0;
 TASK = 'GCP';

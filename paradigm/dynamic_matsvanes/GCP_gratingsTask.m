@@ -26,15 +26,15 @@ if TRAINING == 0
     disp('STARTING EEG RECORDING...');
     initEEG;
 
-%     % Wait ten seconds to initialize EEG
-%     disp('INITIALIZING EEG... PLEASE WAIT 10 SECONDS')
-%     for i=1:10
-%         waitbar(i/10, 'INITIALIZING EEG');
-%         pause(1);
-%     end
-%     wbar = findall(0,'type','figure','tag','TMWWaitbar');
-%     delete(wbar)
-%     disp('EEG INITIALIZED!')
+    % Wait ten seconds to initialize EEG
+    disp('INITIALIZING EEG... PLEASE WAIT 10 SECONDS')
+    for i=1:10
+        waitbar(i/10, 'INITIALIZING EEG');
+        pause(1);
+    end
+    wbar = findall(0,'type','figure','tag','TMWWaitbar');
+    delete(wbar)
+    disp('EEG INITIALIZED!')
 end
 
 % Hide cursor on participant screen
@@ -71,7 +71,7 @@ TASK_END               = 90; % Trigger for ET cutting
 %% Set up experiment parameters
 % Block and Trial Number
 exp.nTrlTrain = 10; % n gratings per training block
-exp.nTrlTask = 125; % n gratings per task block
+exp.nTrlTask = 100; % n gratings per task block
 
 if TRAINING == 1
     exp.nTrials = exp.nTrlTrain;
@@ -129,8 +129,11 @@ end
 % Contrast 'inc'rement range for given white and gray values
 inc = white - gray;
 
-% Open a double buffered fullscreen window and select a black background color:
-[ptbWindow, winRect] = Screen('OpenWindow', screen.ID, gray);
+% Background color
+backgroundColorGray = 256; % Needs to be fixed to 256 for gratings blending into background
+
+% Open a double buffered fullscreen window and select a gray background color:
+[ptbWindow, winRect] = Screen('OpenWindow', screen.ID, backgroundColorGray);
 
 % Get screen size and center coordinates
 [screen.centerX, screen.centerY] = RectCenter(winRect); % Screen center in pixels
@@ -170,7 +173,7 @@ fixationLineWidth = 1.3;            % Line width of fixation cross
 
 % Color
 fixationColor0    = [0 0 0];        % Black fixation cross
-fixationColor1    = [1 0 0];        % Red fixation cross
+fixationColor1    = [255 0 0];        % Red fixation cross
 
 % Location 
 fixationSize_pix  = round(fixationSize_dva*screen.ppd);
@@ -185,7 +188,7 @@ timing.cfiupper   = 3000; % Upper limit of CFI duration
 timing.cfi_task   = 0.5;  % Duration of red fixation cross
 
 %% Settings for inward moving circular grating
-% Grating size
+% Size
 visualAngleGrating    = 7.1;
 visualAngleLocation   = 15;
 gratingSize           = visualAngleGrating*screen.ppd; % Grating stimulus size in pixels
@@ -195,32 +198,6 @@ gratingSize           = 2*gratingRadius; % To prevent consistency errors, redifi
 % Frequency
 driftFreq             = 2; % Every pixel of the grating completes two cycles per second (black-white-black)
 nFramesInCycle        = round((1/driftFreq)/ifi); % Temporal period, in frames, of the drifting grating
-
-% Generate stimulus
-[x,y]                 = meshgrid(-gratingRadius:gratingRadius,-gratingRadius:gratingRadius);
-f                     = 0.55*2*pi; % Period of the grating
-
-% Circular hanning mask
-L                     = 2*gratingRadius+1;
-w1D                   = hann(L); % 1D hann window
-xx                    = linspace(-gratingRadius,gratingRadius,L);
-[X,Y]                 = meshgrid(xx);
-r                     = sqrt( X.^2 + Y.^2 );
-w2D                   = zeros(L);
-w2D(r<=gratingRadius) = interp1(xx,w1D,r(r<=gratingRadius)); % 2D hanning window
-
-% Generate grating texture
-% Compute each frame of the movie and convert those frames stored in
-% MATLAB matrices, into Psychtoolbox OpenGL textures using 'MakeTexture'
-tex                   = zeros(nFramesInCycle,1);
-for jFrame            = 1:nFramesInCycle
-    phase             = (jFrame / nFramesInCycle) * 2 * pi; % Change the phase of the grating according to the framenumber
-    m                 = sin(sqrt(x.^2+y.^2) / f + phase); % Formula sinusoidal
-    grating           = (w2D.*(inc*m)+gray);
-    % inc*m fluctuates from [-gray, gray]. Multiply this with the
-    % hanning mask to let the grating die off at 0
-    tex(jFrame)       = Screen('MakeTexture', ptbWindow, grating);
-end
 
 % Set duration
 movieDurationSecs = 2;
@@ -235,6 +212,54 @@ gratingPosition = CenterRectOnPointd(gratingDim, gratingXpos, gratingYpos); % Mo
 % Use realtime priority for better timing precision
 priorityLevel = MaxPriority(ptbWindow);
 Priority(priorityLevel);
+
+%% Generate grating textures
+% Generate stimulus
+[x,y]                           = meshgrid(-gratingRadius:gratingRadius,-gratingRadius:gratingRadius);
+f                               = 0.55*2*pi; % Period of the grating
+
+% Circular hanning mask
+L                               = 2*gratingRadius+1;
+w1D                             = hann(L); % 1D hann window
+xx                              = linspace(-gratingRadius,gratingRadius,L);
+[X,Y]                           = meshgrid(xx);
+r                               = sqrt( X.^2 + Y.^2 );
+w2D                             = zeros(L);
+w2D(r<=gratingRadius)           = interp1(xx,w1D,r(r<=gratingRadius)); % 2D hanning window
+
+% Tapering mask for the high contrast condition
+[rows, cols]                    = size(x);
+radius                          = sqrt(x.^2 + y.^2); % Distance from the center
+maxRadius                       = gratingRadius; % Maximum radius of the grating
+taperStart                      = maxRadius * 0.25; % Start tapering at 50% of the grating radius
+taperMask                       = 0.5 * (1 + cos(pi * (radius - taperStart) / (maxRadius - taperStart)));
+taperMask(radius <= taperStart) = 1; % Flat region in the center
+taperMask(radius > maxRadius)   = 0; % Fully tapered outside the grating
+% The mask is created based on the radial distance (radius) from the center
+% of the grating. The cosine taper smoothly declines the intensity starting
+% at 50% of the grating size (taperStart) and reaches zero at the maximum radius.
+
+% Compute each frame of the movie and convert those frames stored in
+% MATLAB matrices, into Psychtoolbox OpenGL textures using 'MakeTexture'
+tex                             = zeros(nFramesInCycle,1);
+for jFrame = 1:nFramesInCycle
+    phase                       = (jFrame / nFramesInCycle) * 2 * pi; % Change the phase of the grating according to frame number
+    m                           = sin(sqrt(x.^2 + y.^2) / f + phase); % Formula for sinusoidal grating
+    
+    % Low contrast grating
+    grating_lc                  = (w2D .* (inc * m) + gray) * 0.5;
+    % inc*m fluctuates from [-gray, gray]. Multiply this with the
+    % hanning mask to let the grating die off at 0
+    
+    % High contrast grating
+    grating_hc                  = (w2D .* (inc * m) + gray);
+    % Multiply by taperMask to gradually fade grating towards gray background color (64)
+    grating_hc                  = grating_hc .* taperMask + (gray/2) * (1 - taperMask); 
+    
+    % Create textures for low and high contrast gratings
+    tex_lc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_lc);
+    tex_hc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_hc);
+end
 
 %% Create data structure for preallocating data
 data                             = struct;
@@ -319,7 +344,7 @@ for trl = 1:exp.nTrials
 
     %% Present fixation cross (red for task condition)
     % Fill gray screen
-    Screen('FillRect', ptbWindow, gray);
+    Screen('FillRect', ptbWindow, backgroundColorGray);
     Screen('Flip', ptbWindow);
     % Set jittered trial-specific durations for CFIs
     timing.cfi(trl) = (randsample(timing.cfilower:timing.cfiupper, 1))/1000; % Randomize the jittered central fixation interval on trial
@@ -404,13 +429,14 @@ for trl = 1:exp.nTrials
     % Draw gratings depending on gratingSequence
     while (GetSecs - probeStartTime) < maxProbeDuration
         if gratingSequence(trl) == 1 % low contrast concentric dynamic inward
-            Screen('DrawTexture', ptbWindow, tex(whileCount), [], gratingPosition);
+            Screen('DrawTexture', ptbWindow, tex_lc(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         elseif gratingSequence(trl) == 2 % high contrast concentric dynamic inward
-            Screen('DrawTexture', ptbWindow, tex(whileCount), [], gratingPosition);
+            Screen('DrawTexture', ptbWindow, tex_hc(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         end
         screenshot(sprintf('GCP_screenshot_%s.png', gratingForm), ptbWindow, enableScreenshots);
+        
         % Check for participant response
         if ~responseGiven
             [keyIsDown, responseTime, keyCode] = KbCheck;
