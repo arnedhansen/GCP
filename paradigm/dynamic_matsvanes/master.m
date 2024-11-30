@@ -30,7 +30,7 @@ screenSettings % Manage screens
 
 %% Collect ID and Age
 % dialogID;
-subject.ID = 999; % Set to 999 for tests
+subject.ID = 991; % Set to 991 for tests
 
 %% Protect Matlab code from participant keyboard input
 ListenChar(2);

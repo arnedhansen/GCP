@@ -79,6 +79,9 @@ else
     exp.nTrials = exp.nTrlTask;
 end
 
+% Enable (=1) or disable (=0) screenshots
+enableScreenshots = 0;
+
 %% Set up text parameters
 % Define startExperimentText
 startExperimentText = [
@@ -325,18 +328,8 @@ for trl = 1:exp.nTrials
         if data.redCross(trl) == 0 % No task condition
             Screen('DrawLines', ptbWindow, fixCoords,fixationLineWidth,fixationColor0,[screen.centerX screen.centerY],2);
             Screen('Flip', ptbWindow);
+            screenshot('GCP_screenshot_blackcross.png', ptbWindow, enableScreenshots);
             TRIGGER = FIXCROSSB;
-
-
-
-        % Take screenshot of current screen
-        screenshotFilename = 'GCP_screenshot_blackcross.png';
-        imageArray = Screen('GetImage', ptbWindow);
-        imwrite(imageArray, screenshotFilename);
-        
-
-
-
             if TRAINING == 1
                 Eyelink('Message', num2str(TRIGGER));
                 Eyelink('command', 'record_status_message "FIXCROSS"');
@@ -350,16 +343,7 @@ for trl = 1:exp.nTrials
             Screen('DrawLines', ptbWindow, fixCoords,fixationLineWidth,fixationColor1,[screen.centerX screen.centerY],2);
             Screen('Flip', ptbWindow);
             TRIGGER = FIXCROSSR;
-
-
-
-        % Take screenshot of current screen
-        screenshotFilename = 'GCP_screenshot_redcross.png';
-        imageArray = Screen('GetImage', ptbWindow);
-        imwrite(imageArray, screenshotFilename);
-
-
-
+            screenshot('GCP_screenshot_redcross.png', ptbWindow, enableScreenshots);
             if TRAINING == 1
                 Eyelink('Message', num2str(TRIGGER));
                 Eyelink('command', 'record_status_message "FIXCROSS"');
@@ -426,12 +410,7 @@ for trl = 1:exp.nTrials
             Screen('DrawTexture', ptbWindow, tex(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         end
-
-        % Take screenshot of current screen
-        screenshotFilename = sprintf('GCP_screenshot_%s.png', gratingForm);
-        imageArray = Screen('GetImage', ptbWindow);
-        imwrite(imageArray, screenshotFilename);
-
+        screenshot(sprintf('GCP_screenshot_%s.png', gratingForm), ptbWindow, enableScreenshots);
         % Check for participant response
         if ~responseGiven
             [keyIsDown, responseTime, keyCode] = KbCheck;
