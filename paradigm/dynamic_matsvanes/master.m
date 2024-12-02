@@ -12,7 +12,6 @@
 clear all;
 close all;
 clc;
-rootFilepath = pwd; % Retrieve the present working directory
 
 % Define paths
 PPDEV_PATH = '/home/methlab/Documents/MATLAB/ppdev-mex-master'; % For sending EEG triggers
@@ -50,7 +49,7 @@ TRAINING = 0;
 TASK = 'GCP';
 if isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_GCP_block4.mat']])
     disp('BLOCK 4 DATA ALREADY EXISTS');
-    return
+    start = 5;
 elseif isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_GCP_block3.mat']])
     disp('BLOCK 3 DATA ALREADY EXISTS');
     start = 4;

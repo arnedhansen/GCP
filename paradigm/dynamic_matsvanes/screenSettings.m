@@ -26,14 +26,11 @@ white = WhiteIndex(whichScreen);
 black = BlackIndex(whichScreen);
 gray = round((white+black)/2);
 
-% photo diode
+% Photo diode
 % define the background and diode stimulus
 backColor = [0, 0, 0]; % black
-stimColor = [1500, 1500, 1500]; % white
+stimColor = [255, 255, 255]; % [1500, 1500, 1500]; % white
 backDiameter = 35;
 stimDiameter = 33;
 backPos = [4, screenHeight - 20]; % 40 for test, has to be 4 afterwards
 stimPos = [4, screenHeight - 20]; % 40 for test, has to be 4 afterwards
-
-
-
