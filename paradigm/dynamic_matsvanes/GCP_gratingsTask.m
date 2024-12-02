@@ -118,10 +118,6 @@ spaceKeyCode = KbName('Space');
 %% Imaging set up
 screen.ID = whichScreen; % Get index for stimulus presentation screen
 
-% Find the color values which correspond to white and black(black = 0; white = 255)
-white = WhiteIndex(screen.ID);
-black = BlackIndex(screen.ID);
-gray  = round((white+black)/2);
 if gray == white % Ensure well defined gray, even on floating point framebuffers
     gray = white / 2; 
 end
@@ -158,12 +154,9 @@ Screen('BlendFunction', ptbWindow, 'GL_SRC_ALPHA', 'GL_ONE_MINUS_SRC_ALPHA');
 
 %% Text parameters
 Screen('TextSize', ptbWindow, 25); % Font size for instructions and stimuli
-color.textVal = white;
-color.black   = black;
-color.white   = white;
 
 % Show loading text
-DrawFormattedText(ptbWindow,loadingText,'center','center',color.textVal);
+DrawFormattedText(ptbWindow,loadingText,'center','center',black);
 Screen('Flip',ptbWindow);
 
 %% Fixation cross parameters 
@@ -278,7 +271,7 @@ data.trlDuration(1:exp.nTrials)  = NaN; % Trial duration in seconds
 count5trials                     = NaN; % Initialize accuracy reminder loop variable
 
 %% Show task instruction text
-DrawFormattedText(ptbWindow,startExperimentText,'center','center',color.textVal);
+DrawFormattedText(ptbWindow, startExperimentText, 'center', 'center', black);
 Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1); % black background for photo diode
 Screen('Flip',ptbWindow);
 clc;
@@ -480,14 +473,14 @@ for trl = 1:exp.nTrials
     %% Feedback for training block and CW output
     % Give feedback in training block
     if TRAINING == 1
-        DrawFormattedText(ptbWindow,feedbackText,'center','center',color.black);
+        DrawFormattedText(ptbWindow,feedbackText,'center','center',black);
         Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
         Screen('Flip',ptbWindow);
         WaitSecs(2);
         % Give feedback for no response (too slow)
     elseif TRAINING == 0 && data.correct(trl) == 0 && data.responses(trl) == 0
         feedbackText = 'TOO SLOW! ';
-        DrawFormattedText(ptbWindow,feedbackText,'center','center',color.black);
+        DrawFormattedText(ptbWindow,feedbackText,'center','center',black);
         Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
         Screen('Flip',ptbWindow);
         WaitSecs(2);
@@ -504,7 +497,7 @@ for trl = 1:exp.nTrials
                 '\n\n ' ...
                 '\n\n Please stay focused on the task!'];
             disp(['Participant was made aware of low accuracy in the last 10 trials: ' num2str(percentLastTrialsCorrect) ' %. [' num2str(responsesLastTrials) ']']);
-            DrawFormattedText(ptbWindow,feedbackLastTrials,'center','center',color.white);
+            DrawFormattedText(ptbWindow,feedbackLastTrials,'center','center',black);
             Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
             Screen('Flip',ptbWindow);
             WaitSecs(3);
@@ -657,7 +650,7 @@ else
         '\n\n Press any key to start the break.'];
 end
 
-DrawFormattedText(ptbWindow,breakInstructionText,'center','center',color.textVal);
+DrawFormattedText(ptbWindow,breakInstructionText,'center','center',black);
 Screen('Flip',ptbWindow);
 waitResponse = 1;
 while waitResponse
@@ -669,10 +662,10 @@ end
 if BLOCK == 4 && TRAINING == 0
     FinalText = ['You are done.' ...
         '\n\n Have a great day!'];
-    DrawFormattedText(ptbWindow, FinalText, 'center', 'center', color.textVal);
+    DrawFormattedText(ptbWindow, FinalText, 'center', 'center', black);
 elseif BLOCK == 1 && TRAINING == 0 || BLOCK == 2 && TRAINING == 0 || BLOCK == 3 && TRAINING == 0
     breakText = 'Enjoy your break...';
-    DrawFormattedText(ptbWindow, breakText, 'center', 'center', color.textVal);
+    DrawFormattedText(ptbWindow, breakText, 'center', 'center', black);
 end
 Screen('Flip',ptbWindow);
 

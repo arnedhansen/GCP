@@ -21,7 +21,7 @@ SetResolution(whichScreen, screenWidth, screenHeight, []);
 Screen('ConfigureDisplay', 'Scanout', whichScreen, 0, [], [], refreshRate); % refresh rate of 100hz (only for Linux)
 par.BGcolor = 192;
 
-% Set screen background color
+% Find the color values which correspond to white, black (black = 0; white = 255) and gray
 white = WhiteIndex(whichScreen);
 black = BlackIndex(whichScreen);
 gray = round((white+black)/2);
