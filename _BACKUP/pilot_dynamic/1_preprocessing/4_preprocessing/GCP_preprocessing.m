@@ -12,13 +12,13 @@ folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
 
 %% Read data, segment and convert to FieldTrip data structure
-for subj = 1%:length(subjects)
+for subj = 1:length(subjects)
     clearvars -except subjects subj path
     datapath = strcat(path,subjects{subj});
     cd(datapath)
 
     %% Read blocks
-    for block = 1:4
+    for block = 1:2
         try % Do not load emtpy blocks
             load(strcat(subjects{subj}, '_EEG_ET_GCP_block',num2str(block),'_merged.mat'))
             alleeg{block} = EEG;
@@ -30,7 +30,7 @@ for subj = 1%:length(subjects)
     %% Segment data into epochs -2s before and 3.5s after stim onset and
     %  convert to Fieldtrip data structure
     epoch_window = [-2 3.5];
-    for block = 1:4
+    for block = 1:2
         % 21 = trigger for presentation of low contrast horizontal
         % 22 = trigger for presentation of high contrast horizontal
         % 31 = trigger for presentation of low contrast vertical
