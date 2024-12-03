@@ -60,8 +60,10 @@ for subjects = 1 : length(subjectIDs)
                 end
                 % End trigger
                 endTrigger = startTrigger + 60;
+
                 %% Merge files
-                EEG = pop_importeyetracker(EEG, ETfile,[startTrigger endTrigger],[2 3 4],{'L_GAZE_X', 'L_GAZE_Y', 'L_AREA'},1,1,1,0);
+                EEG = pop_importeyetracker(EEG, ETfile,[startTrigger endTrigger],[2 3 4],{'L_GAZE_X', 'L_GAZE_Y', 'L_AREA', 'R_GAZE_X', 'R_GAZE_Y', 'R_AREA'},1,1,1,0);
+
                 %% Save to disk
                 if strcmp(task, 'Resting_EEG.mat') == 1
                     fileName = [char(subjectID) '_EEG_ET_RestingEO_merged'];
