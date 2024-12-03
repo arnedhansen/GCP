@@ -46,7 +46,7 @@ for id = 1 : length(ids)
                     etfile = [id, '_Resting_ET.mat'];
                 else
                     task = 'Training';
-                    eegfile = '';
+                    break
                 end
             else
                 task = 'GCP';
