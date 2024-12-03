@@ -108,7 +108,62 @@ title('Power Spectrum', 'FontSize', 30);
 hold off;
 
 % Save the plot
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_eeg_gamma_powspctrm.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_eeg_gamma_powspctrm_baselined.png');
+
+%% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
+gapow_LOW = gapow_lc; % Non-baselined low-contrast data
+gapow_HIGH = gapow_hc; % Non-baselined high-contrast data
+gapow_BASELINE_PERIOD_LOW = gapow_lc_baseline_period; % Baseline-period low-contrast data
+gapow_BASELINE_PERIOD_HIGH = gapow_hc_baseline_period; % Baseline-period high-contrast data
+
+% Preallocate arrays for percentage change
+percent_change_LOW = gapow_LOW;
+percent_change_HIGH = gapow_HIGH;
+
+% Percentage change formula: ((stimulus - baseline) / baseline) * 100
+percent_change_LOW.powspctrm = ((gapow_LOW.powspctrm - gapow_BASELINE_PERIOD_LOW.powspctrm) ./ gapow_BASELINE_PERIOD_LOW.powspctrm) * 100;
+percent_change_HIGH.powspctrm = ((gapow_HIGH.powspctrm - gapow_BASELINE_PERIOD_HIGH.powspctrm) ./ gapow_BASELINE_PERIOD_HIGH.powspctrm) * 100;
+
+close all;
+figure;
+set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
+colors = {'b', 'r'};
+conditions = {'Low Contrast', 'High Contrast'};
+cfg = [];
+cfg.channel = channels;
+cfg.figure = 'gcf';
+cfg.linecolor = 'br';
+cfg.linewidth = 1;
+
+% Plot for low and high contrast
+ft_singleplotER(cfg, percent_change_LOW, percent_change_HIGH);
+hold on;
+
+% Add shaded error bars
+channels_seb = ismember(percent_change_LOW.label, cfg.channel);
+lceb = shadedErrorBar(percent_change_LOW.freq, mean(percent_change_LOW.powspctrm(channels_seb, :), 1), std(percent_change_LOW.powspctrm(channels_seb, :))/sqrt(size(percent_change_LOW.powspctrm(channels_seb, :), 1)), {'b', 'markerfacecolor', 'b'});
+hceb = shadedErrorBar(percent_change_HIGH.freq, mean(percent_change_HIGH.powspctrm(channels_seb, :), 1), std(percent_change_HIGH.powspctrm(channels_seb, :))/sqrt(size(percent_change_HIGH.powspctrm(channels_seb, :), 1)), {'r', 'markerfacecolor', 'r'});
+transparency = 0.5;
+set(lceb.patch, 'FaceAlpha', transparency);
+set(hceb.patch, 'FaceAlpha', transparency);
+
+% Adjust plot aesthetics
+set(gcf,'color','w');
+set(gca,'Fontsize',20);
+[~, channel_idx] = ismember(channels, percent_change_LOW.label);
+freq_idx = find(percent_change_LOW.freq >= 30 & percent_change_LOW.freq <= 90); % Adjust freq range to gamma
+max_spctrm = max([mean(percent_change_LOW.powspctrm(channel_idx, freq_idx), 2); mean(percent_change_HIGH.powspctrm(channel_idx, freq_idx), 2)]);
+ylim([-max_spctrm max_spctrm]) % Adjust y-axis range for percentage change
+xlim([30 90]) % Gamma frequency range
+box on;
+xlabel('Frequency [Hz]');
+ylabel('Percentage Change [%]');
+legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
+title('Percentage Change Power Spectrum', 'FontSize', 30);
+hold off;
+
+% Save the plot
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_eeg_gamma_powspctrm_percentage.png');
 
 %% Plot and save INDIVIDUAL power spectra
 for subj = 1:length(subjects)
