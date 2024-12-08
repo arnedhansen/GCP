@@ -100,7 +100,7 @@ freq_idx = find(gapow_LOW.freq >= 30 & gapow_LOW.freq <= 90); % Adjust freq rang
 max_spctrm = max([mean(gapow_LOW.powspctrm(channel_idx, freq_idx), 2); mean(gapow_HIGH.powspctrm(channel_idx, freq_idx), 2)]);
 ylim([-1 1])
 xlim([30 90])
-box on;
+
 xlabel('Frequency [Hz]');
 ylabel('Power [dB]');
 legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
@@ -147,15 +147,28 @@ transparency = 0.5;
 set(lceb.patch, 'FaceAlpha', transparency);
 set(hceb.patch, 'FaceAlpha', transparency);
 
+% Extract stats for gamma peak power and frequency
+% Find gamma peak for low contrast
+lc_gamma_power = mean(percent_change_LOW.powspctrm(channels_seb, freq_idx), 1);
+[lc_peak_amp, lc_peak_idx] = max(lc_gamma_power);
+lc_peak_freq = percent_change_LOW.freq(freq_idx(lc_peak_idx));
+
+% Find gamma peak for high contrast
+hc_gamma_power = mean(percent_change_HIGH.powspctrm(channels_seb, freq_idx), 1);
+[hc_peak_amp, hc_peak_idx] = max(hc_gamma_power);
+hc_peak_freq = percent_change_HIGH.freq(freq_idx(hc_peak_idx));
+
 % Adjust plot aesthetics
+yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5);
+plot([0 lc_peak_freq], [lc_peak_amp lc_peak_amp], '--', 'Color', 'b', 'LineWidth', 0.5);
+plot([lc_peak_freq lc_peak_freq], [-100 lc_peak_amp], '--', 'Color', 'b', 'LineWidth', 0.5);
+plot([0 hc_peak_freq], [hc_peak_amp hc_peak_amp], '--', 'Color', 'r', 'LineWidth', 0.5);
+plot([hc_peak_freq hc_peak_freq], [-100 hc_peak_amp], '--', 'Color', 'r', 'LineWidth', 0.5);
 set(gcf,'color','w');
 set(gca,'Fontsize',20);
-[~, channel_idx] = ismember(channels, percent_change_LOW.label);
-freq_idx = find(percent_change_LOW.freq >= 30 & percent_change_LOW.freq <= 90); % Adjust freq range to gamma
-max_spctrm = max([mean(percent_change_LOW.powspctrm(channel_idx, freq_idx), 2); mean(percent_change_HIGH.powspctrm(channel_idx, freq_idx), 2)]);
-ylim([-max_spctrm max_spctrm]) % Adjust y-axis range for percentage change
+max_spctrm = max(lc_peak_amp, hc_peak_amp);
+ylim([-max_spctrm*1.2 max_spctrm*1.2]);
 xlim([30 90]) % Gamma frequency range
-box on;
 xlabel('Frequency [Hz]');
 ylabel('Percentage Change [%]');
 legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
@@ -166,6 +179,8 @@ hold off;
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_eeg_gamma_powspctrm_percentage.png');
 
 %% Plot and save INDIVIDUAL power spectra
+output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
+
 for subj = 1:length(subjects)
     close all;
     figure;
@@ -187,21 +202,41 @@ for subj = 1:length(subjects)
 
     % Add shaded error bars
     channels_seb = ismember(pow_lc_subj.label, cfg.channel);
-    lceb = shadedErrorBar(pow_lc_subj.freq, mean(pow_lc_subj.powspctrm(channels_seb, :), 1), std(pow_lc_subj.powspctrm(channels_seb, :))/sqrt(size(pow_lc_subj.powspctrm(channels_seb, :), 1)), {'b', 'markerfacecolor', 'b'});
-    hceb = shadedErrorBar(pow_hc_subj.freq, mean(pow_hc_subj.powspctrm(channels_seb, :), 1), std(pow_hc_subj.powspctrm(channels_seb, :))/sqrt(size(pow_hc_subj.powspctrm(channels_seb, :), 1)), {'r', 'markerfacecolor', 'r'});
+    lceb = shadedErrorBar(pow_lc_subj.freq, mean(pow_lc_subj.powspctrm(channels_seb, :), 1), ...
+        std(pow_lc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_lc_subj.powspctrm(channels_seb, :), 1)), {'b', 'markerfacecolor', 'b'});
+    hceb = shadedErrorBar(pow_hc_subj.freq, mean(pow_hc_subj.powspctrm(channels_seb, :), 1), ...
+        std(pow_hc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_hc_subj.powspctrm(channels_seb, :), 1)), {'r', 'markerfacecolor', 'r'});
     transparency = 0.5;
     set(lceb.patch, 'FaceAlpha', transparency);
     set(hceb.patch, 'FaceAlpha', transparency);
 
+    % Extract stats for gamma peak power and frequency
+    % Find gamma peak for low contrast
+    lc_gamma_power = mean(pow_lc_subj.powspctrm(channels_seb, freq_idx), 1);
+    [lc_peak_amp, lc_peak_idx] = max(lc_gamma_power);
+    lc_peak_freq = pow_lc_subj.freq(freq_idx(lc_peak_idx));
+
+    % Find gamma peak for high contrast
+    hc_gamma_power = mean(pow_hc_subj.powspctrm(channels_seb, freq_idx), 1);
+    [hc_peak_amp, hc_peak_idx] = max(hc_gamma_power);
+    hc_peak_freq = pow_hc_subj.freq(freq_idx(hc_peak_idx));
+
+    % Save results
+    gamma_power_frequency(subj).subject = subjects{subj};
+    gamma_power_frequency(subj).low_contrast_amp = lc_peak_amp;
+    gamma_power_frequency(subj).low_contrast_freq = lc_peak_freq;
+    gamma_power_frequency(subj).high_contrast_amp = hc_peak_amp;
+    gamma_power_frequency(subj).high_contrast_freq = hc_peak_freq;
+
     % Adjust plot aesthetics
-    set(gcf,'color','w');
-    set(gca,'Fontsize',20);
-    [~, channel_idx] = ismember(channels, pow_lc_subj.label);
-    freq_idx = find(pow_lc_subj.freq >= 30 & pow_lc_subj.freq <= 80); % Adjust freq range to gamma
-    max_spctrm = max([mean(pow_lc_subj.powspctrm(channel_idx, freq_idx), 2); mean(pow_hc_subj.powspctrm(channel_idx, freq_idx), 2)]);
-    ylim([0 max_spctrm*1.05]);
+    set(gca, 'FontSize', 20);
+    plot([0 lc_peak_freq], [lc_peak_amp lc_peak_amp], '--', 'Color', 'b', 'LineWidth', 0.5);
+    plot([lc_peak_freq lc_peak_freq], [-100 lc_peak_amp], '--', 'Color', 'b', 'LineWidth', 0.5);
+    plot([0 hc_peak_freq], [hc_peak_amp hc_peak_amp], '--', 'Color', 'r', 'LineWidth', 0.5);
+    plot([hc_peak_freq hc_peak_freq], [-100 hc_peak_amp], '--', 'Color', 'r', 'LineWidth', 0.5);
+    max_spctrm = max(lc_peak_amp, hc_peak_amp);
+    ylim([-max_spctrm*1.2 max_spctrm*1.2]);
     xlim([30 90]);
-    box on;
     xlabel('Frequency [Hz]');
     ylabel('Power [dB]');
     legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
@@ -209,15 +244,23 @@ for subj = 1:length(subjects)
     hold off;
 
     % Save individual plot
-    saveas(gcf, sprintf('/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_eeg_gamma_powspctrm_subj%s.png', subjects{subj}));
+    save_path = fullfile(output_dir, sprintf('GCP_eeg_gamma_powspctrm_subj%s.png', subjects{subj}));
+    saveas(gcf, save_path);
+
 end
 
+% Save results to a .mat file for later analysis
+save_path = fullfile(sprintf('/Volumes/methlab/Students/Arne/GCP/data/features/%s/eeg/gamma_power_frequency.mat', subjects{subj}));
+save(save_path, 'gamma_power_frequency');
+
 %% Subplot with all INDIVIDUAL plots
-figure;
-set(gcf, 'Position', [0, 0, 1600, 1600], 'Color', 'w');
+output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
 num_subs = length(subjects);
 cols = 5;  % Number of columns
-rows = 2; % Number of rows
+rows = ceil(num_subs / cols); % Number of rows dynamically calculated
+
+figure;
+set(gcf, 'Position', [0, 0, 1600, 1200], 'Color', 'w'); % Adjust overall figure size
 
 for subj = 1:num_subs
     % Create subplot for each subject
@@ -242,13 +285,12 @@ for subj = 1:num_subs
     transparency = 0.5;
 
     % Adjust plot aesthetics
-    set(gca, 'Fontsize', 12);
+    set(gca, 'FontSize', 12);
     [~, channel_idx] = ismember(channels, pow_lc_subj.label);
     freq_idx = find(pow_lc_subj.freq >= 30 & pow_lc_subj.freq <= 80); % Adjust freq range to gamma
     max_spctrm = max([mean(pow_lc_subj.powspctrm(channel_idx, freq_idx), 2); mean(pow_hc_subj.powspctrm(channel_idx, freq_idx), 2)]);
-    ylim([-max_spctrm*1.05 max_spctrm*1.05]);
+    ylim([-max_spctrm*1.15 max_spctrm*1.15]);
     xlim([30 90]);
-    box on;
     xlabel('Freq [Hz]', 'FontSize', 10);
     ylabel('Power [dB]', 'FontSize', 10);
     title(sprintf('Subj %s', subjects{subj}), 'FontSize', 12);
@@ -256,4 +298,5 @@ for subj = 1:num_subs
 end
 
 % Save the combined figure with all subplots
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_eeg_gamma_powspctrm_all_subjects_subplot.png');
+save_path = fullfile(output_dir, 'GCP_eeg_gamma_powspctrm_all_subjects_subplot.png');
+saveas(gcf, save_path);

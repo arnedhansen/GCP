@@ -67,10 +67,8 @@ channels = occ_channels;
 %% Plot GRAND AVERAGE topoplots for LOW, HIGH and DIFFERENCE
 close all
 % Define data for coditions
-% gapow_LOW = gapow_lc_baselined;
-% gapow_HIGH = gapow_hc_baselined;
-gapow_LOW  = pow_lc_baselined{1}
-gapow_HIGH = pow_hc_baselined{1}
+gapow_LOW = gapow_lc_baselined;
+gapow_HIGH = gapow_hc_baselined;
 
 % Common configuration
 cfg = [];
@@ -132,7 +130,7 @@ cfg             = [];
 load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
 cfg.layout = layANThead;
 cfg.comment     = 'no';
-cfg.channels = channels;
+%cfg.channels = channels;
 cfg.gridscale   = 300;
 cfg.figure      = 'gcf';
 cfg.xlim = [30 90];

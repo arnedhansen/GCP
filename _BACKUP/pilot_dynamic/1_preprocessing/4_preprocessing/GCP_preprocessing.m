@@ -1,6 +1,7 @@
 %% Preprocessing GCP
 
 %% Setup
+startup
 clear
 addpath('/Users/Arne/Documents/matlabtools/eeglab2024.2');
 eeglab
