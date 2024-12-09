@@ -116,7 +116,7 @@ for subj = 1:length(subjects)
     mkdir(savepath)
     cd(savepath)
     save gaze_matrix_trial subj_data_gaze_trial_lc subj_data_gaze_trial_hc
-    save gaze_matrix subj_data_gaze
+    save gaze_matrix_subj subj_data_gaze
     save gaze_dev lc_gdev hc_gdev
     save pupil_size lc_pups hc_pups
     save ms_rate lc_msrate hc_msrate

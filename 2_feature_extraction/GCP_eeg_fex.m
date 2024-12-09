@@ -145,7 +145,7 @@ for subj = 1:length(subjects)
     savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
     mkdir(savepath)
     cd(savepath)
-    save eeg_matrix subj_data_eeg
+    save eeg_matrix_subj subj_data_eeg
     save pow lc_pow hc_pow
     save freq lc_freq hc_freq
     
