@@ -41,17 +41,16 @@ for subj = 1:length(subjects)
 end
 
 %% Compute grand averages
-gapow_lc                                        = ft_freqgrandaverage([],pow_lc{subj});
-gapow_lc_baselined                              = ft_freqgrandaverage([],pow_lc_baselined{subj});
-gapow_lc_baseline_period                        = ft_freqgrandaverage([],pow_lc_baseline_period{subj});
-
-gapow_hc                                        = ft_freqgrandaverage([],pow_hc{subj});
-gapow_hc_baselined                              = ft_freqgrandaverage([],pow_hc_baselined{subj});
-gapow_hc_baseline_period                        = ft_freqgrandaverage([],pow_hc_baseline_period{subj});
+gapow_lc                                               = ft_freqgrandaverage([],pow_lc{subj});
+gapow_lc_baselined                                     = ft_freqgrandaverage([],pow_lc_baselined{subj});
+gapow_lc_baseline_period                               = ft_freqgrandaverage([],pow_lc_baseline_period{subj});
+       
+gapow_hc                                               = ft_freqgrandaverage([],pow_hc{subj});
+gapow_hc_baselined                                     = ft_freqgrandaverage([],pow_hc_baselined{subj});
+gapow_hc_baseline_period                               = ft_freqgrandaverage([],pow_hc_baseline_period{subj});
 
 %% Define channels
-subj = 1;
-datapath = strcat(path, subjects{subj}, '/eeg');
+datapath = strcat(path, subjects{1}, '/eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
@@ -63,6 +62,47 @@ for i = 1:length(pow_label.label)
     end
 end
 channels = occ_channels;
+
+%% Extract gamma peak power and frequency
+eeg_data = [];
+
+for subj = 1:length(subjects)
+    % Extract participant data
+    pow_lc_subj = pow_lc_baselined{subj};
+    pow_hc_subj = pow_hc_baselined{subj};
+
+    % Find channels and frequencies of interest
+    channels_idx = ismember(pow_lc_subj.label, channels);
+    freq_idx = find(pow_lc_subj.freq >= 30 & pow_hc_subj.freq <= 90);
+
+    % Find gamma peak for low contrast
+    lc_gamma_power = mean(pow_lc_subj.powspctrm(channels_idx, freq_idx), 1);
+    [lc_pow, lc_peak_idx] = max(lc_gamma_power);
+    lc_freq = pow_lc_subj.freq(freq_idx(lc_peak_idx));
+
+    % Find gamma peak for high contrast
+    hc_gamma_power = mean(pow_hc_subj.powspctrm(channels_idx, freq_idx), 1);
+    [hc_pow, hc_peak_idx] = max(hc_gamma_power);
+    hc_freq = pow_hc_subj.freq(freq_idx(hc_peak_idx));
+
+    % Create across condition structure
+    subject_id = [str2num(subjects{subj}); str2num(subjects{subj})];
+    subj_data_eeg = struct('ID', num2cell(subject_id(1:2)), 'Condition', num2cell([1; 2]), 'Power', num2cell([lc_pow; hc_pow]), 'Frequency', num2cell([lc_freq; hc_freq]));
+
+    % Save data
+    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
+    mkdir(savepath)
+    cd(savepath)
+    save eeg_matrix subj_data_eeg
+    save pow lc_pow hc_pow
+    save freq lc_freq hc_freq
+    clc
+    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
+
+    % Append to the final structure array
+    eeg_data = [eeg_data; subj_data_eeg];
+end
+save /Volumes/methlab/Students/Arne/GCP/data/features/eeg_matrix eeg_data
 
 %% Plot GRAND AVERAGE power spectrum BASELINED
 close all;
@@ -150,23 +190,23 @@ set(hceb.patch, 'FaceAlpha', transparency);
 % Extract stats for gamma peak power and frequency
 % Find gamma peak for low contrast
 lc_gamma_power = mean(percent_change_LOW.powspctrm(channels_seb, freq_idx), 1);
-[lc_peak_amp, lc_peak_idx] = max(lc_gamma_power);
-lc_peak_freq = percent_change_LOW.freq(freq_idx(lc_peak_idx));
+[lc_pow, lc_peak_idx] = max(lc_gamma_power);
+lc_freq = percent_change_LOW.freq(freq_idx(lc_peak_idx));
 
 % Find gamma peak for high contrast
 hc_gamma_power = mean(percent_change_HIGH.powspctrm(channels_seb, freq_idx), 1);
-[hc_peak_amp, hc_peak_idx] = max(hc_gamma_power);
-hc_peak_freq = percent_change_HIGH.freq(freq_idx(hc_peak_idx));
+[hc_pow, hc_peak_idx] = max(hc_gamma_power);
+hc_freq = percent_change_HIGH.freq(freq_idx(hc_peak_idx));
 
 % Adjust plot aesthetics
 yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5);
-plot([0 lc_peak_freq], [lc_peak_amp lc_peak_amp], '--', 'Color', 'b', 'LineWidth', 0.5);
-plot([lc_peak_freq lc_peak_freq], [-100 lc_peak_amp], '--', 'Color', 'b', 'LineWidth', 0.5);
-plot([0 hc_peak_freq], [hc_peak_amp hc_peak_amp], '--', 'Color', 'r', 'LineWidth', 0.5);
-plot([hc_peak_freq hc_peak_freq], [-100 hc_peak_amp], '--', 'Color', 'r', 'LineWidth', 0.5);
+plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
+plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
+plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
+plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
 set(gcf,'color','w');
 set(gca,'Fontsize',20);
-max_spctrm = max(lc_peak_amp, hc_peak_amp);
+max_spctrm = max(lc_pow, hc_pow);
 ylim([-max_spctrm*1.2 max_spctrm*1.2]);
 xlim([30 90]) % Gamma frequency range
 xlabel('Frequency [Hz]');
@@ -210,31 +250,20 @@ for subj = 1:length(subjects)
     set(lceb.patch, 'FaceAlpha', transparency);
     set(hceb.patch, 'FaceAlpha', transparency);
 
-    % Extract stats for gamma peak power and frequency
-    % Find gamma peak for low contrast
-    lc_gamma_power = mean(pow_lc_subj.powspctrm(channels_seb, freq_idx), 1);
-    [lc_peak_amp, lc_peak_idx] = max(lc_gamma_power);
-    lc_peak_freq = pow_lc_subj.freq(freq_idx(lc_peak_idx));
-
-    % Find gamma peak for high contrast
-    hc_gamma_power = mean(pow_hc_subj.powspctrm(channels_seb, freq_idx), 1);
-    [hc_peak_amp, hc_peak_idx] = max(hc_gamma_power);
-    hc_peak_freq = pow_hc_subj.freq(freq_idx(hc_peak_idx));
-
     % Save results
     gamma_power_frequency(subj).subject = subjects{subj};
-    gamma_power_frequency(subj).low_contrast_amp = lc_peak_amp;
-    gamma_power_frequency(subj).low_contrast_freq = lc_peak_freq;
-    gamma_power_frequency(subj).high_contrast_amp = hc_peak_amp;
-    gamma_power_frequency(subj).high_contrast_freq = hc_peak_freq;
+    gamma_power_frequency(subj).low_contrast_amp = lc_pow;
+    gamma_power_frequency(subj).low_contrast_freq = lc_freq;
+    gamma_power_frequency(subj).high_contrast_amp = hc_pow;
+    gamma_power_frequency(subj).high_contrast_freq = hc_freq;
 
     % Adjust plot aesthetics
     set(gca, 'FontSize', 20);
-    plot([0 lc_peak_freq], [lc_peak_amp lc_peak_amp], '--', 'Color', 'b', 'LineWidth', 0.5);
-    plot([lc_peak_freq lc_peak_freq], [-100 lc_peak_amp], '--', 'Color', 'b', 'LineWidth', 0.5);
-    plot([0 hc_peak_freq], [hc_peak_amp hc_peak_amp], '--', 'Color', 'r', 'LineWidth', 0.5);
-    plot([hc_peak_freq hc_peak_freq], [-100 hc_peak_amp], '--', 'Color', 'r', 'LineWidth', 0.5);
-    max_spctrm = max(lc_peak_amp, hc_peak_amp);
+    plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
+    plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
+    plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
+    plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
+    max_spctrm = max(lc_pow, hc_pow);
     ylim([-max_spctrm*1.2 max_spctrm*1.2]);
     xlim([30 90]);
     xlabel('Frequency [Hz]');
@@ -248,10 +277,6 @@ for subj = 1:length(subjects)
     saveas(gcf, save_path);
 
 end
-
-% Save results to a .mat file for later analysis
-save_path = fullfile(sprintf('/Volumes/methlab/Students/Arne/GCP/data/features/%s/eeg/gamma_power_frequency.mat', subjects{subj}));
-save(save_path, 'gamma_power_frequency');
 
 %% Subplot with all INDIVIDUAL plots
 output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
