@@ -18,7 +18,7 @@ for subj = 1 : length(subjects)
     load dataEEG
     load('/Volumes/methlab/Students/Arne/MA/headmodel/ant128lay.mat');
 
-    %% Identify indices of trials belonging to conditions 
+    %% Identify indices of trials belonging to conditions
     ind61 = find(dataEEG_lc.trialinfo == 61);
     ind62 = find(dataEEG_hc.trialinfo == 62);
 
@@ -60,7 +60,7 @@ end
 clc
 disp('POWER ANALYSIS')
 baseline_period = [-0.5 -0.25];
-analysis_period = [0.3 2];
+analysis_period = [0.3 2]; % only start from 300ms after stimulus presentation to exclude evoked activity
 freq_range = [30 90];
 [subjects, path] = setup('GCP');
 
@@ -125,15 +125,17 @@ for subj = 1:length(subjects)
     channels_idx = ismember(pow_lc_baselined.label, channels);
     freq_idx = find(pow_lc_baselined.freq >= 30 & pow_hc_baselined.freq <= 90);
 
-    % Find gamma peak for low contrast
+    % Find gamma peak for LOW contrast
     lc_gamma_power = mean(pow_lc_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [lc_pow, lc_peak_idx] = max(lc_gamma_power);
-    lc_freq = pow_lc_baselined.freq(freq_idx(lc_peak_idx));
+    [peaks, locs] = findpeaks(lc_gamma_power, pow_lc_baselined.freq(freq_idx));
+    [lc_pow, peak_idx] = max(peaks);
+    lc_freq = locs(peak_idx);
 
-    % Find gamma peak for high contrast
+    % Find gamma peak for HIGH contrast
     hc_gamma_power = mean(pow_hc_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [hc_pow, hc_peak_idx] = max(hc_gamma_power);
-    hc_freq = pow_hc_baselined.freq(freq_idx(hc_peak_idx));
+    [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_baselined.freq(freq_idx));
+    [hc_pow, peak_idx] = max(peaks);
+    hc_freq = locs(peak_idx);
 
     % Create across condition structure
     subject_id = [str2num(subjects{subj}); str2num(subjects{subj})];
@@ -146,8 +148,8 @@ for subj = 1:length(subjects)
     save eeg_matrix subj_data_eeg
     save pow lc_pow hc_pow
     save freq lc_freq hc_freq
-    clc
-    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
+    
+    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracted.'])
 
     % Append to the final structure array
     eeg_data = [eeg_data; subj_data_eeg];

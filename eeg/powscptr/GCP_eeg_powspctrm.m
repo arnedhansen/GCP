@@ -6,28 +6,25 @@ clear
 
 %% Load power spectra data
 for subj = 1:length(subjects)
-load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
 
-% Low contrast
-power_lc{subj} = pow_lc;
-power_lc_baselined{subj} = pow_lc_baselined;
-power_lc_baseline_period{subj} = pow_lc_baseline_period;
+    % Low contrast
+    power_lc{subj} = pow_lc;
+    power_lc_baselined{subj} = pow_lc_baselined;
+    power_lc_baseline_period{subj} = pow_lc_baseline_period;
 
-% High contras =
-power_hc{subj} = pow_hc;
-power_hc_baselined{subj} = pow_hc_baselined;
-power_hc_baseline_period{subj} = pow_hc_baseline_period;
+    % High contrast
+    power_hc{subj} = pow_hc;
+    power_hc_baselined{subj} = pow_hc_baselined;
+    power_hc_baseline_period{subj} = pow_hc_baseline_period;
 
 end
 
-%%
-%%
-%%
 %% Compute grand averages
 gapow_lc                                               = ft_freqgrandaverage([],power_lc{subj});
 gapow_lc_baselined                                     = ft_freqgrandaverage([],power_lc_baselined{subj});
 gapow_lc_baseline_period                               = ft_freqgrandaverage([],power_lc_baseline_period{subj});
-       
+
 gapow_hc                                               = ft_freqgrandaverage([],power_hc{subj});
 gapow_hc_baselined                                     = ft_freqgrandaverage([],power_hc_baselined{subj});
 gapow_hc_baseline_period                               = ft_freqgrandaverage([],power_hc_baseline_period{subj});
@@ -129,16 +126,17 @@ transparency = 0.5;
 set(lceb.patch, 'FaceAlpha', transparency);
 set(hceb.patch, 'FaceAlpha', transparency);
 
-% Extract stats for gamma peak power and frequency
-% Find gamma peak for low contrast
+% Find GA gamma peak for LOW contrast
 lc_gamma_power = mean(percent_change_LOW.powspctrm(channels_seb, freq_idx), 1);
-[lc_pow, lc_peak_idx] = max(lc_gamma_power);
-lc_freq = percent_change_LOW.freq(freq_idx(lc_peak_idx));
+[peaks, locs] = findpeaks(lc_gamma_power, percent_change_LOW.freq(freq_idx));
+[lc_pow, peak_idx] = max(peaks);
+lc_freq = locs(peak_idx);
 
-% Find gamma peak for high contrast
+% Find GA gamma peak for HIGH contrast
 hc_gamma_power = mean(percent_change_HIGH.powspctrm(channels_seb, freq_idx), 1);
-[hc_pow, hc_peak_idx] = max(hc_gamma_power);
-hc_freq = percent_change_HIGH.freq(freq_idx(hc_peak_idx));
+[peaks, locs] = findpeaks(hc_gamma_power, percent_change_HIGH.freq(freq_idx));
+[hc_pow, peak_idx] = max(peaks);
+hc_freq = locs(peak_idx);
 
 % Adjust plot aesthetics
 yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5);
@@ -149,7 +147,7 @@ plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
 set(gcf,'color','w');
 set(gca,'Fontsize',20);
 max_spctrm = max(lc_pow, hc_pow);
-ylim([-max_spctrm*1.2 max_spctrm*1.2]);
+ylim([-max_spctrm*1.25 max_spctrm*1.25]);
 xlim([30 90]) % Gamma frequency range
 xlabel('Frequency [Hz]');
 ylabel('Percentage Change [%]');
