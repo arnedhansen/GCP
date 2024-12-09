@@ -1,60 +1,43 @@
 %% GCP Gamma Peak Power and Frequency
 
 %% Setup
+clear
 [subjects, path] = setup('GCP');
 
-%% Load data and convert TFR data to POWSCPTRM (channels x frequency)
-baseline_period = [-0.5 -0.25];
-analysis_period = [0 2];
-freq_range = [30 120];
-
+%% Load power spectra data
 for subj = 1:length(subjects)
-    datapath = strcat(path, subjects{subj}, '/eeg');
-    cd(datapath);
+load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
 
-    % Load data
-    load('data_tfr.mat');
+% Low contrast
+power_lc{subj} = pow_lc;
+power_lc_baselined{subj} = pow_lc_baselined;
+power_lc_baseline_period{subj} = pow_lc_baseline_period;
 
-    %% Select analysis and baseline period data
-    % (1) Analysis period data, no baseline
-    % (2) Analysis period data, baselined
-    % (3) Baseline period data (to compare with (1) non-baselined data for percentage change)
+% High contras =
+power_hc{subj} = pow_hc;
+power_hc_baselined{subj} = pow_hc_baselined;
+power_hc_baseline_period{subj} = pow_hc_baseline_period;
 
-    pow_lc{subj}                                       = select_data(analysis_period, freq_range, tfr_lc);
-    pow_lc_baselined{subj}                             = select_data(analysis_period, freq_range, tfr_lc_bl);
-    pow_lc_baseline_period{subj}                       = select_data(baseline_period, freq_range, tfr_lc);
-
-    pow_hc{subj}                                       = select_data(analysis_period, freq_range, tfr_hc);
-    pow_hc_baselined{subj}                             = select_data(analysis_period, freq_range, tfr_hc_bl);
-    pow_hc_baseline_period{subj}                       = select_data(baseline_period, freq_range, tfr_hc);
-
-    %% Remove time dimension for POWSCPTRM (channels x frequency)
-    pow_lc{subj}                                       = remove_time_dimension(pow_lc{subj});
-    pow_lc_baselined{subj}                             = remove_time_dimension(pow_lc_baselined{subj});
-    pow_lc_baseline_period{subj}                       = remove_time_dimension(pow_lc_baseline_period{subj});
-
-    pow_hc{subj}                                       = remove_time_dimension(pow_hc{subj});
-    pow_hc_baselined{subj}                             = remove_time_dimension(pow_hc_baselined{subj});
-    pow_hc_baseline_period{subj}                       = remove_time_dimension(pow_hc_baseline_period{subj});
-
-    fprintf('Subject %.3d/%.3d loaded \n', subj, length(subjects))
 end
 
+%%
+%%
+%%
 %% Compute grand averages
-gapow_lc                                               = ft_freqgrandaverage([],pow_lc{subj});
-gapow_lc_baselined                                     = ft_freqgrandaverage([],pow_lc_baselined{subj});
-gapow_lc_baseline_period                               = ft_freqgrandaverage([],pow_lc_baseline_period{subj});
+gapow_lc                                               = ft_freqgrandaverage([],power_lc{subj});
+gapow_lc_baselined                                     = ft_freqgrandaverage([],power_lc_baselined{subj});
+gapow_lc_baseline_period                               = ft_freqgrandaverage([],power_lc_baseline_period{subj});
        
-gapow_hc                                               = ft_freqgrandaverage([],pow_hc{subj});
-gapow_hc_baselined                                     = ft_freqgrandaverage([],pow_hc_baselined{subj});
-gapow_hc_baseline_period                               = ft_freqgrandaverage([],pow_hc_baseline_period{subj});
+gapow_hc                                               = ft_freqgrandaverage([],power_hc{subj});
+gapow_hc_baselined                                     = ft_freqgrandaverage([],power_hc_baselined{subj});
+gapow_hc_baseline_period                               = ft_freqgrandaverage([],power_hc_baseline_period{subj});
 
 %% Define channels
 datapath = strcat(path, subjects{1}, '/eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
-pow_label = pow_lc{1, 1};
+pow_label = pow_lc;
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
     if contains(label, {'O'}) || contains(label, {'I'})
@@ -62,47 +45,6 @@ for i = 1:length(pow_label.label)
     end
 end
 channels = occ_channels;
-
-%% Extract gamma peak power and frequency
-eeg_data = [];
-
-for subj = 1:length(subjects)
-    % Extract participant data
-    pow_lc_subj = pow_lc_baselined{subj};
-    pow_hc_subj = pow_hc_baselined{subj};
-
-    % Find channels and frequencies of interest
-    channels_idx = ismember(pow_lc_subj.label, channels);
-    freq_idx = find(pow_lc_subj.freq >= 30 & pow_hc_subj.freq <= 90);
-
-    % Find gamma peak for low contrast
-    lc_gamma_power = mean(pow_lc_subj.powspctrm(channels_idx, freq_idx), 1);
-    [lc_pow, lc_peak_idx] = max(lc_gamma_power);
-    lc_freq = pow_lc_subj.freq(freq_idx(lc_peak_idx));
-
-    % Find gamma peak for high contrast
-    hc_gamma_power = mean(pow_hc_subj.powspctrm(channels_idx, freq_idx), 1);
-    [hc_pow, hc_peak_idx] = max(hc_gamma_power);
-    hc_freq = pow_hc_subj.freq(freq_idx(hc_peak_idx));
-
-    % Create across condition structure
-    subject_id = [str2num(subjects{subj}); str2num(subjects{subj})];
-    subj_data_eeg = struct('ID', num2cell(subject_id(1:2)), 'Condition', num2cell([1; 2]), 'Power', num2cell([lc_pow; hc_pow]), 'Frequency', num2cell([lc_freq; hc_freq]));
-
-    % Save data
-    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
-    mkdir(savepath)
-    cd(savepath)
-    save eeg_matrix subj_data_eeg
-    save pow lc_pow hc_pow
-    save freq lc_freq hc_freq
-    clc
-    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
-
-    % Append to the final structure array
-    eeg_data = [eeg_data; subj_data_eeg];
-end
-save /Volumes/methlab/Students/Arne/GCP/data/features/eeg_matrix eeg_data
 
 %% Plot GRAND AVERAGE power spectrum BASELINED
 close all;
@@ -144,7 +86,7 @@ xlim([30 90])
 xlabel('Frequency [Hz]');
 ylabel('Power [dB]');
 legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
-title('Power Spectrum', 'FontSize', 30);
+title('Grand Average Power Spectrum', 'FontSize', 30);
 hold off;
 
 % Save the plot

@@ -11,6 +11,7 @@ path = '/Volumes/methlab/Students/Arne/GCP/data/merged/';
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
+tic;
 
 %% Read data, segment and convert to FieldTrip data structure
 for subj = 1:length(subjects)
@@ -98,6 +99,7 @@ for subj = 1:length(subjects)
         disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. Loading next subject...'])
     end
 end
+toc;
 
 %% Function to update labels
 function update_labels(data)
