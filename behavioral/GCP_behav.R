@@ -216,7 +216,7 @@ rt_avg |>
   # Add sample size as text
   geom_text(
     data = sample_sizes,
-    aes(x = 700, y = Condition, label = paste("n =", n), color = Condition),
+    aes(x = 710, y = Condition, label = paste("n =", n), color = Condition),
     inherit.aes = FALSE, # Prevent inheriting other aesthetics
     family = "Roboto Mono",
     size = 4,
