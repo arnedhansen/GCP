@@ -7,12 +7,16 @@
 %   Gamma Peak Frequency
 
 %% Setup
+clear
 [subjects, path] = setup('GCP');
 
 %% Extract TFR HIGH CONTRAST
 % Read data, segment and convert to FieldTrip data structure
 for subj = 1 : length(subjects)
     datapath = strcat(path,subjects{subj}, '/eeg');
+    if isfile(strcat([datapath, 'data_tfr.mat'])) % only new data
+        break
+    end
     cd(datapath)
     close all
     load dataEEG
@@ -148,7 +152,7 @@ for subj = 1:length(subjects)
     save eeg_matrix_subj subj_data_eeg
     save pow lc_pow hc_pow
     save freq lc_freq hc_freq
-    
+
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracted.'])
 
     % Append to the final structure array
