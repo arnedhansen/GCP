@@ -14,7 +14,7 @@ subjects = {folders.name};
 tic;
 
 %% Read data, segment and convert to FieldTrip data structure
-for subj = 1:length(subjects)
+for subj = 6:length(subjects)
     clearvars -except subjects subj path
     datapath = strcat(path,subjects{subj});
     cd(datapath)
@@ -40,9 +40,11 @@ for subj = 1:length(subjects)
         try
             EEG_lc = pop_epoch(alleeg{block}, {'61'}, epoch_window);
             data_lc{block} = eeglab2fieldtrip(EEG_lc, 'raw');
+            data_lc{block}.trialinfo = {};
 
             EEG_hc = pop_epoch(alleeg{block}, {'62'}, epoch_window);
             data_hc{block} = eeglab2fieldtrip(EEG_hc, 'raw');
+            data_hc{block}.trialinfo = {};
         end
     end
 
@@ -100,24 +102,3 @@ for subj = 1:length(subjects)
     end
 end
 toc;
-
-%% Function to update labels
-function update_labels(data)
-blocks = size(data);
-for block = 1:blocks
-    if isempty(data{block})
-        break;
-    else
-        try
-            for i = 1:blocks
-                if ~isempty(data{i}.label)
-                    data{block}.label = data{i}.label;
-                    break;
-                end
-            end
-        catch
-            warning('Error occurred while processing block %d in data structure.', block);
-        end
-    end
-end
-end
