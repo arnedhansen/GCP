@@ -77,7 +77,7 @@ set(gca,'Fontsize',20);
 [~, channel_idx] = ismember(channels, gapow_LOW.label);
 freq_idx = find(gapow_LOW.freq >= 30 & gapow_LOW.freq <= 90); % Adjust freq range to gamma
 max_spctrm = max([mean(gapow_LOW.powspctrm(channel_idx, freq_idx), 2); mean(gapow_HIGH.powspctrm(channel_idx, freq_idx), 2)]);
-ylim([-1 1])
+ylim([-1.25 1.25])
 xlim([30 90])
 
 xlabel('Frequency [Hz]');
@@ -217,6 +217,7 @@ for subj = 1:length(subjects)
 end
 
 %% Subplot with all INDIVIDUAL plots
+clsoe all
 output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
 num_subs = length(subjects);
 cols = 5;  % Number of columns
@@ -265,7 +266,8 @@ for subj = 1:num_subs
     plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
     plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
     max_spctrm = max(lc_pow, hc_pow);
-    ylim([-max_spctrm*1.25 max_spctrm*1.25]);
+    ylim([-1.25 1.25])
+    %ylim([-max_spctrm*1.25 max_spctrm*1.25]);
     xlim([30 90]);
     xlabel('Freq [Hz]', 'FontSize', 10);
     ylabel('Power [dB]', 'FontSize', 10);

@@ -61,7 +61,6 @@ end
 
 %% Load data and convert TFR data to POWSCPTRM (channels x frequency)
 clc
-subj = 0;
 disp('POWER ANALYSIS')
 baseline_period = [-0.5 -0.25];
 analysis_period = [0.3 2]; % only start from 300ms after stimulus presentation to exclude evoked activity
@@ -70,38 +69,40 @@ freq_range = [30 90];
 
 for subj = 1 : length(subjects)
     datapath = strcat(path, subjects{subj}, '/eeg');
-    cd(datapath);
+    %if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
+        cd(datapath);
 
-    % Load data
-    load('data_tfr.mat');
+        % Load data
+        load('data_tfr.mat');
 
-    %% Select analysis and baseline period data
-    % (1) Analysis period data, no baseline
-    % (2) Analysis period data, baselined
-    % (3) Baseline period data (to compare with (1) non-baselined data for percentage change)
+        %% Select analysis and baseline period data
+        % (1) Analysis period data, no baseline
+        % (2) Analysis period data, baselined
+        % (3) Baseline period data (to compare with (1) non-baselined data for percentage change)
 
-    pow_lc                                       = select_data(analysis_period, freq_range, tfr_lc);
-    pow_lc_baselined                             = select_data(analysis_period, freq_range, tfr_lc_bl);
-    pow_lc_baseline_period                       = select_data(baseline_period, freq_range, tfr_lc);
+        pow_lc                                       = select_data(analysis_period, freq_range, tfr_lc);
+        pow_lc_baselined                             = select_data(analysis_period, freq_range, tfr_lc_bl);
+        pow_lc_baseline_period                       = select_data(baseline_period, freq_range, tfr_lc);
 
-    pow_hc                                       = select_data(analysis_period, freq_range, tfr_hc);
-    pow_hc_baselined                             = select_data(analysis_period, freq_range, tfr_hc_bl);
-    pow_hc_baseline_period                       = select_data(baseline_period, freq_range, tfr_hc);
+        pow_hc                                       = select_data(analysis_period, freq_range, tfr_hc);
+        pow_hc_baselined                             = select_data(analysis_period, freq_range, tfr_hc_bl);
+        pow_hc_baseline_period                       = select_data(baseline_period, freq_range, tfr_hc);
 
-    %% Remove time dimension for POWSCPTRM (channels x frequency)
-    pow_lc                                       = remove_time_dimension(pow_lc);
-    pow_lc_baselined                             = remove_time_dimension(pow_lc_baselined);
-    pow_lc_baseline_period                       = remove_time_dimension(pow_lc_baseline_period);
+        %% Remove time dimension for POWSCPTRM (channels x frequency)
+        pow_lc                                       = remove_time_dimension(pow_lc);
+        pow_lc_baselined                             = remove_time_dimension(pow_lc_baselined);
+        pow_lc_baseline_period                       = remove_time_dimension(pow_lc_baseline_period);
 
-    pow_hc                                       = remove_time_dimension(pow_hc);
-    pow_hc_baselined                             = remove_time_dimension(pow_hc_baselined);
-    pow_hc_baseline_period                       = remove_time_dimension(pow_hc_baseline_period);
+        pow_hc                                       = remove_time_dimension(pow_hc);
+        pow_hc_baselined                             = remove_time_dimension(pow_hc_baselined);
+        pow_hc_baseline_period                       = remove_time_dimension(pow_hc_baseline_period);
 
-    % Save data
-    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
-    mkdir(savepath)
-    cd(savepath)
-    save power_spectra pow_lc pow_lc_baselined pow_lc_baseline_period pow_hc pow_hc_baselined pow_hc_baseline_period
+        % Save data
+        savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
+        mkdir(savepath)
+        cd(savepath)
+        save power_spectra pow_lc pow_lc_baselined pow_lc_baseline_period pow_hc pow_hc_baselined pow_hc_baseline_period
+    %end
 end
 
 %% Define channels
@@ -120,43 +121,42 @@ channels = occ_channels;
 
 %% Extract gamma peak power and frequency
 eeg_data = [];
-
 for subj = 1:length(subjects)
-    % Load power spectra data
-    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+        % Load power spectra data
+        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
 
-    % Find channels and frequencies of interest
-    channels_idx = ismember(pow_lc_baselined.label, channels);
-    freq_idx = find(pow_lc_baselined.freq >= 30 & pow_hc_baselined.freq <= 90);
+        % Find channels and frequencies of interest
+        channels_idx = ismember(pow_lc_baselined.label, channels);
+        freq_idx = find(pow_lc_baselined.freq >= 30 & pow_hc_baselined.freq <= 90);
 
-    % Find gamma peak for LOW contrast
-    lc_gamma_power = mean(pow_lc_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(lc_gamma_power, pow_lc_baselined.freq(freq_idx));
-    [lc_pow, peak_idx] = max(peaks);
-    lc_freq = locs(peak_idx);
+        % Find gamma peak for LOW contrast
+        lc_gamma_power = mean(pow_lc_baselined.powspctrm(channels_idx, freq_idx), 1);
+        [peaks, locs] = findpeaks(lc_gamma_power, pow_lc_baselined.freq(freq_idx));
+        [lc_pow, peak_idx] = max(peaks);
+        lc_freq = locs(peak_idx);
 
-    % Find gamma peak for HIGH contrast
-    hc_gamma_power = mean(pow_hc_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_baselined.freq(freq_idx));
-    [hc_pow, peak_idx] = max(peaks);
-    hc_freq = locs(peak_idx);
+        % Find gamma peak for HIGH contrast
+        hc_gamma_power = mean(pow_hc_baselined.powspctrm(channels_idx, freq_idx), 1);
+        [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_baselined.freq(freq_idx));
+        [hc_pow, peak_idx] = max(peaks);
+        hc_freq = locs(peak_idx);
 
-    % Create across condition structure
-    subject_id = [str2num(subjects{subj}); str2num(subjects{subj})];
-    subj_data_eeg = struct('ID', num2cell(subject_id(1:2)), 'Condition', num2cell([1; 2]), 'Power', num2cell([lc_pow; hc_pow]), 'Frequency', num2cell([lc_freq; hc_freq]));
+        % Create across condition structure
+        subject_id = [str2num(subjects{subj}); str2num(subjects{subj})];
+        subj_data_eeg = struct('ID', num2cell(subject_id(1:2)), 'Condition', num2cell([1; 2]), 'Power', num2cell([lc_pow; hc_pow]), 'Frequency', num2cell([lc_freq; hc_freq]));
 
-    % Save data
-    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
-    mkdir(savepath)
-    cd(savepath)
-    save eeg_matrix_subj subj_data_eeg
-    save pow lc_pow hc_pow
-    save freq lc_freq hc_freq
+        % Save data
+        savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
+        mkdir(savepath)
+        cd(savepath)
+        save eeg_matrix_subj subj_data_eeg
+        save pow lc_pow hc_pow
+        save freq lc_freq hc_freq
 
-    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracted.'])
+        disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracted.'])
 
-    % Append to the final structure array
-    eeg_data = [eeg_data; subj_data_eeg];
+        % Append to the final structure array
+        eeg_data = [eeg_data; subj_data_eeg];
 end
 save /Volumes/methlab/Students/Arne/GCP/data/features/eeg_matrix eeg_data
 disp('EEG Feature Matrix created')
