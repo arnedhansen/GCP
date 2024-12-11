@@ -98,7 +98,7 @@ title('Grand Average Power Spectrum', 'FontSize', 30);
 hold off;
 
 % Save the plot
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_eeg_gamma_powspctrm_baselined.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_baselined.png');
 
 %% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
 % Percentage change formula: ((stimulus - baseline) / baseline) * 100
@@ -160,9 +160,9 @@ title('Percentage Change Power Spectrum', 'FontSize', 30);
 hold off;
 
 % Save the plot
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_eeg_gamma_powspctrm_percentage.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
 
-%% Plot and save INDIVIDUAL power spectra
+%% Plot INDIVIDUAL power spectra BASELINED
 output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
 
 for subj = 1:length(subjects)
@@ -216,11 +216,11 @@ for subj = 1:length(subjects)
     hold off;
 
     % Save individual plot
-    save_path = fullfile(output_dir, sprintf('GCP_eeg_gamma_powspctrm_subj%s.png', subjects{subj}));
+    save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined.png', subjects{subj}));
     saveas(gcf, save_path);
 end
 
-%% Subplot with all INDIVIDUAL plots
+%% Subplot with all INDIVIDUAL power spectra BASELINED
 close all
 output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
 num_subs = length(subjects);
@@ -283,5 +283,5 @@ for subj = 1:num_subs
 end
 
 % Save the combined figure with all subplots
-save_path = fullfile(output_dir, 'GCP_eeg_gamma_powspctrm_all_subjects_subplot.png');
+save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined.png');
 saveas(gcf, save_path);
