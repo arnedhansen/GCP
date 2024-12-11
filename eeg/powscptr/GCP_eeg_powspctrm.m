@@ -101,18 +101,11 @@ hold off;
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_eeg_gamma_powspctrm_baselined.png');
 
 %% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
-gapow_LOW = gapow_lc; % Non-baselined low-contrast data
-gapow_HIGH = gapow_hc; % Non-baselined high-contrast data
-gapow_BASELINE_PERIOD_LOW = gapow_lc_baseline_period; % Baseline-period low-contrast data
-gapow_BASELINE_PERIOD_HIGH = gapow_hc_baseline_period; % Baseline-period high-contrast data
-
-% Preallocate arrays for percentage change
-percent_change_LOW = gapow_LOW;
-percent_change_HIGH = gapow_HIGH;
-
 % Percentage change formula: ((stimulus - baseline) / baseline) * 100
-percent_change_LOW.powspctrm = ((gapow_LOW.powspctrm - gapow_BASELINE_PERIOD_LOW.powspctrm) ./ gapow_BASELINE_PERIOD_LOW.powspctrm) * 100;
-percent_change_HIGH.powspctrm = ((gapow_HIGH.powspctrm - gapow_BASELINE_PERIOD_HIGH.powspctrm) ./ gapow_BASELINE_PERIOD_HIGH.powspctrm) * 100;
+percent_change_LOW = gapow_lc;
+percent_change_HIGH = gapow_hc;
+percent_change_LOW.powspctrm = ((gapow_lc.powspctrm - gapow_lc_baseline_period.powspctrm) ./ gapow_lc_baseline_period.powspctrm) * 100;
+percent_change_HIGH.powspctrm = ((gapow_hc.powspctrm - gapow_hc_baseline_period.powspctrm) ./ gapow_hc_baseline_period.powspctrm) * 100;
 
 close all;
 figure;
