@@ -1,7 +1,8 @@
 % Load your data into MATLAB, assuming you have converted it to a table format
 close all
-load('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.mat')
-data = struct2table(merged_data);
+data = readtable('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv');
+variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'MSRate', 'GammaPower', 'GammaFreq'};
+
 
 % Split the data by contrast condition
 low_contrast = data(data.Condition == 1, :);
