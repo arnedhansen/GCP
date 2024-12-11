@@ -21,13 +21,13 @@ for subj = 1:length(subjects)
 end
 
 %% Compute grand averages
-gapow_lc                                               = ft_freqgrandaverage([],power_lc{subj});
-gapow_lc_baselined                                     = ft_freqgrandaverage([],power_lc_baselined{subj});
-gapow_lc_baseline_period                               = ft_freqgrandaverage([],power_lc_baseline_period{subj});
+gapow_lc                                               = ft_freqgrandaverage([],power_lc{:});
+gapow_lc_baselined                                     = ft_freqgrandaverage([],power_lc_baselined{:});
+gapow_lc_baseline_period                               = ft_freqgrandaverage([],power_lc_baseline_period{:});
 
-gapow_hc                                               = ft_freqgrandaverage([],power_hc{subj});
-gapow_hc_baselined                                     = ft_freqgrandaverage([],power_hc_baselined{subj});
-gapow_hc_baseline_period                               = ft_freqgrandaverage([],power_hc_baseline_period{subj});
+gapow_hc                                               = ft_freqgrandaverage([],power_hc{:});
+gapow_hc_baselined                                     = ft_freqgrandaverage([],power_hc_baselined{:});
+gapow_hc_baseline_period                               = ft_freqgrandaverage([],power_hc_baseline_period{:});
 
 %% Define channels
 datapath = strcat(path, subjects{1}, '/eeg');
@@ -55,31 +55,42 @@ cfg.figure = 'gcf';
 cfg.linecolor = 'br';
 cfg.linewidth = 1;
 
-% Define data for coditions
-gapow_LOW = gapow_lc_baselined;
-gapow_HIGH = gapow_hc_baselined;
-
 % Plot for low and high contrast
-ft_singleplotER(cfg, gapow_LOW, gapow_HIGH);
+ft_singleplotER(cfg, gapow_lc_baselined, gapow_hc_baselined);
 hold on;
 
 % Add shaded error bars
-channels_seb = ismember(gapow_LOW.label, cfg.channel);
-lceb = shadedErrorBar(gapow_LOW.freq, mean(gapow_LOW.powspctrm(channels_seb, :), 1), std(gapow_LOW.powspctrm(channels_seb, :))/sqrt(size(gapow_LOW.powspctrm(channels_seb, :), 1)), {'b', 'markerfacecolor', 'b'});
-hceb = shadedErrorBar(gapow_HIGH.freq, mean(gapow_HIGH.powspctrm(channels_seb, :), 1), std(gapow_HIGH.powspctrm(channels_seb, :))/sqrt(size(gapow_HIGH.powspctrm(channels_seb, :), 1)), {'r', 'markerfacecolor', 'r'});
+channels_seb = ismember(gapow_lc_baselined.label, cfg.channel);
+lceb = shadedErrorBar(gapow_lc_baselined.freq, mean(gapow_lc_baselined.powspctrm(channels_seb, :), 1), std(gapow_lc_baselined.powspctrm(channels_seb, :))/sqrt(size(gapow_lc_baselined.powspctrm(channels_seb, :), 1)), {'b', 'markerfacecolor', 'b'});
+hceb = shadedErrorBar(gapow_hc_baselined.freq, mean(gapow_hc_baselined.powspctrm(channels_seb, :), 1), std(gapow_hc_baselined.powspctrm(channels_seb, :))/sqrt(size(gapow_hc_baselined.powspctrm(channels_seb, :), 1)), {'r', 'markerfacecolor', 'r'});
 transparency = 0.5;
 set(lceb.patch, 'FaceAlpha', transparency);
 set(hceb.patch, 'FaceAlpha', transparency);
 
+% Find GA gamma peak for LOW contrast
+freq_idx = find(gapow_lc_baselined.freq >= 30 & gapow_lc_baselined.freq <= 90); % Adjust freq range to gamma
+lc_gamma_power = mean(gapow_lc_baselined.powspctrm(channels_seb, freq_idx), 1);
+[peaks, locs] = findpeaks(lc_gamma_power, gapow_lc_baselined.freq(freq_idx));
+[lc_pow, peak_idx] = max(peaks);
+lc_freq = locs(peak_idx);
+
+% Find GA gamma peak for HIGH contrast
+hc_gamma_power = mean(gapow_hc_baselined.powspctrm(channels_seb, freq_idx), 1);
+[peaks, locs] = findpeaks(hc_gamma_power, gapow_hc_baselined.freq(freq_idx));
+[hc_pow, peak_idx] = max(peaks);
+hc_freq = locs(peak_idx);
+
 % Adjust plot aesthetics
+yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5);
+plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
+plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
+plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
+plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
 set(gcf,'color','w');
 set(gca,'Fontsize',20);
-[~, channel_idx] = ismember(channels, gapow_LOW.label);
-freq_idx = find(gapow_LOW.freq >= 30 & gapow_LOW.freq <= 90); % Adjust freq range to gamma
-max_spctrm = max([mean(gapow_LOW.powspctrm(channel_idx, freq_idx), 2); mean(gapow_HIGH.powspctrm(channel_idx, freq_idx), 2)]);
-ylim([-1.25 1.25])
+max_spctrm = max(lc_pow, hc_pow);
+ylim([-max_spctrm*1.25 max_spctrm*1.25]);
 xlim([30 90])
-
 xlabel('Frequency [Hz]');
 ylabel('Power [dB]');
 legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
@@ -217,7 +228,7 @@ for subj = 1:length(subjects)
 end
 
 %% Subplot with all INDIVIDUAL plots
-clsoe all
+close all
 output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
 num_subs = length(subjects);
 cols = 5;  % Number of columns
