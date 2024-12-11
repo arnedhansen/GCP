@@ -273,6 +273,7 @@ for subj = 1:num_subs
     ylim([-1.25 1.25])
     %ylim([-max_spctrm*1.25 max_spctrm*1.25]);
     xlim([30 90]);
+    xticks(30:10:90);
     xlabel('Freq [Hz]', 'FontSize', 10);
     ylabel('Power [dB]', 'FontSize', 10);
     if mod(subj, 5) == 0

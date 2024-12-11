@@ -1,8 +1,13 @@
-% Load the data
+%% 
+
+%% Load the data
 clear
 clc
 close all
 data = readtable('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv');
+%summary(data)
+
+%%
 
 % Extract relevant columns
 IDs = data.ID; % Participant IDs
@@ -20,38 +25,28 @@ cond2_freq = gamma_freq(conditions == 2);
 data_power = {cond1_power, cond2_power};
 data_freq = {cond1_freq, cond2_freq};
 
-% Set colours for the conditions
-colours = [0.2, 0.6, 1; 1, 0.6, 0.2]; % Example colours: blue and orange
-
-% Create Gamma Power plot
+%% make figure
+close all
 figure;
-subplot(1,2,1); % Gamma Power
-h_power = rm_raincloud(data_power, colours, 0, 'ks', 0.3);
-title('Gamma Power Across Conditions');
-ylabel('Gamma Power');
-xlabel('Condition');
-hold on;
+set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
 
-% Add connection lines for Gamma Power
-for i = 1:length(cond1_power)
-    plot([1, 2], [cond1_power(i), cond2_power(i)], 'Color', [0.5, 0.5, 0.5], 'LineWidth', 0.5);
-end
-hold off;
+% Generate the repeated measures raincloud plot
+colours = [0.5 0.5 0.5; 1 1 1]; % Use MATLAB's default line colours (or adjust as needed)
+rcp = rm_raincloud(data_power, colours);
 
-% Create Gamma Frequency plot
-subplot(1,2,2); % Gamma Frequency
-h_freq = rm_raincloud(data_freq, colours, 0, 'ks', 0.3);
-title('Gamma Frequency Across Conditions');
-ylabel('Gamma Frequency (Hz)');
-xlabel('Condition');
-hold on;
+% Adjust the Y-axis limits
+set(gca, 'YLim', [-0.3 1.6]);
 
-% Add connection lines for Gamma Frequency
-for i = 1:length(cond1_freq)
-    plot([1, 2], [cond1_freq(i), cond2_freq(i)], 'Color', [0.5, 0.5, 0.5], 'LineWidth', 0.5);
-end
-hold off;
+% Add title to the plot
+title(['Figure M10' newline 'Repeated measures raincloud plot - some aesthetic options']);
 
-% Adjust layout
-set(gcf, 'Position', [100, 100, 1200, 600]); % Set figure size
-sgtitle('Gamma Power and Frequency Across Conditions'); % Add a super title
+% Define a new colour for a specific subset
+new_cl = [0.2 0.2 0.2]; % Grey colour
+
+% Change one subset to the new colour and adjust dot size
+% Assuming subset indices are structured in rcp as rcp.p and rcp.s
+rcp.p{2, 2}.FaceColor         = new_cl; % Change patch colour
+rcp.s{2, 2}.MarkerFaceColor   = new_cl; % Change scatter face colour
+% rcp.m(2, 2).MarkerEdgeColor   = 'none'; % Remove edge colour
+% rcp.m(2, 2).MarkerFaceColor   = new_cl; % Change marker face colour
+rcp.s{2, 2}.SizeData          = 300;    % Adjust scatter dot size
