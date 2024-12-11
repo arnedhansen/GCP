@@ -29,10 +29,10 @@ figure;
 set(gcf, 'Position', [0, 0, 1000, 600], 'Color', 'w');
 colors = {'b', 'r'};
 hold on;
-box off
 
 % Boxplots
 boxplot(dataDeviation, 'Colors', 'k', 'Symbol', '', 'Widths', 0.5);
+box off
 for subj = 1:length(subjects)
     plot(1:length(conditions), dataDeviation(subj, :), '-o', 'Color', [0.5, 0.5, 0.5], 'MarkerFaceColor', 'w');
 end

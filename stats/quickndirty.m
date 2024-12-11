@@ -1,6 +1,7 @@
 % Load your data into MATLAB, assuming you have converted it to a table format
 close all
-data = merged_table
+load('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.mat')
+data = struct2table(merged_data);
 
 % Split the data by contrast condition
 low_contrast = data(data.Condition == 1, :);
