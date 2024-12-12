@@ -28,17 +28,19 @@ for subj = 1:length(subjects)
 
     %% Read blocks
     trial_counter = 1;
-    for block = 1:2 %% %% %% 4
-        load(strcat(subjects{subj}, '_GCP_block', num2str(block), '.mat'))
-        num_trials = length(saves.data.correct);
+    try
+        for block = 1:4
+            load(strcat(subjects{subj}, '_GCP_block', num2str(block), '.mat'))
+            num_trials = length(saves.data.correct);
 
-        % Append data for this block
-        subject_id = [subject_id; repmat({saves.subjectID}, num_trials, 1)];
-        trial_num = [trial_num; (trial_counter:(trial_counter + num_trials - 1))'];
-        condition = [condition; saves.data.grating'];
-        accuracy = [accuracy; saves.data.correct'];
-        reaction_time = [reaction_time; saves.data.reactionTime'];
-        trial_counter = trial_counter + num_trials;
+            % Append data for this block
+            subject_id = [subject_id; repmat({saves.subjectID}, num_trials, 1)];
+            trial_num = [trial_num; (trial_counter:(trial_counter + num_trials - 1))'];
+            condition = [condition; saves.data.grating'];
+            accuracy = [accuracy; saves.data.correct'];
+            reaction_time = [reaction_time; saves.data.reactionTime'];
+            trial_counter = trial_counter + num_trials;
+        end
     end
 
     %% Create a trial-by-trial structure array for this subject
@@ -48,9 +50,15 @@ for subj = 1:length(subjects)
     %% Calculate subject-specific data by condition (GazeDev, PupilSize, MSRate)
     lc = subj_data_behav_trial(ismember([subj_data_behav_trial.Condition], 1));
     lc_acc = sum([lc.Accuracy])/length(lc)*100;
-    lc_rt = mean([lc.ReactionTime], 'omitnan');
+    valid_reactions = ~isnan([lc.ReactionTime]); % Logical array of non-NaN ReactionTime
+    correct_responses = [lc.Accuracy] == 1; % Logical array of Accuracy == 1
+    lc_acc = sum(valid_reactions & correct_responses) / sum(valid_reactions) * 100; % Percentage of valid and correct instances
+    lc_rt = mean([lc.ReactionTime], 'omitnan'); 
+
     hc = subj_data_behav_trial(ismember([subj_data_behav_trial.Condition], 2));
-    hc_acc = sum([hc.Accuracy])/length(hc)*100;
+    valid_reactions = ~isnan([hc.ReactionTime]); % Logical array of non-NaN ReactionTime
+    correct_responses = [hc.Accuracy] == 1; % Logical array of Accuracy == 1
+    hc_acc = sum(valid_reactions & correct_responses) / sum(valid_reactions) * 100; % Percentage of valid and correct instances
     hc_rt = mean([hc.ReactionTime], 'omitnan');
 
     %% Create across condition structure
