@@ -21,51 +21,46 @@ for subj = 1:length(subjects)
     dataET_hc = ft_selectdata(cfg, dataET_hc);
 
     %% Filter data for out-of-screen data points and zeros from blinks
-    condcounter=0;
-    for condition = 2:2:8
-        condcounter=condcounter+1;
-        if condition == 2
-            data=dataetL2;
-            data=horzcat(dataetL2.trial{:});
-        elseif condition == 4
-            data=dataetL4;
-            data=horzcat(dataetL4.trial{:});
-        elseif condition == 6
-            data=dataetL6;
-            data=horzcat(dataetL6.trial{:});
-        elseif condition == 8
-            data=dataetL8;
-            data=horzcat(dataetL8.trial{:});
+    for condition = {'lc', 'hc'}
+        if strcmp(condition, 'lc')
+            data = dataET_lc;
+            data = horzcat(dataET_lc.trial{:});
+        elseif strcmp(condition, 'hc')
+            data = dataET_hc;
+            data = horzcat(dataET_hc.trial{:});
         end
 
         % Filter out data points outside the screen boundaries
-        valid_data_indices = data(1, :) >= 0 & data(1, :) <= 800 & data(2, :) >= 0 & data(2, :) <= 600; % Check that x and y positions are in boundaries of screen
-        valid_data = data(:, valid_data_indices);
+        valid_data_indices = data(1, :) >= 0 & data(1, :) <= 800 & data(2, :) >= 0 & data(2, :) <= 600;
+        valid_data = data(1:3, valid_data_indices); % Excluding pupil size data
 
-        % Remove data points that contain zeros (assuming your data contains x, y, and pupil size)
-        window_size = 50;
-        cleaned_data = remove_blink_window(data, window_size);
-        data = cleaned_data;
+        % Remove blinks with a window of 100ms (= 50 samples/timepoints)
+        win_size = 50;
+        data = remove_blinks(data, win_size);
 
-        x_positions = data(1, :);
-        y_positions = data(2, :);
+        if strcmp(condition, 'lc')
+            x_positions_lc = data(1, :);
+            y_positions_lc = data(2, :);
+        elseif strcmp(condition, 'hc')
+            x_positions_hc = data(1, :);
+            y_positions_hc = data(2, :);
+        end
+    end
 
-for subj = 1:length(subjects)
-    %% Create custom grid for heatmap in pixels
+    %% Bin and smooth data
+    % Create custom grid for heatmap in pixels
     num_bins = 100;
     x_grid_pixels = linspace(0, 800, num_bins);
     y_grid_pixels = linspace(0, 600, num_bins);
 
-    %% Low contrast
-    x_positions = cellfun(@(x) nanmean([x{:}]), num2cell(gaze_x_lc, 1));
-    y_positions = cellfun(@(x) nanmean([x{:}]), num2cell(gaze_y_lc, 1));
-
     % Bin data
     smoothing_factor = 5;
-    binned_data_pixels = histcounts2(x_positions, y_positions, x_grid_pixels, y_grid_pixels);
+    binned_data_pixels_lc = histcounts2(x_positions_lc, y_positions_lc, x_grid_pixels, y_grid_pixels);
+    binned_data_pixels_hc = histcounts2(x_positions_hc, y_positions_hc, x_grid_pixels, y_grid_pixels);
 
     % Apply gaussian smoothing
-    smoothed_data_pixels(subj, 1, :, :) = imgaussfilt(binned_data_pixels, smoothing_factor);
+    smoothed_data_pixels_lc(subj, :, :) = imgaussfilt(binned_data_pixels_lc, smoothing_factor);
+    smoothed_data_pixels_hc(subj, :, :) = imgaussfilt(binned_data_pixels_hc, smoothing_factor);
 
     % Treat ET data as TFR for stats
     freq = [];
@@ -73,32 +68,20 @@ for subj = 1:length(subjects)
     freq.time       = linspace(0, 800, 99);
     freq.label      = {'et'};
     freq.dimord     = 'chan_freq_time';
-    tmp(1,:,:)      = squeeze(smoothed_data_pixels(subj, 1, :, :));
+    tmp(1,:,:)      = squeeze(smoothed_data_pixels_lc(subj, :, :));
     freq.powspctrm  = tmp;
 
+    cfg = [];
+    cfg.frequency = [0 600];
     lcg{subj} = freq;
-
-    %% High contrast
-    x_positions = cellfun(@(x) nanmean([x{:}]), num2cell(gaze_x_hc, 1));
-    y_positions = cellfun(@(x) nanmean([x{:}]), num2cell(gaze_y_hc, 1));
-
-    % Bin data
-    binned_data_pixels = histcounts2(x_positions, y_positions, x_grid_pixels, y_grid_pixels);
-
-    % Apply gaussian smoothing
-    smoothed_data_pixels(subj, 2, :, :) = imgaussfilt(binned_data_pixels, smoothing_factor);
-
-    % Treat ET data as TFR for stats
-    tmp(1,:,:)      = squeeze(smoothed_data_pixels(subj, 2, :, :));
-    freq.powspctrm  = tmp;
-
-    hcg{subj} = freq;
+    hcg{subj} = freq;    
 end
 
 %% Aggregate data for subjects
-subject_average = squeeze(mean(smoothed_data_pixels, 1));
-lc_gdensity = subject_average(1, :, :);
-hc_gdensity = subject_average(2, :, :);
+lc_gdensity = squeeze(mean(smoothed_data_pixels_lc, 1));
+%lc_gdensity = subject_average_lc(1, :, :);
+hc_gdensity = squeeze(mean(smoothed_data_pixels_hc, 1));
+%hc_gdensity = subject_average_hc(2, :, :);
 
 %% Calculate significant differences between low and high contrast
 cfg                    = [];
@@ -155,9 +138,8 @@ cfg.figure = 'gcf';
 ft_singleplotTFR([], freq);
 set(gcf, 'color', 'w');
 set(gca, 'Fontsize', 30);
-set(gca, 'YDir', 'reverse');
 title('');
-clim([0 650]);
+%clim([0 650]);
 hold on; plot(centerX, centerY, 'o', 'MarkerSize', 15, 'MarkerFaceColor', 'k');
 xlim([0 800]);
 ylim([0 600]);
@@ -188,9 +170,8 @@ cfg.figure = 'gcf';
 ft_singleplotTFR([], freq);
 set(gcf, 'color', 'w');
 set(gca, 'Fontsize', 30);
-set(gca, 'YDir', 'reverse');
 title('');
-clim([0 650]);
+%clim([0 650]);
 hold on; plot(centerX, centerY, 'o', 'MarkerSize', 15, 'MarkerFaceColor', 'k');
 xlim([0 800]);
 ylim([0 600]);
