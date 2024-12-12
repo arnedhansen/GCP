@@ -113,3 +113,50 @@ for i = 1:length(variables)
 end
 sgtitle('Percentage Change (HC - LC)', 'FontSize', 24);
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_barplots_percentage_change.png');
+
+%% CORRELATION matrix
+% Calculate the correlation matrix between variables
+corr_matrix = corr(table2array(data(:, variables)), 'Rows', 'pairwise');
+
+% Correlation matrix
+% Generate heatmap
+figure('Color', 'white');
+set(gcf, 'Position', [200, 400, 1200, 1500]);
+h = heatmap(corr_matrix);
+
+% Define and add color map
+num_colors = 256;
+cpoints = [0, 0, 0, 1;      % blue at the lowest value
+           0.46, 1, 1, 1;  % transition to white starts
+           0.54, 1, 1, 1;  % transition from white ends
+           1, 1, 0, 0];    % red at the highest value
+
+% Preallocate the colormap array.
+cmap = zeros(num_colors, 3);
+
+% Linearly interpolate to fill in the colormap.
+for i=1:size(cmap,1)
+    % Normalize the current index to the 0-1 range based on the colormap size.
+    val = (i-1)/(num_colors-1);
+    % Find the first point where the value is greater than the current normalized value.
+    idx = find(cpoints(:,1) >= val, 1);
+    if idx == 1
+        % Use the first colour for values below the first point.
+        cmap(i,:) = cpoints(1,2:4);
+    else
+        % Linearly interpolate between the two bounding colours.
+        range = cpoints(idx,1) - cpoints(idx-1,1);
+        frac = (val - cpoints(idx-1,1)) / range;
+        cmap(i,:) = (1-frac)*cpoints(idx-1,2:4) + frac*cpoints(idx,2:4);
+    end
+end
+colormap(h, cmap);
+
+% Customization
+h.Title = 'Correlation Heatmap';
+h.XDisplayLabels = variables; % Assuming varNames contains variable names excluding 'Date', 'Weekday', and 'Overall Score'
+h.YDisplayLabels = variables;
+h.ColorLimits = [-1, 1]; % Color limits to ensure proper color mapping
+h.FontSize = 12; % Increase the size of the x and y axis tick labels
+hTitle.FontSize = 25;
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_correlation_matrix.png');
