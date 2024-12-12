@@ -17,7 +17,6 @@ for subj = 1:length(subjects)
     power_hc{subj} = pow_hc;
     power_hc_baselined{subj} = pow_hc_baselined;
     power_hc_baseline_period{subj} = pow_hc_baseline_period;
-
 end
 
 %% Compute grand averages

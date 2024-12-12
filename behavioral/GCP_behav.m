@@ -49,6 +49,7 @@ figure;
 set(gcf, 'Position', [0, 0, 1000, 600], 'Color', 'w');
 colors = {'r', 'b'};
 hold on;
+box off
 
 % Boxplots
 boxplot(dataAcc, 'Colors', 'k', 'Symbol', '', 'Widths', 0.5);

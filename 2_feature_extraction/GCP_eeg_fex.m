@@ -7,7 +7,7 @@
 %   Gamma Peak Frequency
 
 %% Setup
-clear
+startup
 [subjects, path] = setup('GCP');
 
 %% Extract TFR HIGH CONTRAST
@@ -129,17 +129,35 @@ for subj = 1:length(subjects)
     channels_idx = ismember(pow_lc_baselined.label, channels);
     freq_idx = find(pow_lc_baselined.freq >= 30 & pow_hc_baselined.freq <= 90);
 
+    % Find channels and frequencies of interest
+    channels_idx = ismember(pow_lc_baselined.label, channels);
+    freq_idx = find(pow_lc_baselined.freq >= 30 & pow_hc_baselined.freq <= 90);
+
     % Find gamma peak for LOW contrast
     lc_gamma_power = mean(pow_lc_baselined.powspctrm(channels_idx, freq_idx), 1);
     [peaks, locs] = findpeaks(lc_gamma_power, pow_lc_baselined.freq(freq_idx));
-    [lc_pow, peak_idx] = max(peaks);
+    [~, peak_idx] = max(peaks);
     lc_freq = locs(peak_idx);
+
+    % Calculate the range of frequencies for ±5 Hz around the peak frequency
+    lc_freq_range = lc_freq + [-5, 5];  % ±5 Hz range
+    lc_freq_idx_range = find(pow_lc_baselined.freq >= lc_freq_range(1) & pow_lc_baselined.freq <= lc_freq_range(2));
+
+    % Compute the peak gamma power as the mean power in the ±5 Hz range
+    lc_pow = mean(lc_gamma_power(lc_freq_idx_range));
 
     % Find gamma peak for HIGH contrast
     hc_gamma_power = mean(pow_hc_baselined.powspctrm(channels_idx, freq_idx), 1);
     [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_baselined.freq(freq_idx));
-    [hc_pow, peak_idx] = max(peaks);
+    [~, peak_idx] = max(peaks);
     hc_freq = locs(peak_idx);
+
+    % Calculate the range of frequencies for ±5 Hz around the peak frequency
+    hc_freq_range = hc_freq + [-5, 5];  % ±5 Hz range
+    hc_freq_idx_range = find(pow_hc_baselined.freq >= hc_freq_range(1) & pow_hc_baselined.freq <= hc_freq_range(2));
+
+    % Compute the peak gamma power as the mean power in the ±5 Hz range
+    hc_pow = mean(hc_gamma_power(hc_freq_idx_range));
 
     % Create across condition structure
     subject_id = [str2num(subjects{subj}); str2num(subjects{subj})];
