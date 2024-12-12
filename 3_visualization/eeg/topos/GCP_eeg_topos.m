@@ -1,54 +1,32 @@
 %% GCP Gamma Topoplots
 
 %% Setup
-startup
+clear
 [subjects, path] = setup('GCP');
 
-%% Load data and convert TFR data to POWSCPTRM (channels x frequency)
-baseline_period = [-0.5 -0.25];
-analysis_period = [0 2];
-freq_range = [30 120];
-
+%% Load power spectra data
 for subj = 1:length(subjects)
-    datapath = strcat(path, subjects{subj}, '/eeg');
-    cd(datapath);
+    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
 
-    % Load data
-    load('data_tfr.mat');
+    % Low contrast
+    power_lc{subj} = pow_lc;
+    power_lc_baselined{subj} = pow_lc_baselined;
+    power_lc_baseline_period{subj} = pow_lc_baseline_period;
 
-    %% Select analysis and baseline period data
-    % (1) Analysis period data, no baseline
-    % (2) Analysis period data, baselined
-    % (3) Baseline period data (to compare with (1) non-baselined data for percentage change)
-
-    pow_lc{subj}                                       = select_data(analysis_period, freq_range, tfr_lc);
-    pow_lc_baselined{subj}                             = select_data(analysis_period, freq_range, tfr_lc_bl);
-    pow_lc_baseline_period{subj}                       = select_data(baseline_period, freq_range, tfr_lc);
-
-    pow_hc{subj}                                       = select_data(analysis_period, freq_range, tfr_hc);
-    pow_hc_baselined{subj}                             = select_data(analysis_period, freq_range, tfr_hc_bl);
-    pow_hc_baseline_period{subj}                       = select_data(baseline_period, freq_range, tfr_hc);
-
-    %% Remove time dimension for POWSCPTRM (channels x frequency)
-    pow_lc{subj}                                       = remove_time_dimension(pow_lc{subj});
-    pow_lc_baselined{subj}                             = remove_time_dimension(pow_lc_baselined{subj});
-    pow_lc_baseline_period{subj}                       = remove_time_dimension(pow_lc_baseline_period{subj});
-
-    pow_hc{subj}                                       = remove_time_dimension(pow_hc{subj});
-    pow_hc_baselined{subj}                             = remove_time_dimension(pow_hc_baselined{subj});
-    pow_hc_baseline_period{subj}                       = remove_time_dimension(pow_hc_baseline_period{subj});
-
-    fprintf('Subject %.3d/%.3d loaded \n', subj, length(subjects))
+    % High contrast
+    power_hc{subj} = pow_hc;
+    power_hc_baselined{subj} = pow_hc_baselined;
+    power_hc_baseline_period{subj} = pow_hc_baseline_period;
 end
 
 %% Compute grand averages
-gapow_lc                                        = ft_freqgrandaverage([],pow_lc{subj});
-gapow_lc_baselined                              = ft_freqgrandaverage([],pow_lc_baselined{subj});
-gapow_lc_baseline_period                        = ft_freqgrandaverage([],pow_lc_baseline_period{subj});
+gapow_lc                                               = ft_freqgrandaverage([],power_lc{:});
+gapow_lc_baselined                                     = ft_freqgrandaverage([],power_lc_baselined{:});
+gapow_lc_baseline_period                               = ft_freqgrandaverage([],power_lc_baseline_period{:});
 
-gapow_hc                                        = ft_freqgrandaverage([],pow_hc{subj});
-gapow_hc_baselined                              = ft_freqgrandaverage([],pow_hc_baselined{subj});
-gapow_hc_baseline_period                        = ft_freqgrandaverage([],pow_hc_baseline_period{subj});
+gapow_hc                                               = ft_freqgrandaverage([],power_hc{:});
+gapow_hc_baselined                                     = ft_freqgrandaverage([],power_hc_baselined{:});
+gapow_hc_baseline_period                               = ft_freqgrandaverage([],power_hc_baseline_period{:});
 
 %% Define channels
 subj = 1;
@@ -181,6 +159,7 @@ for subj = 1:length(subjects)
 end
 
 %% Subplot of All Subjects (HC, LC, and Difference)
+close all
 % Plot all subjects' topoplots in a 3-column grid: HC, LC, and HC-LC difference
 figure;
 set(gcf, 'Position', [0, 0, 2000, 2000], 'Color', 'w');

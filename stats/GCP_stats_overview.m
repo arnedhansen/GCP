@@ -95,12 +95,15 @@ for i = 1:length(variables)
     hold on;
 
     % Bar plot for each participant
-    bar(1:length(subjects), percent_change(:, i), 'FaceColor', [0.2, 0.6, 0.8], 'EdgeColor', 'none');
+    bar(1:length(subjects), percent_change(:, i), 'FaceColor', 'k', 'EdgeColor', 'none');
 
     % Formatting
     xlim([0.5, length(subjects) + 0.5]);
     abw = max(abs([min(percent_change(:, i), [], 'omitnan'), max(percent_change(:, i), [], 'omitnan')]));
     ylim([-abw*1.25 abw*1.25]);
+    if i == 5
+        ylim([-100 100])
+    end
     xticks(1:length(subjects));
     xticklabels(subjects);
     xlabel('Subjects');

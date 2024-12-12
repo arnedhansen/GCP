@@ -36,7 +36,7 @@ occ_channels = {};
 pow_label = pow_lc;
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
-    if contains(label, {'O'}) || contains(label, {'I'})
+    if contains(label, {'O'}) && ~contains(label, {'P'}) || contains(label, {'I'})
         occ_channels{end+1} = label;
     end
 end
@@ -173,10 +173,6 @@ for subj = 1:length(subjects)
     pow_lc_subj = power_lc_baselined{subj};
     pow_hc_subj = power_hc_baselined{subj};
 
-    % Load POWER and FREQUENCY
-    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/pow'));
-    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/freq'));
-
     % Figure common config
     cfg = [];
     cfg.channel = channels;
@@ -197,6 +193,8 @@ for subj = 1:length(subjects)
     transparency = 0.5;
     set(lceb.patch, 'FaceAlpha', transparency);
     set(hceb.patch, 'FaceAlpha', transparency);
+
+    
 
     % Adjust plot aesthetics
     yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5);
