@@ -315,8 +315,8 @@ for subj = 1:num_subs
     end
     xlim([30 90]);
     xticks(30:10:90);
-    xlabel('Freq [Hz]', 'FontSize', 10);
-    ylabel('Power [dB]', 'FontSize', 10);
+    xlabel('Freq [Hz]', 'FontSize', 15);
+    ylabel('Power [dB]', 'FontSize', 15);
     if mod(subj, 5) == 0
         legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 15, 'Location', 'best');
     end
