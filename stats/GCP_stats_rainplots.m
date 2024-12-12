@@ -1,4 +1,4 @@
-%% RAINPLOT for GCP Power and Frequency data
+%% RAINPLOTs for GCP data
 clear
 clc
 close all
@@ -21,27 +21,30 @@ close all
 % Choose data to plot
 variables = {acc_dat, rt_dat, gazedev_dat, pups_dat, ms_dat, pow_dat, freq_dat};
 labels = {'Accuracy', 'Reaction Time', 'Gaze Deviation', 'Pupil Size', 'Microsaccade Rate', 'Gamma Power', 'Gamma Frequency'};
-for i = 1 %:length(variables)
+for var = 1:length(variables)
+    close all
     % Extract the current data variable
-    dat = variables{i};
-    dat = pow_dat
+    dat = variables{var};
+    % dat = pow_dat
     max_vals = max(cellfun(@(x) max(abs(x)), dat));
 
     % Define colours for conditions
     [cb] = cbrewer('qual', 'Set3', 12, 'pchip');
-    colours = cb([5, 6], :); % Two colours: one for Condition 1 (low contrast), one for Condition 2 (high contrast)
-    %colours = [0 0 1; 1 0 0];  % Blue for low contrast, Red for high contrast
+    colours = cb([5, 6], :); % cb pastel colours (5 = bright blue; 6 = orange)
 
     % Create raincloud plot
     figure;
     set(gcf, 'Position', [300, 250, 1600, 900], 'Color', 'w');
-    % = rm_raincloud(data, colours, plot_top_to_bottom, raindrop_size)
-    h = rm_raincloud(dat, colours, 0, 500);
+    % = rm_raincloud(data, colours, add_boxplot, plot_top_to_bottom, raindrop_size, plot_mean_dots, connecting_lines)
+    h = rm_raincloud(dat, colours, 1, 0, 500, 0, 1);
 
     % Adjust plot aesthetics
-    set(gca, 'YTick', [0, 1.8], 'YTickLabel', {'High Contrast', 'Low Contrast'}, 'FontSize', 20);
-    %xlim([-max_vals*1.25 max_vals*2.5]) % for y-axis
-    xlim([-1 2.25])
-    xlabel('Gamma Power [db]', 'FontSize', 20);
-    title(['Gamma Power' newline 'relative to baseline'], 'FontSize', 25);
+    xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+    if var == 1
+        xlim([92.5 100])
+    end
+    %xlim([-max_vals*1.25 max_vals*2]) % for y-axis
+    xlabel(labels(var), 'FontSize', 20);
+    title([labels(var)], 'FontSize', 25);
+    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_rainclouds_', labels{var}, '.png'))
 end
