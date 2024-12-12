@@ -132,5 +132,5 @@ for subj = 1:length(subjects)
     % Append to the final structure array
     gaze_data = [gaze_data; subj_data_gaze];
 end
-save /Volumes/methlab/Students/Arne/GCP/data/features/gaze gaze_x_lc gaze_y_lc gaze_x_hc gaze_y_hc
+save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_raw gaze_x_lc gaze_y_lc gaze_x_hc gaze_y_hc
 save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_matrix gaze_data
