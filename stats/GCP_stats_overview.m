@@ -64,7 +64,7 @@ for i = 1:length(variables)
         
         % Clear any previous scatter points (in case of overlaid dots)
         scatter(x_jittered, cond_data.(variables{i}), 36, 'MarkerEdgeColor', markerColor, ...
-            'MarkerFaceColor', markerColor, 'jitter', 'off', 'SizeData', 36);
+            'MarkerFaceColor', markerColor, 'jitter', 'off', 'SizeData', 38);
     end
 
     % Add title and labels
@@ -125,6 +125,101 @@ for i = 1:length(variables)
 end
 sgtitle('Percentage Change (HC - LC)', 'FontSize', 24);
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_barplots_percentage_change.png');
+
+%% Plot DIFFERENCES in GAMMA POWER and FREQUENCY against MICROSACCADES and GAZE DEVIATION
+close all
+% Calculate the differences in Gamma Power and Gamma Frequency
+gamma_power_diff = percent_change(:, 5);
+gamma_freq_diff = percent_change(:, 6);
+
+% Extract the corresponding values for Gaze Deviation and Microsaccade Rate
+gaze_deviation_diff = percent_change(:, 3);
+ms_rate_diff = percent_change(:, 4);
+
+% Set up the figure with the same aesthetics as before
+figure;
+set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+
+% Plot Gamma Power difference vs Gaze Deviation difference
+subplot(2, 2, 1);
+hold on;
+scatter(gaze_deviation_diff, gamma_power_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
+xlabel('Gaze Deviation Difference [%]', 'FontSize', 15);
+ylabel('Gamma Power Difference [%]', 'FontSize', 15);
+
+% Calculate max_abs_range for this subplot
+max_abs_range = max(abs([gamma_power_diff; gaze_deviation_diff]), [], 'all');
+xlim([-50 50]);
+ylim([-100 100]);
+
+% Dashed lines at x = 0 and y = 0
+xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+
+title('Gamma Power vs Gaze Deviation', 'FontSize', 20);
+hold off;
+
+% Plot Gamma Power difference vs Microsaccade Rate difference
+subplot(2, 2, 2);
+hold on;
+scatter(ms_rate_diff, gamma_power_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
+xlabel('Microsaccade Rate Difference [%]', 'FontSize', 15);
+ylabel('Gamma Power Difference [%]', 'FontSize', 15);
+
+% Calculate max_abs_range for this subplot
+max_abs_range = max(abs([gamma_power_diff; ms_rate_diff]), [], 'all');
+% xlim([-25 25]);
+% ylim([-100 100]);
+
+% Dashed lines at x = 0 and y = 0
+xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+
+title('Gamma Power vs Microsaccade Rate', 'FontSize', 20);
+hold off;
+
+% Plot Gamma Frequency difference vs Gaze Deviation difference
+subplot(2, 2, 3);
+hold on;
+scatter(gaze_deviation_diff, gamma_freq_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
+xlabel('Gaze Deviation Difference [%]', 'FontSize', 15);
+ylabel('Gamma Frequency Difference [%]', 'FontSize', 15);
+
+% Calculate max_abs_range for this subplot
+max_abs_range = max(abs([gamma_freq_diff; gaze_deviation_diff]), [], 'all');
+max_abs_range = 45;
+xlim([-max_abs_range*1.25 max_abs_range*1.25]);
+ylim([-max_abs_range*1.25 max_abs_range*1.25]);
+
+% Dashed lines at x = 0 and y = 0
+xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+
+title('Gamma Frequency vs Gaze Deviation', 'FontSize', 20);
+hold off;
+
+% Plot Gamma Frequency difference vs Microsaccade Rate difference
+subplot(2, 2, 4);
+hold on;
+scatter(ms_rate_diff, gamma_freq_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
+xlabel('Microsaccade Rate Difference [%]', 'FontSize', 15);
+ylabel('Gamma Frequency Difference [%]', 'FontSize', 15);
+
+% Calculate max_abs_range for this subplot
+max_abs_range = max(abs([gamma_freq_diff; ms_rate_diff]), [], 'all');
+max_abs_range = 45;
+xlim([-max_abs_range*1.25 max_abs_range*1.25]);
+ylim([-max_abs_range*1.25 max_abs_range*1.25]);
+
+% Dashed lines at x = 0 and y = 0
+xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+
+title('Gamma Frequency vs Microsaccade Rate', 'FontSize', 20);
+hold off;
+
+% Save the figure
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_associations.png');
 
 %% CORRELATION matrix
 close all

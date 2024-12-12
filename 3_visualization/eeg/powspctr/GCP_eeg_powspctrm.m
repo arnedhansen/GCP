@@ -306,16 +306,21 @@ for subj = 1:num_subs
     plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
     plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
     max_spctrm = max(lc_pow, hc_pow);
-    ylim([-1.55 1.55])
-    %ylim([-max_spctrm*1.25 max_spctrm*1.25]);
+    %ylim([-1.55 1.55])
+    ylim([-max_spctrm*1.25 max_spctrm*1.25]);
+    if subj == 9
+        ylim([-0.35 0.35])
+    elseif subj == 10
+        ylim([-0.75 0.75])
+    end
     xlim([30 90]);
     xticks(30:10:90);
     xlabel('Freq [Hz]', 'FontSize', 10);
     ylabel('Power [dB]', 'FontSize', 10);
     if mod(subj, 5) == 0
-        legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20, 'Location', 'best');
+        legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 15, 'Location', 'best');
     end
-    title(sprintf('Subject %s: Power Spectrum', subjects{subj}), 'FontSize', 12);
+    title(sprintf('Subject %s', subjects{subj}), 'FontSize', 12);
     hold off;
 end
 
