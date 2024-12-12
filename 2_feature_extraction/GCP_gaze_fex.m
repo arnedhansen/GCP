@@ -41,6 +41,12 @@ for subj = 1:length(subjects)
             close all
             data = dataET.trial{trl};
 
+            %% Choose data 300ms after stimulus presentation to exclude evoked activity
+            analysis_period = [0.3 2];
+            time_vector = dataET.time{trl};
+            analysis_idx = (time_vector >= analysis_period(1)) & (time_vector <= analysis_period(2));
+            data = data(:, analysis_idx);
+
             %% Filter out data points outside the screen boundaries
             valid_data_indices = data(1, :) >= 0 & data(1, :) <= 800 & data(2, :) >= 0 & data(2, :) <= 600;
             valid_data = data(1:3, valid_data_indices); % Excluding pupil size data

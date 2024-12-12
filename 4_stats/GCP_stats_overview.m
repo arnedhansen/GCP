@@ -149,7 +149,7 @@ ylabel('Gamma Power Difference [%]', 'FontSize', 15);
 
 % Calculate max_abs_range for this subplot
 max_abs_range = max(abs([gamma_power_diff; gaze_deviation_diff]), [], 'all');
-xlim([-50 50]);
+xlim([-100 100]);
 ylim([-100 100]);
 
 % Dashed lines at x = 0 and y = 0
@@ -168,7 +168,9 @@ ylabel('Gamma Power Difference [%]', 'FontSize', 15);
 
 % Calculate max_abs_range for this subplot
 max_abs_range = max(abs([gamma_power_diff; ms_rate_diff]), [], 'all');
-xlim([-25 25]);
+%xlim([-25 25]);
+%ylim([-100 100]);
+xlim([-100 100]);
 ylim([-100 100]);
 
 % Dashed lines at x = 0 and y = 0
@@ -186,10 +188,12 @@ xlabel('Gaze Deviation Difference [%]', 'FontSize', 15);
 ylabel('Gamma Frequency Difference [%]', 'FontSize', 15);
 
 % Calculate max_abs_range for this subplot
-max_abs_range = max(abs([gamma_freq_diff; gaze_deviation_diff]), [], 'all');
-max_abs_range = 45;
-xlim([-max_abs_range*1.25 max_abs_range*1.25]);
-ylim([-max_abs_range*1.25 max_abs_range*1.25]);
+%max_abs_range = max(abs([gamma_freq_diff; gaze_deviation_diff]), [], 'all');
+% max_abs_range = 45;
+% xlim([-max_abs_range*1.25 max_abs_range*1.25]);
+% ylim([-max_abs_range*1.25 max_abs_range*1.25]);
+xlim([-100 100]);
+ylim([-100 100]);
 
 % Dashed lines at x = 0 and y = 0
 xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
@@ -206,10 +210,12 @@ xlabel('Microsaccade Rate Difference [%]', 'FontSize', 15);
 ylabel('Gamma Frequency Difference [%]', 'FontSize', 15);
 
 % Calculate max_abs_range for this subplot
-max_abs_range = max(abs([gamma_freq_diff; ms_rate_diff]), [], 'all');
-max_abs_range = 45;
-xlim([-max_abs_range*1.25 max_abs_range*1.25]);
-ylim([-max_abs_range*1.25 max_abs_range*1.25]);
+% max_abs_range = max(abs([gamma_freq_diff; ms_rate_diff]), [], 'all');
+% max_abs_range = 45;
+% xlim([-max_abs_range*1.25 max_abs_range*1.25]);
+% ylim([-max_abs_range*1.25 max_abs_range*1.25]);
+xlim([-100 100]);
+ylim([-100 100]);
 
 % Dashed lines at x = 0 and y = 0
 xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
