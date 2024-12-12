@@ -1,6 +1,7 @@
 %% GCP Gamma Topoplots
 
 %% Setup
+startup
 [subjects, path] = setup('GCP');
 
 %% Load data and convert TFR data to POWSCPTRM (channels x frequency)
@@ -90,7 +91,7 @@ set(gcf, 'Position', [0, 0, 2000, 800], 'Color', 'w');
 set(gca, 'Fontsize', 25);
 
 % Set title
-sgtitle('Topographical Maps'), 'FontSize', 30, 'FontWeight', 'bold';
+sgtitle('Topographical Maps 300 ms - 2000 ms after Stimulus Presentation (30 - 90 Hz)', 'FontSize', 30, 'FontWeight', 'bold');
 
 % LOW CONTRAST
 subplot(1, 3, 1);
@@ -195,20 +196,30 @@ for subj = 1:num_subs
     pow_diff_subj = pow_hc_subj;
     pow_diff_subj.powspctrm = pow_hc_subj.powspctrm - pow_lc_subj.powspctrm;
 
-    % Plot HC
+    % High Contrast
     subplot(rows, cols, (subj-1)*cols + 1);
     ft_topoplotER(cfg, pow_hc_subj);
-    title(sprintf('Subj %s: High Contrast', subjects{subj}), 'FontSize', 12);
+    title('High Contrast', 'FontSize', 10);
+    cb = colorbar;
+    cb.FontSize = 10;
+    ylabel(cb, 'Power [dB]', 'FontSize', 10);
 
-    % Plot LC
+    % Low Contrast
     subplot(rows, cols, (subj-1)*cols + 2);
     ft_topoplotER(cfg, pow_lc_subj);
-    title(sprintf('Subj %s: Low Contrast', subjects{subj}), 'FontSize', 12);
+    title('Low Contrast', 'FontSize', 10);
+    cb = colorbar;
+    cb.FontSize = 10;
+    ylabel(cb, 'Power [dB]', 'FontSize', 10);
 
-    % Plot Difference (HC - LC)
+    % Difference (HC - LC)
     subplot(rows, cols, (subj-1)*cols + 3);
     ft_topoplotER(cfg, pow_diff_subj);
-    title(sprintf('Subj %s: High - Low', subjects{subj}), 'FontSize', 12);
+    title('Difference (High - Low)', 'FontSize', 10);
+    cb = colorbar;
+    cb.FontSize = 10;
+    ylabel(cb, 'Power [dB]', 'FontSize', 10);
+
 end
 
 % Save the combined subplot figure with all subjects
