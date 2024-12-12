@@ -3,22 +3,18 @@ clc
 clear
 close all
 data = readtable('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv');
+data.ReactionTime = data.ReactionTime .* 1000;
 variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'MSRate', 'GammaPower', 'GammaFreq'};
 
 % Split the data by contrast condition
 low_contrast = data(data.Condition == 1, :);
 high_contrast = data(data.Condition == 2, :);
 
-% Calculate descriptive statistics
-% disp('Descriptive Statistics for Low Contrast:');
-% summary(low_contrast)
-% disp('Descriptive Statistics for High Contrast:');
-% summary(high_contrast)
-
 %% BOXPLOTS
 close all
 figure;
 set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Microsaccade Rate [ms/s]', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
 
 % Unique subject identifiers
 subjects = unique(data.ID);
@@ -50,16 +46,32 @@ for i = 1:length(variables)
         end
     end
 
-    % Scatter individual data points
-    scatter(data.Condition, data.(variables{i}), 'jitter', 'on', 'jitterAmount', 0.00001, ...
-        'MarkerEdgeColor', [0.2, 0.2, 0.8], 'MarkerFaceColor', [0.2, 0.6, 0.8], 'SizeData', 36);
+    % Scatter individual data points with jitter
+    jitterAmount = 0.001;  % Amount of jitter in the x-direction
+    for cond = 1:2  % Two conditions (Low Contrast = 1, High Contrast = 2)
+        % Filter data based on condition
+        cond_data = data(data.Condition == cond, :);
+
+        % Determine color based on condition
+        if cond == 1
+            markerColor = [0, 0, 1];  % Blue for Low Contrast
+        else
+            markerColor = [1, 0, 0];  % Red for High Contrast
+        end
+
+        % Add jitter and scatter the points
+        x_jittered = cond_data.Condition + (rand(size(cond_data.(variables{i}))) - 0.5) * jitterAmount;  % Add random jitter to x-axis
+        
+        % Clear any previous scatter points (in case of overlaid dots)
+        scatter(x_jittered, cond_data.(variables{i}), 36, 'MarkerEdgeColor', markerColor, ...
+            'MarkerFaceColor', markerColor, 'jitter', 'off', 'SizeData', 36);
+    end
 
     % Add title and labels
     title(variables{i}, "FontSize", 20);
-    ylabel(variables{i});
+    ylabel(y_axis_labels{i}, "FontSize", 15);
     hold off;
 end
-
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_boxplots.png');
 
 %% PERCENTAGE CHANGE BARPLOTS
@@ -115,6 +127,7 @@ sgtitle('Percentage Change (HC - LC)', 'FontSize', 24);
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_barplots_percentage_change.png');
 
 %% CORRELATION matrix
+close all
 % Calculate the correlation matrix between variables
 corr_matrix = corr(table2array(data(:, variables)), 'Rows', 'pairwise');
 
