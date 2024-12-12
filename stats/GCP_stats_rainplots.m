@@ -5,6 +5,7 @@ close all
 
 % Load data
 data = readtable('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv');
+data.ReactionTime = data.ReactionTime .* 1000;
 
 % Split and combine data for all variables by condition
 acc_dat = {data.Accuracy(data.Condition == 1), data.Accuracy(data.Condition == 2)};
@@ -20,8 +21,10 @@ close all
 
 % Choose data to plot
 variables = {acc_dat, rt_dat, gazedev_dat, pups_dat, ms_dat, pow_dat, freq_dat};
-labels = {'Accuracy', 'Reaction Time', 'Gaze Deviation', 'Pupil Size', 'Microsaccade Rate', 'Gamma Power', 'Gamma Frequency'};
-for var = 1:length(variables)
+title_labels = {'Accuracy', 'Reaction Time', 'Gaze Deviation', 'Pupil Size', 'Microsaccade Rate', 'Gamma Power', 'Gamma Frequency'};
+y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Pupil Size [a.u.]', 'Microsaccade Rate [ms/s]', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
+save_names = {'acc', 'rt', 'gazedev', 'pups', 'ms', 'pow', 'freq'};
+for var = 6%:length(variables)
     close all
     % Extract the current data variable
     dat = variables{var};
@@ -41,10 +44,14 @@ for var = 1:length(variables)
     % Adjust plot aesthetics
     xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
     if var == 1
-        xlim([92.5 100])
+        xlim([93 100])
     end
     %xlim([-max_vals*1.25 max_vals*2]) % for y-axis
-    xlabel(labels(var), 'FontSize', 20);
-    title([labels(var)], 'FontSize', 25);
-    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_rainclouds_', labels{var}, '.png'))
+    xlabel(y_axis_labels(var), 'FontSize', 25);
+    % Add title and adjust position
+    title_h = title([title_labels{var}], 'FontSize', 30);
+    if var == 1
+        title_h.Position(1) = title_h.Position(1) + 0.3; % Move title upward
+    end
+    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_rainclouds_', save_names{var}, '.png'))
 end
