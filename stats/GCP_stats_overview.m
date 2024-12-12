@@ -99,7 +99,8 @@ for i = 1:length(variables)
 
     % Formatting
     xlim([0.5, length(subjects) + 0.5]);
-    ylim([min(percent_change(:, i), [], 'omitnan') - 10, max(percent_change(:, i), [], 'omitnan') + 10]);
+    abw = max(abs([min(percent_change(:, i), [], 'omitnan'), max(percent_change(:, i), [], 'omitnan')]));
+    ylim([-abw*1.25 abw*1.25]);
     xticks(1:length(subjects));
     xticklabels(subjects);
     xlabel('Subjects');
@@ -109,4 +110,3 @@ for i = 1:length(variables)
 end
 sgtitle('Percentage Change (HC - LC)', 'FontSize', 24);
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_barplots_percentage_change.png');
-

@@ -1,52 +1,47 @@
-%% 
-
-%% Load the data
+%% RAINPLOT for GCP Power and Frequency data
 clear
 clc
 close all
+
+% Load data
 data = readtable('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv');
-%summary(data)
 
-%%
+% Split and combine data for all variables by condition
+acc_dat = {data.Accuracy(data.Condition == 1), data.Accuracy(data.Condition == 2)};
+rt_dat = {data.ReactionTime(data.Condition == 1), data.ReactionTime(data.Condition == 2)};
+gazedev_dat = {data.GazeDeviation(data.Condition == 1), data.GazeDeviation(data.Condition == 2)};
+pups_dat = {data.PupilSize(data.Condition == 1), data.PupilSize(data.Condition == 2)};
+ms_dat = {data.MSRate(data.Condition == 1), data.MSRate(data.Condition == 2)};
+pow_dat = {data.GammaPower(data.Condition == 1), data.GammaPower(data.Condition == 2)};
+freq_dat = {data.GammaFreq(data.Condition == 1), data.GammaFreq(data.Condition == 2)};
 
-% Extract relevant columns
-IDs = data.ID; % Participant IDs
-conditions = data.Condition; % Experimental conditions
-gamma_power = data.GammaPower; % Gamma Power
-gamma_freq = data.GammaFreq; % Gamma Frequency
-
-% Split data into two conditions
-cond1_power = gamma_power(conditions == 1);
-cond2_power = gamma_power(conditions == 2);
-cond1_freq = gamma_freq(conditions == 1);
-cond2_freq = gamma_freq(conditions == 2);
-
-% Prepare data for rm_raincloud
-data_power = {cond1_power, cond2_power};
-data_freq = {cond1_freq, cond2_freq};
-
-%% make figure
+%% Set up the figure
 close all
-figure;
-set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
 
-% Generate the repeated measures raincloud plot
-colours = [0.5 0.5 0.5; 1 1 1]; % Use MATLAB's default line colours (or adjust as needed)
-rcp = rm_raincloud(data_power, colours);
+% Choose data to plot
+variables = {acc_dat, rt_dat, gazedev_dat, pups_dat, ms_dat, pow_dat, freq_dat};
+labels = {'Accuracy', 'Reaction Time', 'Gaze Deviation', 'Pupil Size', 'Microsaccade Rate', 'Gamma Power', 'Gamma Frequency'};
+for i = 1 %:length(variables)
+    % Extract the current data variable
+    dat = variables{i};
+    dat = pow_dat
+    max_vals = max(cellfun(@(x) max(abs(x)), dat));
 
-% Adjust the Y-axis limits
-set(gca, 'YLim', [-0.3 1.6]);
+    % Define colours for conditions
+    [cb] = cbrewer('qual', 'Set3', 12, 'pchip');
+    colours = cb([5, 6], :); % Two colours: one for Condition 1 (low contrast), one for Condition 2 (high contrast)
+    %colours = [0 0 1; 1 0 0];  % Blue for low contrast, Red for high contrast
 
-% Add title to the plot
-title(['Figure M10' newline 'Repeated measures raincloud plot - some aesthetic options']);
+    % Create raincloud plot
+    figure;
+    set(gcf, 'Position', [300, 250, 1600, 900], 'Color', 'w');
+    % = rm_raincloud(data, colours, plot_top_to_bottom, raindrop_size)
+    h = rm_raincloud(dat, colours, 0, 500);
 
-% Define a new colour for a specific subset
-new_cl = [0.2 0.2 0.2]; % Grey colour
-
-% Change one subset to the new colour and adjust dot size
-% Assuming subset indices are structured in rcp as rcp.p and rcp.s
-rcp.p{2, 2}.FaceColor         = new_cl; % Change patch colour
-rcp.s{2, 2}.MarkerFaceColor   = new_cl; % Change scatter face colour
-% rcp.m(2, 2).MarkerEdgeColor   = 'none'; % Remove edge colour
-% rcp.m(2, 2).MarkerFaceColor   = new_cl; % Change marker face colour
-rcp.s{2, 2}.SizeData          = 300;    % Adjust scatter dot size
+    % Adjust plot aesthetics
+    set(gca, 'YTick', [0, 1.8], 'YTickLabel', {'High Contrast', 'Low Contrast'}, 'FontSize', 20);
+    %xlim([-max_vals*1.25 max_vals*2.5]) % for y-axis
+    xlim([-1 2.25])
+    xlabel('Gamma Power [db]', 'FontSize', 20);
+    title(['Gamma Power' newline 'relative to baseline'], 'FontSize', 25);
+end
