@@ -1,6 +1,7 @@
 %% Heatmap for GCP gaze data
 
 %% Setup
+startup
 clear
 clc
 close all
@@ -77,11 +78,9 @@ for subj = 1:length(subjects)
     hcg{subj} = freq;    
 end
 
-%% Aggregate data for subjects
+%% Average across subjects
 lc_gdensity = squeeze(mean(smoothed_data_pixels_lc, 1));
-%lc_gdensity = subject_average_lc(1, :, :);
 hc_gdensity = squeeze(mean(smoothed_data_pixels_hc, 1));
-%hc_gdensity = subject_average_hc(2, :, :);
 
 %% Calculate significant differences between low and high contrast
 cfg                    = [];
@@ -91,7 +90,7 @@ cfg.statistic          = 'ft_statfun_depsamplesT';
 cfg.tail               = 0;
 cfg.clustertail        = 0;
 cfg.alpha              = 0.05;
-cfg.numrandomization   = 1000;
+cfg.numrandomization   = 10000;
 cfg.neighbours         = [];
 
 clear design
@@ -111,10 +110,17 @@ cfg.uvar     = 1;
 cfg.ivar     = 2;
 
 [stat] = ft_freqstatistics(cfg, hcg{:}, lcg{:});
-stat.stat(stat.mask==0) = 0; % mask out all non-significant
+
+% Handle NaNs by replacing them with 0 (or another placeholder value)
+stat.stat(isnan(stat.stat)) = 0;  % Replace NaNs with 0
+% Check if there are any remaining NaNs
+disp(sum(isnan(stat.stat(:))));  % Count NaNs in stat.stat
+stat.stat(stat.mask == 0) = 0;  % Mask out all non-significant
 statstern = stat;
-cohensd = 2 * ((statstern.stat) ./ sqrt(numel(design)));
+cohensd = 2 * ((statstern.stat) ./ sqrt(numel(design)));  % Calculate Cohen's d
 statstern.stat = cohensd;
+% Interpolate NaNs 
+stat.stat = fillmissing(stat.stat, 'linear', 2);  % Linear interpolation along the 2nd dimension (time/frequency)
 
 %% Common settings for plotting
 centerX = 800 / 2;
@@ -139,9 +145,9 @@ ft_singleplotTFR([], freq);
 set(gcf, 'color', 'w');
 set(gca, 'Fontsize', 30);
 title('');
-%clim([0 650]);
-hold on; plot(centerX, centerY, 'o', 'MarkerSize', 15, 'MarkerFaceColor', 'k');
-xlim([0 800]);
+clim([0 300]);
+hold on
+plot(centerX, centerY, '+', 'MarkerSize', 20, 'LineWidth', 2.5, 'Color', 'k');xlim([0 800]);
 ylim([0 600]);
 
 xlabel('Screen Width [px]');
@@ -149,7 +155,7 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Gaze Density [a.u.]', 'FontSize', 32); % Label the colorbar
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_lc.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_lc.png');
 
 %% Plot high contrast condition
 freq.powspctrm(1,:,:) = squeeze(hc_gdensity)';
@@ -171,8 +177,9 @@ ft_singleplotTFR([], freq);
 set(gcf, 'color', 'w');
 set(gca, 'Fontsize', 30);
 title('');
-%clim([0 650]);
-hold on; plot(centerX, centerY, 'o', 'MarkerSize', 15, 'MarkerFaceColor', 'k');
+clim([0 300]);
+hold on
+plot(centerX, centerY, '+', 'MarkerSize', 20, 'LineWidth', 2.5, 'Color', 'k');
 xlim([0 800]);
 ylim([0 600]);
 
@@ -181,7 +188,7 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Gaze Density [a.u.]', 'FontSize', 32); % Label the colorbar
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_hc.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_hc.png');
 
 %% Plot difference (hc - lc)
 diff = hc_gdensity - lc_gdensity;
@@ -203,10 +210,10 @@ cfg.figure = 'gcf';
 ft_singleplotTFR([], freq);
 set(gcf, 'color', 'w');
 set(gca, 'Fontsize', 30);
-set(gca, 'YDir', 'reverse');
 title('');
-clim([-90 90]);
-hold on; plot(centerX, centerY, 'o', 'MarkerSize', 15, 'MarkerFaceColor', 'k');
+clim([-60 60]);
+hold on
+plot(centerX, centerY, '+', 'MarkerSize', 20, 'LineWidth', 2.5, 'Color', 'k');
 xlim([0 800]);
 ylim([0 600]);
 
@@ -215,15 +222,15 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Gaze Density [a.u.]', 'FontSize', 32); % Label the colorbar
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_diff.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_diff.png');
 
 %% Plot t-value stats
 mycolormap = customcolormap_preset('red-white-blue');
 freq.powspctrm(1,:,:)= squeeze(stat.stat)';
 freq.time = x_grid_pixels(2:end);
 freq.freq = y_grid_pixels(2:end);
-freq.label={'et'};
-freq.dimord= 'chan_freq_time';
+freq.label = {'et'};
+freq.dimord = 'chan_freq_time';
 
 clf;
 close all;
@@ -236,52 +243,36 @@ cfg.figure='gcf';
 ft_singleplotTFR([],freq);
 set(gcf,'color','w');
 set(gca,'Fontsize',30);
-set(gca, 'YDir', 'reverse')
 title('');
-clim([-3.45 3.45])
-hold on; plot(centerX, centerY, 'o', 'MarkerSize', 15, 'MarkerFaceColor', 'k');
+%clim([-3.45 3.45])
+hold on
+plot(centerX, centerY, '+', 'MarkerSize', 20, 'LineWidth', 2.5, 'Color', 'k');
 xlim([0 800]);
 ylim([0 600]);
-
 xlabel('Screen Width [px]');
 ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Effect Size [Cohen''s d]', 'FontSize', 32); % Label the colorbar
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/SternbergSIM_gaze_stat_diff_fine.png');
-clf;
-close all;
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_stats_raw.png');
 
 %% Plot differnces between load 2 & load 8 for all subs  - INDIVIDUAL PLOTS
 for subj = 1:length(subjects)
-    diff = l8g{subj};
-    diff = l8g{subj}.powspctrm-l2g{subj}.powspctrm;
+    close all;
+    diff = hcg{subj};
+    diff = hcg{subj}.powspctrm-lcg{subj}.powspctrm;
 
     freq.powspctrm(1,:,:)= squeeze(diff)';
     freq.time = x_grid_pixels(2:end);
     freq.freq = y_grid_pixels(2:end);
-    freq.label={'et'};
-    freq.dimord= 'chan_freq_time';
-
-    clf;
-    close all;
+    freq.label = {'et'};
+    freq.dimord = 'chan_freq_time';
+    
+    % Plot
     figure('Color', 'w');
-    addpath('/Volumes/methlab/Students/Arne/MA/scripts/lib/');
-
-    % Set colormap to have white in the middle
-    mycolormap = customcolormap_preset('red-white-blue');
-    totalColors = size(mycolormap, 1);
-    maxVal = max(freq.powspctrm(:));
-    minVal = min(freq.powspctrm(:));
-    climValue = max(abs(minVal), abs(maxVal));
-    proportion = 2.5 / climValue;
-    rangeIndices = round(totalColors * proportion);
-    middleIndex = ceil(totalColors / 2);  % find the middle index
-    indicesToWhite = (middleIndex - rangeIndices):(middleIndex + rangeIndices);  % find the range of indices to set to white
-    mycolormap(indicesToWhite, :) = repmat([1 1 1], length(indicesToWhite), 1);  % set them to white
-    colormap(mycolormap);
-
     set(gcf, 'Position', [0, 0, 1000, 800]);
+    mycolormap = customcolormap_preset('red-white-blue');
+    colormap(mycolormap);
     cfg =[];
     cfg.figure='gcf';
     ft_singleplotTFR([],freq);
@@ -292,13 +283,13 @@ for subj = 1:length(subjects)
     maxVal = max(freq.powspctrm(:));
     minVal = min(freq.powspctrm(:));
     climValue = max(abs(minVal), abs(maxVal));
-    clim([-climValue climValue])
-    hold on; plot(centerX, centerY, 'o', 'MarkerSize', 15, 'MarkerFaceColor', 'k');
+    % clim([-climValue climValue])
+    hold on
+    plot(centerX, centerY, '+', 'MarkerSize', 20, 'LineWidth', 2.5, 'Color', 'k');
     xlim([0 800]);
     ylim([0 600]);
 
-    saveas(gcf, ['/Volumes/methlab/Students/Arne/MA/figures/gaze/SternbergSIM_gaze_stat_diff_gen_subj', num2str(subj), '.png']);
-
+    saveas(gcf, ['/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_diff_subj', num2str(subj), '.png']);
 end
 
 %% MONTECARLO
@@ -333,7 +324,7 @@ cfg.design   = design;
 cfg.uvar     = 1;
 cfg.ivar     = 2;
 
-[stat] = ft_freqstatistics(cfg, l8g{:}, l2g{:});
+[stat] = ft_freqstatistics(cfg, hcg{:}, lcg{:});
 stat.stat(stat.mask==0)=0;% mask out all non significant
 statstern=stat;
 cohensd=2*((statstern.stat)./sqrt(numel(design)));
@@ -344,8 +335,8 @@ mycolormap = customcolormap_preset('red-white-blue');
 freq.powspctrm(1,:,:)= squeeze(stat.stat)';
 freq.time = x_grid_pixels(2:end);
 freq.freq = y_grid_pixels(2:end);
-freq.label={'et'};
-freq.dimord= 'chan_freq_time';
+freq.label = {'et'};
+freq.dimord = 'chan_freq_time';
 
 clf;
 close all;
@@ -361,8 +352,9 @@ set(gca,'Fontsize',30);
 set(gca, 'YDir', 'reverse')
 title('');
 clim([-3.45 3.45])
-hold on; plot(centerX, centerY, 'o', 'MarkerSize', 15, 'MarkerFaceColor', 'k');
+hold on
+plot(centerX, centerY, '+', 'MarkerSize', 15, 'LineWidth', 1, 'Color', 'k');
 xlim([0 800]);
 ylim([0 600]);
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/SternbergSIM_gaze_stat_diff_fine_montecarlo.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_stats_montecarlo.png');
