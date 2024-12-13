@@ -34,10 +34,10 @@ datapath = strcat(path, subjects{subj}, '/eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
-pow_label = pow_lc{1, 1};
+pow_label = power_lc{1, 1};
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
-    if contains(label, {'O'}) || contains(label, {'I'})
+    if contains(label, {'O'}) && ~contains(label, {'P'}) || contains(label, {'I'})
         occ_channels{end+1} = label;
     end
 end

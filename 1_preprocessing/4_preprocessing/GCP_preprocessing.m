@@ -17,7 +17,7 @@ for subj = 1:length(subjects)
     clearvars -except subjects subj path
     datapath = strcat(path,subjects{subj});
     cd(datapath)
-    %if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/dataEEG.mat']))
+    if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/dataEEG.mat']))
         %% Read blocks
         for block = 1:4
             try % Do not load emtpy blocks
@@ -58,42 +58,42 @@ for subj = 1:length(subjects)
             end
         end
 
-        % %% Remove empty blocks
-        % data_lc = data_lc(~cellfun('isempty', data_lc));
-        % data_hc = data_hc(~cellfun('isempty', data_hc));
-        % 
-        % %% Equalize labels
-        % update_labels(data_lc);
-        % update_labels(data_hc);
-        % 
-        % %% Append data for conditions
-        % cfg = [];
-        % cfg.keepsampleinfo = 'no';
-        % data_lc = ft_appenddata(cfg, data_lc{:});
-        % data_hc = ft_appenddata(cfg, data_hc{:});
-        % 
-        % %% Add trialinfo
-        % data_lc.trialinfo = zeros(numel(data_lc.trial), 1) + 61;
-        % data_hc.trialinfo = zeros(numel(data_hc.trial), 1) + 62;
-        % 
-        % %% Get EyeTracking data
-        % cfg = [];
-        % cfg.channel = {'L-GAZE-X'  'L-GAZE-Y' 'L-AREA', 'R-GAZE-X'  'R-GAZE-Y' 'R-AREA'};
-        % dataET_lc = ft_selectdata(cfg, data_lc);
-        % dataET_hc = ft_selectdata(cfg, data_hc);
-        % 
-        % %% Get EEG data (excl. ET and EOG data)
-        % cfg = [];
-        % cfg.channel = {'all' '-B*' '-HEOGR' '-HEOGL', '-VEOGU', '-VEOGL' ,'-L-GAZE-X' , '-L-GAZE-Y' , '-L-AREA', '-R-GAZE-X'  '-R-GAZE-Y' '-R-AREA'};
-        % dataEEG_lc = ft_selectdata(cfg, data_lc);
-        % dataEEG_hc = ft_selectdata(cfg, data_hc);
-        % 
-        % %% Re-reference data to average/common reference
-        % cfg = [];
-        % cfg.reref   = 'yes';
-        % cfg.refchannel = 'all';
-        % dataEEG_lc = ft_preprocessing(cfg, dataEEG_lc);
-        % dataEEG_hc = ft_preprocessing(cfg, dataEEG_hc);
+        %% Remove empty blocks
+        data_lc = data_lc(~cellfun('isempty', data_lc));
+        data_hc = data_hc(~cellfun('isempty', data_hc));
+
+        %% Equalize labels
+        update_labels(data_lc);
+        update_labels(data_hc);
+
+        %% Append data for conditions
+        cfg = [];
+        cfg.keepsampleinfo = 'no';
+        data_lc = ft_appenddata(cfg, data_lc{:});
+        data_hc = ft_appenddata(cfg, data_hc{:});
+
+        %% Add trialinfo
+        data_lc.trialinfo = zeros(numel(data_lc.trial), 1) + 61;
+        data_hc.trialinfo = zeros(numel(data_hc.trial), 1) + 62;
+
+        %% Get EyeTracking data
+        cfg = [];
+        cfg.channel = {'L-GAZE-X'  'L-GAZE-Y' 'L-AREA', 'R-GAZE-X'  'R-GAZE-Y' 'R-AREA'};
+        dataET_lc = ft_selectdata(cfg, data_lc);
+        dataET_hc = ft_selectdata(cfg, data_hc);
+
+        %% Get EEG data (excl. ET and EOG data)
+        cfg = [];
+        cfg.channel = {'all' '-B*' '-HEOGR' '-HEOGL', '-VEOGU', '-VEOGL' ,'-L-GAZE-X' , '-L-GAZE-Y' , '-L-AREA', '-R-GAZE-X'  '-R-GAZE-Y' '-R-AREA'};
+        dataEEG_lc = ft_selectdata(cfg, data_lc);
+        dataEEG_hc = ft_selectdata(cfg, data_hc);
+
+        %% Re-reference data to average/common reference
+        cfg = [];
+        cfg.reref   = 'yes';
+        cfg.refchannel = 'all';
+        dataEEG_lc = ft_preprocessing(cfg, dataEEG_lc);
+        dataEEG_hc = ft_preprocessing(cfg, dataEEG_hc);
 
         %% Compute gaze metric data
         % Low contrast gaze metrics average across trials
@@ -107,14 +107,14 @@ for subj = 1:length(subjects)
         hc_blinks = sum(hc_blink(:))/sum(hc_trl(:));
 
         %% Save data
-        % savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/');
-        % mkdir(savepath)
-        % cd(savepath)
-        % save dataEEG dataEEG_lc dataEEG_hc
+        savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/');
+        mkdir(savepath)
+        cd(savepath)
+        save dataEEG dataEEG_lc dataEEG_hc
         savepathET = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/gaze/');
         mkdir(savepathET)
         cd(savepathET)
-        %save dataET dataET_lc dataET_hc
+        save dataET dataET_lc dataET_hc
         save gaze_metrics lc_saccades lc_fixations lc_blinks hc_saccades hc_fixations hc_blinks
         clc
         if subj == length(subjects)
@@ -122,5 +122,5 @@ for subj = 1:length(subjects)
         else
             disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. Loading next subject...'])
         end
-    %end
+    end
 end

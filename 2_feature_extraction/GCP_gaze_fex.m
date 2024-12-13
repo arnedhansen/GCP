@@ -16,7 +16,8 @@ path = '/Volumes/methlab/Students/Arne/GCP/data/features/';
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
-gaze_data = struct('ID', {}, 'Condition', {}, 'GazeDeviation', {}, 'PupilSize', {}, 'MSRate', {});
+gaze_data = struct('ID', {}, 'Condition', {}, 'GazeDeviation', {}, ...
+    'PupilSize', {}, 'MSRate', {}, 'Blinks', {}, 'Fixations', {}, 'Saccades', {});
 
 %% Load all eye movements
 for subj = 1:length(subjects)
@@ -117,8 +118,18 @@ for subj = 1:length(subjects)
         end
     end
 
+    %% Load gaze metrics (extracted in GCP_preprocessing.m)
+    load([datapath, filesep, 'gaze_metrics'])
+
     %% Create across condition structure
-    subj_data_gaze = struct('ID', num2cell(subject_id(1:2)), 'Condition', num2cell([1; 2]), 'GazeDeviation', num2cell([lc_gdev; hc_gdev]), 'PupilSize', num2cell([lc_pups; hc_pups]), 'MSRate', num2cell([lc_msrate; hc_msrate]));
+    subj_data_gaze = struct('ID', num2cell(subject_id(1:2)), ...
+        'Condition', num2cell([1; 2]), ...
+        'GazeDeviation', num2cell([lc_gdev; hc_gdev]), ...
+        'PupilSize', num2cell([lc_pups; hc_pups]), ...
+        'MSRate', num2cell([lc_msrate; hc_msrate]), ...
+        'Blinks', num2cell([lc_blinks; hc_blinks]),...
+        'Fixations', num2cell([lc_fixations; hc_fixations]),...
+        'Saccades', num2cell([lc_saccades; hc_saccades]));
 
     %% Save data
     savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/gaze/');
