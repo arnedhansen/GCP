@@ -4,6 +4,9 @@
 %   Gaze deviation
 %   Pupil size
 %   Microsaccades
+%
+% Gaze metrics labelled by eye-tracker (saccades, blinks and
+% fixations) are extracted already in GCP_preprocessing.m
 
 %% Setup
 clear

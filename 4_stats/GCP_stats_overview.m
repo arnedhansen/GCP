@@ -5,12 +5,81 @@ close all
 data = readtable('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv');
 data.ReactionTime = data.ReactionTime .* 1000;
 variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'MSRate', 'GammaPower', 'GammaFreq'};
+save_names = {'acc', 'rt', 'gazedev', 'ms', 'pow', 'freq'};
 
 % Split the data by contrast condition
 low_contrast = data(data.Condition == 1, :);
 high_contrast = data(data.Condition == 2, :);
 
-%% BOXPLOTS
+%% BOXPLOTS for each variable
+close all;
+y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Microsaccade Rate [ms/s]', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
+
+% Unique subject identifiers
+subjects = unique(data.ID);
+
+for i = 1:length(variables)
+    % Create a new figure for each subplot
+    figure;
+    set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w'); % Adjust size for each individual plot
+    hold on;
+
+    % Set axis limits
+    ylim([min(data.(variables{i})) max(data.(variables{i}))])
+    xlim([0.5 2.5])
+
+    % Create boxplot
+    boxplot(data.(variables{i}), data.Condition, 'Labels', {'Low Contrast', 'High Contrast'});
+    set(gca, 'FontSize', 15); 
+
+    % Overlay individual data points and connect them
+    for subj = 1:length(subjects)
+        % Extract data for this subject
+        subj_data = data(data.ID == subjects(subj), :);
+
+        if height(subj_data) == 2 % Ensure the subject has data for both conditions
+            % X coordinates: condition indices
+            x = subj_data.Condition;
+            % Y coordinates: variable values
+            y = subj_data.(variables{i});
+
+            % Connect points with a line
+            plot(x, y, '-o', 'Color', [0.5, 0.5, 0.5, 0.5], 'LineWidth', 0.5);
+        end
+    end
+
+    % Scatter individual data points with jitter
+    jitterAmount = 0.005; % Adjust jitter if needed
+    for cond = 1:2 % Two conditions (Low Contrast = 1, High Contrast = 2)
+        % Filter data based on condition
+        cond_data = data(data.Condition == cond, :);
+
+        % Determine color based on condition
+        if cond == 1
+            markerColor = [0, 0, 1]; % Blue for Low Contrast
+        else
+            markerColor = [1, 0, 0]; % Red for High Contrast
+        end
+
+        % Add jitter and scatter the points
+        x_jittered = cond_data.Condition + (rand(size(cond_data.(variables{i}))) - 0.5) * jitterAmount;
+
+        scatter(x_jittered, cond_data.(variables{i}), 36, 'MarkerEdgeColor', markerColor, ...
+            'MarkerFaceColor', markerColor, 'jitter', 'off', 'SizeData', 50);
+    end
+
+    % Add title and labels
+    title(variables{i}, "FontSize", 20);
+    ylabel(y_axis_labels{i}, "FontSize", 15);
+
+    % Save individual subplot
+    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_boxplots_', save_names{i}, '.png'));
+    
+    % Close the current figure to free memory
+    close(gcf);
+end
+
+%% BOXPLOTS OVERVIEW
 close all
 figure;
 set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
@@ -29,6 +98,7 @@ for i = 1:length(variables)
 
     % Create boxplot
     boxplot(data.(variables{i}), data.Condition, 'Labels', {'Low Contrast', 'High Contrast'});
+    set(gca, 'FontSize', 15); 
 
     % Overlay individual data points and connect them
     for subj = 1:length(subjects)
@@ -72,9 +142,62 @@ for i = 1:length(variables)
     ylabel(y_axis_labels{i}, "FontSize", 15);
     hold off;
 end
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_boxplots.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_boxplots.png');
 
-%% PERCENTAGE CHANGE BARPLOTS
+%% PERCENTAGE CHANGE BARPLOTS for each variable
+close all;
+% Preallocate percentage change matrix
+percent_change = zeros(length(subjects), length(variables));
+
+% Loop through each variable to calculate percentage change
+for i = 1:length(variables)
+    for subj = 1:length(subjects)
+        % Extract data for this subject
+        subj_data = data(data.ID == subjects(subj), :);
+
+        if height(subj_data) == 2 % Ensure the subject has data for both conditions
+            % Low and high contrast values
+            low_value = subj_data{subj_data.Condition == 1, variables{i}};
+            high_value = subj_data{subj_data.Condition == 2, variables{i}};
+
+            % Calculate percentage change ((high - low) / low) * 100
+            percent_change(subj, i) = ((high_value - low_value) / low_value) * 100;
+        else
+            percent_change(subj, i) = NaN; % Handle missing data
+        end
+    end
+
+    % Create a new figure for the individual variable
+    figure;
+    set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w'); % Adjust size for individual plots
+    hold on;
+
+    % Bar plot for each participant
+    bar(1:length(subjects), percent_change(:, i), 'FaceColor', 'k', 'EdgeColor', 'none');
+
+    % Formatting
+    xlim([0.5, length(subjects) + 0.5]);
+    abw = max(abs([min(percent_change(:, i), [], 'omitnan'), max(percent_change(:, i), [], 'omitnan')]));
+    ylim([-abw*1.25 abw*1.25]);
+    if i == 5
+        ylim([-100 100]);
+    end
+    xticks(1:length(subjects));
+    xticklabels(subjects);
+    xlabel('Subjects', 'FontSize', 15); % Set font size for xlabel
+    ylabel('% Change', 'FontSize', 15); % Set font size for ylabel
+    title(variables{i}, 'FontSize', 20);
+
+    hold off;
+
+    % Save individual bar plot
+    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_barplots_', save_names{i}, '.png'));
+
+    % Close the individual figure to free memory
+    close(gcf);
+end
+
+%% PERCENTAGE CHANGE BARPLOTS OVERVIEW
 close all
 % Preallocate percentage change matrix
 percent_change = zeros(length(subjects), length(variables));
@@ -124,7 +247,7 @@ for i = 1:length(variables)
     hold off;
 end
 sgtitle('Percentage Change (HC - LC)', 'FontSize', 24);
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_barplots_percentage_change.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_barplots_percentage_change.png');
 
 %% Plot DIFFERENCES in GAMMA POWER and FREQUENCY against MICROSACCADES and GAZE DEVIATION
 close all
@@ -225,7 +348,7 @@ title('Gamma Frequency vs Microsaccade Rate', 'FontSize', 20);
 hold off;
 
 % Save the figure
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_associations.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations.png');
 
 %% CORRELATION matrix
 % close all
@@ -273,4 +396,4 @@ saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview
 % h.ColorLimits = [-1, 1]; % Color limits to ensure proper color mapping
 % h.FontSize = 12; % Increase the size of the x and y axis tick labels
 % hTitle.FontSize = 25;
-% saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/GCP_stats_overview_correlation_matrix.png');
+% saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_correlation_matrix.png');

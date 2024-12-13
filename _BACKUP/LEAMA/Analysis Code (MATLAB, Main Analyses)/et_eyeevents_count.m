@@ -178,14 +178,3 @@ t = table(saccades_lc_mean .', saccades_hc_mean .', fixations_lc_mean .', fixati
 filename = '\\psyger-stor02.d.uzh.ch\methlab\Students\Lea Baechlin\Results\Numbers_Eyeevents_Means.xlsx';
 
 writetable(t,filename,'Sheet',1,'Range','D1')
-
-
-
-
-
-
-
-
-
-
-
