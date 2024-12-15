@@ -7,6 +7,7 @@ data.ReactionTime = data.ReactionTime .* 1000;
 data.PupilSize = [];
 variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'MSRate', 'Blinks', 'Fixations', 'Saccades', 'GammaPower', 'GammaFreq'};
 save_names = {'acc', 'rt', 'gazedev', 'ms', 'blink', 'fix', 'sacc', 'pow', 'freq'};
+colors = color_def('GCP');
 
 % Split the data by contrast condition
 low_contrast = data(data.Condition == 1, :);
@@ -55,18 +56,11 @@ for i = 1:length(variables)
         % Filter data based on condition
         cond_data = data(data.Condition == cond, :);
 
-        % Determine color based on condition
-        if cond == 1
-            markerColor = [0, 0, 1]; % Blue for Low Contrast
-        else
-            markerColor = [1, 0, 0]; % Red for High Contrast
-        end
-
         % Add jitter and scatter the points
         x_jittered = cond_data.Condition + (rand(size(cond_data.(variables{i}))) - 0.5) * jitterAmount;
 
-        scatter(x_jittered, cond_data.(variables{i}), 36, 'MarkerEdgeColor', markerColor, ...
-            'MarkerFaceColor', markerColor, 'jitter', 'off', 'SizeData', 50);
+        scatter(x_jittered, cond_data.(variables{i}), 100, 'MarkerEdgeColor', colors(cond, :), ...
+            'MarkerFaceColor', colors(cond, :), 'jitter', 'off', 'SizeData', 100);
     end
 
     % Add title and labels
@@ -74,7 +68,7 @@ for i = 1:length(variables)
     ylabel(y_axis_labels{i}, "FontSize", 15);
 
     % Save individual subplot
-    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_boxplots_', save_names{i}, '.png'));
+    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_boxplots_', save_names{i}, '.png'));
     
     % Close the current figure to free memory
     close(gcf);
@@ -123,19 +117,12 @@ for i = 1:length(variables)
         % Filter data based on condition
         cond_data = data(data.Condition == cond, :);
 
-        % Determine color based on condition
-        if cond == 1
-            markerColor = [0, 0, 1];  % Blue for Low Contrast
-        else
-            markerColor = [1, 0, 0];  % Red for High Contrast
-        end
-
         % Add jitter and scatter the points
         x_jittered = cond_data.Condition + (rand(size(cond_data.(variables{i}))) - 0.5) * jitterAmount;  % Add random jitter to x-axis
         
         % Clear any previous scatter points (in case of overlaid dots)
-        scatter(x_jittered, cond_data.(variables{i}), 36, 'MarkerEdgeColor', markerColor, ...
-            'MarkerFaceColor', markerColor, 'jitter', 'off', 'SizeData', 38);
+        scatter(x_jittered, cond_data.(variables{i}), 100, 'MarkerEdgeColor', colors(cond, :), ...
+            'MarkerFaceColor', colors(cond, :), 'jitter', 'off', 'SizeData', 100);
     end
 
     % Add title and labels
@@ -180,7 +167,7 @@ for i = 1:length(variables)
     xlim([0.5, length(subjects) + 0.5]);
     abw = max(abs([min(percent_change(:, i), [], 'omitnan'), max(percent_change(:, i), [], 'omitnan')]));
     ylim([-abw*1.25 abw*1.25]);
-    if i == 5
+    if abw > 100
         ylim([-100 100]);
     end
     xticks(1:length(subjects));
@@ -192,7 +179,7 @@ for i = 1:length(variables)
     hold off;
 
     % Save individual bar plot
-    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_barplots_', save_names{i}, '.png'));
+    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_barplots_', save_names{i}, '.png'));
 
     % Close the individual figure to free memory
     close(gcf);
@@ -237,8 +224,8 @@ for i = 1:length(variables)
     xlim([0.5, length(subjects) + 0.5]);
     abw = max(abs([min(percent_change(:, i), [], 'omitnan'), max(percent_change(:, i), [], 'omitnan')]));
     ylim([-abw*1.25 abw*1.25]);
-    if i == 5
-        ylim([-100 100])
+    if abw > 100
+        ylim([-100 100]);
     end
     xticks(1:length(subjects));
     xticklabels(subjects);
@@ -451,7 +438,6 @@ hold off;
 
 % Save the figure
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations.png');
-
 
 %% CORRELATION matrix
 % close all

@@ -46,7 +46,6 @@ channels = occ_channels;
 close all;
 figure;
 set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
-colors = {'b', 'r'};
 conditions = {'Low Contrast', 'High Contrast'};
 cfg = [];
 cfg.channel = channels;
@@ -109,7 +108,6 @@ percent_change_HIGH.powspctrm = ((gapow_hc.powspctrm - gapow_hc_baseline_period.
 close all;
 figure;
 set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
-colors = {'b', 'r'};
 conditions = {'Low Contrast', 'High Contrast'};
 cfg = [];
 cfg.channel = channels;
