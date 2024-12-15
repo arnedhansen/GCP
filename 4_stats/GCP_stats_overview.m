@@ -14,25 +14,26 @@ low_contrast = data(data.Condition == 1, :);
 high_contrast = data(data.Condition == 2, :);
 
 %% BOXPLOTS for each variable
-close all;
 y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Microsaccade Rate [ms/s]', 'Blinks', 'Fixations', 'Saccades', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
 
 % Unique subject identifiers
 subjects = unique(data.ID);
 
 for i = 1:length(variables)
+    close all
     % Create a new figure for each subplot
     figure;
     set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w'); % Adjust size for each individual plot
     hold on;
+    box off
 
     % Set axis limits
     ylim([min(data.(variables{i})) max(data.(variables{i}))])
     xlim([0.5 2.5])
 
-    % Create boxplot
-    boxplot(data.(variables{i}), data.Condition, 'Labels', {'Low Contrast', 'High Contrast'});
-    set(gca, 'FontSize', 15); 
+    % Create boxplot 
+    boxplot(data.(variables{i}), data.Condition, 'Labels', {'Low Contrast', 'High Contrast'}, 'Colors', 'k');
+    set(gca, 'FontSize', 20); 
 
     % Overlay individual data points and connect them
     for subj = 1:length(subjects)
@@ -51,7 +52,7 @@ for i = 1:length(variables)
     end
 
     % Scatter individual data points with jitter
-    jitterAmount = 0.005; % Adjust jitter if needed
+    jitterAmount = 0.001; % Adjust jitter if needed
     for cond = 1:2 % Two conditions (Low Contrast = 1, High Contrast = 2)
         % Filter data based on condition
         cond_data = data(data.Condition == cond, :);
@@ -59,19 +60,16 @@ for i = 1:length(variables)
         % Add jitter and scatter the points
         x_jittered = cond_data.Condition + (rand(size(cond_data.(variables{i}))) - 0.5) * jitterAmount;
 
-        scatter(x_jittered, cond_data.(variables{i}), 100, 'MarkerEdgeColor', colors(cond, :), ...
-            'MarkerFaceColor', colors(cond, :), 'jitter', 'off', 'SizeData', 100);
+        scatter(x_jittered, cond_data.(variables{i}), 300, 'MarkerEdgeColor', 'k', ...
+            'MarkerFaceColor', colors(cond, :), 'jitter', 'off', 'SizeData', 300);
     end
 
     % Add title and labels
-    title(variables{i}, "FontSize", 20);
-    ylabel(y_axis_labels{i}, "FontSize", 15);
+    title(variables{i}, "FontSize", 30);
+    ylabel(y_axis_labels{i}, "FontSize", 25);
 
     % Save individual subplot
     saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_boxplots_', save_names{i}, '.png'));
-    
-    % Close the current figure to free memory
-    close(gcf);
 end
 
 %% BOXPLOTS OVERVIEW
@@ -92,7 +90,7 @@ for i = 1:length(variables)
     xlim([0.5 2.5])
 
     % Create boxplot
-    boxplot(data.(variables{i}), data.Condition, 'Labels', {'Low Contrast', 'High Contrast'});
+    boxplot(data.(variables{i}), data.Condition, 'Labels', {'Low Contrast', 'High Contrast'}, 'Colors', 'k');
     set(gca, 'FontSize', 15); 
 
     % Overlay individual data points and connect them
@@ -121,7 +119,7 @@ for i = 1:length(variables)
         x_jittered = cond_data.Condition + (rand(size(cond_data.(variables{i}))) - 0.5) * jitterAmount;  % Add random jitter to x-axis
         
         % Clear any previous scatter points (in case of overlaid dots)
-        scatter(x_jittered, cond_data.(variables{i}), 100, 'MarkerEdgeColor', colors(cond, :), ...
+        scatter(x_jittered, cond_data.(variables{i}), 100, 'MarkerEdgeColor', 'k', ...
             'MarkerFaceColor', colors(cond, :), 'jitter', 'off', 'SizeData', 100);
     end
 
@@ -237,108 +235,8 @@ end
 sgtitle('Percentage Change (HC - LC)', 'FontSize', 24);
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_barplots_percentage_change.png');
 
-%% Plot DIFFERENCES in GAMMA POWER and FREQUENCY against MICROSACCADES and GAZE DEVIATION
-close all
-% Calculate the differences in Gamma Power and Gamma Frequency
-gamma_power_diff = percent_change(:, 5);
-gamma_freq_diff = percent_change(:, 6);
-
-% Extract the corresponding values for Gaze Deviation and Microsaccade Rate
-gaze_deviation_diff = percent_change(:, 3);
-ms_rate_diff = percent_change(:, 4);
-
-% Set up the figure with the same aesthetics as before
-figure;
-set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
-
-% Plot Gamma Power difference vs Gaze Deviation difference
-subplot(2, 2, 1);
-hold on;
-scatter(gaze_deviation_diff, gamma_power_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
-xlabel('Gaze Deviation Difference [%]', 'FontSize', 15);
-ylabel('Gamma Power Difference [%]', 'FontSize', 15);
-
-% Calculate max_abs_range for this subplot
-max_abs_range = max(abs([gamma_power_diff; gaze_deviation_diff]), [], 'all');
-xlim([-100 100]);
-ylim([-100 100]);
-
-% Dashed lines at x = 0 and y = 0
-xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-
-title('Gamma Power vs Gaze Deviation', 'FontSize', 20);
-hold off;
-
-% Plot Gamma Power difference vs Microsaccade Rate difference
-subplot(2, 2, 2);
-hold on;
-scatter(ms_rate_diff, gamma_power_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
-xlabel('Microsaccade Rate Difference [%]', 'FontSize', 15);
-ylabel('Gamma Power Difference [%]', 'FontSize', 15);
-
-% Calculate max_abs_range for this subplot
-max_abs_range = max(abs([gamma_power_diff; ms_rate_diff]), [], 'all');
-%xlim([-25 25]);
-%ylim([-100 100]);
-xlim([-100 100]);
-ylim([-100 100]);
-
-% Dashed lines at x = 0 and y = 0
-xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-
-title('Gamma Power vs Microsaccade Rate', 'FontSize', 20);
-hold off;
-
-% Plot Gamma Frequency difference vs Gaze Deviation difference
-subplot(2, 2, 3);
-hold on;
-scatter(gaze_deviation_diff, gamma_freq_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
-xlabel('Gaze Deviation Difference [%]', 'FontSize', 15);
-ylabel('Gamma Frequency Difference [%]', 'FontSize', 15);
-
-% Calculate max_abs_range for this subplot
-%max_abs_range = max(abs([gamma_freq_diff; gaze_deviation_diff]), [], 'all');
-% max_abs_range = 45;
-% xlim([-max_abs_range*1.25 max_abs_range*1.25]);
-% ylim([-max_abs_range*1.25 max_abs_range*1.25]);
-xlim([-100 100]);
-ylim([-100 100]);
-
-% Dashed lines at x = 0 and y = 0
-xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-
-title('Gamma Frequency vs Gaze Deviation', 'FontSize', 20);
-hold off;
-
-% Plot Gamma Frequency difference vs Microsaccade Rate difference
-subplot(2, 2, 4);
-hold on;
-scatter(ms_rate_diff, gamma_freq_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
-xlabel('Microsaccade Rate Difference [%]', 'FontSize', 15);
-ylabel('Gamma Frequency Difference [%]', 'FontSize', 15);
-
-% Calculate max_abs_range for this subplot
-% max_abs_range = max(abs([gamma_freq_diff; ms_rate_diff]), [], 'all');
-% max_abs_range = 45;
-% xlim([-max_abs_range*1.25 max_abs_range*1.25]);
-% ylim([-max_abs_range*1.25 max_abs_range*1.25]);
-xlim([-100 100]);
-ylim([-100 100]);
-
-% Dashed lines at x = 0 and y = 0
-xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-
-title('Gamma Frequency vs Microsaccade Rate', 'FontSize', 20);
-hold off;
-
-% Save the figure
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations.png');
-
-%% Plot DIFFERENCES in GAMMA POWER and FREQUENCY against GAZE METRICS from ET (blinks, fixations, saccades)
+%% Plot DIFFERENCES in GAMMA POWER and FREQUENCY against GAZE METRICS: MICROSACCADES,
+%  GAZE DEVIATION and labels by ET (BLINKS, FIXATIONS, SACCADES)
 close all
 % Calculate the differences in Gamma Power and Gamma Frequency
 gamma_power_diff = percent_change(:, 5);

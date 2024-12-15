@@ -2,7 +2,7 @@
 
 %% Setup
 clear
-[subjects, path] = setup('GCP');
+[subjects, path, colors] = setup('GCP');
 
 %% Load power spectra data
 for subj = 1:length(subjects)
@@ -46,11 +46,9 @@ channels = occ_channels;
 close all;
 figure;
 set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
-conditions = {'Low Contrast', 'High Contrast'};
 cfg = [];
 cfg.channel = channels;
 cfg.figure = 'gcf';
-cfg.linecolor = 'br';
 cfg.linewidth = 1;
 
 % Plot for low and high contrast
@@ -59,11 +57,20 @@ hold on;
 
 % Add shaded error bars
 channels_seb = ismember(gapow_lc_baselined.label, cfg.channel);
-lceb = shadedErrorBar(gapow_lc_baselined.freq, mean(gapow_lc_baselined.powspctrm(channels_seb, :), 1), std(gapow_lc_baselined.powspctrm(channels_seb, :))/sqrt(size(gapow_lc_baselined.powspctrm(channels_seb, :), 1)), {'b', 'markerfacecolor', 'b'});
-hceb = shadedErrorBar(gapow_hc_baselined.freq, mean(gapow_hc_baselined.powspctrm(channels_seb, :), 1), std(gapow_hc_baselined.powspctrm(channels_seb, :))/sqrt(size(gapow_hc_baselined.powspctrm(channels_seb, :), 1)), {'r', 'markerfacecolor', 'r'});
-transparency = 0.5;
-set(lceb.patch, 'FaceAlpha', transparency);
-set(hceb.patch, 'FaceAlpha', transparency);
+lceb = shadedErrorBar(gapow_lc_baselined.freq, mean(gapow_lc_baselined.powspctrm(channels_seb, :), 1), std(gapow_lc_baselined.powspctrm(channels_seb, :))/sqrt(size(gapow_lc_baselined.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+hceb = shadedErrorBar(gapow_hc_baselined.freq, mean(gapow_hc_baselined.powspctrm(channels_seb, :), 1), std(gapow_hc_baselined.powspctrm(channels_seb, :))/sqrt(size(gapow_hc_baselined.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+lceb.mainLine.Color = colors(1, :);
+hceb.mainLine.Color = colors(2, :);
+lceb.patch.FaceColor = colors(1, :);
+hceb.patch.FaceColor = colors(2, :);
+set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
+set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
+set(lceb.edge(1), 'Color', colors(1, :));
+set(lceb.edge(2), 'Color', colors(1, :));
+set(hceb.edge(1), 'Color', colors(2, :));
+set(hceb.edge(2), 'Color', colors(2, :));
+set(lceb.patch, 'FaceAlpha', 0.5);
+set(hceb.patch, 'FaceAlpha', 0.5);
 
 % Find GA gamma peak for LOW contrast
 freq_idx = find(gapow_lc_baselined.freq >= 30 & gapow_lc_baselined.freq <= 90); % Adjust freq range to gamma
@@ -79,11 +86,11 @@ hc_gamma_power = mean(gapow_hc_baselined.powspctrm(channels_seb, freq_idx), 1);
 hc_freq = locs(peak_idx);
 
 % Adjust plot aesthetics
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5);
-plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
-plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
-plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
-plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
+yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
+plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
+plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
 set(gcf,'color','w');
 set(gca,'Fontsize',20);
 max_spctrm = max(lc_pow, hc_pow);
@@ -108,11 +115,9 @@ percent_change_HIGH.powspctrm = ((gapow_hc.powspctrm - gapow_hc_baseline_period.
 close all;
 figure;
 set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
-conditions = {'Low Contrast', 'High Contrast'};
 cfg = [];
 cfg.channel = channels;
 cfg.figure = 'gcf';
-cfg.linecolor = 'br';
 cfg.linewidth = 1;
 
 % Plot for low and high contrast
@@ -121,11 +126,20 @@ hold on;
 
 % Add shaded error bars
 channels_seb = ismember(percent_change_LOW.label, cfg.channel);
-lceb = shadedErrorBar(percent_change_LOW.freq, mean(percent_change_LOW.powspctrm(channels_seb, :), 1), std(percent_change_LOW.powspctrm(channels_seb, :))/sqrt(size(percent_change_LOW.powspctrm(channels_seb, :), 1)), {'b', 'markerfacecolor', 'b'});
-hceb = shadedErrorBar(percent_change_HIGH.freq, mean(percent_change_HIGH.powspctrm(channels_seb, :), 1), std(percent_change_HIGH.powspctrm(channels_seb, :))/sqrt(size(percent_change_HIGH.powspctrm(channels_seb, :), 1)), {'r', 'markerfacecolor', 'r'});
-transparency = 0.5;
-set(lceb.patch, 'FaceAlpha', transparency);
-set(hceb.patch, 'FaceAlpha', transparency);
+lceb = shadedErrorBar(percent_change_LOW.freq, mean(percent_change_LOW.powspctrm(channels_seb, :), 1), std(percent_change_LOW.powspctrm(channels_seb, :))/sqrt(size(percent_change_LOW.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+hceb = shadedErrorBar(percent_change_HIGH.freq, mean(percent_change_HIGH.powspctrm(channels_seb, :), 1), std(percent_change_HIGH.powspctrm(channels_seb, :))/sqrt(size(percent_change_HIGH.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+lceb.mainLine.Color = colors(1, :);
+hceb.mainLine.Color = colors(2, :);
+lceb.patch.FaceColor = colors(1, :);
+hceb.patch.FaceColor = colors(2, :);
+set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
+set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
+set(lceb.edge(1), 'Color', colors(1, :));
+set(lceb.edge(2), 'Color', colors(1, :));
+set(hceb.edge(1), 'Color', colors(2, :));
+set(hceb.edge(2), 'Color', colors(2, :));
+set(lceb.patch, 'FaceAlpha', 0.5);
+set(hceb.patch, 'FaceAlpha', 0.5);
 
 % Find GA gamma peak for LOW contrast
 lc_gamma_power = mean(percent_change_LOW.powspctrm(channels_seb, freq_idx), 1);
@@ -140,11 +154,11 @@ hc_gamma_power = mean(percent_change_HIGH.powspctrm(channels_seb, freq_idx), 1);
 hc_freq = locs(peak_idx);
 
 % Adjust plot aesthetics
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5);
-plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
-plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
-plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
-plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
+yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
+plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
+plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
 set(gcf,'color','w');
 set(gca,'Fontsize',20);
 max_spctrm = max(lc_pow, hc_pow);
@@ -162,7 +176,7 @@ saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspc
 %% Plot INDIVIDUAL power spectra BASELINED
 output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
 
-for subj = 9%1:length(subjects)
+for subj = 1:length(subjects)
     close all;
     figure;
     set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
@@ -175,7 +189,6 @@ for subj = 9%1:length(subjects)
     cfg = [];
     cfg.channel = channels;
     cfg.figure = 'gcf';
-    cfg.linecolor = 'br';
     cfg.linewidth = 1;
 
     % Plot power spectrum for low and high contrast
@@ -185,12 +198,21 @@ for subj = 9%1:length(subjects)
     % Add shaded error bars
     channels_seb = ismember(pow_lc_subj.label, cfg.channel);
     lceb = shadedErrorBar(pow_lc_subj.freq, mean(pow_lc_subj.powspctrm(channels_seb, :), 1), ...
-        std(pow_lc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_lc_subj.powspctrm(channels_seb, :), 1)), {'b', 'markerfacecolor', 'b'});
+        std(pow_lc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_lc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
     hceb = shadedErrorBar(pow_hc_subj.freq, mean(pow_hc_subj.powspctrm(channels_seb, :), 1), ...
-        std(pow_hc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_hc_subj.powspctrm(channels_seb, :), 1)), {'r', 'markerfacecolor', 'r'});
-    transparency = 0.5;
-    set(lceb.patch, 'FaceAlpha', transparency);
-    set(hceb.patch, 'FaceAlpha', transparency);
+        std(pow_hc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_hc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+    lceb.mainLine.Color = colors(1, :);
+    hceb.mainLine.Color = colors(2, :);
+    lceb.patch.FaceColor = colors(1, :);
+    hceb.patch.FaceColor = colors(2, :);
+    set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
+    set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
+    set(lceb.edge(1), 'Color', colors(1, :));
+    set(lceb.edge(2), 'Color', colors(1, :));
+    set(hceb.edge(1), 'Color', colors(2, :));
+    set(hceb.edge(2), 'Color', colors(2, :));
+    set(lceb.patch, 'FaceAlpha', 0.5);
+    set(hceb.patch, 'FaceAlpha', 0.5);
 
     % Find channels and frequencies of interest
     channels_idx = ismember(pow_lc_subj.label, channels);
@@ -213,12 +235,12 @@ for subj = 9%1:length(subjects)
     end
 
     % Adjust plot aesthetics
-    yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5);
+    yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
+    plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+    plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+    plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
+    plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
     set(gca, 'FontSize', 20);
-    plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
-    plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
-    plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
-    plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
     max_spctrm = max(lc_pow, hc_pow);
     if subj == 9
         max_spctrm = 0.4
@@ -259,7 +281,6 @@ for subj = 1:num_subs
     cfg = [];
     cfg.channel = channels;  % Focus on occipital channels
     cfg.figure = 'gcf';
-    cfg.linecolor = 'br';    % Blue for Low Contrast, Red for High Contrast
     cfg.linewidth = 1;
 
     % Plot power spectrum for low and high contrast
@@ -269,12 +290,21 @@ for subj = 1:num_subs
     % Add shaded error bars
     channels_seb = ismember(pow_lc_subj.label, cfg.channel);
     lceb = shadedErrorBar(pow_lc_subj.freq, mean(pow_lc_subj.powspctrm(channels_seb, :), 1), ...
-        std(pow_lc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_lc_subj.powspctrm(channels_seb, :), 1)), {'b', 'markerfacecolor', 'b'});
+        std(pow_lc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_lc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
     hceb = shadedErrorBar(pow_hc_subj.freq, mean(pow_hc_subj.powspctrm(channels_seb, :), 1), ...
-        std(pow_hc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_hc_subj.powspctrm(channels_seb, :), 1)), {'r', 'markerfacecolor', 'r'});
-    transparency = 0.5;
-    set(lceb.patch, 'FaceAlpha', transparency);
-    set(hceb.patch, 'FaceAlpha', transparency);
+        std(pow_hc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_hc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+    lceb.mainLine.Color = colors(1, :);
+    hceb.mainLine.Color = colors(2, :);
+    lceb.patch.FaceColor = colors(1, :);
+    hceb.patch.FaceColor = colors(2, :);
+    set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
+    set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
+    set(lceb.edge(1), 'Color', colors(1, :));
+    set(lceb.edge(2), 'Color', colors(1, :));
+    set(hceb.edge(1), 'Color', colors(2, :));
+    set(hceb.edge(2), 'Color', colors(2, :));
+    set(lceb.patch, 'FaceAlpha', 0.5);
+    set(hceb.patch, 'FaceAlpha', 0.5);
 
      % Find channels and frequencies of interest
     channels_idx = ismember(pow_lc_subj.label, channels);
@@ -297,12 +327,12 @@ for subj = 1:num_subs
     end
 
     % Adjust plot aesthetics
-    yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5);
     set(gca, 'FontSize', 20);
-    plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
-    plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', 'b', 'LineWidth', 0.5);
-    plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
-    plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', 'r', 'LineWidth', 0.5);
+    yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
+    plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+    plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+    plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
+    plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
     max_spctrm = max(lc_pow, hc_pow);
     %ylim([-1.55 1.55])
     ylim([-max_spctrm*1.25 max_spctrm*1.25]);
