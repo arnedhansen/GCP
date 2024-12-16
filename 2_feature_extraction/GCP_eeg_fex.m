@@ -62,8 +62,14 @@ end
 %% Load data and convert TFR data to POWSCPTRM (channels x frequency)
 clc
 disp('POWER ANALYSIS')
+% Set analysis to 0-300ms or 300ms-2000ms after stimulus presentation
+anal_period = 1;
 baseline_period = [-0.5 -0.25];
-analysis_period = [0.3 2]; % only start from 300ms after stimulus presentation to exclude evoked activity
+if anal_period == 1
+    analysis_period = [0 0.3]; % only starting stimulus activity
+else
+    analysis_period = [0.3 2]; % only start from 300ms after stimulus presentation
+end
 freq_range = [30 90];
 [subjects, path] = setup('GCP');
 
@@ -101,7 +107,11 @@ for subj = 1 : length(subjects)
     savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
     mkdir(savepath)
     cd(savepath)
+    if anal_period == 1
+            save power_spectra_300 pow_lc pow_lc_baselined pow_lc_baseline_period pow_hc pow_hc_baselined pow_hc_baseline_period
+    else
     save power_spectra pow_lc pow_lc_baselined pow_lc_baseline_period pow_hc pow_hc_baselined pow_hc_baseline_period
+    end
     %end
 end
 
@@ -123,7 +133,11 @@ channels = occ_channels;
 eeg_data = [];
 for subj = 1:length(subjects)
     % Load power spectra data
-    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    if anal_period == 1
+        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
+    else
+        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    end
 
     % Find channels and frequencies of interest
     channels_idx = ismember(pow_lc_baselined.label, channels);
@@ -167,9 +181,15 @@ for subj = 1:length(subjects)
     savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
     mkdir(savepath)
     cd(savepath)
-    save eeg_matrix_subj subj_data_eeg
-    save pow lc_pow hc_pow
-    save freq lc_freq hc_freq
+    if anal_period == 1
+        save eeg_matrix_subj300 subj_data_eeg
+        save pow300 lc_pow hc_pow
+        save freq300 lc_freq hc_freq
+    else
+        save eeg_matrix_subj subj_data_eeg
+        save pow lc_pow hc_pow
+        save freq lc_freq hc_freq
+    end
 
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracted.'])
 

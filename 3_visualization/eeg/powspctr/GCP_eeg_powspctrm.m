@@ -3,10 +3,16 @@
 %% Setup
 clear
 [subjects, path, colors] = setup('GCP');
+anal_period = 1
+
 
 %% Load power spectra data
 for subj = 1:length(subjects)
-    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    if anal_period == 1
+        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
+    else
+        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    end
 
     % Low contrast
     power_lc{subj} = pow_lc;
@@ -103,7 +109,11 @@ title('Grand Average Power Spectrum', 'FontSize', 30);
 hold off;
 
 % Save the plot
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_baselined.png');
+if anal_period == 1
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_baselined_300.png');
+else
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_baselined.png');
+end
 
 %% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
 % Percentage change formula: ((stimulus - baseline) / baseline) * 100
@@ -171,7 +181,11 @@ title('Percentage Change Power Spectrum', 'FontSize', 30);
 hold off;
 
 % Save the plot
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
+if anal_period == 1
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage_300.png');
+else
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
+end
 
 %% Plot INDIVIDUAL power spectra BASELINED
 output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
@@ -256,7 +270,11 @@ for subj = 1:length(subjects)
     hold off;
 
     % Save individual plot
-    save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined.png', subjects{subj}));
+    if anal_period == 1
+        save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined_300.png', subjects{subj}));
+    else
+        save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined.png', subjects{subj}));
+    end
     saveas(gcf, save_path);
 end
 
@@ -321,10 +339,10 @@ for subj = 1:num_subs
     [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_subj.freq(freq_idx));
     [hc_pow, peak_idx] = max(peaks);
     hc_freq = locs(peak_idx);
-    if subj == 9
-        hc_pow = 0.1149
-        hc_freq = 86
-    end
+    % if subj == 9
+    %     hc_pow = 0.1149
+    %     hc_freq = 86
+    % end
 
     % Adjust plot aesthetics
     set(gca, 'FontSize', 20);
@@ -335,11 +353,11 @@ for subj = 1:num_subs
     plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
     max_spctrm = max(lc_pow, hc_pow);
     ylim([-max_spctrm*1.25 max_spctrm*1.25]);
-    if subj == 9
-        ylim([-0.35 0.35])
-    elseif subj == 10
-        ylim([-0.75 0.75])
-    end
+    % if subj == 9
+    %     ylim([-0.35 0.35])
+    % elseif subj == 10
+    %     ylim([-0.75 0.75])
+    % end
     xlim([30 90]);
     xticks(30:10:90);
     xlabel('Freq [Hz]', 'FontSize', 15);
@@ -352,5 +370,9 @@ for subj = 1:num_subs
 end
 
 % Save the combined figure with all subplots
-save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined.png');
+if anal_period == 1
+    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined_300.png');
+else
+    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined.png');
+end
 saveas(gcf, save_path);
