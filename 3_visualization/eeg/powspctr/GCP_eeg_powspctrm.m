@@ -334,7 +334,6 @@ for subj = 1:num_subs
     plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
     plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
     max_spctrm = max(lc_pow, hc_pow);
-    %ylim([-1.55 1.55])
     ylim([-max_spctrm*1.25 max_spctrm*1.25]);
     if subj == 9
         ylim([-0.35 0.35])

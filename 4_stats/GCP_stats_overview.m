@@ -156,6 +156,7 @@ for i = 1:length(variables)
     % Create a new figure for the individual variable
     figure;
     set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w'); % Adjust size for individual plots
+    set(gca, 'FontSize', 20); 
     hold on;
 
     % Bar plot for each participant
@@ -170,9 +171,9 @@ for i = 1:length(variables)
     end
     xticks(1:length(subjects));
     xticklabels(subjects);
-    xlabel('Subjects', 'FontSize', 15); % Set font size for xlabel
-    ylabel('% Change', 'FontSize', 15); % Set font size for ylabel
-    title(variables{i}, 'FontSize', 20);
+    xlabel('Subjects', 'FontSize', 25); % Set font size for xlabel
+    ylabel('% Change', 'FontSize', 25); % Set font size for ylabel
+    title(variables{i}, 'FontSize', 30);
 
     hold off;
 
