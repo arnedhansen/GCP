@@ -239,103 +239,63 @@ saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats
 %  GAZE DEVIATION and labels by ET (BLINKS, FIXATIONS, SACCADES)
 close all
 % Calculate the differences in Gamma Power and Gamma Frequency
-gamma_power_diff = percent_change(:, 5);
-gamma_freq_diff = percent_change(:, 6);
+gamma_power_diff = percent_change(:, 8);
+gamma_freq_diff = percent_change(:, 9);
 
-% Extract the corresponding values for Gaze Deviation and Microsaccade Rate
+% Extract the corresponding values for gaze metrics
 gaze_deviation_diff = percent_change(:, 3);
 ms_rate_diff = percent_change(:, 4);
+blink_diff = percent_change(:, 5);
+fix_diff = percent_change(:, 6);
+sacc_diff = percent_change(:, 7);
 
-% Set up the figure with the same aesthetics as before
+% Define gaze metrics
+metrics = {
+    'Gaze Deviation Diff. [%]', gaze_deviation_diff;
+    'Microsaccade Rate Diff. [%]', ms_rate_diff;
+    'Blink Diff. [%]', blink_diff;
+    'Fixation Diff. [%]', fix_diff;
+    'Saccade Diff. [%]', sacc_diff
+};
+
+% Number of metrics
+n_metrics = size(metrics, 1);
+
+% Create figure for Gamma Power
 figure;
-set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+set(gcf, 'Position', [0, 0, 800, 800], 'Color', 'w');
+for i = 1:n_metrics
+    subplot(ceil(n_metrics / 2), 2, i);
+    hold on;
+    scatter(metrics{i, 2}, gamma_power_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0]);
+    xlabel(metrics{i, 1}, 'FontSize', 15);
+    ylabel('Gamma Power Diff. [%]', 'FontSize', 15);
+    xlim([-100, 100]);
+    ylim([-100, 100]);
+    xline(0, '--', 'Color', [0.3, 0.3, 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+    yline(0, '--', 'Color', [0.3, 0.3, 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+    title(['Pow vs ', metrics{i, 1}], 'FontSize', 18);
+    hold off;
+end
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations_pow.png');
 
-% Plot Gamma Power difference vs Gaze Deviation difference
-subplot(2, 2, 1);
-hold on;
-scatter(gaze_deviation_diff, gamma_power_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
-xlabel('Gaze Deviation Difference [%]', 'FontSize', 15);
-ylabel('Gamma Power Difference [%]', 'FontSize', 15);
-
-% Calculate max_abs_range for this subplot
-max_abs_range = max(abs([gamma_power_diff; gaze_deviation_diff]), [], 'all');
-xlim([-100 100]);
-ylim([-100 100]);
-
-% Dashed lines at x = 0 and y = 0
-xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-
-title('Gamma Power vs Gaze Deviation', 'FontSize', 20);
-hold off;
-
-% Plot Gamma Power difference vs Microsaccade Rate difference
-subplot(2, 2, 2);
-hold on;
-scatter(ms_rate_diff, gamma_power_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
-xlabel('Microsaccade Rate Difference [%]', 'FontSize', 15);
-ylabel('Gamma Power Difference [%]', 'FontSize', 15);
-
-% Calculate max_abs_range for this subplot
-max_abs_range = max(abs([gamma_power_diff; ms_rate_diff]), [], 'all');
-%xlim([-25 25]);
-%ylim([-100 100]);
-xlim([-100 100]);
-ylim([-100 100]);
-
-% Dashed lines at x = 0 and y = 0
-xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-
-title('Gamma Power vs Microsaccade Rate', 'FontSize', 20);
-hold off;
-
-% Plot Gamma Frequency difference vs Gaze Deviation difference
-subplot(2, 2, 3);
-hold on;
-scatter(gaze_deviation_diff, gamma_freq_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
-xlabel('Gaze Deviation Difference [%]', 'FontSize', 15);
-ylabel('Gamma Frequency Difference [%]', 'FontSize', 15);
-
-% Calculate max_abs_range for this subplot
-%max_abs_range = max(abs([gamma_freq_diff; gaze_deviation_diff]), [], 'all');
-% max_abs_range = 45;
-% xlim([-max_abs_range*1.25 max_abs_range*1.25]);
-% ylim([-max_abs_range*1.25 max_abs_range*1.25]);
-xlim([-100 100]);
-ylim([-100 100]);
-
-% Dashed lines at x = 0 and y = 0
-xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-
-title('Gamma Frequency vs Gaze Deviation', 'FontSize', 20);
-hold off;
-
-% Plot Gamma Frequency difference vs Microsaccade Rate difference
-subplot(2, 2, 4);
-hold on;
-scatter(ms_rate_diff, gamma_freq_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0], 'SizeData', 100);
-xlabel('Microsaccade Rate Difference [%]', 'FontSize', 15);
-ylabel('Gamma Frequency Difference [%]', 'FontSize', 15);
-
-% Calculate max_abs_range for this subplot
-% max_abs_range = max(abs([gamma_freq_diff; ms_rate_diff]), [], 'all');
-% max_abs_range = 45;
-% xlim([-max_abs_range*1.25 max_abs_range*1.25]);
-% ylim([-max_abs_range*1.25 max_abs_range*1.25]);
-xlim([-100 100]);
-ylim([-100 100]);
-
-% Dashed lines at x = 0 and y = 0
-xline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
-
-title('Gamma Frequency vs Microsaccade Rate', 'FontSize', 20);
-hold off;
-
-% Save the figure
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations.png');
+% Create figure for Gamma Frequency
+figure;
+set(gcf, 'Position', [800, 0, 800, 800], 'Color', 'w');
+for i = 1:n_metrics
+    subplot(ceil(n_metrics / 2), 2, i);
+    hold on;
+    scatter(metrics{i, 2}, gamma_freq_diff, 36, 'MarkerEdgeColor', [0, 0, 0], 'MarkerFaceColor', [0, 0, 0]);
+    xlabel(metrics{i, 1}, 'FontSize', 15);
+    ylabel('Gamma Frequency Diff. [%]', 'FontSize', 15);
+    xlim([-100, 100]);
+    ylim([-100, 100]);
+    xline(0, '--', 'Color', [0.3, 0.3, 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+    yline(0, '--', 'Color', [0.3, 0.3, 0.3], 'LineWidth', 0.5, 'Alpha', 0.25);
+    title(['Freq vs ', metrics{i, 1}], 'FontSize', 18);
+    hold off;
+end
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations_freq.png');
 
 %% CORRELATION matrix
 % close all
@@ -383,4 +343,4 @@ saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats
 % h.ColorLimits = [-1, 1]; % Color limits to ensure proper color mapping
 % h.FontSize = 12; % Increase the size of the x and y axis tick labels
 % hTitle.FontSize = 25;
-% saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_correlation_matrix.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_correlation_matrix.png');
