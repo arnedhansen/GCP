@@ -46,7 +46,7 @@ for subj = 1:length(subjects)
             data = dataET.trial{trl};
 
             %% Choose data 300ms after stimulus presentation to exclude evoked activity
-            analysis_period = [0.3 2];
+            analysis_period = [0 2];
             time_vector = dataET.time{trl};
             analysis_idx = (time_vector >= analysis_period(1)) & (time_vector <= analysis_period(2));
             data = data(:, analysis_idx);
@@ -90,7 +90,12 @@ for subj = 1:length(subjects)
             fsample = 500; % Sample rate of 500 Hz
             velData = [gaze_x{subj, trl}; gaze_y{subj, trl}]; % Concatenate x and y gaze coordinates to compute the velocity of eye movements in a 2D space
             trlLength = length(dataET.time{trl});
-            microsaccade_rate = detect_microsaccades(fsample, velData, trlLength);
+            [microsaccade_rate, microsaccade_details] = detect_microsaccades(fsample, velData, trlLength);
+            if strcmp(conds, 'lc')
+                ms_data_lc{trl} = microsaccade_details; % Save trial by trial ms data
+            elseif strcmp(conds, 'hc')
+                ms_data_hc{trl} = microsaccade_details; % Save trial by trial ms data
+            end
 
             %% Append data for this trial
             subject_id = [subject_id; str2num(subjects{subj})];
@@ -133,13 +138,16 @@ for subj = 1:length(subjects)
 
     %% Save data
     savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/gaze/');
-    mkdir(savepath)
+    if isempty(dir(savepath))
+        mkdir(savepath)
+    end
     cd(savepath)
     save gaze_matrix_trial subj_data_gaze_trial_lc subj_data_gaze_trial_hc
     save gaze_matrix_subj subj_data_gaze
     save gaze_dev lc_gdev hc_gdev
     save pupil_size lc_pups hc_pups
     save ms_rate lc_msrate hc_msrate
+    save ms_data ms_data_lc ms_data_hc
     clc
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
 

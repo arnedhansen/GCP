@@ -2,6 +2,8 @@
 
 % Visualizations:
 %   Boxplots of microsaccade rate
+%   Barplots of microsaccade rate percentage difference
+%   Histograms of microsaccade timing
 
 %% Setup
 clear
@@ -12,16 +14,25 @@ dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
 
-%% Load gaze data
+%% Load microsaccade data
+ms_details_lc = {};
+ms_details_hc = {};
 for subj = 1:length(subjects)
     datapath = strcat(path, subjects{subj}, '/gaze');
     cd(datapath);
+
+    % Load ms_rate.mat
     load('ms_rate.mat');
     ms_lc(subj) = lc_msrate;
     ms_hc(subj) = hc_msrate;
+
+    % Load ms_data.mat
+    load('ms_data.mat');
+    ms_details_lc{subj} = ms_data_lc;
+    ms_details_hc{subj} = ms_data_hc;
 end
 
-%% Plot Euclidean deviations BOXPLOTS
+%% Plot Microsaccades BOXPLOTS
 dataMSrate = [ms_lc', ms_hc'];
 conditions = {'Low Contrast', 'High Contrast'};
 close all
@@ -68,7 +79,7 @@ disp(means);
 disp('Stds:');
 disp(Stds);
 
-%% Plot Euclidean deviations BARPLOT for PERCENTAGE CHANGE
+%% Plot Microsaccades BARPLOT for PERCENTAGE CHANGE
 close all
 % Calculate Percentage Changes
 percent_change = ((ms_hc - ms_lc) ./ ms_lc) * 100;
@@ -98,3 +109,109 @@ hold off;
 disp('Percentage Changes:');
 disp(percent_change);
 
+%% Plot Microsaccade TIMING Data
+close all
+figure('Name', 'Microsaccade Timing Distribution', 'NumberTitle', 'off');
+set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w'); % Adjust figure size
+set(gca, 'FontSize', 20);
+hold on;
+
+% Define colours for the GCP project
+colors = color_def('GCP'); % Get colours: Beige and Purple
+
+% Collect all timings for low and high conditions
+ms_timings_lc = [];
+ms_timings_hc = [];
+for subj = 1:length(ms_details_lc)
+    if ~isempty(ms_details_lc{subj})
+        for trl = 1:length(ms_details_lc{subj})
+            ms_timings_lc = [ms_timings_lc; ms_details_lc{subj}{trl}.Onset]; %#ok<AGROW>
+        end
+    end
+    if ~isempty(ms_details_hc{subj})
+        for trl = 1:length(ms_details_hc{subj})
+            ms_timings_hc = [ms_timings_hc; ms_details_hc{subj}{trl}.Onset]; %#ok<AGROW>
+        end
+    end
+end
+
+% Convert to ms
+ms_timings_lc = ms_timings_lc * 2;
+ms_timings_hc = ms_timings_hc * 2;
+
+% Histogram for LOW contrast
+histogram(ms_timings_lc, 'BinWidth', 10, ... 
+    'FaceColor', colors(1, :), 'EdgeColor', 'none', ...
+    'Normalization', 'probability', 'FaceAlpha', 0.85, ...
+    'DisplayName', 'Low Condition');
+
+% Histogram for HIGH contrast
+histogram(ms_timings_hc, 'BinWidth', 10, ...
+    'FaceColor', colors(2, :), 'EdgeColor', 'none', ...
+    'Normalization', 'probability', 'FaceAlpha', 0.5, ...
+    'DisplayName', 'High Condition');
+
+
+% Finalise plot
+xlabel('Time [ms]');
+ylabel('Density');
+title('Microsaccade Timing Distribution');
+legend('Location', 'best');
+xlim([0 2000])
+hold off;
+
+% Save the figure
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/microsaccades/GCP_gaze_microsaccades_timing_histogram.png');
+
+%% 3. Microsaccade Peak Velocities Distribution
+close all
+figure('Name', 'Microsaccade Timing Distribution', 'NumberTitle', 'off');
+set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w'); % Adjust figure size
+set(gca, 'FontSize', 20);
+hold on;
+
+% Define colours for the GCP project
+colors = color_def('GCP'); % Get colours: Beige and Purple
+
+% Load data
+ms_peak_lc = [];
+ms_peak_hc = [];
+for subj = 1:length(ms_details_lc)
+    if ~isempty(ms_details_lc{subj})
+        for trl = 1:length(ms_details_lc{subj})
+            ms_peak_lc = [ms_peak_lc; ms_details_lc{subj}{trl}.Peak]; %#ok<AGROW>
+        end
+    end
+    if ~isempty(ms_details_hc{subj})
+        for trl = 1:length(ms_details_hc{subj})
+            ms_peak_hc = [ms_peak_hc; ms_details_hc{subj}{trl}.Peak]; %#ok<AGROW>
+        end
+    end
+end
+
+% Convert to ms
+ms_peak_lc = ms_peak_lc * 2;
+ms_peak_hc = ms_peak_hc * 2;
+
+% Histogram for LOW contrast
+histogram(ms_peak_lc, 'BinWidth', 10, ... 
+    'FaceColor', colors(1, :), 'EdgeColor', 'none', ...
+    'Normalization', 'probability', 'FaceAlpha', 0.85, ...
+    'DisplayName', 'Low Condition');
+
+% Histogram for HIGH contrast
+histogram(ms_peak_hc, 'BinWidth', 10, ...
+    'FaceColor', colors(2, :), 'EdgeColor', 'none', ...
+    'Normalization', 'probability', 'FaceAlpha', 0.5, ...
+    'DisplayName', 'High Condition');
+
+% Finalise plot
+xlabel('Time [ms]');
+ylabel('Density');
+title('Microsaccade Peak Velocity Distribution');
+legend('Location', 'best');
+xlim([0 2000])
+hold off;
+
+% Save figure
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/microsaccades/GCP_gaze_microsaccades_peak_velocity_histogram.png');
