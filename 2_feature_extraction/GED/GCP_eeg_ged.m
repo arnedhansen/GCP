@@ -16,19 +16,17 @@ subjects = {folders.name};
 for subj = 10%:length(subjects)
     datapath = strcat(path, subjects{subj});
     cd(datapath)
-    
-    % Initialise a structure to hold all blocks
-    EEG_all = [];
-    
+        
     % Read blocks
+    EEG_all = [];
     for block = 1:1
         try % Do not load empty blocks
             load(strcat(subjects{subj}, '_EEG_ET_GCP_block', num2str(block), '_merged.mat'))
             
             EEG.data = double(EEG.data);
-            
+
             % Identify the indices of the EEG channels
-            chanlocs = {EEG.chanlocs.labels}; % Channel labels
+            chanlocs = {EEG.chanlocs.labels};
             exclude_channels = {'B*', 'HEOGR', 'HEOGL', 'VEOGU', 'VEOGL', ...
                                 'L-GAZE-X', 'L-GAZE-Y', 'L-AREA', ...
                                 'R-GAZE-X', 'R-GAZE-Y', 'R-AREA'};
@@ -39,16 +37,15 @@ for subj = 10%:length(subjects)
 
             % Rereference to average
             EEG = pop_reref(EEG, []);
-            
 
-            % Filter EEG data
-            EEG = pop_eegfiltnew(EEG, 0.2, 30);
+            % Filter EEG data to gamma band (30 - 90 Hz)
+            EEG = pop_eegfiltnew(EEG, 30, 90);
             
             % Append data
             if isempty(EEG_all)
-                EEG_all = EEG; % Initialise with the first block
+                EEG_all = EEG; 
             else
-                EEG_all = pop_mergeset(EEG_all, EEG); % Append subsequent blocks
+                EEG_all = pop_mergeset(EEG_all, EEG);
             end
             clear EEG
             fprintf('Subject GCP %.3s (%.3d/%.3d): Block %.1d loaded and appended\n', subjects{subj}, subj, length(subjects), block)
@@ -64,7 +61,7 @@ stim_latency = latencies(stim_idx);
 
 % Define how many timepoints (at 500Hz) should be uses for pre and post segments
 pre_timepoints = 250; % -1000 ms until 0 (stimuls presentation)
-post_timpoints = 250; % 0 (stimulus presentation) until +2000ms 
+post_timpoints = 500; % 0 (stimulus presentation) until +2000ms 
 
 %% Pre-stimulus covariance
 addpath('/Users/Arne/Documents/matlabtools/colormaps/')
@@ -84,7 +81,7 @@ for ti=1:length(stim_latency)
     nwin = length(stim_latency(ti)-pre_timepoints : stim_latency(ti) + post_timpoints);
     covPre   = covPre + (tmpdat*tmpdat')/nwin; % nwin = length in TIME POINTS von pre für jedes trial
 end
-covPre = covPre./ti;
+covPre = covPre / length(stim_latency);
 
 % Sanity check
 close all
@@ -108,7 +105,7 @@ for ti=1:length(stim_latency)
     nwin = length(stim_latency(ti) : stim_latency(ti)+post_timpoints);
     covPost   = covPost + (tmpdat*tmpdat')/nwin; % nwin = length in TIME POINTS von pre für jedes trial
 end
-covPost = covPost./ti;
+covPost = covPost / length(stim_latency);
 
 % Sanity check
 close all
@@ -135,10 +132,10 @@ set(gca, 'FontSize', 14, 'LineWidth', 1.5, 'Box', 'on');
 topo_map_prepost = covPost * eigenvecs(:, maxcomp(end));
 
 % Gamma time series component (raw data * eigenvector)
-gammacomp_pre = EEG_all.data' * eigenvecs(:, maxcomp(end));
-
+gammacomp = EEG_all.data' * eigenvecs(:, maxcomp(end));
 
 % Pre-stimulus gamma component
+gammacomp_pre = EEG_all.data' * eigenvecs(:, maxcomp(end));
 
 
 % Post-stimulus gamma component
@@ -155,29 +152,19 @@ figure
 gcomp = gammacomp_pre;
 hilb = hilbert(gcomp')';
 pow = abs(hilb).^2;
-plot(pow(1:100))
+plot(pow(1:1000))
 end
 
 %%
 figure
 topoplot(topo_map_prepost, EEG_all.chanlocs)
-% 
-% figure;
-% plot(gammacomp(1:1000))
-% 
-% 
-% hilb = hilbert(gammacomp')';
-% pwr = abs(hilb).^2;
-% 
-% figure;
-% plot(pwr(1:100))
+colorbar
+%%
+figure;
+plot(gammacomp(1:1000))
+ 
+%%
 %pwr ist zeitreihe
 %power in segmente prä vs. post als zeitreihe plotten
-
-
 %powerscptrm von gammacomp
-
-
-% für jedes subj plot
-
-
+%für jedes subj plot
