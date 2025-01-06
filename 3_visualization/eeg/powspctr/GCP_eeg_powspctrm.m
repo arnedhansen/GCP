@@ -3,7 +3,7 @@
 %% Setup
 clear
 [subjects, path, colors] = setup('GCP');
-anal_period = 1
+anal_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms aftet stimulus presentation
 
 %% Load power spectra data
 for subj = 1:length(subjects)
@@ -340,10 +340,10 @@ for subj = 1:num_subs
     [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_subj.freq(freq_idx));
     [hc_pow, peak_idx] = max(peaks);
     hc_freq = locs(peak_idx);
-    % if subj == 9
-    %     hc_pow = 0.1149
-    %     hc_freq = 86
-    % end
+    if subj == 9
+        hc_pow = 0.1149
+        hc_freq = 86
+    end
 
     % Adjust plot aesthetics
     set(gca, 'FontSize', 20);
@@ -354,19 +354,19 @@ for subj = 1:num_subs
     plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
     max_spctrm = max(lc_pow, hc_pow);
     ylim([-max_spctrm*1.25 max_spctrm*1.25]);
-    % if subj == 9
-    %     ylim([-0.35 0.35])
-    % elseif subj == 10
-    %     ylim([-0.75 0.75])
-    % end
+    if subj == 9
+        ylim([-0.35 0.35])
+    elseif subj == 10
+        ylim([-0.75 0.75])
+    end
     xlim([30 90]);
     xticks(30:10:90);
-    xlabel('Freq [Hz]', 'FontSize', 15);
-    ylabel('Power [dB]', 'FontSize', 15);
-    if mod(subj, 5) == 0
-        legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 15, 'Location', 'best');
+    xlabel('Freq [Hz]', 'FontSize', 20);
+    ylabel('Power [dB]', 'FontSize', 20);
+    if subj == 5
+        legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20, 'Location', 'best');
     end
-    title(sprintf('Subject %s', subjects{subj}), 'FontSize', 12);
+    title(sprintf('Subject %d', subj), 'FontSize', 20);
     hold off;
 end
 

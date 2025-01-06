@@ -1,12 +1,17 @@
-% Load your data into MATLAB, assuming you have converted it to a table format
+%% GCP Stats Overview
+% Boxplots for all variables
+% Percentage change barplots
+% Gamma Differences vs. Gaze Differences
+
+%% Load data 
 clc
 clear
 close all
 data = readtable('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv');
 data.ReactionTime = data.ReactionTime .* 1000;
 data.PupilSize = [];
-variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'MSRate', 'Blinks', 'Fixations', 'Saccades', 'GammaPower', 'GammaFreq'};
-save_names = {'acc', 'rt', 'gazedev', 'ms', 'blink', 'fix', 'sacc', 'pow', 'freq'};
+variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'GazeSTD', 'MSRate', 'Blinks', 'Fixations', 'Saccades', 'GammaPower', 'GammaFreq'};
+save_names = {'acc', 'rt', 'gazedev', 'gazestd', 'ms', 'blink', 'fix', 'sacc', 'pow', 'freq'};
 colors = color_def('GCP');
 
 % Split the data by contrast condition
@@ -14,7 +19,7 @@ low_contrast = data(data.Condition == 1, :);
 high_contrast = data(data.Condition == 2, :);
 
 %% BOXPLOTS for each variable
-y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Microsaccade Rate [ms/s]', 'Blinks', 'Fixations', 'Saccades', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
+y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Gaze STD [px]', 'Microsaccade Rate [ms/s]', 'Blinks', 'Fixations', 'Saccades', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
 
 % Unique subject identifiers
 subjects = unique(data.ID);
@@ -23,7 +28,7 @@ for i = 1:length(variables)
     close all
     % Create a new figure for each subplot
     figure;
-    set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w'); % Adjust size for each individual plot
+    set(gcf, 'Position', [100, 200, 600, 700], 'Color', 'w'); % Adjust size for each individual plot
     hold on;
     box off
 
@@ -33,7 +38,7 @@ for i = 1:length(variables)
 
     % Create boxplot 
     boxplot(data.(variables{i}), data.Condition, 'Labels', {'Low Contrast', 'High Contrast'}, 'Colors', 'k');
-    set(gca, 'FontSize', 20); 
+    set(gca, 'FontSize', 30); 
 
     % Overlay individual data points and connect them
     for subj = 1:length(subjects)
@@ -65,8 +70,8 @@ for i = 1:length(variables)
     end
 
     % Add title and labels
-    title(variables{i}, "FontSize", 30);
-    ylabel(y_axis_labels{i}, "FontSize", 25);
+    title(variables{i}, "FontSize", 40);
+    ylabel(y_axis_labels{i}, "FontSize", 30);
 
     % Save individual subplot
     saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_boxplots_', save_names{i}, '.png'));
@@ -76,13 +81,13 @@ end
 close all
 figure;
 set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
-y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Microsaccade Rate [ms/s]', 'Blinks', 'Fixations', 'Saccades', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
+y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Gaze STD [px]', 'Microsaccade Rate [ms/s]', 'Blinks', 'Fixations', 'Saccades', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
 
 % Unique subject identifiers
 subjects = unique(data.ID);
 
 for i = 1:length(variables)
-    subplot(3, 3, i);
+    subplot(4, 3, i);
     hold on;
 
     % Set axis limits
@@ -213,7 +218,7 @@ figure;
 set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
 
 for i = 1:length(variables)
-    subplot(3, 3, i);
+    subplot(4, 3, i);
     hold on;
 
     % Bar plot for each participant
@@ -240,19 +245,21 @@ saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats
 %  GAZE DEVIATION and labels by ET (BLINKS, FIXATIONS, SACCADES)
 close all
 % Calculate the differences in Gamma Power and Gamma Frequency
-gamma_power_diff = percent_change(:, 8);
-gamma_freq_diff = percent_change(:, 9);
+gamma_power_diff = percent_change(:, 9);
+gamma_freq_diff = percent_change(:, 10);
 
 % Extract the corresponding values for gaze metrics
 gaze_deviation_diff = percent_change(:, 3);
-ms_rate_diff = percent_change(:, 4);
-blink_diff = percent_change(:, 5);
-fix_diff = percent_change(:, 6);
-sacc_diff = percent_change(:, 7);
+gaze_std_diff = percent_change(:, 4);
+ms_rate_diff = percent_change(:, 5);
+blink_diff = percent_change(:, 6);
+fix_diff = percent_change(:, 7);
+sacc_diff = percent_change(:, 8);
 
 % Define gaze metrics
 metrics = {
     'Gaze Deviation Diff. [%]', gaze_deviation_diff;
+    'Gaze STD Diff. [%]', gaze_std_diff;
     'Microsaccade Rate Diff. [%]', ms_rate_diff;
     'Blink Diff. [%]', blink_diff;
     'Fixation Diff. [%]', fix_diff;

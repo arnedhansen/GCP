@@ -130,7 +130,7 @@ for subj = 1:length(subjects)
             subj_data_gaze_trial_hc = subj_data_gaze_trial;
             hc_gdev = mean([subj_data_gaze_trial_hc.GazeDeviation], 'omitnan');
             hc_gSDx = mean([subj_data_gaze_trial_hc.GazeStdX], 'omitnan');
-            hc_gSDy = mean([subj_data_gaze_trial_lc.GazeStdY], 'omitnan');
+            hc_gSDy = mean([subj_data_gaze_trial_hc.GazeStdY], 'omitnan');
             hc_pups = mean([subj_data_gaze_trial_hc.PupilSize], 'omitnan');
             hc_msrate = mean([subj_data_gaze_trial_hc.MSRate], 'omitnan');
         end
