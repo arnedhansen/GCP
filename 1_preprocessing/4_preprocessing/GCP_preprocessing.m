@@ -17,7 +17,7 @@ for subj = 1:length(subjects)
     clearvars -except subjects subj path
     datapath = strcat(path,subjects{subj});
     cd(datapath)
-    if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/dataEEG.mat']))
+    %if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/dataEEG.mat']))
         %% Read blocks
         for block = 1:4
             try % Do not load emtpy blocks
@@ -43,6 +43,9 @@ for subj = 1:length(subjects)
                 % Low contrast gaze metrics extraction
                 lc_gaze_metrics = pop_epoch(alleeg{block}, {'61'}, analysis_window); % Stimulus presentation time
                 lc_trl(block) = lc_gaze_metrics.trials;
+
+%%%%%%% exclude saccades with blinks around
+
                 lc_sacc(block) = sum(ismember({lc_gaze_metrics.event.type}, {'L_saccade', 'R_saccade'}));
                 lc_fix(block) = sum(ismember({lc_gaze_metrics.event.type}, {'L_fixation', 'R_fixation'}));
                 lc_blink(block) = sum(ismember({lc_gaze_metrics.event.type}, {'L_blink', 'R_blink'}));
@@ -122,5 +125,5 @@ for subj = 1:length(subjects)
         else
             disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. Loading next subject...'])
         end
-    end
+    %end
 end
