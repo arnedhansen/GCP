@@ -1,7 +1,8 @@
 %% GCP Gaze Feature Extraction Sternberg
 %
 % Extracted features:
-%   Gaze deviation
+%   Gaze deviation (Euclidean distances)
+%   Gaze standard deviation
 %   Pupil size
 %   Microsaccades
 %
