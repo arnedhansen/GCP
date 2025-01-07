@@ -46,7 +46,6 @@ for subj = 1:length(subjects)
 
         %% Get trial-by-trial gaze data
         for trl = 1:length(dataET.trialinfo)
-            close all
             data = dataET.trial{trl};
 
             %% Choose data 300ms after stimulus presentation to exclude evoked activity
@@ -59,6 +58,7 @@ for subj = 1:length(subjects)
             valid_data_indices = data(1, :) >= 0 & data(1, :) <= 800 & data(2, :) >= 0 & data(2, :) <= 600;
             valid_data = data(1:3, valid_data_indices);
             data = valid_data;
+            data(2, :) = 600 - data(2, :); % Invert Y-axis
 
             %% Remove blinks with a window of 100ms (= 50 samples/timepoints)
             win_size = 50;
@@ -66,7 +66,7 @@ for subj = 1:length(subjects)
 
             %% Extract gaze data and pupil size
             gaze_x{subj, trl} = data(1, :);
-            gaze_y{subj, trl} = data(2, :);
+            gaze_y{subj, trl} = data(2, :); 
             pupil_size{subj, trl} = mean(data(3, :), 'omitnan') / 1000;
             pups = pupil_size{subj, trl};
 
@@ -79,18 +79,19 @@ for subj = 1:length(subjects)
                 gaze_y_hc{subj, trl} = gaze_y{subj, trl};
             end
 
-            %% Compute gaze deviation as euclidean distances from the center
+            %% Compute gaze deviation as euclidean distances from the center and gaze standard deviation
             x_coords = gaze_x{subj, trl};
             y_coords = gaze_y{subj, trl};
-            gaze_euclidean_dev = zeros(1, length(x_coords) - 1);
+
             % Calculate Euclidean distances
-            for samples = 1:length(x_coords)
-                dx = x_coords(samples) - 400; % Distance from middle of x-axis (total 800 px)
-                dy = y_coords(samples) - 300; % Distance from middle of y-axis (total 600 px)
-                gaze_euclidean_dev(samples) = sqrt(dx^2 + dy^2);
-            end
+            % dx = x_coords - 400; % Distance from middle of x-axis (total 800 px)
+            % dy = y_coords - 300; % Distance from middle of y-axis (total 600 px)
+            dx = x_coords - nanmean(x_coords); % Distance from mean (to get rid of impact of gaze shifts)
+            dy = y_coords - nanmean(y_coords); % Distance from mean (to get rid of impact of gaze shifts)
+            gaze_euclidean_dev = sqrt(dx.^2 + dy.^2);
+
             % Calculate the mean Euclidean distance
-            mean_euclidean_distance = mean(gaze_euclidean_dev, 'omitnan');
+            mean_euclidean_distance = nanmean(gaze_euclidean_dev);
             gaze_standard_deviation_x = nanstd(x_coords);
             gaze_standard_deviation_y = nanstd(y_coords);
 
@@ -115,6 +116,33 @@ for subj = 1:length(subjects)
             pupilSize = [pupilSize; pups];
             microsaccadeRate = [microsaccadeRate; microsaccade_rate];
         end
+
+        %% Check data by visualizing raw gaze data
+        close all
+        % Preallocate arrays for averaged gaze data
+        num_samples = 850; % Assuming each trial has ~850 samples
+        mean_gaze_x = nan(num_samples, 1);
+        mean_gaze_y = nan(num_samples, 1);
+
+        % Stack trials into matrices for averaging
+        gaze_x_matrix = cell2mat(cellfun(@(x) x(:), gaze_x(subj, :), 'UniformOutput', false)');
+        gaze_y_matrix = cell2mat(cellfun(@(y) y(:), gaze_y(subj, :), 'UniformOutput', false)');
+
+        % Calculate the mean over trials for each sample
+        mean_gaze_x = nanmean(gaze_x_matrix, 2);
+        mean_gaze_y = nanmean(gaze_y_matrix, 2);
+
+        % Plot the averaged gaze data
+        figure;
+        set(gcf, "Position", [200, 200, 1000, 600]);
+        plot(mean_gaze_x, mean_gaze_y, 'o');
+        hold on;
+        plot(400, 300, 'rx', 'MarkerSize', 10, 'LineWidth', 2); % Centre point
+        title('Averaged Gaze Data Distribution Across Samples');
+        xlabel('X Coordinates');
+        ylabel('Y Coordinates');
+        xlim([0 800]);
+        ylim([0 600]);
 
         %% Create a trial-by-trial structure array for this subject
         subj_data_gaze_trial = struct('ID', num2cell(subject_id), 'Trial', num2cell(trial_num), 'Condition', num2cell(condition), 'GazeDeviation', num2cell(gazeDev), 'GazeStdX', num2cell(gazeSDx), 'GazeStdY', num2cell(gazeSDy), 'PupilSize', num2cell(pupilSize), 'MSRate', num2cell(microsaccadeRate));
