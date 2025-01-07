@@ -169,7 +169,7 @@ fixationLineWidth = 1.3;            % Line width of fixation cross
 
 % Color
 fixationColor0    = [0 0 0];        % Black fixation cross
-fixationColor1    = [255 0 0];        % Red fixation cross
+fixationColor1    = [255 0 0];      % Red fixation cross
 
 % Location 
 fixationSize_pix  = round(fixationSize_dva*screen.ppd);
@@ -259,12 +259,13 @@ end
 
 %% Create data structure for preallocating data
 data                             = struct;
-nums                             = repmat(1:2, 1, 100);
+nums                             = repmat(1:4, 1, 100);
 gratingSequence                  = nums(randperm(length(nums), exp.nTrials)); % Define grating sequence
-data.grating(1, exp.nTrials)     = NaN; % Saves grating form (1 or 2, see below)
-% grating = 1 is low contrast concentric dynamic inward
-% grating = 2 is high contrast concentric dynamic inward
-data.contrast(1, exp.nTrials)    = NaN; % Binary measure for low/high contrast
+data.grating(1, exp.nTrials)     = NaN; % Saves grating form (see below)
+% grating = 1 is 25% contrast concentric dynamic inward
+% grating = 2 is 50% contrast concentric dynamic inward
+% grating = 3 is 75% contrast concentric dynamic inward
+% grating = 4 is 100% contrast concentric dynamic inward
 data.redCross(1, exp.nTrials)    = NaN; % Binary measure for task condition
 data.responses(1, exp.nTrials)   = NaN; % Binary measure for (no) response
 data.correct(1, exp.nTrials)     = NaN; % Binary measure for correct responses
@@ -326,13 +327,17 @@ for trl = 1:exp.nTrials
     tic;
     % Add trial grating info
     if gratingSequence(trl) == 1
-        gratingForm = 'low contrast concentric dynamic inward';
+        gratingForm = '25% contrast';
     elseif gratingSequence(trl) == 2
-        gratingForm = 'high contrast concentric dynamic inward';
+        gratingForm = '50% contrast';
+    elseif gratingSequence(trl) == 3
+        gratingForm = '75% contrast';
+    elseif gratingSequence(trl) == 4
+        gratingForm = '100% contrast';
     end
 
-    % Randomized selection of task (red fication cross) trials (25%)
-    if randi(4) == 1
+    % Randomized selection of task (red fication cross) trials (10%)
+    if randi(10) == 1
         data.redCross(trl) = 1;
     else
         data.redCross(trl) = 0;
@@ -391,8 +396,10 @@ for trl = 1:exp.nTrials
 
     %% Define grating depending on sequence number
     data.grating(trl) = gratingSequence(trl);
-    % grating =  1 is low contrast concentric dynamic inward
-    % grating =  2 is high contrast concentric dynamic inward
+    % grating = 1 is 25% contrast concentric dynamic inward
+    % grating = 2 is 50% contrast concentric dynamic inward
+    % grating = 3 is 75% contrast concentric dynamic inward
+    % grating = 4 is 100% contrast concentric dynamic inward
 
     %% Present grating and get response
     Screen('Flip', ptbWindow); % Preparatory flip
@@ -402,13 +409,21 @@ for trl = 1:exp.nTrials
 
     % Send presentation triggers
     if gratingSequence(trl) == 1 && data.redCross(trl) == 1
-        TRIGGER = PRESENTATION_LC_TASK;
+        TRIGGER = PRESENTATION_C25_TASK;
     elseif gratingSequence(trl) == 2 && data.redCross(trl) == 1
-        TRIGGER = PRESENTATION_HC_TASK;
+        TRIGGER = PRESENTATION_C50_TASK;
+    elseif gratingSequence(trl) == 3 && data.redCross(trl) == 1
+        TRIGGER = PRESENTATION_C75_TASK;
+    elseif gratingSequence(trl) == 4 && data.redCross(trl) == 1
+        TRIGGER = PRESENTATION_C100_TASK;
     elseif gratingSequence(trl) == 1 && data.redCross(trl) == 0
-        TRIGGER = PRESENTATION_LC_NOTASK;
+        TRIGGER = PRESENTATION_C25_NOTASK;
     elseif gratingSequence(trl) == 2 && data.redCross(trl) == 0
-        TRIGGER = PRESENTATION_HC_NOTASK;
+        TRIGGER = PRESENTATION_C50_NOTASK;
+    elseif gratingSequence(trl) == 3 && data.redCross(trl) == 0
+        TRIGGER = PRESENTATION_C75_NOTASK;
+    elseif gratingSequence(trl) == 4 && data.redCross(trl) == 0
+        TRIGGER = PRESENTATION_C100_NOTASK;
     end
 
     if TRAINING == 1
@@ -592,7 +607,6 @@ saves.data.reactionTime         = data.reactionTime;
 saves.experiment                = exp;
 saves.screen                    = screen;
 saves.startExperimentText       = startExperimentText;
-% saves.stimulus                  = stimulus;
 saves.subjectID                 = subjectID;
 saves.subject                   = subject;
 saves.timing                    = timing;
@@ -609,10 +623,14 @@ trigger.BLOCK0                  = BLOCK0;
 trigger.FIXCROSSR               = FIXCROSSR;
 trigger.FIXCROSSB               = FIXCROSSB;
 
-trigger.PRESENTATION_LC_TASK    = PRESENTATION_LC_TASK;
-trigger.PRESENTATION_HC_TASK    = PRESENTATION_HC_TASK;
-trigger.PRESENTATION_LC_NOTASK  = PRESENTATION_LC_NOTASK;
-trigger.PRESENTATION_HC_NOTASK  = PRESENTATION_HC_NOTASK;
+trigger.PRESENTATION_C25_TASK    = PRESENTATION_C25_TASK;
+trigger.PRESENTATION_C50_TASK    = PRESENTATION_C50_TASK;
+trigger.PRESENTATION_C75_TASK    = PRESENTATION_C75_TASK;
+trigger.PRESENTATION_C100_TASK   = PRESENTATION_C100_TASK;
+trigger.PRESENTATION_C25_NOTASK  = PRESENTATION_C25_NOTASK;
+trigger.PRESENTATION_C50_NOTASK  = PRESENTATION_C50_NOTASK;
+trigger.PRESENTATION_C75_NOTASK  = PRESENTATION_C75_NOTASK;
+trigger.PRESENTATION_C100_NOTASK = PRESENTATION_C100_NOTASK;
 
 trigger.BLOCK1_END              = BLOCK1_END;
 trigger.BLOCK2_END              = BLOCK2_END;
