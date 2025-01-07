@@ -1,5 +1,4 @@
 %% Connect Eyetracker & Calibrate
-
 bgClr = 127;
 Screen('Preference', 'SyncTestSettings', 0.002);    % the systems are a little noisy, give the test a little more leeway
 [ptbWindow,winRect] = PsychImaging('OpenWindow', whichScreen, bgClr, [], [], [], [], 4);
@@ -33,7 +32,7 @@ try
     % Connect the Eytracker, it needs a window
     EL_Connect;
     try % open file to record data to
-        disp('creating edf file');
+        disp('CREATING EDF FILE');
         status=Eyelink('Openfile', edfFile);
     catch
         disp('ERROR creating the edf file on Eye-Tracker');

@@ -21,19 +21,16 @@ SetResolution(whichScreen, screenWidth, screenHeight, []);
 Screen('ConfigureDisplay', 'Scanout', whichScreen, 0, [], [], refreshRate); % refresh rate of 100hz (only for Linux)
 par.BGcolor = 192;
 
-% Set screen background color
+% Find the color values which correspond to white, black (black = 0; white = 255) and gray
 white = WhiteIndex(whichScreen);
 black = BlackIndex(whichScreen);
 gray = round((white+black)/2);
 
-% photo diode
+% Photo diode
 % define the background and diode stimulus
 backColor = [0, 0, 0]; % black
-stimColor = [1500, 1500, 1500]; % white
+stimColor = [255, 255, 255]; % [1500, 1500, 1500]; % white
 backDiameter = 35;
 stimDiameter = 33;
 backPos = [4, screenHeight - 20]; % 40 for test, has to be 4 afterwards
 stimPos = [4, screenHeight - 20]; % 40 for test, has to be 4 afterwards
-
-
-
