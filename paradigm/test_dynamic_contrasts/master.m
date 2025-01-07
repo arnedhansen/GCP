@@ -1,14 +1,14 @@
 %% Master script for the GCP (Gamma Contrast Perception) Study
 % Test with different contrast conditions for the  gratings: 
 % 25%, 50%, 75%, 100%
-
+%
 % - Resting EEG
 % - Gratings Training (10 trials)
 % - Gratings (800 trials)
-%   - 200x 25% contrast
-%   - 200x 50% contrast 
-%   - 200x 75% contrast 
-%   - 200x 100% contrast
+%   - 200x contrast 25% 
+%   - 200x contrast 50% 
+%   - 200x contrast 75% 
+%   - 200x contrast 100%
 
 %% General settings, screens and paths
 
@@ -16,7 +16,6 @@
 clear all;
 close all;
 clc;
-rootFilepath = pwd; % Retrieve the present working directory
 
 % Define paths
 PPDEV_PATH = '/home/methlab/Documents/MATLAB/ppdev-mex-master'; % For sending EEG triggers
@@ -27,8 +26,9 @@ addpath(FUNS_PATH) % Add path to folder with functions
 screenSettings % Manage screens
 
 %% Collect ID and Age
-dialogID;
-% subject.ID = 999; Set to 999 for tests
+%dialogID;
+subject.ID = 999; Set to 999 for tests
+
 
 %% Protect Matlab code from participant keyboard input
 ListenChar(2);
@@ -41,21 +41,21 @@ ListenChar(2);
 %     disp('RESTING EEG DATA ALREADY EXISTS');
 % end
 
-% if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
-%     TRAINING = 1;
-%     start = 1;
-%     TASK = 'GCP';
-%     BLOCK = 1;
-%     GCP_gratingsTask;
-% else
-%     disp('TRAINING BLOCK DATA ALREADY EXISTS');
-% end
+if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
+    TRAINING = 1;
+    start = 1;
+    TASK = 'GCP';
+    BLOCK = 1;
+    GCP_gratingsTask;
+else
+    disp('TRAINING BLOCK DATA ALREADY EXISTS');
+end
 
 TRAINING = 0;
 TASK = 'GCP';
 if isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_GCP_block4.mat']])
     disp('BLOCK 4 DATA ALREADY EXISTS');
-    return
+    start = 5;
 elseif isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_GCP_block3.mat']])
     disp('BLOCK 3 DATA ALREADY EXISTS');
     start = 4;
