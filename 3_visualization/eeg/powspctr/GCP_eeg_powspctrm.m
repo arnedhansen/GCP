@@ -102,10 +102,10 @@ set(gca,'Fontsize',20);
 max_spctrm = max(lc_pow, hc_pow);
 ylim([-max_spctrm*1.25 max_spctrm*1.25]);
 xlim([30 90])
-xlabel('Frequency [Hz]');
-ylabel('Power [dB]');
-legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
-title('Grand Average Power Spectrum', 'FontSize', 30);
+xlabel('Frequency [Hz]', 'FontSize', 30);
+ylabel('Power [dB]', 'FontSize', 30);
+legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 25);
+title('Grand Average Power Spectrum', 'FontSize', 40);
 hold off;
 
 % Save the plot

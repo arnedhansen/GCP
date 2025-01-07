@@ -23,14 +23,13 @@ y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'G
 
 % Unique subject identifiers
 subjects = unique(data.ID);
+font_size = 20;
 
 for i = 1:length(variables)
     close all
-    % Create a new figure for each subplot
     figure;
-    set(gcf, 'Position', [100, 200, 600, 700], 'Color', 'w'); % Adjust size for each individual plot
+    set(gcf, 'Position', [100, 200, 800, 800], 'Color', 'w');
     hold on;
-    box off
 
     % Set axis limits
     ylim([min(data.(variables{i})) max(data.(variables{i}))])
@@ -40,38 +39,40 @@ for i = 1:length(variables)
     boxplot(data.(variables{i}), data.Condition, 'Labels', {'Low Contrast', 'High Contrast'}, 'Colors', 'k');
     set(gca, 'FontSize', 30); 
 
-    % Overlay individual data points and connect them
+    % Define jitter
+    jitterAmount = 0.1; % Adjust jitter if needed
+    for cond = 1:2
+        cond_data = data(data.Condition == cond, :);
+        x_jittered{cond} = cond_data.Condition + (rand(size(cond_data.(variables{i}))) - 0.5) * jitterAmount;
+    end
+
+    % Connect points with a line
     for subj = 1:length(subjects)
         % Extract data for this subject
         subj_data = data(data.ID == subjects(subj), :);
 
         if height(subj_data) == 2 % Ensure the subject has data for both conditions
-            % X coordinates: condition indices
-            x = subj_data.Condition;
-            % Y coordinates: variable values
+            x = [x_jittered{1}'; x_jittered{2}'];
+            x = x(:, subj);
             y = subj_data.(variables{i});
-
-            % Connect points with a line
-            plot(x, y, '-o', 'Color', [0.5, 0.5, 0.5, 0.5], 'LineWidth', 0.5);
+            plot(x, y, '-o', 'Color', [0.5, 0.5, 0.5, 0.5], 'LineWidth', 2);
         end
     end
 
-    % Scatter individual data points with jitter
-    jitterAmount = 0.001; % Adjust jitter if needed
+    % Scatter individual data points
     for cond = 1:2 % Two conditions (Low Contrast = 1, High Contrast = 2)
-        % Filter data based on condition
         cond_data = data(data.Condition == cond, :);
-
-        % Add jitter and scatter the points
-        x_jittered = cond_data.Condition + (rand(size(cond_data.(variables{i}))) - 0.5) * jitterAmount;
-
-        scatter(x_jittered, cond_data.(variables{i}), 300, 'MarkerEdgeColor', 'k', ...
+        scatter(x_jittered{cond}, cond_data.(variables{i}), 300, 'MarkerEdgeColor', 'k', ...
             'MarkerFaceColor', colors(cond, :), 'jitter', 'off', 'SizeData', 300);
     end
+    
 
     % Add title and labels
     title(variables{i}, "FontSize", 40);
     ylabel(y_axis_labels{i}, "FontSize", 30);
+    set(gca, 'Box', 'off');
+    ax = gca;
+    ax.FontSize = font_size;
 
     % Save individual subplot
     saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_boxplots_', save_names{i}, '.png'));

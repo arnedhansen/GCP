@@ -86,8 +86,8 @@ for subj = 1:length(subjects)
             % Calculate Euclidean distances
             % dx = x_coords - 400; % Distance from middle of x-axis (total 800 px)
             % dy = y_coords - 300; % Distance from middle of y-axis (total 600 px)
-            dx = x_coords - nanmean(x_coords); % Distance from mean (to get rid of impact of gaze shifts)
-            dy = y_coords - nanmean(y_coords); % Distance from mean (to get rid of impact of gaze shifts)
+            dx = x_coords - 400 - nanmean(x_coords - 400); % Distance from mean (to get rid of impact of gaze shifts)
+            dy = y_coords - 300 - nanmean(y_coords - 300); % Distance from mean (to get rid of impact of gaze shifts)
             gaze_euclidean_dev = sqrt(dx.^2 + dy.^2);
 
             % Calculate the mean Euclidean distance

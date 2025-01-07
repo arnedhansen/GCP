@@ -106,8 +106,42 @@ figure;
 set(gcf, 'Position', [0, 0, 1600, 900], 'Color', 'w');
 colormap([colors(1, :); colors(2, :)]);
 
-% Subplot 1: Microsaccades vs Gaze Deviation
+% Subplot 1: Gaze Deviation vs Saccades
 subplot(2, 3, 1);
+h1 = scatter(gaze_dev(conditions == 1), saccades(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
+hold on;
+h2 = scatter(gaze_dev(conditions == 2), saccades(conditions == 2), marker_size, 'filled', 'MarkerFaceColor', colors(2, :));
+lsline;
+lines = findobj(gca, 'Type', 'Line');
+set(lines(1), 'Color', colors(1, :), 'LineWidth', 2);
+set(lines(2), 'Color', colors(2, :), 'LineWidth', 2);
+title('Gaze Deviation vs Saccades', 'FontSize', font_size, 'FontWeight', 'bold');
+xlabel('Gaze Deviation [px]', 'FontSize', font_size);
+ylabel('Saccades [count]', 'FontSize', font_size);
+ax = gca;
+ax.FontSize = font_size;
+
+% Subplot 2: Saccades vs Microsaccades
+subplot(2, 3, 2);
+% Scatter for condition 1
+h1 = scatter(saccades(conditions == 1), microsaccades(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
+hold on;
+% Scatter for condition 2
+h2 = scatter(saccades(conditions == 2), microsaccades(conditions == 2), marker_size, 'filled', 'MarkerFaceColor', colors(2, :));
+% Add LSline for both conditions
+lsline;
+% Find and colour the LSlines based on the scatter plot handles
+lines = findobj(gca, 'Type', 'Line');
+set(lines(1), 'Color', colors(1, :), 'LineWidth', 2); % First line (condition 1)
+set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2)
+title('Saccades vs Microsaccades', 'FontSize', font_size, 'FontWeight', 'bold');
+xlabel('Saccades [count]', 'FontSize', font_size);
+ylabel('Microsaccades [ms/s]', 'FontSize', font_size);
+ax = gca;
+ax.FontSize = font_size;
+
+% Subplot 3: Microsaccades vs Gaze Deviation
+subplot(2, 3, 3);
 % Scatter for condition 1
 h1 = scatter(microsaccades(conditions == 1), gaze_dev(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
 hold on;
@@ -118,91 +152,15 @@ lsline;
 % Find and colour the LSlines based on the scatter plot handles
 lines = findobj(gca, 'Type', 'Line');
 set(lines(1), 'Color', colors(1, :), 'LineWidth', 2); % First line (condition 1)
-set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2)
+set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2);
 title('Microsaccades vs Gaze Deviation', 'FontSize', font_size, 'FontWeight', 'bold');
 xlabel('Microsaccades [ms/s]', 'FontSize', font_size);
 ylabel('Gaze Deviation [px]', 'FontSize', font_size);
 ax = gca;
 ax.FontSize = font_size;
 
-% Subplot 2: Microsaccades vs Saccades
-subplot(2, 3, 2);
-% Scatter for condition 1
-h1 = scatter(microsaccades(conditions == 1), saccades(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
-hold on;
-% Scatter for condition 2
-h2 = scatter(microsaccades(conditions == 2), saccades(conditions == 2), marker_size, 'filled', 'MarkerFaceColor', colors(2, :));
-% Add LSline for both conditions
-lsline;
-% Find and colour the LSlines based on the scatter plot handles
-lines = findobj(gca, 'Type', 'Line');
-set(lines(1), 'Color', [colors(1, :), 0.5], 'LineWidth', 2); % First line (condition 1)
-set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2)
-title('Microsaccades vs Saccades', 'FontSize', font_size, 'FontWeight', 'bold');
-xlabel('Microsaccades [ms/s]', 'FontSize', font_size);
-ylabel('Saccades [count]', 'FontSize', font_size);
-ax = gca;
-ax.FontSize = font_size;
-
-% Subplot 3: Saccades vs Gaze Deviation
-subplot(2, 3, 3);
-% Scatter for condition 1
-h1 = scatter(saccades(conditions == 1), gaze_dev(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
-hold on;
-% Scatter for condition 2
-h2 = scatter(saccades(conditions == 2), gaze_dev(conditions == 2), marker_size, 'filled', 'MarkerFaceColor', colors(2, :));
-% Add LSline for both conditions
-lsline;
-% Find and colour the LSlines based on the scatter plot handles
-lines = findobj(gca, 'Type', 'Line');
-set(lines(1), 'Color', [colors(1, :), 0.5], 'LineWidth', 2); % First line (condition 1)
-set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2)
-title('Saccades vs Gaze Deviation', 'FontSize', font_size, 'FontWeight', 'bold');
-xlabel('Saccades [count]', 'FontSize', font_size);
-ylabel('Gaze Deviation [px]', 'FontSize', font_size);
-ax = gca;
-ax.FontSize = font_size;
-
-% Subplot 4: Microsaccades vs Gaze STD
+% Subplot 4: Gaze STD vs Saccades
 subplot(2, 3, 4);
-% Scatter for condition 1
-h1 = scatter(microsaccades(conditions == 1), gazeSDx(conditions == 1) + gazeSDy(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
-hold on;
-% Scatter for condition 2
-h2 = scatter(microsaccades(conditions == 2), gazeSDx(conditions == 2) + gazeSDy(conditions == 2), marker_size, 'filled', 'MarkerFaceColor', colors(2, :));
-% Add LSline for both conditions
-lsline;
-% Find and colour the LSlines based on the scatter plot handles
-lines = findobj(gca, 'Type', 'Line');
-set(lines(1), 'Color', [colors(1, :), 0.5], 'LineWidth', 2); % First line (condition 1)
-set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2)
-title('Microsaccades vs Gaze STD', 'FontSize', font_size, 'FontWeight', 'bold');
-xlabel('Microsaccades [ms/s]', 'FontSize', font_size);
-ylabel('Gaze Deviation SD [px]', 'FontSize', font_size);
-ax = gca;
-ax.FontSize = font_size;
-
-% Subplot 5: Microsaccades vs Saccades (Repeated for symmetry)
-subplot(2, 3, 5);
-% Scatter for condition 1
-h1 = scatter(microsaccades(conditions == 1), saccades(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
-hold on;
-% Scatter for condition 2
-h2 = scatter(microsaccades(conditions == 2), saccades(conditions == 2), marker_size, 'filled', 'MarkerFaceColor', colors(2, :));
-% Add LSline for both conditions
-lsline;
-% Find and colour the LSlines based on the scatter plot handles
-lines = findobj(gca, 'Type', 'Line');
-set(lines(1), 'Color', [colors(1, :), 0.5], 'LineWidth', 2); % First line (condition 1)
-set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2)
-title('Microsaccades vs Saccades', 'FontSize', font_size, 'FontWeight', 'bold');
-xlabel('Microsaccades [ms/s]', 'FontSize', font_size);
-ylabel('Saccades [count]', 'FontSize', font_size);
-ax = gca;
-ax.FontSize = font_size;
-
-% Subplot 6: Saccades vs Gaze STD
-subplot(2, 3, 6);
 % Scatter for condition 1
 h1 = scatter(saccades(conditions == 1), gazeSDx(conditions == 1) + gazeSDy(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
 hold on;
@@ -212,14 +170,52 @@ h2 = scatter(saccades(conditions == 2), gazeSDx(conditions == 2) + gazeSDy(condi
 lsline;
 % Find and colour the LSlines based on the scatter plot handles
 lines = findobj(gca, 'Type', 'Line');
-set(lines(1), 'Color', [colors(1, :), 0.5], 'LineWidth', 2); % First line (condition 1)
-set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2)
-title('Saccades vs Gaze STD', 'FontSize', font_size, 'FontWeight', 'bold');
+set(lines(1), 'Color', colors(1, :), 'LineWidth', 2); % First line (condition 1)
+set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2);
+title('Gaze STD vs Saccades', 'FontSize', font_size, 'FontWeight', 'bold');
 xlabel('Saccades [count]', 'FontSize', font_size);
 ylabel('Gaze Deviation SD [px]', 'FontSize', font_size);
 ax = gca;
 ax.FontSize = font_size;
 
+% Subplot 5: Saccades vs Microsaccades (Repeated for symmetry)
+subplot(2, 3, 5);
+% Scatter for condition 1
+h1 = scatter(saccades(conditions == 1), microsaccades(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
+hold on;
+% Scatter for condition 2
+h2 = scatter(saccades(conditions == 2), microsaccades(conditions == 2), marker_size, 'filled', 'MarkerFaceColor', colors(2, :));
+% Add LSline for both conditions
+lsline;
+% Find and colour the LSlines based on the scatter plot handles
+lines = findobj(gca, 'Type', 'Line');
+set(lines(1), 'Color', colors(1, :), 'LineWidth', 2); % First line (condition 1)
+set(lines(2), 'Color', colors(2, :), 'LineWidth', 2); % Second line (condition 2);
+title('Saccades vs Microsaccades', 'FontSize', font_size, 'FontWeight', 'bold');
+xlabel('Saccades [count]', 'FontSize', font_size);
+ylabel('Microsaccades [ms/s]', 'FontSize', font_size);
+ax = gca;
+ax.FontSize = font_size;
+
+% Subplot 6: Microsaccades vs Gaze STD
+subplot(2, 3, 6);
+% Scatter for condition 1
+h1 = scatter(microsaccades(conditions == 1), gazeSDx(conditions == 1) + gazeSDy(conditions == 1), marker_size, 'filled', 'MarkerFaceColor', colors(1, :));
+hold on;
+% Scatter for condition 2
+h2 = scatter(microsaccades(conditions == 2), gazeSDx(conditions == 2) + gazeSDy(conditions == 2), marker_size, 'filled', 'MarkerFaceColor', colors(2, :));
+% Add LSline for both conditions
+lsline;
+% Find and colour the LSlines based on the scatter plot handles
+lines = findobj(gca, 'Type', 'Line');
+set(lines(1), 'Color', colors(1, :), 'LineWidth', 2); % First line (condition 1)
+set(lines(2), 'Color', colors(2, :), 'LineWidth', 2);
+title('Microsaccades vs Gaze STD', 'FontSize', font_size, 'FontWeight', 'bold');
+xlabel('Microsaccades [ms/s]', 'FontSize', font_size);
+ylabel('Gaze Deviation SD [px]', 'FontSize', font_size);
+ax = gca;
+ax.FontSize = font_size;
+
 % Save
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/relations/GCP_gaze_metrics_relations_DEV_STD.png');
+saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/relations/GCP_gaze_metrics_relations.png');
 
