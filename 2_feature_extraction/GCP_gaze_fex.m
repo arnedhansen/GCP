@@ -26,11 +26,15 @@ for subj = 1:length(subjects)
     datapath = strcat(path, subjects{subj}, '/gaze');
     load([datapath, filesep, 'dataET'])
 
-    for conds = {'lc', 'hc'}
-        if strcmp(conds, 'lc')
-            dataET = dataET_lc;
-        elseif strcmp(conds, 'hc')
-            dataET = dataET_hc;
+    for conds = {'c25', 'c50', 'c75', 'c100'}
+        if strcmp(conds, 'c25')
+            dataET = dataET_c25;
+        elseif strcmp(conds, 'c50')
+            dataET = dataET_c50;
+        elseif strcmp(conds, 'c75')
+            dataET = dataET_c75;
+        elseif strcmp(conds, 'c100')
+            dataET = dataET_c100;
         end
 
         %% Initialize arrays
@@ -66,17 +70,23 @@ for subj = 1:length(subjects)
 
             %% Extract gaze data and pupil size
             gaze_x{subj, trl} = data(1, :);
-            gaze_y{subj, trl} = data(2, :); 
+            gaze_y{subj, trl} = data(2, :);
             pupil_size{subj, trl} = mean(data(3, :), 'omitnan') / 1000;
             pups = pupil_size{subj, trl};
 
             % Save raw gaze data
-            if strcmp(conds, 'lc')
-                gaze_x_lc{subj, trl} = gaze_x{subj, trl};
-                gaze_y_lc{subj, trl} = gaze_y{subj, trl};
-            elseif strcmp(conds, 'hc')
-                gaze_x_hc{subj, trl} = gaze_x{subj, trl};
-                gaze_y_hc{subj, trl} = gaze_y{subj, trl};
+            if strcmp(conds, 'c25')
+                gaze_x_c25{subj, trl} = gaze_x{subj, trl};
+                gaze_y_c25{subj, trl} = gaze_y{subj, trl};
+            elseif strcmp(conds, 'c50')
+                gaze_x_c50{subj, trl} = gaze_x{subj, trl};
+                gaze_y_c50{subj, trl} = gaze_y{subj, trl};
+            elseif strcmp(conds, 'c75')
+                gaze_x_c75{subj, trl} = gaze_x{subj, trl};
+                gaze_y_c75{subj, trl} = gaze_y{subj, trl};
+            elseif strcmp(conds, 'c100')
+                gaze_x_c100{subj, trl} = gaze_x{subj, trl};
+                gaze_y_c100{subj, trl} = gaze_y{subj, trl};
             end
 
             %% Compute gaze deviation as euclidean distances from the center and gaze standard deviation
@@ -84,8 +94,6 @@ for subj = 1:length(subjects)
             y_coords = gaze_y{subj, trl};
 
             % Calculate Euclidean distances
-            % dx = x_coords - 400; % Distance from middle of x-axis (total 800 px)
-            % dy = y_coords - 300; % Distance from middle of y-axis (total 600 px)
             dx = x_coords - 400 - nanmean(x_coords - 400); % Distance from mean (to get rid of impact of gaze shifts)
             dy = y_coords - 300 - nanmean(y_coords - 300); % Distance from mean (to get rid of impact of gaze shifts)
             gaze_euclidean_dev = sqrt(dx.^2 + dy.^2);
@@ -100,10 +108,14 @@ for subj = 1:length(subjects)
             velData = [gaze_x{subj, trl}; gaze_y{subj, trl}]; % Concatenate x and y gaze coordinates to compute the velocity of eye movements in a 2D space
             trlLength = length(dataET.time{trl});
             [microsaccade_rate, microsaccade_details] = detect_microsaccades(fsample, velData, trlLength);
-            if strcmp(conds, 'lc')
-                ms_data_lc{trl} = microsaccade_details; % Save trial by trial ms data
-            elseif strcmp(conds, 'hc')
-                ms_data_hc{trl} = microsaccade_details; % Save trial by trial ms data
+            if strcmp(conds, 'c25')
+                ms_data_c25{trl} = microsaccade_details; % Save trial by trial ms data
+            elseif strcmp(conds, 'c50')
+                ms_data_c50{trl} = microsaccade_details; % Save trial by trial ms data
+            elseif strcmp(conds, 'c75')
+                ms_data_c75{trl} = microsaccade_details; % Save trial by trial ms data
+            elseif strcmp(conds, 'c100')
+                ms_data_c100{trl} = microsaccade_details; % Save trial by trial ms data
             end
 
             %% Append data for this trial
@@ -148,56 +160,72 @@ for subj = 1:length(subjects)
         subj_data_gaze_trial = struct('ID', num2cell(subject_id), 'Trial', num2cell(trial_num), 'Condition', num2cell(condition), 'GazeDeviation', num2cell(gazeDev), 'GazeStdX', num2cell(gazeSDx), 'GazeStdY', num2cell(gazeSDy), 'PupilSize', num2cell(pupilSize), 'MSRate', num2cell(microsaccadeRate));
 
         %% Calculate subject-specific data by condition (GazeDev, PupilSize, MSRate)
-        if strcmp(conds, 'lc')
-            subj_data_gaze_trial_lc = subj_data_gaze_trial;
-            lc_gdev = mean([subj_data_gaze_trial_lc.GazeDeviation], 'omitnan');
-            lc_gSDx = mean([subj_data_gaze_trial_lc.GazeStdX], 'omitnan');
-            lc_gSDy = mean([subj_data_gaze_trial_lc.GazeStdY], 'omitnan');
-            lc_pups = mean([subj_data_gaze_trial_lc.PupilSize], 'omitnan');
-            lc_msrate = mean([subj_data_gaze_trial_lc.MSRate], 'omitnan');
-        elseif strcmp(conds, 'hc')
-            subj_data_gaze_trial_hc = subj_data_gaze_trial;
-            hc_gdev = mean([subj_data_gaze_trial_hc.GazeDeviation], 'omitnan');
-            hc_gSDx = mean([subj_data_gaze_trial_hc.GazeStdX], 'omitnan');
-            hc_gSDy = mean([subj_data_gaze_trial_hc.GazeStdY], 'omitnan');
-            hc_pups = mean([subj_data_gaze_trial_hc.PupilSize], 'omitnan');
-            hc_msrate = mean([subj_data_gaze_trial_hc.MSRate], 'omitnan');
+        if strcmp(conds, 'c25')
+            subj_data_gaze_trial_c25 = subj_data_gaze_trial;
+            c25_gdev = mean([subj_data_gaze_trial_c25.GazeDeviation], 'omitnan');
+            c25_gSDx = mean([subj_data_gaze_trial_c25.GazeStdX], 'omitnan');
+            c25_gSDy = mean([subj_data_gaze_trial_c25.GazeStdY], 'omitnan');
+            c25_pups = mean([subj_data_gaze_trial_c25.PupilSize], 'omitnan');
+            c25_msrate = mean([subj_data_gaze_trial_c25.MSRate], 'omitnan');
+        elseif strcmp(conds, 'c50')
+            subj_data_gaze_trial_c50 = subj_data_gaze_trial;
+            c50_gdev = mean([subj_data_gaze_trial_c50.GazeDeviation], 'omitnan');
+            c50_gSDx = mean([subj_data_gaze_trial_c50.GazeStdX], 'omitnan');
+            c50_gSDy = mean([subj_data_gaze_trial_c50.GazeStdY], 'omitnan');
+            c50_gSDy = mean([subj_data_gaze_trial_c50.GazeStdY], 'omitnan');
+            c50_pups = mean([subj_data_gaze_trial_c50.PupilSize], 'omitnan');
+            c50_msrate = mean([subj_data_gaze_trial_c50.MSRate], 'omitnan');
+        elseif strcmp(conds, 'c75')
+            subj_data_gaze_trial_c75 = subj_data_gaze_trial;
+            c75_gdev = mean([subj_data_gaze_trial_c75.GazeDeviation], 'omitnan');
+            c75_gSDx = mean([subj_data_gaze_trial_c75.GazeStdX], 'omitnan');
+            c75_gSDy = mean([subj_data_gaze_trial_c75.GazeStdY], 'omitnan');
+            c75_gSDy = mean([subj_data_gaze_trial_c75.GazeStdY], 'omitnan');
+            c75_pups = mean([subj_data_gaze_trial_c75.PupilSize], 'omitnan');
+            c75_msrate = mean([subj_data_gaze_trial_c75.MSRate], 'omitnan');
+        elseif strcmp(conds, 'c100')
+            subj_data_gaze_trial_c100 = subj_data_gaze_trial;
+            c100_gdev = mean([subj_data_gaze_trial_c100.GazeDeviation], 'omitnan');
+            c100_gSDx = mean([subj_data_gaze_trial_c100.GazeStdX], 'omitnan');
+            c100_gSDy = mean([subj_data_gaze_trial_c100.GazeStdY], 'omitnan');
+            c100_gSDy = mean([subj_data_gaze_trial_c100.GazeStdY], 'omitnan');
+            c100_pups = mean([subj_data_gaze_trial_c100.PupilSize], 'omitnan');
+            c100_msrate = mean([subj_data_gaze_trial_c100.MSRate], 'omitnan');
         end
+
+        %% Load gaze metrics (extracted in GCP_preprocessing.m)
+        load([datapath, filesep, 'gaze_metrics'])
+
+        %% Create across condition structure
+        subj_data_gaze = struct('ID', num2cell(subject_id(1:2)), ...
+            'Condition', num2cell([1; 4]), ...
+            'GazeDeviation', num2cell([c25_gdev; c50_gdev; c75_gdev; c100_gdev]), ...
+            'GazeStdX', num2cell([c25_gSDx; c50_gSDx; c75_gSDx; c100_gSDx]), ...
+            'GazeStdY', num2cell([c25_gSDy; c50_gSDy; c75_gSDy; c100_gSDy]), ...
+            'PupilSize', num2cell([c25_pups; c50_pups; c75_pups; c100_pups]), ...
+            'MSRate', num2cell([c25_msrate; c50_msrate; c75_msrate; c100_msrate]), ...
+            'Blinks', num2cell([c25_blinks; c50_blinks; c75_blinks; c100_blinks]), ...
+            'Fixations', num2cell([c25_fixations; c50_fixations; c75_fixations; c100_fixations]), ...
+            'Saccades', num2cell([c25_saccades; c50_saccades; c75_saccades; c100_saccades]));
+
+        %% Save data
+        savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/gaze/');
+        if isempty(dir(savepath))
+            mkdir(savepath)
+        end
+        cd(savepath)
+        save gaze_matrix_trial subj_data_gaze_trial_c25 subj_data_gaze_trial_c50 subj_data_gaze_trial_c75 subj_data_gaze_trial_c100
+        save gaze_matrix_subj subj_data_gaze_c25 subj_data_gaze_c50 subj_data_gaze_c75 subj_data_gaze_c100
+        save gaze_dev c25_gdev c50_gdev c75_gdev c100_gdev
+        save gaze_std c25_gSDx c25_gSDy c50_gSDx c50_gSDy c75_gSDx c75_gSDy c100_gSDx c100_gSDy
+        save pupil_size c25_pups c50_pups c75_pups c100_pups
+        save ms_rate c25_msrate c50_msrate c75_msrate c100_msrate
+        clc
+        disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
+
+        % Append to the final structure array
+        gaze_data = [gaze_data; subj_data_gaze];
     end
-
-    %% Load gaze metrics (extracted in GCP_preprocessing.m)
-    load([datapath, filesep, 'gaze_metrics'])
-
-    %% Create across condition structure
-    subj_data_gaze = struct('ID', num2cell(subject_id(1:2)), ...
-        'Condition', num2cell([1; 2]), ...
-        'GazeDeviation', num2cell([lc_gdev; hc_gdev]), ...
-        'GazeStdX', num2cell([lc_gSDx; hc_gSDx]), ...
-        'GazeStdY', num2cell([lc_gSDy; hc_gSDy]), ...
-        'PupilSize', num2cell([lc_pups; hc_pups]), ...
-        'MSRate', num2cell([lc_msrate; hc_msrate]), ...
-        'Blinks', num2cell([lc_blinks; hc_blinks]),...
-        'Fixations', num2cell([lc_fixations; hc_fixations]),...
-        'Saccades', num2cell([lc_saccades; hc_saccades]));
-
-    %% Save data
-    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/gaze/');
-    if isempty(dir(savepath))
-        mkdir(savepath)
-    end
-    cd(savepath)
-    save gaze_matrix_trial subj_data_gaze_trial_lc subj_data_gaze_trial_hc
-    save gaze_matrix_subj subj_data_gaze
-    save gaze_dev lc_gdev hc_gdev
-    save gaze_std lc_gSDx lc_gSDy hc_gSDx hc_gSDy
-    save pupil_size lc_pups hc_pups
-    save ms_rate lc_msrate hc_msrate
-    save ms_data ms_data_lc ms_data_hc
-    clc
-    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
-
-    % Append to the final structure array
-    gaze_data = [gaze_data; subj_data_gaze];
 end
 save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_raw gaze_x_lc gaze_y_lc gaze_x_hc gaze_y_hc
-save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_matrix gaze_data 
+save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_matrix gaze_data
