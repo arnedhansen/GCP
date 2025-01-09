@@ -237,24 +237,34 @@ taperMask(radius > maxRadius)   = 0; % Fully tapered outside the grating
 
 % Compute each frame of the movie and convert those frames stored in
 % MATLAB matrices, into Psychtoolbox OpenGL textures using 'MakeTexture'
+contrastLevels                  = [0.25, 0.5, 0.75, 1];
 tex                             = zeros(nFramesInCycle,1);
 for jFrame = 1:nFramesInCycle
     phase                       = (jFrame / nFramesInCycle) * 2 * pi; % Change the phase of the grating according to frame number
     m                           = sin(sqrt(x.^2 + y.^2) / f + phase); % Formula for sinusoidal grating
-    
-    % Low contrast grating
-    grating_lc                  = (w2D .* (inc * m) + gray) * 0.5;
-    % inc*m fluctuates from [-gray, gray]. Multiply this with the
-    % hanning mask to let the grating die off at 0
-    
-    % High contrast grating
-    grating_hc                  = (w2D .* (inc * m) + gray);
+
+    % inc*m fluctuates from [-gray, gray]. Multiply this with the hanning mask to let the grating die off at 0
+    % 25% contrast grating
+    grating_c25                  = (w2D .* (inc * m) + gray) * contrastLevels(1);
     % Multiply by taperMask to gradually fade grating towards gray background color (64)
-    grating_hc                  = grating_hc .* taperMask + (gray/2) * (1 - taperMask); 
+    grating_c25                 = grating_c25 .* taperMask + (gray/2) * (1 - taperMask);
+    
+    % 50% contrast grating
+    grating_c50                  = (w2D .* (inc * m) + gray) * contrastLevels(2);
+
+    % 75% contrast grating
+    grating_c75                  = (w2D .* (inc * m) + gray) * contrastLevels(3);
+    % Multiply by taperMask to gradually fade grating towards gray background color (64)
+    grating_c75                 = grating_c75 .* taperMask + (gray/2) * (1 - taperMask);
+    
+    % 100% contrast grating
+    grating_c100                 = (w2D .* (inc * m) + gray) * contrastLevels(4);
+    % Multiply by taperMask to gradually fade grating towards gray background color (64)
+    grating_c100                 = grating_c100 .* taperMask + (gray/2) * (1 - taperMask); 
     
     % Create textures for low and high contrast gratings
-    tex_lc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_lc);
-    tex_hc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_hc);
+    tex_lc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c50);
+    tex_hc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c100);
 end
 
 %% Create data structure for preallocating data
@@ -439,10 +449,16 @@ for trl = 1:exp.nTrials
     whileCount = 1;
     % Draw gratings depending on gratingSequence
     while (GetSecs - probeStartTime) < maxProbeDuration
-        if gratingSequence(trl) == 1 % low contrast concentric dynamic inward
+        if gratingSequence(trl) == 1 % 25% contrast grating
             Screen('DrawTexture', ptbWindow, tex_lc(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
-        elseif gratingSequence(trl) == 2 % high contrast concentric dynamic inward
+        elseif gratingSequence(trl) == 2 % 50% contrast grating
+            Screen('DrawTexture', ptbWindow, tex_hc(whileCount), [], gratingPosition);
+            Screen('Flip', ptbWindow);
+        elseif gratingSequence(trl) == 3 % 75% contrast grating
+            Screen('DrawTexture', ptbWindow, tex_lc(whileCount), [], gratingPosition);
+            Screen('Flip', ptbWindow);
+        elseif gratingSequence(trl) == 4 % 100% contrast grating
             Screen('DrawTexture', ptbWindow, tex_hc(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         end
