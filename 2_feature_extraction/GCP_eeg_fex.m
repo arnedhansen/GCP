@@ -21,8 +21,10 @@ for subj = 1 : length(subjects)
         load('/Volumes/methlab/Students/Arne/MA/headmodel/ant128lay.mat');
 
         %% Identify indices of trials belonging to conditions
-        ind61 = find(dataEEG_lc.trialinfo == 61);
-        ind62 = find(dataEEG_hc.trialinfo == 62);
+        ind61 = find(dataEEG_c25.trialinfo == 61);
+        ind62 = find(dataEEG_c50.trialinfo == 62);
+        ind63 = find(dataEEG_c75.trialinfo == 63);
+        ind64 = find(dataEEG_c100.trialinfo == 64);
 
         %% Time frequency analysis
         cfg             = [];
@@ -35,24 +37,33 @@ for subj = 1 : length(subjects)
         cfg.toi         = -1:0.05:3;
         cfg.keeptrials  = 'no';
 
-        % LOW contrast concentric dynamic inward
+        % 25% contrast concentric dynamic inward
         cfg.trials = ind61;
-        tfr_lc = ft_freqanalysis(cfg,dataEEG_lc);
+        tfr_c25 = ft_freqanalysis(cfg,dataEEG_c25);
 
-        % HIGH contrast concentric dynamic inward
+        % 50% contrast concentric dynamic inward
         cfg.trials = ind62;
-        tfr_hc = ft_freqanalysis(cfg,dataEEG_hc);
+        tfr_c50 = ft_freqanalysis(cfg,dataEEG_c50);
+
+        % 75% contrast concentric dynamic inward
+        cfg.trials = ind63;
+        tfr_c75 = ft_freqanalysis(cfg,dataEEG_c75);
+
+        cfg.trials = ind64;
+        tfr_c100 = ft_freqanalysis(cfg,dataEEG_c100);
 
         %% Baseline
         cfg             = [];
         cfg.baseline    = [-.5 -.25];
         cfg.baselinetype = 'db';
-        tfr_lc_bl                       = ft_freqbaseline(cfg, tfr_lc);
-        tfr_hc_bl                       = ft_freqbaseline(cfg, tfr_hc);
+        tfr_c25_bl                       = ft_freqbaseline(cfg, tfr_c25);
+        tfr_c50_bl                       = ft_freqbaseline(cfg, tfr_c50);
+        tfr_c75_bl                       = ft_freqbaseline(cfg, tfr_c75);
+        tfr_c100_bl                      = ft_freqbaseline(cfg, tfr_c100);
 
         %% Save data
         cd(datapath)
-        save data_tfr tfr_lc  tfr_lc_bl tfr_hc tfr_hc_bl
+        save data_tfr tfr_c25 tfr_c50 tfr_c75 tfr_c100 tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl
 
         clc
         fprintf('Subject %.3d/%.3d TFR DATA computed \n', subj, length(subjects))
@@ -63,7 +74,7 @@ end
 clc
 disp('POWER ANALYSIS')
 % Set analysis to 0-300ms or 300ms-2000ms after stimulus presentation
-anal_period = 1;
+anal_period = 2;
 baseline_period = [-0.5 -0.25];
 if anal_period == 1
     analysis_period = [0 0.3]; % only starting stimulus activity
@@ -75,44 +86,67 @@ freq_range = [30 90];
 
 for subj = 1 : length(subjects)
     datapath = strcat(path, subjects{subj}, '/eeg');
-    %if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
-    cd(datapath);
+    if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
+        cd(datapath);
 
-    % Load data
-    load('data_tfr.mat');
+        % Load data
+        load('data_tfr.mat');
 
-    %% Select analysis and baseline period data
-    % (1) Analysis period data, no baseline
-    % (2) Analysis period data, baselined
-    % (3) Baseline period data (to compare with (1) non-baselined data for percentage change)
+        %% Select analysis and baseline period data
+        % (1) Analysis period data, no baseline
+        % (2) Analysis period data, baselined
+        % (3) Baseline period data (to compare with (1) non-baselined data for percentage change)
 
-    pow_lc                                       = select_data(analysis_period, freq_range, tfr_lc);
-    pow_lc_baselined                             = select_data(analysis_period, freq_range, tfr_lc_bl);
-    pow_lc_baseline_period                       = select_data(baseline_period, freq_range, tfr_lc);
+        %% Power spectra calculations
+        pow_c25                                       = select_data(analysis_period, freq_range, tfr_c25);
+        pow_c25_baselined                             = select_data(analysis_period, freq_range, tfr_c25_bl);
+        pow_c25_baseline_period                       = select_data(baseline_period, freq_range, tfr_c25);
 
-    pow_hc                                       = select_data(analysis_period, freq_range, tfr_hc);
-    pow_hc_baselined                             = select_data(analysis_period, freq_range, tfr_hc_bl);
-    pow_hc_baseline_period                       = select_data(baseline_period, freq_range, tfr_hc);
+        pow_c50                                       = select_data(analysis_period, freq_range, tfr_c50);
+        pow_c50_baselined                             = select_data(analysis_period, freq_range, tfr_c50_bl);
+        pow_c50_baseline_period                       = select_data(baseline_period, freq_range, tfr_c50);
 
-    %% Remove time dimension for POWSCPTRM (channels x frequency)
-    pow_lc                                       = remove_time_dimension(pow_lc);
-    pow_lc_baselined                             = remove_time_dimension(pow_lc_baselined);
-    pow_lc_baseline_period                       = remove_time_dimension(pow_lc_baseline_period);
+        pow_c75                                       = select_data(analysis_period, freq_range, tfr_c75);
+        pow_c75_baselined                             = select_data(analysis_period, freq_range, tfr_c75_bl);
+        pow_c75_baseline_period                       = select_data(baseline_period, freq_range, tfr_c75);
 
-    pow_hc                                       = remove_time_dimension(pow_hc);
-    pow_hc_baselined                             = remove_time_dimension(pow_hc_baselined);
-    pow_hc_baseline_period                       = remove_time_dimension(pow_hc_baseline_period);
+        pow_c100                                       = select_data(analysis_period, freq_range, tfr_c100);
+        pow_c100_baselined                             = select_data(analysis_period, freq_range, tfr_c100_bl);
+        pow_c100_baseline_period                       = select_data(baseline_period, freq_range, tfr_c100);
 
-    % Save data
-    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
-    mkdir(savepath)
-    cd(savepath)
-    if anal_period == 1
-            save power_spectra_300 pow_lc pow_lc_baselined pow_lc_baseline_period pow_hc pow_hc_baselined pow_hc_baseline_period
-    else
-    save power_spectra pow_lc pow_lc_baselined pow_lc_baseline_period pow_hc pow_hc_baselined pow_hc_baseline_period
+        %% Remove time dimension for POWSCPTRM (channels x frequency)
+        pow_c25                                       = remove_time_dimension(pow_c25);
+        pow_c25_baselined                             = remove_time_dimension(pow_c25_baselined);
+        pow_c25_baseline_period                       = remove_time_dimension(pow_c25_baseline_period);
+
+        pow_c50                                       = remove_time_dimension(pow_c50);
+        pow_c50_baselined                             = remove_time_dimension(pow_c50_baselined);
+        pow_c50_baseline_period                       = remove_time_dimension(pow_c50_baseline_period);
+
+        pow_c75                                       = remove_time_dimension(pow_c75);
+        pow_c75_baselined                             = remove_time_dimension(pow_c75_baselined);
+        pow_c75_baseline_period                       = remove_time_dimension(pow_c75_baseline_period);
+
+        pow_c100                                       = remove_time_dimension(pow_c100);
+        pow_c100_baselined                             = remove_time_dimension(pow_c100_baselined);
+        pow_c100_baseline_period                       = remove_time_dimension(pow_c100_baseline_period);
+
+        %% Save data
+        savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
+        mkdir(savepath)
+        cd(savepath)
+        if anal_period == 1
+            save power_spectra_300 pow_c25 pow_c25_baselined pow_c25_baseline_period ...
+                pow_c50 pow_c50_baselined pow_c50_baseline_period ...
+                pow_c75 pow_c75_baselined pow_c75_baseline_period ...
+                pow_c100 pow_c100_baselined pow_c100_baseline_period
+        else
+            save power_spectra pow_c25 pow_c25_baselined pow_c25_baseline_period ...
+                pow_c50 pow_c50_baselined pow_c50_baseline_period ...
+                pow_c75 pow_c75_baselined pow_c75_baseline_period ...
+                pow_c100 pow_c100_baselined pow_c100_baseline_period
+        end
     end
-    %end
 end
 
 %% Define channels
@@ -120,7 +154,7 @@ datapath = strcat(path, subjects{1}, '/eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
-pow_label = pow_lc;
+pow_label = pow_c25;
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
     if contains(label, {'O'}) || contains(label, {'I'})
@@ -140,42 +174,50 @@ for subj = 1:length(subjects)
     end
 
     % Find channels and frequencies of interest
-    channels_idx = ismember(pow_lc_baselined.label, channels);
-    freq_idx = find(pow_lc_baselined.freq >= 30 & pow_hc_baselined.freq <= 90);
+    channels_idx = ismember(pow_c25_baselined.label, channels);
+    freq_idx = find(pow_c25_baselined.freq >= 30 & pow_c100_baselined.freq <= 90);
 
-    % Find gamma peak for LOW contrast
-    lc_gamma_power = mean(pow_lc_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(lc_gamma_power, pow_lc_baselined.freq(freq_idx));
-    [lc_pow, peak_idx] = max(peaks);
-    lc_freq = locs(peak_idx);
+    % Find gamma peak for 25% contrast
+    c25_gamma_power = mean(pow_c25_baselined.powspctrm(channels_idx, freq_idx), 1);
+    [peaks, locs] = findpeaks(c25_gamma_power, pow_c25_baselined.freq(freq_idx));
+    [c25_pow, peak_idx] = max(peaks);
+    c25_freq = locs(peak_idx);
 
-    % % Calculate the range of frequencies for ±5 Hz around the peak frequency
-    % lc_freq_range = lc_freq + [-5, 5];  % ±5 Hz range
-    % lc_freq_idx_range = find(pow_lc_baselined.freq >= lc_freq_range(1) & pow_lc_baselined.freq <= lc_freq_range(2));
-    % 
+    % % Caclculate the range of frequencies for ±5 Hz around the peak frequency
+    % c25_freq_range = c25_freq + [-5, 5];  % ±5 Hz range
+    % c25_freq_idx_range = find(pow_c25_baselined.freq >= c25_freq_range(1) & pow_c25_baselined.freq <= c25_freq_range(2));
+    %
     % % Compute the peak gamma power as the mean power in the ±5 Hz range
-    % lc_pow = mean(lc_gamma_power(lc_freq_idx_range));
+    % c25_pow = mean(c25_gamma_power(c25_freq_idx_range));
 
-    % Find gamma peak for HIGH contrast
-    hc_gamma_power = mean(pow_hc_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_baselined.freq(freq_idx));
-    [hc_pow, peak_idx] = max(peaks);
-    hc_freq = locs(peak_idx);
+    % Find gamma peak for 50% contrast
+    c50_gamma_power = mean(pow_c50_baselined.powspctrm(channels_idx, freq_idx), 1);
+    [peaks, locs] = findpeaks(c50_gamma_power, pow_c50_baselined.freq(freq_idx));
+    [c50_pow, peak_idx] = max(peaks);
+    c50_freq = locs(peak_idx);
 
-    % % Calculate the range of frequencies for ±5 Hz around the peak frequency
-    % hc_freq_range = hc_freq + [-5, 5];  % ±5 Hz range
-    % hc_freq_idx_range = find(pow_hc_baselined.freq >= hc_freq_range(1) & pow_hc_baselined.freq <= hc_freq_range(2));
-    % 
-    % % Compute the peak gamma power as the mean power in the ±5 Hz range
-    % hc_pow = mean(hc_gamma_power(hc_freq_idx_range));
-    if subj == 9
-        hc_pow = 0.1149;
-        hc_freq = 86;
-    end
+    % Find gamma peak for 75% contrast
+    c75_gamma_power = mean(pow_c75_baselined.powspctrm(channels_idx, freq_idx), 1);
+    [peaks, locs] = findpeaks(c75_gamma_power, pow_c75_baselined.freq(freq_idx));
+    [c75_pow, peak_idx] = max(peaks);
+    c75_freq = locs(peak_idx);
+
+    % Find gamma peak for 100% contrast
+    c100_gamma_power = mean(pow_c100_baselined.powspctrm(channels_idx, freq_idx), 1);
+    [peaks, locs] = findpeaks(c100_gamma_power, pow_c100_baselined.freq(freq_idx));
+    [c100_pow, peak_idx] = max(peaks);
+    c100_freq = locs(peak_idx);
 
     % Create across condition structure
-    subject_id = [str2num(subjects{subj}); str2num(subjects{subj})];
-    subj_data_eeg = struct('ID', num2cell(subject_id(1:2)), 'Condition', num2cell([1; 2]), 'Power', num2cell([lc_pow; hc_pow]), 'Frequency', num2cell([lc_freq; hc_freq]));
+    subject_id = repmat(str2num(subjects{subj}), 4, 1);
+    conditions = [1; 2; 3; 4];
+    powers = [c25_pow; c50_pow; c75_pow; c100_pow];
+    frequencies = [c25_freq; c50_freq; c75_freq; c100_freq];
+
+    subj_data_eeg = struct('ID', num2cell(subject_id), ...
+        'Condition', num2cell(conditions), ...
+        'Power', num2cell(powers), ...
+        'Frequency', num2cell(frequencies));
 
     % Save data
     savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
@@ -183,12 +225,12 @@ for subj = 1:length(subjects)
     cd(savepath)
     if anal_period == 1
         save eeg_matrix_subj300 subj_data_eeg
-        save pow300 lc_pow hc_pow
-        save freq300 lc_freq hc_freq
+        save pow300 c25_pow c50_pow c75_pow c100_pow
+        save freq300 c25_freq c50_freq c75_freq c100_freq
     else
         save eeg_matrix_subj subj_data_eeg
-        save pow lc_pow hc_pow
-        save freq lc_freq hc_freq
+        save pow c25_pow c50_pow c75_pow c100_pow
+        save freq c25_freq c50_freq c75_freq c100_freq
     end
 
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracted.'])
