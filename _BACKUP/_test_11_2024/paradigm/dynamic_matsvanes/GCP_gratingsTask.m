@@ -1,4 +1,5 @@
 %% GCP Gratings Task
+%
 % This code requires PsychToolbox. https://psychtoolbox.org
 % This was tested with PsychToolbox version 3.0.15, and with MATLAB R2023b.
 %
@@ -42,39 +43,35 @@ HideCursor(whichScreen);
 %% Define TRIGGERS
 TASK_START = 10; % trigger for ET cutting
 
-BLOCK1                   = 11; % Trigger for start of block 1
-BLOCK2                   = 12; % Trigger for start of block 2
-BLOCK3                   = 13; % Trigger for start of block 3
-BLOCK4                   = 14; % Trigger for start of block 4
-BLOCK0                   = 15; % Trigger for start of training block (block 0)
-  
-FIXCROSSR                = 16; % Trigger for red (task) fixation cross
-FIXCROSSB                = 17; % Trigger for black fixation cross
+BLOCK1                 = 11; % Trigger for start of block 1
+BLOCK2                 = 12; % Trigger for start of block 2
+BLOCK3                 = 13; % Trigger for start of block 3
+BLOCK4                 = 14; % Trigger for start of block 4
+BLOCK0                 = 15; % Trigger for start of training block (block 0)
 
-PRESENTATION_C25_TASK    = 51; % Trigger for presentation of 25% contrast concentric dynamic inward grating WITH button press response
-PRESENTATION_C50_TASK    = 52; % Trigger for presentation of 50% contrast concentric dynamic inward grating WITH button press response
-PRESENTATION_C75_TASK    = 53; % Trigger for presentation of 75% contrast concentric dynamic inward grating WITH button press response
-PRESENTATION_C100_TASK   = 54; % Trigger for presentation of 100% contrast concentric dynamic inward grating WITH button press response
-PRESENTATION_C25_NOTASK  = 61; % Trigger for presentation of 25% contrast concentric dynamic inward grating WITHOUT button press response
-PRESENTATION_C50_NOTASK  = 62; % Trigger for presentation of 50% contrast concentric dynamic inward grating WITHOUT button press response
-PRESENTATION_C75_NOTASK  = 63; % Trigger for presentation of 75% contrast concentric dynamic inward grating WITHOUT button press response
-PRESENTATION_C100_NOTASK = 64; % Trigger for presentation of 100% contrast concentric dynamic inward grating WITHOUT button press response
+FIXCROSSR              = 16; % Trigger for red (task) fixation cross
+FIXCROSSB              = 17; % Trigger for black fixation cross
 
-BLOCK1_END               = 71; % End of block 1
-BLOCK2_END               = 72; % End of block 2
-BLOCK3_END               = 73; % End of block 3
-BLOCK4_END               = 74; % End of block 4
-BLOCK0_END               = 75; % End of block 0
-  
-RESP_YES                 = 87; % Trigger for response yes (spacebar)
-RESP_NO                  = 88; % Trigger for response no (no input)
-  
-TASK_END                 = 90; % Trigger for ET cutting
+PRESENTATION_LC_TASK   = 51; % Trigger for presentation of low contrast concentric dynamic inward grating WITH button press response
+PRESENTATION_HC_TASK   = 52; % Trigger for presentation of high contrast concentric dynamic inward grating WITH button press response
+PRESENTATION_LC_NOTASK = 61; % Trigger for presentation of low contrast concentric dynamic inward grating WITHOUT button press response
+PRESENTATION_HC_NOTASK = 62; % Trigger for presentation of high contrast concentric dynamic inward grating WITHOUT button press response
+
+BLOCK1_END             = 71; % End of block 1
+BLOCK2_END             = 72; % End of block 2
+BLOCK3_END             = 73; % End of block 3
+BLOCK4_END             = 74; % End of block 4
+BLOCK0_END             = 75; % End of block 0
+
+RESP_YES               = 87; % Trigger for response yes (spacebar)
+RESP_NO                = 88; % Trigger for response no (no input)
+
+TASK_END               = 90; % Trigger for ET cutting
 
 %% Set up experiment parameters
 % Block and Trial Number
 exp.nTrlTrain = 10; % n gratings per training block
-exp.nTrlTask = 200; % n gratings per task block
+exp.nTrlTask = 100; % n gratings per task block
 
 if TRAINING == 1
     exp.nTrials = exp.nTrlTrain;
@@ -82,8 +79,8 @@ else
     exp.nTrials = exp.nTrlTask;
 end
 
-% Enable (= 1) or disable (= 0) screenshots
-enableScreenshots = 1;
+% Enable (=1) or disable (=0) screenshots
+enableScreenshots = 0;
 
 %% Set up text parameters
 % Define startExperimentText
@@ -169,7 +166,7 @@ fixationLineWidth = 1.3;            % Line width of fixation cross
 
 % Color
 fixationColor0    = [0 0 0];        % Black fixation cross
-fixationColor1    = [255 0 0];      % Red fixation cross
+fixationColor1    = [255 0 0];        % Red fixation cross
 
 % Location 
 fixationSize_pix  = round(fixationSize_dva*screen.ppd);
@@ -237,47 +234,34 @@ taperMask(radius > maxRadius)   = 0; % Fully tapered outside the grating
 
 % Compute each frame of the movie and convert those frames stored in
 % MATLAB matrices, into Psychtoolbox OpenGL textures using 'MakeTexture'
-contrastLevels                  = [0.25, 0.5, 0.75, 1];
 tex                             = zeros(nFramesInCycle,1);
 for jFrame = 1:nFramesInCycle
     phase                       = (jFrame / nFramesInCycle) * 2 * pi; % Change the phase of the grating according to frame number
     m                           = sin(sqrt(x.^2 + y.^2) / f + phase); % Formula for sinusoidal grating
-
-    % inc*m fluctuates from [-gray, gray]. Multiply this with the hanning mask to let the grating die off at 0
-    % 25% contrast grating
-    grating_c25                  = (w2D .* (inc * m) + gray) * contrastLevels(1);
-    % Multiply by taperMask to gradually fade grating towards gray background color (64)
-    grating_c25                 = grating_c25 .* taperMask + (gray/2) * (1 - taperMask);
     
-    % 50% contrast grating
-    grating_c50                  = (w2D .* (inc * m) + gray) * contrastLevels(2);
-
-    % 75% contrast grating
-    grating_c75                  = (w2D .* (inc * m) + gray) * contrastLevels(3);
-    % Multiply by taperMask to gradually fade grating towards gray background color (64)
-    grating_c75                 = grating_c75 .* taperMask + (gray/2) * (1 - taperMask);
+    % Low contrast grating
+    grating_lc                  = (w2D .* (inc * m) + gray) * 0.5;
+    % inc*m fluctuates from [-gray, gray]. Multiply this with the
+    % hanning mask to let the grating die off at 0
     
-    % 100% contrast grating
-    grating_c100                 = (w2D .* (inc * m) + gray) * contrastLevels(4);
+    % High contrast grating
+    grating_hc                  = (w2D .* (inc * m) + gray);
     % Multiply by taperMask to gradually fade grating towards gray background color (64)
-    grating_c100                 = grating_c100 .* taperMask + (gray/2) * (1 - taperMask); 
+    grating_hc                  = grating_hc .* taperMask + (gray/2) * (1 - taperMask); 
     
     % Create textures for low and high contrast gratings
-    tex_c25(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c25);
-    tex_c50(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c50);
-    tex_c75(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c75);
-    tex_c100(jFrame)             = Screen('MakeTexture', ptbWindow, grating_c100);
+    tex_lc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_lc);
+    tex_hc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_hc);
 end
 
 %% Create data structure for preallocating data
 data                             = struct;
-nums                             = repmat(1:4, 1, 100);
+nums                             = repmat(1:2, 1, 100);
 gratingSequence                  = nums(randperm(length(nums), exp.nTrials)); % Define grating sequence
-data.grating(1, exp.nTrials)     = NaN; % Saves grating form (see below)
-% grating = 1 is 25% contrast concentric dynamic inward
-% grating = 2 is 50% contrast concentric dynamic inward
-% grating = 3 is 75% contrast concentric dynamic inward
-% grating = 4 is 100% contrast concentric dynamic inward
+data.grating(1, exp.nTrials)     = NaN; % Saves grating form (1 or 2, see below)
+% grating = 1 is low contrast concentric dynamic inward
+% grating = 2 is high contrast concentric dynamic inward
+data.contrast(1, exp.nTrials)    = NaN; % Binary measure for low/high contrast
 data.redCross(1, exp.nTrials)    = NaN; % Binary measure for task condition
 data.responses(1, exp.nTrials)   = NaN; % Binary measure for (no) response
 data.correct(1, exp.nTrials)     = NaN; % Binary measure for correct responses
@@ -339,28 +323,16 @@ for trl = 1:exp.nTrials
     tic;
     % Add trial grating info
     if gratingSequence(trl) == 1
-        gratingForm = ' 25% contrast';
+        gratingForm = 'low contrast concentric dynamic inward';
     elseif gratingSequence(trl) == 2
-        gratingForm = ' 50% contrast';
-    elseif gratingSequence(trl) == 3
-        gratingForm = ' 75% contrast';
-    elseif gratingSequence(trl) == 4
-        gratingForm = '100% contrast';
+        gratingForm = 'high contrast concentric dynamic inward';
     end
 
-    % Randomized selection of task (red fication cross) trials (10%)
-    if TRAINING == 0
-        if randi(10) == 1
-            data.redCross(trl) = 1;
-        else
-            data.redCross(trl) = 0;
-        end
-    elseif TRAINING == 1
-        if randi(3) == 1
-            data.redCross(trl) = 1;
-        else
-            data.redCross(trl) = 0;
-        end
+    % Randomized selection of task (red fication cross) trials (25%)
+    if randi(4) == 1
+        data.redCross(trl) = 1;
+    else
+        data.redCross(trl) = 0;
     end
 
     %% Present fixation cross (red for task condition)
@@ -416,10 +388,8 @@ for trl = 1:exp.nTrials
 
     %% Define grating depending on sequence number
     data.grating(trl) = gratingSequence(trl);
-    % grating = 1 is 25% contrast concentric dynamic inward
-    % grating = 2 is 50% contrast concentric dynamic inward
-    % grating = 3 is 75% contrast concentric dynamic inward
-    % grating = 4 is 100% contrast concentric dynamic inward
+    % grating =  1 is low contrast concentric dynamic inward
+    % grating =  2 is high contrast concentric dynamic inward
 
     %% Present grating and get response
     Screen('Flip', ptbWindow); % Preparatory flip
@@ -429,21 +399,13 @@ for trl = 1:exp.nTrials
 
     % Send presentation triggers
     if gratingSequence(trl) == 1 && data.redCross(trl) == 1
-        TRIGGER = PRESENTATION_C25_TASK;
+        TRIGGER = PRESENTATION_LC_TASK;
     elseif gratingSequence(trl) == 2 && data.redCross(trl) == 1
-        TRIGGER = PRESENTATION_C50_TASK;
-    elseif gratingSequence(trl) == 3 && data.redCross(trl) == 1
-        TRIGGER = PRESENTATION_C75_TASK;
-    elseif gratingSequence(trl) == 4 && data.redCross(trl) == 1
-        TRIGGER = PRESENTATION_C100_TASK;
+        TRIGGER = PRESENTATION_HC_TASK;
     elseif gratingSequence(trl) == 1 && data.redCross(trl) == 0
-        TRIGGER = PRESENTATION_C25_NOTASK;
+        TRIGGER = PRESENTATION_LC_NOTASK;
     elseif gratingSequence(trl) == 2 && data.redCross(trl) == 0
-        TRIGGER = PRESENTATION_C50_NOTASK;
-    elseif gratingSequence(trl) == 3 && data.redCross(trl) == 0
-        TRIGGER = PRESENTATION_C75_NOTASK;
-    elseif gratingSequence(trl) == 4 && data.redCross(trl) == 0
-        TRIGGER = PRESENTATION_C100_NOTASK;
+        TRIGGER = PRESENTATION_HC_NOTASK;
     end
 
     if TRAINING == 1
@@ -459,17 +421,11 @@ for trl = 1:exp.nTrials
     whileCount = 1;
     % Draw gratings depending on gratingSequence
     while (GetSecs - probeStartTime) < maxProbeDuration
-        if gratingSequence(trl) == 1 % 25% contrast grating
-            Screen('DrawTexture', ptbWindow, tex_c25(whileCount), [], gratingPosition);
+        if gratingSequence(trl) == 1 % low contrast concentric dynamic inward
+            Screen('DrawTexture', ptbWindow, tex_lc(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
-        elseif gratingSequence(trl) == 2 % 50% contrast grating
-            Screen('DrawTexture', ptbWindow, tex_c50(whileCount), [], gratingPosition);
-            Screen('Flip', ptbWindow);
-        elseif gratingSequence(trl) == 3 % 75% contrast grating
-            Screen('DrawTexture', ptbWindow, tex_c75(whileCount), [], gratingPosition);
-            Screen('Flip', ptbWindow);
-        elseif gratingSequence(trl) == 4 % 100% contrast grating
-            Screen('DrawTexture', ptbWindow, tex_c100(whileCount), [], gratingPosition);
+        elseif gratingSequence(trl) == 2 % high contrast concentric dynamic inward
+            Screen('DrawTexture', ptbWindow, tex_hc(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         end
         screenshot(sprintf('GCP_screenshot_%s.png', gratingForm), ptbWindow, enableScreenshots);
@@ -633,6 +589,7 @@ saves.data.reactionTime         = data.reactionTime;
 saves.experiment                = exp;
 saves.screen                    = screen;
 saves.startExperimentText       = startExperimentText;
+saves.stimulus                  = stimulus;
 saves.subjectID                 = subjectID;
 saves.subject                   = subject;
 saves.timing                    = timing;
@@ -649,14 +606,10 @@ trigger.BLOCK0                  = BLOCK0;
 trigger.FIXCROSSR               = FIXCROSSR;
 trigger.FIXCROSSB               = FIXCROSSB;
 
-trigger.PRESENTATION_C25_TASK    = PRESENTATION_C25_TASK;
-trigger.PRESENTATION_C50_TASK    = PRESENTATION_C50_TASK;
-trigger.PRESENTATION_C75_TASK    = PRESENTATION_C75_TASK;
-trigger.PRESENTATION_C100_TASK   = PRESENTATION_C100_TASK;
-trigger.PRESENTATION_C25_NOTASK  = PRESENTATION_C25_NOTASK;
-trigger.PRESENTATION_C50_NOTASK  = PRESENTATION_C50_NOTASK;
-trigger.PRESENTATION_C75_NOTASK  = PRESENTATION_C75_NOTASK;
-trigger.PRESENTATION_C100_NOTASK = PRESENTATION_C100_NOTASK;
+trigger.PRESENTATION_LC_TASK    = PRESENTATION_LC_TASK;
+trigger.PRESENTATION_HC_TASK    = PRESENTATION_HC_TASK;
+trigger.PRESENTATION_LC_NOTASK  = PRESENTATION_LC_NOTASK;
+trigger.PRESENTATION_HC_NOTASK  = PRESENTATION_HC_NOTASK;
 
 trigger.BLOCK1_END              = BLOCK1_END;
 trigger.BLOCK2_END              = BLOCK2_END;
