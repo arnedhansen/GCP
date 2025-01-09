@@ -42,14 +42,14 @@ HideCursor(whichScreen);
 %% Define TRIGGERS
 TASK_START = 10; % trigger for ET cutting
 
-BLOCK1                 = 11; % Trigger for start of block 1
-BLOCK2                 = 12; % Trigger for start of block 2
-BLOCK3                 = 13; % Trigger for start of block 3
-BLOCK4                 = 14; % Trigger for start of block 4
-BLOCK0                 = 15; % Trigger for start of training block (block 0)
-
-FIXCROSSR              = 16; % Trigger for red (task) fixation cross
-FIXCROSSB              = 17; % Trigger for black fixation cross
+BLOCK1                   = 11; % Trigger for start of block 1
+BLOCK2                   = 12; % Trigger for start of block 2
+BLOCK3                   = 13; % Trigger for start of block 3
+BLOCK4                   = 14; % Trigger for start of block 4
+BLOCK0                   = 15; % Trigger for start of training block (block 0)
+  
+FIXCROSSR                = 16; % Trigger for red (task) fixation cross
+FIXCROSSB                = 17; % Trigger for black fixation cross
 
 PRESENTATION_C25_TASK    = 51; % Trigger for presentation of 25% contrast concentric dynamic inward grating WITH button press response
 PRESENTATION_C50_TASK    = 52; % Trigger for presentation of 50% contrast concentric dynamic inward grating WITH button press response
@@ -60,16 +60,16 @@ PRESENTATION_C50_NOTASK  = 62; % Trigger for presentation of 50% contrast concen
 PRESENTATION_C75_NOTASK  = 63; % Trigger for presentation of 75% contrast concentric dynamic inward grating WITHOUT button press response
 PRESENTATION_C100_NOTASK = 64; % Trigger for presentation of 100% contrast concentric dynamic inward grating WITHOUT button press response
 
-BLOCK1_END             = 71; % End of block 1
-BLOCK2_END             = 72; % End of block 2
-BLOCK3_END             = 73; % End of block 3
-BLOCK4_END             = 74; % End of block 4
-BLOCK0_END             = 75; % End of block 0
-
-RESP_YES               = 87; % Trigger for response yes (spacebar)
-RESP_NO                = 88; % Trigger for response no (no input)
-
-TASK_END               = 90; % Trigger for ET cutting
+BLOCK1_END               = 71; % End of block 1
+BLOCK2_END               = 72; % End of block 2
+BLOCK3_END               = 73; % End of block 3
+BLOCK4_END               = 74; % End of block 4
+BLOCK0_END               = 75; % End of block 0
+  
+RESP_YES                 = 87; % Trigger for response yes (spacebar)
+RESP_NO                  = 88; % Trigger for response no (no input)
+  
+TASK_END                 = 90; % Trigger for ET cutting
 
 %% Set up experiment parameters
 % Block and Trial Number
@@ -83,7 +83,7 @@ else
 end
 
 % Enable (= 1) or disable (= 0) screenshots
-enableScreenshots = 0;
+enableScreenshots = 1;
 
 %% Set up text parameters
 % Define startExperimentText
@@ -263,8 +263,10 @@ for jFrame = 1:nFramesInCycle
     grating_c100                 = grating_c100 .* taperMask + (gray/2) * (1 - taperMask); 
     
     % Create textures for low and high contrast gratings
-    tex_lc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c50);
-    tex_hc(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c100);
+    tex_c25(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c25);
+    tex_c50(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c50);
+    tex_c75(jFrame)              = Screen('MakeTexture', ptbWindow, grating_c75);
+    tex_c100(jFrame)             = Screen('MakeTexture', ptbWindow, grating_c100);
 end
 
 %% Create data structure for preallocating data
@@ -337,20 +339,28 @@ for trl = 1:exp.nTrials
     tic;
     % Add trial grating info
     if gratingSequence(trl) == 1
-        gratingForm = '25% contrast';
+        gratingForm = ' 25% contrast';
     elseif gratingSequence(trl) == 2
-        gratingForm = '50% contrast';
+        gratingForm = ' 50% contrast';
     elseif gratingSequence(trl) == 3
-        gratingForm = '75% contrast';
+        gratingForm = ' 75% contrast';
     elseif gratingSequence(trl) == 4
         gratingForm = '100% contrast';
     end
 
     % Randomized selection of task (red fication cross) trials (10%)
-    if randi(10) == 1
-        data.redCross(trl) = 1;
-    else
-        data.redCross(trl) = 0;
+    if TRAINING == 0
+        if randi(10) == 1
+            data.redCross(trl) = 1;
+        else
+            data.redCross(trl) = 0;
+        end
+    elseif TRAINING == 1
+        if randi(3) == 1
+            data.redCross(trl) = 1;
+        else
+            data.redCross(trl) = 0;
+        end
     end
 
     %% Present fixation cross (red for task condition)
@@ -450,16 +460,16 @@ for trl = 1:exp.nTrials
     % Draw gratings depending on gratingSequence
     while (GetSecs - probeStartTime) < maxProbeDuration
         if gratingSequence(trl) == 1 % 25% contrast grating
-            Screen('DrawTexture', ptbWindow, tex_lc(whileCount), [], gratingPosition);
+            Screen('DrawTexture', ptbWindow, tex_c25(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         elseif gratingSequence(trl) == 2 % 50% contrast grating
-            Screen('DrawTexture', ptbWindow, tex_hc(whileCount), [], gratingPosition);
+            Screen('DrawTexture', ptbWindow, tex_c50(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         elseif gratingSequence(trl) == 3 % 75% contrast grating
-            Screen('DrawTexture', ptbWindow, tex_lc(whileCount), [], gratingPosition);
+            Screen('DrawTexture', ptbWindow, tex_c75(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         elseif gratingSequence(trl) == 4 % 100% contrast grating
-            Screen('DrawTexture', ptbWindow, tex_hc(whileCount), [], gratingPosition);
+            Screen('DrawTexture', ptbWindow, tex_c100(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         end
         screenshot(sprintf('GCP_screenshot_%s.png', gratingForm), ptbWindow, enableScreenshots);

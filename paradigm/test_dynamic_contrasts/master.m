@@ -26,8 +26,8 @@ addpath(FUNS_PATH) % Add path to folder with functions
 screenSettings % Manage screens
 
 %% Collect ID and Age
-%dialogID;
-subject.ID = 999; Set to 999 for tests
+dialogID;
+%subject.ID = 991; %Set to 999 for tests
 
 
 %% Protect Matlab code from participant keyboard input
@@ -35,11 +35,11 @@ ListenChar(2);
 
 %% Check for existing files and start tasks
 
-% if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_Resting.mat']])
-%     restingEEG
-% else
-%     disp('RESTING EEG DATA ALREADY EXISTS');
-% end
+if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_Resting.mat']])
+    restingEEG
+else
+    disp('RESTING EEG DATA ALREADY EXISTS');
+end
 
 if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
     TRAINING = 1;
