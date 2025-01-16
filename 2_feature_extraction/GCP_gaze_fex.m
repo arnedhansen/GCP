@@ -144,17 +144,17 @@ for subj = 1:length(subjects)
         mean_gaze_x = nanmean(gaze_x_matrix, 2);
         mean_gaze_y = nanmean(gaze_y_matrix, 2);
 
-        % Plot the averaged gaze data
-        figure;
-        set(gcf, "Position", [200, 200, 1000, 600]);
-        plot(mean_gaze_x, mean_gaze_y, 'o');
-        hold on;
-        plot(400, 300, 'rx', 'MarkerSize', 10, 'LineWidth', 2); % Centre point
-        title('Averaged Gaze Data Distribution Across Samples');
-        xlabel('X Coordinates');
-        ylabel('Y Coordinates');
-        xlim([0 800]);
-        ylim([0 600]);
+        %% Plot the averaged gaze data
+        % figure;
+        % set(gcf, "Position", [200, 200, 1000, 600]);
+        % plot(mean_gaze_x, mean_gaze_y, 'o');
+        % hold on;
+        % plot(400, 300, 'rx', 'MarkerSize', 10, 'LineWidth', 2); % Centre point
+        % title('Averaged Gaze Data Distribution Across Samples');
+        % xlabel('X Coordinates');
+        % ylabel('Y Coordinates');
+        % xlim([0 800]);
+        % ylim([0 600]);
 
         %% Create a trial-by-trial structure array for this subject
         subj_data_gaze_trial = struct('ID', num2cell(subject_id), 'Trial', num2cell(trial_num), 'Condition', num2cell(condition), 'GazeDeviation', num2cell(gazeDev), 'GazeStdX', num2cell(gazeSDx), 'GazeStdY', num2cell(gazeSDy), 'PupilSize', num2cell(pupilSize), 'MSRate', num2cell(microsaccadeRate));
@@ -192,40 +192,41 @@ for subj = 1:length(subjects)
             c100_pups = mean([subj_data_gaze_trial_c100.PupilSize], 'omitnan');
             c100_msrate = mean([subj_data_gaze_trial_c100.MSRate], 'omitnan');
         end
-
-        %% Load gaze metrics (extracted in GCP_preprocessing.m)
-        load([datapath, filesep, 'gaze_metrics'])
-
-        %% Create across condition structure
-        subj_data_gaze = struct('ID', num2cell(subject_id(1:2)), ...
-            'Condition', num2cell([1; 4]), ...
-            'GazeDeviation', num2cell([c25_gdev; c50_gdev; c75_gdev; c100_gdev]), ...
-            'GazeStdX', num2cell([c25_gSDx; c50_gSDx; c75_gSDx; c100_gSDx]), ...
-            'GazeStdY', num2cell([c25_gSDy; c50_gSDy; c75_gSDy; c100_gSDy]), ...
-            'PupilSize', num2cell([c25_pups; c50_pups; c75_pups; c100_pups]), ...
-            'MSRate', num2cell([c25_msrate; c50_msrate; c75_msrate; c100_msrate]), ...
-            'Blinks', num2cell([c25_blinks; c50_blinks; c75_blinks; c100_blinks]), ...
-            'Fixations', num2cell([c25_fixations; c50_fixations; c75_fixations; c100_fixations]), ...
-            'Saccades', num2cell([c25_saccades; c50_saccades; c75_saccades; c100_saccades]));
-
-        %% Save data
-        savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/gaze/');
-        if isempty(dir(savepath))
-            mkdir(savepath)
-        end
-        cd(savepath)
-        save gaze_matrix_trial subj_data_gaze_trial_c25 subj_data_gaze_trial_c50 subj_data_gaze_trial_c75 subj_data_gaze_trial_c100
-        save gaze_matrix_subj subj_data_gaze_c25 subj_data_gaze_c50 subj_data_gaze_c75 subj_data_gaze_c100
-        save gaze_dev c25_gdev c50_gdev c75_gdev c100_gdev
-        save gaze_std c25_gSDx c25_gSDy c50_gSDx c50_gSDy c75_gSDx c75_gSDy c100_gSDx c100_gSDy
-        save pupil_size c25_pups c50_pups c75_pups c100_pups
-        save ms_rate c25_msrate c50_msrate c75_msrate c100_msrate
-        clc
-        disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
-
-        % Append to the final structure array
-        gaze_data = [gaze_data; subj_data_gaze];
     end
+
+    %% Load gaze metrics (extracted in GCP_preprocessing.m)
+    load([datapath, filesep, 'gaze_metrics'])
+
+    %% Create across condition structure
+    subj_data_gaze = struct('ID', num2cell(subject_id(1:4)), ...
+        'Condition', num2cell([1; 2; 3; 4]), ...
+        'GazeDeviation', num2cell([c25_gdev; c50_gdev; c75_gdev; c100_gdev]), ...
+        'GazeStdX', num2cell([c25_gSDx; c50_gSDx; c75_gSDx; c100_gSDx]), ...
+        'GazeStdY', num2cell([c25_gSDy; c50_gSDy; c75_gSDy; c100_gSDy]), ...
+        'PupilSize', num2cell([c25_pups; c50_pups; c75_pups; c100_pups]), ...
+        'MSRate', num2cell([c25_msrate; c50_msrate; c75_msrate; c100_msrate]), ...
+        'Blinks', num2cell([c25_blinks; c50_blinks; c75_blinks; c100_blinks]), ...
+        'Fixations', num2cell([c25_fixations; c50_fixations; c75_fixations; c100_fixations]), ...
+        'Saccades', num2cell([c25_saccades; c50_saccades; c75_saccades; c100_saccades]));
+
+    %% Save data
+    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/gaze/');
+    if isempty(dir(savepath))
+        mkdir(savepath)
+    end
+    cd(savepath)
+    save gaze_matrix_trial subj_data_gaze_trial_c25 subj_data_gaze_trial_c50 subj_data_gaze_trial_c75 subj_data_gaze_trial_c100
+    save gaze_matrix_subj subj_data_gaze
+    save gaze_dev c25_gdev c50_gdev c75_gdev c100_gdev
+    save gaze_std c25_gSDx c25_gSDy c50_gSDx c50_gSDy c75_gSDx c75_gSDy c100_gSDx c100_gSDy
+    save pupil_size c25_pups c50_pups c75_pups c100_pups
+    save ms_rate c25_msrate c50_msrate c75_msrate c100_msrate
+    clc
+    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
+
+    % Append to the final structure array
+    gaze_data = [gaze_data; subj_data_gaze];
 end
-save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_raw gaze_x_lc gaze_y_lc gaze_x_hc gaze_y_hc
+save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_raw ...
+    gaze_x_c25 gaze_y_c25 gaze_x_c50 gaze_y_c50 gaze_x_c75 gaze_y_c75 gaze_x_c100 gaze_y_c100
 save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_matrix gaze_data

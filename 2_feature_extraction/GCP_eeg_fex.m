@@ -49,6 +49,7 @@ for subj = 1 : length(subjects)
         cfg.trials = ind63;
         tfr_c75 = ft_freqanalysis(cfg,dataEEG_c75);
 
+        % 100% contrast concentric dynamic inward
         cfg.trials = ind64;
         tfr_c100 = ft_freqanalysis(cfg,dataEEG_c100);
 

@@ -3,7 +3,7 @@
 %% Setup
 clear
 [subjects, path, colors] = setup('GCP');
-anal_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms aftet stimulus presentation
+anal_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus presentation
 
 %% Load power spectra data
 for subj = 1:length(subjects)
@@ -13,98 +13,91 @@ for subj = 1:length(subjects)
         load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
     end
 
-    % Low contrast
-    power_lc{subj} = pow_lc;
-    power_lc_baselined{subj} = pow_lc_baselined;
-    power_lc_baseline_period{subj} = pow_lc_baseline_period;
+    % Contrast conditions
+    power_c25{subj} = pow_c25;
+    power_c50{subj} = pow_c50;
+    power_c75{subj} = pow_c75;
+    power_c100{subj} = pow_c100;
 
-    % High contrast
-    power_hc{subj} = pow_hc;
-    power_hc_baselined{subj} = pow_hc_baselined;
-    power_hc_baseline_period{subj} = pow_hc_baseline_period;
+    power_c25_baselined{subj} = pow_c25_baselined;
+    power_c50_baselined{subj} = pow_c50_baselined;
+    power_c75_baselined{subj} = pow_c75_baselined;
+    power_c100_baselined{subj} = pow_c100_baselined;
+
+    power_c25_baseline_period{subj} = pow_c25_baseline_period;
+    power_c50_baseline_period{subj} = pow_c50_baseline_period;
+    power_c75_baseline_period{subj} = pow_c75_baseline_period;
+    power_c100_baseline_period{subj} = pow_c100_baseline_period;
 end
 
 %% Compute grand averages
-gapow_lc                                               = ft_freqgrandaverage([],power_lc{:});
-gapow_lc_baselined                                     = ft_freqgrandaverage([],power_lc_baselined{:});
-gapow_lc_baseline_period                               = ft_freqgrandaverage([],power_lc_baseline_period{:});
+gapow_c25 = ft_freqgrandaverage([], power_c25{:});
+gapow_c50 = ft_freqgrandaverage([], power_c50{:});
+gapow_c75 = ft_freqgrandaverage([], power_c75{:});
+gapow_c100 = ft_freqgrandaverage([], power_c100{:});
 
-gapow_hc                                               = ft_freqgrandaverage([],power_hc{:});
-gapow_hc_baselined                                     = ft_freqgrandaverage([],power_hc_baselined{:});
-gapow_hc_baseline_period                               = ft_freqgrandaverage([],power_hc_baseline_period{:});
+gapow_c25_baselined = ft_freqgrandaverage([], power_c25_baselined{:});
+gapow_c50_baselined = ft_freqgrandaverage([], power_c50_baselined{:});
+gapow_c75_baselined = ft_freqgrandaverage([], power_c75_baselined{:});
+gapow_c100_baselined = ft_freqgrandaverage([], power_c100_baselined{:});
+
+gapow_c25_baseline_period = ft_freqgrandaverage([], power_c25_baseline_period{:});
+gapow_c50_baseline_period = ft_freqgrandaverage([], power_c50_baseline_period{:});
+gapow_c75_baseline_period = ft_freqgrandaverage([], power_c75_baseline_period{:});
+gapow_c100_baseline_period = ft_freqgrandaverage([], power_c100_baseline_period{:});
 
 %% Define channels
 datapath = strcat(path, subjects{1}, '/eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
-pow_label = pow_lc;
+pow_label = pow_c25; % Assume similar structure across conditions
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
     if contains(label, {'O'}) && ~contains(label, {'P'}) || contains(label, {'I'})
-    %if contains(label, {'O'}) || contains(label, {'I'})
         occ_channels{end+1} = label;
     end
 end
 channels = occ_channels;
 
 %% Plot GRAND AVERAGE power spectrum BASELINED
+% Plotting should include all conditions (c25, c50, c75, c100)
 close all;
 figure;
-set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
+set(gcf, 'Position', [0, 0, 1000, 2000], 'Color', 'w');
 cfg = [];
 cfg.channel = channels;
 cfg.figure = 'gcf';
 cfg.linewidth = 1;
 
-% Plot for low and high contrast
-ft_singleplotER(cfg, gapow_lc_baselined, gapow_hc_baselined);
+% Plot for all contrasts
+ft_singleplotER(cfg, gapow_c25_baselined, gapow_c50_baselined, gapow_c75_baselined, gapow_c100_baselined);
 hold on;
 
-% Add shaded error bars
-channels_seb = ismember(gapow_lc_baselined.label, cfg.channel);
-lceb = shadedErrorBar(gapow_lc_baselined.freq, mean(gapow_lc_baselined.powspctrm(channels_seb, :), 1), std(gapow_lc_baselined.powspctrm(channels_seb, :))/sqrt(size(gapow_lc_baselined.powspctrm(channels_seb, :), 1)), {'-'}, 0);
-hceb = shadedErrorBar(gapow_hc_baselined.freq, mean(gapow_hc_baselined.powspctrm(channels_seb, :), 1), std(gapow_hc_baselined.powspctrm(channels_seb, :))/sqrt(size(gapow_hc_baselined.powspctrm(channels_seb, :), 1)), {'-'}, 0);
-lceb.mainLine.Color = colors(1, :);
-hceb.mainLine.Color = colors(2, :);
-lceb.patch.FaceColor = colors(1, :);
-hceb.patch.FaceColor = colors(2, :);
-set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
-set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
-set(lceb.edge(1), 'Color', colors(1, :));
-set(lceb.edge(2), 'Color', colors(1, :));
-set(hceb.edge(1), 'Color', colors(2, :));
-set(hceb.edge(2), 'Color', colors(2, :));
-set(lceb.patch, 'FaceAlpha', 0.5);
-set(hceb.patch, 'FaceAlpha', 0.5);
-
-% Find GA gamma peak for LOW contrast
-freq_idx = find(gapow_lc_baselined.freq >= 30 & gapow_lc_baselined.freq <= 90); % Adjust freq range to gamma
-lc_gamma_power = mean(gapow_lc_baselined.powspctrm(channels_seb, freq_idx), 1);
-[peaks, locs] = findpeaks(lc_gamma_power, gapow_lc_baselined.freq(freq_idx));
-[lc_pow, peak_idx] = max(peaks);
-lc_freq = locs(peak_idx);
-
-% Find GA gamma peak for HIGH contrast
-hc_gamma_power = mean(gapow_hc_baselined.powspctrm(channels_seb, freq_idx), 1);
-[peaks, locs] = findpeaks(hc_gamma_power, gapow_hc_baselined.freq(freq_idx));
-[hc_pow, peak_idx] = max(peaks);
-hc_freq = locs(peak_idx);
+% Add shaded error bars for each condition
+conditions = {gapow_c25_baselined, gapow_c50_baselined, gapow_c75_baselined, gapow_c100_baselined};
+col_indices = [1, 1, 2, 2]; % Map to colours
+for i = 1:4
+    curr_cond = conditions{i};
+    channels_seb = ismember(curr_cond.label, cfg.channel);
+    seb = shadedErrorBar(curr_cond.freq, ...
+        mean(curr_cond.powspctrm(channels_seb, :), 1), ...
+        std(curr_cond.powspctrm(channels_seb, :)) / sqrt(size(curr_cond.powspctrm(channels_seb, :), 1)), ...
+        {'-'}, 0);
+    seb.mainLine.Color = colors(col_indices(i), :);
+    seb.patch.FaceColor = colors(col_indices(i), :);
+    set(seb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(col_indices(i), :));
+    set(seb.patch, 'FaceAlpha', 0.5);
+end
 
 % Adjust plot aesthetics
 yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
-plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
-plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
-plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
-plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
-set(gcf,'color','w');
-set(gca,'Fontsize',20);
-max_spctrm = max(lc_pow, hc_pow);
-ylim([-max_spctrm*1.25 max_spctrm*1.25]);
+set(gcf, 'color', 'w');
+set(gca, 'FontSize', 20);
 xlim([30 90])
 xlabel('Frequency [Hz]', 'FontSize', 30);
 ylabel('Power [dB]', 'FontSize', 30);
-legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 25);
+legend({'c25', 'c50', 'c75', 'c100'}, 'FontName', 'Arial', 'FontSize', 25);
 title('Grand Average Power Spectrum', 'FontSize', 40);
 hold off;
 
@@ -114,6 +107,17 @@ if anal_period == 1
 else
     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_baselined.png');
 end
+
+
+
+
+
+
+
+
+
+
+
 
 %% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
 % Percentage change formula: ((stimulus - baseline) / baseline) * 100
