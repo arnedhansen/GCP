@@ -14,7 +14,7 @@ startup
 % Read data, segment and convert to FieldTrip data structure
 for subj = 1 : length(subjects)
     datapath = strcat(path,subjects{subj}, '/eeg');
-    if ~isfile(strcat([datapath, '/data_tfr.mat'])) % only new data
+    %if ~isfile(strcat([datapath, '/data_tfr.mat'])) % only new data
         cd(datapath)
         close all
         load dataEEG
@@ -68,7 +68,7 @@ for subj = 1 : length(subjects)
 
         clc
         fprintf('Subject %.3d/%.3d TFR DATA computed \n', subj, length(subjects))
-    end
+    %end
 end
 
 %% Load data and convert TFR data to POWSCPTRM (channels x frequency)

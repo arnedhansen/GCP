@@ -3,11 +3,11 @@
 %% Setup
 clear
 [subjects, path, colors] = setup('GCP');
-anal_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus presentation
+analysis_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus presentation
 
 %% Load power spectra data
 for subj = 1:length(subjects)
-    if anal_period == 1
+    if analysis_period == 1
         load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
     else
         load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
@@ -76,7 +76,7 @@ hold on;
 
 % Add shaded error bars for each condition
 conditions = {gapow_c25_baselined, gapow_c50_baselined, gapow_c75_baselined, gapow_c100_baselined};
-col_indices = [1, 1, 2, 2]; % Map to colours
+col_indices = [1, 2, 3, 4];
 for i = 1:4
     curr_cond = conditions{i};
     channels_seb = ismember(curr_cond.label, cfg.channel);
@@ -102,8 +102,8 @@ title('Grand Average Power Spectrum', 'FontSize', 40);
 hold off;
 
 % Save the plot
-if anal_period == 1
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300/GCP_powspctrm_baselined_300.png');
+if analysis_period == 1
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_baselined_300.png');
 else
     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_baselined.png');
 end
@@ -185,8 +185,8 @@ title('Percentage Change Power Spectrum', 'FontSize', 30);
 hold off;
 
 % Save the plot
-if anal_period == 1
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300/GCP_powspctrm_percentage_300.png');
+if analysis_period == 1
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_percentage_300.png');
 else
     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
 end
@@ -274,8 +274,8 @@ for subj = 1:length(subjects)
     hold off;
 
     % Save individual plot
-    if anal_period == 1
-        output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300';
+    if analysis_period == 1
+        output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300';
         save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined_300.png', subjects{subj}));
     else
         save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined.png', subjects{subj}));
@@ -375,8 +375,8 @@ for subj = 1:num_subs
 end
 
 % Save the combined figure with all subplots
-if anal_period == 1
-    output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300';
+if analysis_period == 1
+    output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300';
     save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined_300.png');
 else
     save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined.png');
