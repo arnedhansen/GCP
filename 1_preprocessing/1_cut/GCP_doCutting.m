@@ -1,4 +1,4 @@
-%% Cutting of GCP EEG data
+%% Cutting of GCP EEG data for the GCP study
 % Automatically finds all not converted .cnt files
 
 %% EEGlab
@@ -10,7 +10,7 @@ eeglab
 close()
 cd(p)
 
-%% Define path and cut data
+%% Define path, cut data and convert asc to mat files.
 d = dir(strcat('/Volumes/methlab_data/OCC/GCP/data/*/', '*cnt'));
 ids = {};
 for f = 1 : size(d, 1)
@@ -30,10 +30,10 @@ for id = 1 : length(ids)
     
     if not(isempty(d))
         for f = 1 : size(d, 1)
-            % convert ET asc to mat
+            % Convert ET asc to mat
             inputFile = fullfile(d(f).folder, d(f).name);
             
-            % rename the files (EyeLink can't deal with long filenames, edf filenames has to be short)
+            % Rename the files (EyeLink can't deal with long filenames, edf filenames has to be short)
             x = strsplit(d(f).name, '_');
             name = x{2};
             id = x{end-1};

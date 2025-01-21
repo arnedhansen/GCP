@@ -18,7 +18,7 @@ for subjects = 1 : length(subjectIDs)
     subjectID = subjectIDs(subjects);
     % Check if subject files have already been merged
     if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/merged/', char(subjectID), filesep, char(subjectID), '*_merged.mat']))
-        % Setup data paths
+        % Set up data paths
         filePathET = ['/Volumes/methlab_data/OCC/GCP/data/', char(subjectID)];
         filePathEEG = ['/Volumes/methlab/Students/Arne/GCP/data/automagic/',  char(subjectID)];
         resultFolder = ['/Volumes/methlab/Students/Arne/GCP/data/merged/', char(subjectID)];
@@ -26,8 +26,7 @@ for subjects = 1 : length(subjectIDs)
         dEEG = dir([filePathEEG, filesep, '*ip*EEG.mat']);
         dET = dir([filePathET, filesep, '*ET.mat']);
 
-        for files = 1 : 5
-            try % Do not process missing blocks
+        for files = 1 : size(dEEG, 1)
                 ETnameShort = dET(files).name(1:end-7);
                 ETname = dET(files).name;
 
@@ -50,6 +49,7 @@ for subjects = 1 : length(subjectIDs)
                 if strcmp(task, 'Resting_EEG.mat')
                     startTrigger = 10;
                     endTrigger = 90;
+                % Grating Task    
                 else
                     startTriggers = 11:14;
                     endTriggers = 71:74;
@@ -77,7 +77,6 @@ for subjects = 1 : length(subjectIDs)
                     step = sprintf('%s', char(fileTaskName(3)), '_', char(fileTaskName(4)));
                     disp(['GCP' char(subjectID) ': ' step ' done' ])
                 end
-            end
         end
     end
 end

@@ -60,7 +60,6 @@ i74 = find(ismember({EEGorig.event.type}, '74'));
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i10(1)).latency, EEGorig.event(i90(1)).latency]);
     task = [subjectID, '_GCP_Resting_EEG.mat'];
-    % Save to a file
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message
@@ -71,7 +70,6 @@ end
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i11(end)).latency, EEGorig.event(i71(end)).latency]);
     task = [subjectID, '_GCP_block1_task_EEG.mat'];
-    % Save to a file
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message
@@ -82,7 +80,6 @@ end
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i12(end)).latency, EEGorig.event(i72(end)).latency]);
     task = [subjectID, '_GCP_block2_task_EEG.mat'];
-    % Save to a file
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message
@@ -93,7 +90,6 @@ end
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i13(end)).latency, EEGorig.event(i73(end)).latency]);
     task = [subjectID, '_GCP_block3_task_EEG.mat'];
-    % Save to a file
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message
@@ -104,7 +100,6 @@ end
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i14(end)).latency, EEGorig.event(i74(end)).latency]);
     task = [subjectID, '_GCP_block4_task_EEG.mat'];
-    % Save to a file
     save(fullfile(filePath, task), 'EEG', '-v7.3')
 catch ME
     ME.message

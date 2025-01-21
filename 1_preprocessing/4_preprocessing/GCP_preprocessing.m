@@ -17,6 +17,7 @@ for subj = 1:length(subjects)
     clearvars -except subjects subj path
     datapath = strcat(path,subjects{subj});
     cd(datapath)
+
     if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/dataEEG.mat']))
         %% Read blocks
         for block = 1:4
@@ -25,6 +26,9 @@ for subj = 1:length(subjects)
                 alleeg{block} = EEG;
                 clear EEG
                 fprintf('Subject GCP %.3s (%.3d/%.3d): Block %.1d loaded \n', subjects{subj}, subj, length(subjects), block)
+            catch ME
+                ME.message
+                disp(['ERROR loading Block ' num2str(block) '!'])
             end
         end
 
@@ -33,14 +37,14 @@ for subj = 1:length(subjects)
         epoch_window = [-2 3.5];
         analysis_window = [0.3 2]; % Analysis window for eye metric extraction
         for block = 1:4
-            % 51 = PRESENTATION_C25_TASK(Trigger for presentation of 25% contrast concentric dynamic inward grating WITH button press response)
-            % 52 = PRESENTATION_C50_TASK(Trigger for presentation of 50% contrast concentric dynamic inward grating WITH button press response)
-            % 53 = PRESENTATION_C75_TASK(Trigger for presentation of 75% contrast concentric dynamic inward grating WITH button press response)
-            % 54 = PRESENTATION_C100_TASK(Trigger for presentation of 100% contrast concentric dynamic inward grating WITH button press response)
-            % 61 = PRESENTATION_C25_NOTASK(Trigger for presentation of 25% contrast concentric dynamic inward grating WITHOUT button press response)
-            % 62 = PRESENTATION_C50_NOTASK(Trigger for presentation of 50% contrast concentric dynamic inward grating WITHOUT button press response)
-            % 63 = PRESENTATION_C75_NOTASK(Trigger for presentation of 75% contrast concentric dynamic inward grating WITHOUT button press response)
-            % 64 = PRESENTATION_C100_NOTASK(Trigger for presentation of 100% contrast concentric dynamic inward grating WITHOUT button press response)
+            % 51 = PRESENTATION_C25_TASK    (Trigger for presentation of 25% contrast concentric dynamic inward grating WITH button press response)
+            % 52 = PRESENTATION_C50_TASK    (Trigger for presentation of 50% contrast concentric dynamic inward grating WITH button press response)
+            % 53 = PRESENTATION_C75_TASK    (Trigger for presentation of 75% contrast concentric dynamic inward grating WITH button press response)
+            % 54 = PRESENTATION_C100_TASK   (Trigger for presentation of 100% contrast concentric dynamic inward grating WITH button press response)
+            % 61 = PRESENTATION_C25_NOTASK  (Trigger for presentation of 25% contrast concentric dynamic inward grating WITHOUT button press response)
+            % 62 = PRESENTATION_C50_NOTASK  (Trigger for presentation of 50% contrast concentric dynamic inward grating WITHOUT button press response)
+            % 63 = PRESENTATION_C75_NOTASK  (Trigger for presentation of 75% contrast concentric dynamic inward grating WITHOUT button press response)
+            % 64 = PRESENTATION_C100_NOTASK (Trigger for presentation of 100% contrast concentric dynamic inward grating WITHOUT button press response)
             try
                 %% Segment 25% contrast data
                 % 25% contrast EEG data (trigger = 61)
