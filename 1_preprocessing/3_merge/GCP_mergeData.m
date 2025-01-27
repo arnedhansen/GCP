@@ -2,6 +2,7 @@
 % Use AFTER AUTOMAGIC
 
 %% Setup
+startup
 clear
 addpath /Volumes/methlab/4marius_bdf/eeglab % for pop_importeyetracker (EYE-EEG)
 eeglab
@@ -25,9 +26,12 @@ for subjects = 1 : length(subjectIDs)
         mkdir(resultFolder)
         dEEG = dir([filePathEEG, filesep, '*ip*EEG.mat']);
         dET = dir([filePathET, filesep, '*ET.mat']);
-
-        for files = 1 : size(dEEG, 1)
+        try
+            for files = 1 : size(dEEG, 1)
                 ETnameShort = dET(files).name(1:end-7);
+                if files == size(dEEG, 1)
+                    ETnameShort = [dET(files).name(1:3), '_GCP_', dET(files).name(5:end-7)];
+                end
                 ETname = dET(files).name;
 
                 idxEEG = contains({dEEG.name}, ETnameShort);
@@ -49,7 +53,7 @@ for subjects = 1 : length(subjectIDs)
                 if strcmp(task, 'Resting_EEG.mat')
                     startTrigger = 10;
                     endTrigger = 90;
-                % Grating Task    
+                    % Grating Task
                 else
                     startTriggers = 11:14;
                     endTriggers = 71:74;
@@ -77,6 +81,9 @@ for subjects = 1 : length(subjectIDs)
                     step = sprintf('%s', char(fileTaskName(3)), '_', char(fileTaskName(4)));
                     disp(['GCP' char(subjectID) ': ' step ' done' ])
                 end
+            end
+        catch ME
+            fprintf('ERROR processing file %d: %s\n', files, ME.message);
         end
     end
 end
