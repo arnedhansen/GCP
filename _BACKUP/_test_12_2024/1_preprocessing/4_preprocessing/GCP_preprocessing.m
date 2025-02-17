@@ -14,13 +14,13 @@ subjects = {folders.name};
 tic;
 
 %% Read data, segment and convert to FieldTrip data structure
-for subj = 6:length(subjects)
+for subj = 1:length(subjects)
     clearvars -except subjects subj path
     datapath = strcat(path,subjects{subj});
     cd(datapath)
 
     %% Read blocks
-    for block = 1:2
+    for block = 1:6
         try % Do not load emtpy blocks
             load(strcat(subjects{subj}, '_EEG_ET_GCP_block',num2str(block),'_merged.mat'))
             alleeg{block} = EEG;
@@ -32,17 +32,17 @@ for subj = 6:length(subjects)
     %% Segment data into epochs -2s before and 3.5s after stim onset and
     %  convert to Fieldtrip data structure
     epoch_window = [-2 3.5];
-    for block = 1:2
+    for block = 1:6
         % 51 = Trigger for presentation of low contrast concentric dynamic inward grating WITH button press response (PRESENTATION_LC_TASK)
         % 52 = Trigger for presentation of high contrast concentric dynamic inward grating WITH button press response (PRESENTATION_HC_TASK)
         % 61 = Trigger for presentation of low contrast concentric dynamic inward grating WITHOUT button press response (PRESENTATION_LC_NOTASK)
         % 62 = Trigger for presentation of high contrast concentric dynamic inward grating WITHOUT button press response (PRESENTATION_HC_NOTASK)
         try
-            EEG_lc = pop_epoch(alleeg{block}, {'61'}, epoch_window);
+            EEG_lc = pop_epoch(alleeg{block}, {'61', '62'}, epoch_window);
             data_lc{block} = eeglab2fieldtrip(EEG_lc, 'raw');
             data_lc{block}.trialinfo = {};
 
-            EEG_hc = pop_epoch(alleeg{block}, {'62'}, epoch_window);
+            EEG_hc = pop_epoch(alleeg{block}, {'63', '64'}, epoch_window);
             data_hc{block} = eeglab2fieldtrip(EEG_hc, 'raw');
             data_hc{block}.trialinfo = {};
         end
@@ -89,11 +89,11 @@ for subj = 6:length(subjects)
     savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/');
     mkdir(savepath)
     cd(savepath)
-    save dataEEG dataEEG_lc dataEEG_hc
+    save dataEEG_LCHC dataEEG_lc dataEEG_hc
     savepathET = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/gaze/');
     mkdir(savepathET)
     cd(savepathET)
-    save dataET dataET_lc dataET_hc
+    save dataET_LCHC dataET_lc dataET_hc
     clc
     if subj == length(subjects)
         disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. PREPROCESSING FINALIZED.'])

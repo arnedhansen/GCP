@@ -21,9 +21,9 @@ for subj = 1 : length(subjects)
         load('/Volumes/methlab/Students/Arne/MA/headmodel/ant128lay.mat');
 
         %% Identify indices of trials belonging to conditions
-        ind61 = find(dataEEG_c25.trialinfo == 61);
-        ind62 = find(dataEEG_c50.trialinfo == 62);
-        ind63 = find(dataEEG_c75.trialinfo == 63);
+        ind61 = find(dataEEG_c25.trialinfo  == 61);
+        ind62 = find(dataEEG_c50.trialinfo  == 62);
+        ind63 = find(dataEEG_c75.trialinfo  == 63);
         ind64 = find(dataEEG_c100.trialinfo == 64);
 
         %% Time frequency analysis

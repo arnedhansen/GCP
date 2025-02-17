@@ -14,15 +14,15 @@ startup
 % Read data, segment and convert to FieldTrip data structure
 for subj = 1 : length(subjects)
     datapath = strcat(path,subjects{subj}, '/eeg');
-    if ~isfile(strcat([datapath, '/data_tfr.mat'])) % only new data
+    if ~isfile(strcat([datapath, '/data_tfr_LCHC.mat'])) % only new data
         cd(datapath)
         close all
-        load dataEEG
+        load dataEEG_LCHC
         load('/Volumes/methlab/Students/Arne/MA/headmodel/ant128lay.mat');
 
         %% Identify indices of trials belonging to conditions
-        ind61 = find(dataEEG_lc.trialinfo == 61);
-        ind62 = find(dataEEG_hc.trialinfo == 62);
+        %ind_LC = find(dataEEG_lc.trialinfo == [61, 62]);
+        %ind_HC = find(dataEEG_hc.trialinfo == [63, 64]);
 
         %% Time frequency analysis
         cfg             = [];
@@ -36,11 +36,11 @@ for subj = 1 : length(subjects)
         cfg.keeptrials  = 'no';
 
         % LOW contrast concentric dynamic inward
-        cfg.trials = ind61;
+        %cfg.trials = ind_LC;
         tfr_lc = ft_freqanalysis(cfg,dataEEG_lc);
 
         % HIGH contrast concentric dynamic inward
-        cfg.trials = ind62;
+        %cfg.trials = ind_HC;
         tfr_hc = ft_freqanalysis(cfg,dataEEG_hc);
 
         %% Baseline
@@ -52,7 +52,7 @@ for subj = 1 : length(subjects)
 
         %% Save data
         cd(datapath)
-        save data_tfr tfr_lc  tfr_lc_bl tfr_hc tfr_hc_bl
+        save data_tfr_LCHC tfr_lc  tfr_lc_bl tfr_hc tfr_hc_bl
 
         clc
         fprintf('Subject %.3d/%.3d TFR DATA computed \n', subj, length(subjects))
@@ -63,7 +63,7 @@ end
 clc
 disp('POWER ANALYSIS')
 % Set analysis to 0-300ms or 300ms-2000ms after stimulus presentation
-anal_period = 1;
+anal_period = 0;
 baseline_period = [-0.5 -0.25];
 if anal_period == 1
     analysis_period = [0 0.3]; % only starting stimulus activity
@@ -79,7 +79,7 @@ for subj = 1 : length(subjects)
     cd(datapath);
 
     % Load data
-    load('data_tfr.mat');
+    load('data_tfr_LCHC.mat');
 
     %% Select analysis and baseline period data
     % (1) Analysis period data, no baseline
@@ -110,7 +110,7 @@ for subj = 1 : length(subjects)
     if anal_period == 1
             save power_spectra_300 pow_lc pow_lc_baselined pow_lc_baseline_period pow_hc pow_hc_baselined pow_hc_baseline_period
     else
-    save power_spectra pow_lc pow_lc_baselined pow_lc_baseline_period pow_hc pow_hc_baselined pow_hc_baseline_period
+    save power_spectra_LCHC pow_lc pow_lc_baselined pow_lc_baseline_period pow_hc pow_hc_baselined pow_hc_baseline_period
     end
     %end
 end
@@ -136,7 +136,7 @@ for subj = 1:length(subjects)
     if anal_period == 1
         load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
     else
-        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_LCHC'))
     end
 
     % Find channels and frequencies of interest
@@ -186,9 +186,9 @@ for subj = 1:length(subjects)
         save pow300 lc_pow hc_pow
         save freq300 lc_freq hc_freq
     else
-        save eeg_matrix_subj subj_data_eeg
-        save pow lc_pow hc_pow
-        save freq lc_freq hc_freq
+        save eeg_matrix_subj_LCHC subj_data_eeg
+        save pow_LCHC lc_pow hc_pow
+        save freq_LCHC lc_freq hc_freq
     end
 
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracted.'])
@@ -196,5 +196,5 @@ for subj = 1:length(subjects)
     % Append to the final structure array
     eeg_data = [eeg_data; subj_data_eeg];
 end
-save /Volumes/methlab/Students/Arne/GCP/data/features/eeg_matrix eeg_data
+save /Volumes/methlab/Students/Arne/GCP/data/features/eeg_matrix_LCHC eeg_data
 disp('EEG Feature Matrix created')
