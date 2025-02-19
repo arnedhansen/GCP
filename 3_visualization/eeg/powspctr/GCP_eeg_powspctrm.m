@@ -297,78 +297,76 @@ for subj = 1:num_subs
     % Create subplot for each subject
     subplot(rows, cols, subj);
 
-    % Extract participant data
-    pow_lc_subj = power_lc_baselined{subj};
-    pow_hc_subj = power_hc_baselined{subj};
+    % Extract participant data for all four conditions
+    pow_c25_subj = power_c25_baselined{subj};
+    pow_c50_subj = power_c50_baselined{subj};
+    pow_c75_subj = power_c75_baselined{subj};
+    pow_c100_subj = power_c100_baselined{subj};
 
     cfg = [];
     cfg.channel = channels;
     cfg.figure = 'gcf';
     cfg.linewidth = 1;
 
-    % Plot power spectrum for low and high contrast
-    ft_singleplotER(cfg, pow_lc_subj, pow_hc_subj);
+    % Plot power spectrum for all four conditions
+    ft_singleplotER(cfg, pow_c25_subj, pow_c50_subj, pow_c75_subj, pow_c100_subj);
     hold on;
 
-    % Add shaded error bars
-    channels_seb = ismember(pow_lc_subj.label, cfg.channel);
-    lceb = shadedErrorBar(pow_lc_subj.freq, mean(pow_lc_subj.powspctrm(channels_seb, :), 1), ...
-        std(pow_lc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_lc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
-    hceb = shadedErrorBar(pow_hc_subj.freq, mean(pow_hc_subj.powspctrm(channels_seb, :), 1), ...
-        std(pow_hc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_hc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
-    lceb.mainLine.Color = colors(1, :);
-    hceb.mainLine.Color = colors(2, :);
-    lceb.patch.FaceColor = colors(1, :);
-    hceb.patch.FaceColor = colors(2, :);
-    set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
-    set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
-    set(lceb.edge(1), 'Color', colors(1, :));
-    set(lceb.edge(2), 'Color', colors(1, :));
-    set(hceb.edge(1), 'Color', colors(2, :));
-    set(hceb.edge(2), 'Color', colors(2, :));
-    set(lceb.patch, 'FaceAlpha', 0.5);
-    set(hceb.patch, 'FaceAlpha', 0.5);
+    % Define colors for each condition
+    condition_colors = colors(1:4, :);
+    
+    % Add shaded error bars for each condition
+    conditions = {pow_c25_subj, pow_c50_subj, pow_c75_subj, pow_c100_subj};
+    shadedEBs = cell(1, 4);
+    for i = 1:4
+        channels_seb = ismember(conditions{i}.label, cfg.channel);
+        shadedEBs{i} = shadedErrorBar(conditions{i}.freq, mean(conditions{i}.powspctrm(channels_seb, :), 1), ...
+            std(conditions{i}.powspctrm(channels_seb, :)) / sqrt(size(conditions{i}.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+        shadedEBs{i}.mainLine.Color = condition_colors(i, :);
+        shadedEBs{i}.patch.FaceColor = condition_colors(i, :);
+        set(shadedEBs{i}.mainLine, 'LineWidth', cfg.linewidth);
+        set(shadedEBs{i}.patch, 'FaceAlpha', 0.5);
+    end
 
-     % Find channels and frequencies of interest
-    channels_idx = ismember(pow_lc_subj.label, channels);
-    freq_idx = find(pow_lc_subj.freq >= 30 & pow_hc_subj.freq <= 90);
+    % Find channels and frequencies of interest
+    channels_idx = ismember(pow_c25_subj.label, channels);
+    freq_idx = find(pow_c25_subj.freq >= 30 & pow_c100_subj.freq <= 90);
 
-    % Find gamma peak for LOW contrast
-    lc_gamma_power = mean(pow_lc_subj.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(lc_gamma_power, pow_lc_subj.freq(freq_idx));
-    [lc_pow, peak_idx] = max(peaks);
-    lc_freq = locs(peak_idx);
-
-    % Find gamma peak for HIGH contrast
-    hc_gamma_power = mean(pow_hc_subj.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_subj.freq(freq_idx));
-    [hc_pow, peak_idx] = max(peaks);
-    hc_freq = locs(peak_idx);
-    if subj == 9
-        hc_pow = 0.1149
-        hc_freq = 86
+    peak_freqs = zeros(1, 4);
+    peak_powers = zeros(1, 4);
+    for i = 1:4
+        gamma_power = mean(conditions{i}.powspctrm(channels_idx, freq_idx), 1);
+        [peaks, locs] = findpeaks(gamma_power, conditions{i}.freq(freq_idx));
+        if ~isempty(peaks)
+            [peak_powers(i), peak_idx] = max(peaks);
+            peak_freqs(i) = locs(peak_idx);
+        end
     end
 
     % Adjust plot aesthetics
     set(gca, 'FontSize', 20);
     yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
-    plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
-    plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
-    plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
-    plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
-    max_spctrm = max(lc_pow, hc_pow);
-    ylim([-max_spctrm*1.25 max_spctrm*1.25]);
-    if subj == 9
-        ylim([-0.35 0.35])
-    elseif subj == 10
-        ylim([-0.75 0.75])
+    for i = 1:4
+        if peak_powers(i) > 0
+            plot([0 peak_freqs(i)], [peak_powers(i) peak_powers(i)], '--', 'Color', condition_colors(i, :), 'LineWidth', 2);
+            plot([peak_freqs(i) peak_freqs(i)], [-100 peak_powers(i)], '--', 'Color', condition_colors(i, :), 'LineWidth', 2);
+        end
     end
+
+    max_spctrm = max(peak_powers);
+        if subj == 4
+            max_spctrm = 0.55
+        elseif subj == 6
+            max_spctrm = 0.5
+        end
+    ylim([-max_spctrm*1.25 max_spctrm*1.25]);
     xlim([30 90]);
     xticks(30:10:90);
     xlabel('Freq [Hz]', 'FontSize', 20);
     ylabel('Power [dB]', 'FontSize', 20);
     if subj == 5
-        legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20, 'Location', 'best');
+        legend([shadedEBs{1}.mainLine, shadedEBs{2}.mainLine, shadedEBs{3}.mainLine, shadedEBs{4}.mainLine], ...
+            {'C25', 'C50', 'C75', 'C100'}, 'FontName', 'Arial', 'FontSize', 20, 'Location', 'best');
     end
     title(sprintf('Subject %d', subj), 'FontSize', 20);
     hold off;

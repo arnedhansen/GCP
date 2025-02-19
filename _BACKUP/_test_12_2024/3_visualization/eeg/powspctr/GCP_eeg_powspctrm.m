@@ -10,7 +10,7 @@ for subj = 1:length(subjects)
     if anal_period == 1
         load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
     else
-        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_LCHC'))
     end
 
     % Low contrast
@@ -100,6 +100,7 @@ plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth',
 set(gcf,'color','w');
 set(gca,'Fontsize',20);
 max_spctrm = max(lc_pow, hc_pow);
+max_spctrm = 0.3
 ylim([-max_spctrm*1.25 max_spctrm*1.25]);
 xlim([30 90])
 xlabel('Frequency [Hz]', 'FontSize', 30);
@@ -110,9 +111,9 @@ hold off;
 
 % Save the plot
 if anal_period == 1
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300/GCP_powspctrm_baselined_300.png');
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300/GCP_powspctrm_baselined_300_LCHC.png');
 else
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_baselined.png');
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_baselined_LCHC.png');
 end
 
 %% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
@@ -172,6 +173,7 @@ plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth',
 set(gcf,'color','w');
 set(gca,'Fontsize',20);
 max_spctrm = max(lc_pow, hc_pow);
+max_spctrm = 10
 ylim([-max_spctrm*1.25 max_spctrm*1.25]);
 xlim([30 90]) % Gamma frequency range
 xlabel('Frequency [Hz]');
@@ -182,9 +184,9 @@ hold off;
 
 % Save the plot
 if anal_period == 1
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300/GCP_powspctrm_percentage_300.png');
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300/GCP_powspctrm_percentage_300_LCHC.png');
 else
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage_LCHC.png');
 end
 
 %% Plot INDIVIDUAL power spectra BASELINED
@@ -256,11 +258,7 @@ for subj = 1:length(subjects)
     plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
     set(gca, 'FontSize', 20);
     max_spctrm = max(lc_pow, hc_pow);
-    % if subj == 9
-    %     max_spctrm = 0.4
-    % elseif subj == 10
-    %     max_spctrm = 0.55
-    % end
+    max_spctrm = 1.5
     ylim([-max_spctrm*1.25 max_spctrm*1.25]);
     xlim([30 90]);
     xlabel('Frequency [Hz]');
@@ -272,9 +270,9 @@ for subj = 1:length(subjects)
     % Save individual plot
     if anal_period == 1
         output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300';
-        save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined_300.png', subjects{subj}));
+        save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined_300_LCHC.png', subjects{subj}));
     else
-        save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined.png', subjects{subj}));
+        save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined_LCHC.png', subjects{subj}));
     end
     saveas(gcf, save_path);
 end
@@ -340,10 +338,10 @@ for subj = 1:num_subs
     [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_subj.freq(freq_idx));
     [hc_pow, peak_idx] = max(peaks);
     hc_freq = locs(peak_idx);
-    if subj == 9
-        hc_pow = 0.1149
-        hc_freq = 86
-    end
+    % if subj == 9
+    %     hc_pow = 0.1149
+    %     hc_freq = 86
+    % end
 
     % Adjust plot aesthetics
     set(gca, 'FontSize', 20);
@@ -353,12 +351,25 @@ for subj = 1:num_subs
     plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
     plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
     max_spctrm = max(lc_pow, hc_pow);
-    ylim([-max_spctrm*1.25 max_spctrm*1.25]);
-    if subj == 9
-        ylim([-0.35 0.35])
+    if subj == 4
+        max_spctrm = 2
+    elseif subj == 6
+        max_spctrm = 0.25
+    elseif subj == 7
+        max_spctrm = 1
     elseif subj == 10
-        ylim([-0.75 0.75])
+        max_spctrm = 1
     end
+    if max_spctrm < 0
+        ylim([max_spctrm*1.25 max_spctrm*-1.25]);
+    else
+        ylim([-max_spctrm*1.25 max_spctrm*1.25]);
+    end
+    % if subj == 9
+    %     ylim([-0.35 0.35])
+    % elseif subj == 10
+    %     ylim([-0.75 0.75])
+    % end
     xlim([30 90]);
     xticks(30:10:90);
     xlabel('Freq [Hz]', 'FontSize', 20);
@@ -373,8 +384,8 @@ end
 % Save the combined figure with all subplots
 if anal_period == 1
     output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_anal_period_300';
-    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined_300.png');
+    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined_300_LCHC.png');
 else
-    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined.png');
+    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined_LCHC.png');
 end
 saveas(gcf, save_path);
