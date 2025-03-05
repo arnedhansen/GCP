@@ -144,7 +144,7 @@ for subj = 1:length(subjects)
         mean_gaze_x = nanmean(gaze_x_matrix, 2);
         mean_gaze_y = nanmean(gaze_y_matrix, 2);
 
-        %% Plot the averaged gaze data
+        % Plot the averaged gaze data
         % figure;
         % set(gcf, "Position", [200, 200, 1000, 600]);
         % plot(mean_gaze_x, mean_gaze_y, 'o');
