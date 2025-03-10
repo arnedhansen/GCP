@@ -14,19 +14,6 @@ load('/Volumes/methlab/Students/Arne/GCP/data/features/behavioral_matrix.mat');
 load('/Volumes/methlab/Students/Arne/GCP/data/features/eeg_matrix.mat');
 load('/Volumes/methlab/Students/Arne/GCP/data/features/gaze_matrix.mat');
 
-%% Sort behavioral structure
-conds = [behav_data.Condition];
-[~, sortedIndices] = sort(conds);
-behav = behav_data(sortedIndices);
-
-%% Calculate GazeSTD
-% GazeSTD = struct('GazeSTD', []); 
-% for i = 1:length(gaze_data)
-%     GazeStdX = gaze_data(i).GazeStdX; 
-%     GazeStdY = gaze_data(i).GazeStdY; 
-%     GazeSTD(i).GazeSTD = GazeStdX + GazeStdY;
-% end
-
 %% Merge structures
 merged_data = struct('ID', {behav_data.ID}, ...
                      'Condition', {behav_data.Condition}, ...
@@ -40,9 +27,6 @@ merged_data = struct('ID', {behav_data.ID}, ...
                      'Saccades', {gaze_data.Saccades}, ...
                      'GammaPower', {eeg_data.Power}, ...
                      'GammaFreq', {eeg_data.Frequency});
-
-                     %'GazeSTD', {GazeSTD.GazeSTD},...
-
 
 %% Save as .mat
 save /Volumes/methlab/Students/Arne/GCP/data/features/merged_data.mat merged_data
