@@ -11,8 +11,6 @@ path = '/Volumes/methlab/Students/Arne/GCP/data/features/';
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
-codedir = fullfile('/Users/Arne/Documents/GitHub/RainCloudPlots/tutorial_matlab');
-addpath(codedir);
 
 %% Load RT and Acc data
 for subj = 1:length(subjects)
