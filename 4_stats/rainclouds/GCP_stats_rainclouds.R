@@ -7,49 +7,46 @@ library(dplyr)
 library(colorspace)  # provides darken(), lighten(), desaturate()
 
 # Define colour palette
-pal <- c("#FF8C00", "#A034F0", "#159090") # DataViz workshop colors
-pal <- c("#ADD9E6", "#99CC99", "#FFB3BF") # Light AOC pastel colors
-pal <- c("#7998A1", "#6B8F6B", "#B37D86") # Dark AOC pastel colors
-pal <- c("#93B8C4", "#82AD82", "#D998A2") # Perfect AOC pastel colors
-
-# Function to add sample size as text (offset adjusted by a fraction of the range)
-add_sample <- function(x) {
-  offset <- 0.025 * diff(range(x))
-  return(c(y = max(x) + offset, label = length(x)))
-}
+pal <- c("#FF8C00", "#A034F0", "#159090", "#ADD9E6") # DataViz workshop colors
+#pal <- c("#ADD9E6", "#99CC99", "#FFB3BF") # Light AOC pastel colors
+#pal <- c("#7998A1", "#6B8F6B", "#B37D86") # Dark AOC pastel colors
+#pal <- c("#93B8C4", "#82AD82", "#D998A2") # Perfect AOC pastel colors
 
 # Read in the data (adjust the file path if needed)
-dat <- read.csv("/Volumes/methlab/Students/Arne/AOC/data/features/merged_data_nback.csv")
+dat <- read.csv("/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv")
 
 # Transform reaction times to milliseconds
 dat$ReactionTime <- dat$ReactionTime * 1000
 
-# Create the GazeStd column as the average of GazeStdX and GazeStdY
-dat$GazeStd <- (dat$GazeStdX + dat$GazeStdY) / 2
 
-# Convert Condition to a factor with labels "1-back", "2-back", "3-back"
-dat$Condition <- factor(dat$Condition, levels = c(1, 2, 3), labels = c("1-back", "2-back", "3-back"))
+
+################################
+dat$Accuracy <- dat$ReactionTime
+################################
+
+
+# Convert Condition to a factor with labels
+dat$Condition <- factor(dat$Condition, levels = c(1, 2, 3, 4), labels = c("25%", "50%", "75%", "100%"))
 
 # Define the list of variables, y-axis labels and save names (to be used in file naming)
-variables <- c("Accuracy", "ReactionTime", "GazeDeviation", "GazeStd", "MSRate", "Fixations", "Saccades", "AlphaPower", "IAF")
-titles <- c("Accuracy", "Reaction Time", "Gaze Deviation", "Gaze Standard Deviation",
-            "Microsaccade Rate", "Fixations", "Saccades", "Alpha Power", "Individual Alpha Frequency")
-y_labels  <- c("Accuracy [%]", "Reaction Time [ms]", "Gaze Deviation [px]", "Gaze Std [px]",
-               "Microsaccade Rate [ms/s]", "Fixations", "Saccades", "Alpha Power [\u03BCV²/Hz]", "IAF [Hz]")
-save_names <- c("acc", "rt", "gazedev", "gazestd", "ms", "fix", "sacc", "pow", "iaf")
+variables <- c("Accuracy", "ReactionTime", "GazeDeviation", "MSRate", "Fixations", "Saccades", "GammaPower", "GammaFreq")
+titles <- c("Accuracy", "Reaction Time", "Gaze Deviation", "Microsaccade Rate", "Fixations", "Saccades", "Gamma Power", "Gamma Frequency")
+y_labels  <- c("Accuracy [%]", "Reaction Time [ms]", "Gaze Deviation [px]",
+               "Microsaccade Rate [ms/s]", "Fixations", "Saccades", "Gamma Power [dB]", "Gamma Frequency [Hz]")
+save_names <- c("acc", "rt", "gazedev", "ms", "fix", "sacc", "pow", "freq")
 
 # Remove outliers using the IQR method (1.5 * IQR rule)
-dat <- dat %>%
-  group_by(Condition) %>%
-  mutate(across(all_of(variables), ~{
-    lower <- quantile(.x, 0.25, na.rm = TRUE) - 1.5 * IQR(.x, na.rm = TRUE)
-    upper <- quantile(.x, 0.75, na.rm = TRUE) + 1.5 * IQR(.x, na.rm = TRUE)
-    replace(.x, .x < lower | .x > upper, NA)
-  })) %>%
-  ungroup()
+#dat <- dat %>%
+#  group_by(Condition) %>%
+#  mutate(across(all_of(variables), ~{
+#    lower <- quantile(.x, 0.25, na.rm = TRUE) - 1.5 * IQR(.x, na.rm = TRUE)
+#    upper <- quantile(.x, 0.75, na.rm = TRUE) + 1.5 * IQR(.x, na.rm = TRUE)
+#    replace(.x, .x < lower | .x > upper, NA)
+#  })) %>%
+#  ungroup()
 
 # Define the output directory and create it if it doesn't exist
-output_dir <- "/Volumes/methlab/Students/Arne/AOC/figures/stats/rainclouds"
+output_dir <- "/Volumes/methlab/Students/Arne/GCP/figures/stats/rainclouds"
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
@@ -105,27 +102,6 @@ for(i in seq_along(variables)) {
       position = position_jitter(seed = 1, width = 0.125)
     ) +
     
-    # Add median value as text, nudged to the right of the boxplot
-    # stat_summary(
-    #   geom = "text",
-    #   fun = "median",
-    #   aes(label = round(after_stat(y), 2), color = Condition),
-    #   family = "Roboto Mono",
-    #   fontface = "bold",
-    #   size = 4.5,
-    #   nudge_y = 12.3
-    # ) +
-    
-    # Commenting out sample size addition
-    # stat_summary(
-    #   geom = "text",
-    #   fun.data = add_sample,
-    #   aes(label = paste("n =", after_stat(label), color = Condition)),
-    #   family = "Roboto Mono",
-    #   size = 4,
-    #   nudge_x = 0.3
-    # ) +
-    
     # Set manual colours for consistency
     scale_color_manual(values = pal, guide = "none") + 
     scale_fill_manual(values = pal, guide = "none") +
@@ -157,42 +133,42 @@ for(i in seq_along(variables)) {
   
   # Adjust the y-axis
   # "Accuracy", "ReactionTime", "GazeDeviation", "GazeStd", "MSRate", "Fixations", "Saccades", "AlphaPower", "IAF"
-  if(var == "Accuracy") {
-    p <- p + scale_y_continuous(
-      limits = c(70, 100),
-      breaks = seq(75, 100, by = 5),
-      expand = c(0.001, 0.001)
-    ) 
-  }
-  if(var == "GazeDeviation") {
-    p <- p + scale_y_continuous(
-      limits = c(0, 60),
-      breaks = seq(0, 60, by = 20),
-      expand = c(0.001, 0.001)
-    ) 
-  }
-  if(var == "MSRate") {
-    p <- p + scale_y_continuous(
-      limits = c(0, 3),
-      breaks = seq(0, 3, by = 1),
-      expand = c(0.001, 0.001)
-    ) 
-  }
-  if(var == "Fixations") {
-    p <- p + scale_y_continuous(
-      limits = c(0, 7),
-      breaks = seq(0, 7, by = 1),
-      expand = c(0.001, 0.001)
-    ) 
-  }
-  if(var == "IAF") {
-    p <- p + scale_y_continuous(
-      limits = c(8, 13),
-      breaks = seq(8, 13, by = 1),
-      expand = c(0.001, 0.001)
-    ) 
-  }
-  
+#  if(var == "Accuracy") {
+#    p <- p + scale_y_continuous(
+#      limits = c(70, 100),
+#      breaks = seq(75, 100, by = 5),
+#      expand = c(0.001, 0.001)
+#    ) 
+#  }
+#  if(var == "GazeDeviation") {
+#    p <- p + scale_y_continuous(
+#      limits = c(0, 60),
+#      breaks = seq(0, 60, by = 20),
+#      expand = c(0.001, 0.001)
+#    ) 
+#  }
+#  if(var == "MSRate") {
+#    p <- p + scale_y_continuous(
+#      limits = c(0, 3),
+#      breaks = seq(0, 3, by = 1),
+#      expand = c(0.001, 0.001)
+#    ) 
+#  }
+#  if(var == "Fixations") {
+#    p <- p + scale_y_continuous(
+#      limits = c(0, 7),
+#      breaks = seq(0, 7, by = 1),
+#      expand = c(0.001, 0.001)
+#    ) 
+#  }
+#  if(var == "IAF") {
+#    p <- p + scale_y_continuous(
+#      limits = c(8, 13),
+#      breaks = seq(8, 13, by = 1),
+#      expand = c(0.001, 0.001)
+#    ) 
+#  }
+#  
   
   # Save the plot as a PNG file
   ggsave(filename = file.path(output_dir, paste0("AOC_stats_rainclouds_", save_name, "_nback.png")),
