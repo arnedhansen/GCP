@@ -2,6 +2,9 @@
 %
 % Extracted features:
 %   TFR
+%       Raw
+%       FOOOF
+%       Baselined
 %   Power Spectrum
 %   Gamma Peak Power
 %   Gamma Peak Frequency
@@ -10,64 +13,114 @@
 startup
 [subjects, path] = setup('GCP');
 
-%% Extract TFR HIGH CONTRAST
+%% Extract TFR
 % Read data, segment and convert to FieldTrip data structure
-for subj = 1 : length(subjects)
-    datapath = strcat(path,subjects{subj}, '/eeg');
+for subj = 1 %: length(subjects)
+    datapath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg');
     %if ~isfile(strcat([datapath, '/data_tfr.mat'])) % only new data
-        cd(datapath)
-        close all
-        load dataEEG
-        load('/Volumes/methlab/Students/Arne/MA/headmodel/ant128lay.mat');
+    cd(datapath)
+    close all
+    load dataEEG
+    load('/Volumes/methlab/Students/Arne/MA/headmodel/ant128lay.mat');
 
-        %% Identify indices of trials belonging to conditions
-        ind61 = find(dataEEG_c25.trialinfo  == 61);
-        ind62 = find(dataEEG_c50.trialinfo  == 62);
-        ind63 = find(dataEEG_c75.trialinfo  == 63);
-        ind64 = find(dataEEG_c100.trialinfo == 64);
+    %% Identify indices of trials belonging to conditions
+    ind61 = find(dataEEG_c25.trialinfo  == 61);
+    ind62 = find(dataEEG_c50.trialinfo  == 62);
+    ind63 = find(dataEEG_c75.trialinfo  == 63);
+    ind64 = find(dataEEG_c100.trialinfo == 64);
 
-        %% Time frequency analysis
-        cfg             = [];
-        cfg.output      = 'pow';
-        cfg.method      = 'mtmconvol';
-        cfg.taper       = 'dpss';
-        cfg.foi         = 30:4:120;                         % Analysis 30 to 90 Hz in steps of 4 Hz
-        cfg.tapsmofrq   = 11;                               % 10 tapers
-        cfg.t_ftimwin   = ones(length(cfg.foi),1).*0.5;     % Length of time window = 0.5 sec
-        cfg.toi         = -1:0.05:3;
-        cfg.keeptrials  = 'no';
+    %% Time frequency analysis
+    cfg             = [];
+    cfg.output      = 'pow';
+    cfg.method      = 'mtmconvol';
+    cfg.taper       = 'dpss';
+    cfg.foi         = 30:5:120;                         % Analysis 30 to 120 Hz in steps of 5 Hz
+    cfg.tapsmofrq   = 5;
+    cfg.t_ftimwin   = ones(length(cfg.foi),1).*0.5;     % Length of time window = 0.5 sec
+    cfg.toi          = -1.5:0.05:2;                     % Time window "slides" from -0.5 to 1.5 sec in steps of 0.05 sec (50 ms)
+    cfg.keeptrials  = 'no';
 
-        % 25% contrast concentric dynamic inward
-        cfg.trials = ind61;
-        tfr_c25 = ft_freqanalysis(cfg,dataEEG_c25);
+    % 25% contrast concentric dynamic inward
+    cfg.trials = ind61;
+    tfr_c25 = ft_freqanalysis(cfg,dataEEG_c25);
 
-        % 50% contrast concentric dynamic inward
-        cfg.trials = ind62;
-        tfr_c50 = ft_freqanalysis(cfg,dataEEG_c50);
+    % 50% contrast concentric dynamic inward
+    cfg.trials = ind62;
+    tfr_c50 = ft_freqanalysis(cfg,dataEEG_c50);
 
-        % 75% contrast concentric dynamic inward
-        cfg.trials = ind63;
-        tfr_c75 = ft_freqanalysis(cfg,dataEEG_c75);
+    % 75% contrast concentric dynamic inward
+    cfg.trials = ind63;
+    tfr_c75 = ft_freqanalysis(cfg,dataEEG_c75);
 
-        % 100% contrast concentric dynamic inward
-        cfg.trials = ind64;
-        tfr_c100 = ft_freqanalysis(cfg,dataEEG_c100);
+    % 100% contrast concentric dynamic inward
+    cfg.trials = ind64;
+    tfr_c100 = ft_freqanalysis(cfg,dataEEG_c100);
 
-        %% Baseline
-        cfg             = [];
-        cfg.baseline    = [-.5 -.25];
-        cfg.baselinetype = 'db';
-        tfr_c25_bl                       = ft_freqbaseline(cfg, tfr_c25);
-        tfr_c50_bl                       = ft_freqbaseline(cfg, tfr_c50);
-        tfr_c75_bl                       = ft_freqbaseline(cfg, tfr_c75);
-        tfr_c100_bl                      = ft_freqbaseline(cfg, tfr_c100);
+    %% FOOOF
+    tfrs = {tfr_c25, tfr_c50, tfr_c75, tfr_c100};
+    for tfr_contrast = 1:4
+        clear fspctrm
+        tfr = tfrs{1, tfr_contrast};
+        for t = 1 :length(tfr.time)
+            cfg = [];
+            cfg.latency = tfr.time(t);
+            tmp = ft_selectdata(cfg,tfr);
 
-        %% Save data
-        cd(datapath)
-        save data_tfr tfr_c25 tfr_c50 tfr_c75 tfr_c100 tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl
+            for chan = 1:length(tmp.label)
 
-        clc
-        fprintf('Subject %.3d/%.3d TFR DATA computed \n', subj, length(subjects))
+                % Transpose, to make inputs row vectors
+                freqs = tmp.freq';
+                psd = tmp.powspctrm(chan,:)';
+
+                % FOOOF settings
+                settings = struct();  % Use defaults
+                f_range = [tfr.freq(1), tfr.freq(end)];
+
+                % Run FOOOF
+                fooof_results = fooof(freqs, psd, f_range, settings, true);
+                powspctrmff(chan,:) = fooof_results.fooofed_spectrum-fooof_results.ap_fit;
+            end
+            fspctrm(:,:,t) = powspctrmff;
+        end
+        fooofedtrl(:,:,:) = fspctrm;
+        if tfr_contrast == 1
+            tfr_c25_ff = tfr;
+            tfr25ff.powspctrm = fooofedtrl;
+        elseif tfr_contrast == 2
+            tfr_c50_ff = tfr;
+            tfr50ff.powspctrm = fooofedtrl;
+        elseif tfr_contrast == 3
+            tfr_c75_ff = tfr;
+            tfr75ff.powspctrm = fooofedtrl;
+        elseif tfr_contrast == 4
+            tfr_c100_ff = tfr;
+            tfr100ff.powspctrm = fooofedtrl;
+        end
+    end
+
+    %% Baseline
+    cfg              = [];
+    cfg.baseline     = [-1.5 -.25];
+    cfg.baselinetype = 'absolute';   % FOOOF already sets log scale, so no 'dB' here
+    tfr_c25_bl                       = ft_freqbaseline(cfg, tfr_c25_ff);
+    tfr_c50_bl                       = ft_freqbaseline(cfg, tfr_c50_ff);
+    tfr_c75_bl                       = ft_freqbaseline(cfg, tfr_c75_ff);
+    tfr_c100_bl                      = ft_freqbaseline(cfg, tfr_c100_ff);
+
+    %% Smooth powerspectra
+    tfr_c25_bl = tfr_c25_bl
+    tfr_c50_bl = tfr_c50_bl
+    tfr_c75_bl = tfr_c75_bl
+    tfr_c100_bl = tfr_c100_bl
+
+    %% Save data
+    cd(datapath)
+    save data_tfr tfr_c25 tfr_c50 tfr_c75 tfr_c100 ... 
+        tfr_c25_ff tfr_c50_ff tfr_c75_ff tfr_c100_ff ...
+        tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl
+
+    clc
+    fprintf('Subject %.3d/%.3d TFR DATA computed \n', subj, length(subjects))
     %end
 end
 
