@@ -258,7 +258,7 @@ for subj = 1:length(subjects)
 
     % Find channels and frequencies of interest
     channels_idx = ismember(pow_c25_fooof_bl_smooth.label, channels);
-    freq_idx = find(pow_c25_fooof_bl_smooth.freq >= 30 & pow_c100_baselined.freq <= 90);
+    freq_idx = find(pow_c25_fooof_bl_smooth.freq >= 30 & pow_c25_fooof_bl_smooth.freq <= 90);
 
     % Find gamma peak for 25% contrast
     c25_gamma_power = mean(pow_c25_fooof_bl_smooth.powspctrm(channels_idx, freq_idx), 1);

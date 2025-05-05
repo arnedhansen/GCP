@@ -3,7 +3,7 @@
 %% Setup
 clear
 [subjects, path, colors] = setup('GCP');
-analysis_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus presentation
+analysis_period = 2; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus presentation
 
 %% Load power spectra data
 for subj = 1:length(subjects)
@@ -14,46 +14,53 @@ for subj = 1:length(subjects)
     end
 
     % Raw powerspectra
-    power_c25{subj} = pow_c25;
-    power_c50{subj} = pow_c50;
-    power_c75{subj} = pow_c75;
+    power_c25{subj}  = pow_c25;
+    power_c50{subj}  = pow_c50;
+    power_c75{subj}  = pow_c75;
     power_c100{subj} = pow_c100;
 
     % Baselined powerspectra
-    power_c25_baselined{subj} = pow_c25_baselined;
-    power_c50_baselined{subj} = pow_c50_baselined;
-    power_c75_baselined{subj} = pow_c75_baselined;
+    power_c25_baselined{subj}  = pow_c25_baselined;
+    power_c50_baselined{subj}  = pow_c50_baselined;
+    power_c75_baselined{subj}  = pow_c75_baselined;
     power_c100_baselined{subj} = pow_c100_baselined;
 
     % Baseline period powerspectra
-    power_c25_baseline_period{subj} = pow_c25_baseline_period;
-    power_c50_baseline_period{subj} = pow_c50_baseline_period;
-    power_c75_baseline_period{subj} = pow_c75_baseline_period;
+    power_c25_baseline_period{subj}  = pow_c25_baseline_period;
+    power_c50_baseline_period{subj}  = pow_c50_baseline_period;
+    power_c75_baseline_period{subj}  = pow_c75_baseline_period;
     power_c100_baseline_period{subj} = pow_c100_baseline_period;
 
     % Baselined FOOOFed powerspectra
-
-
+    power_c25_fooof_bl_smooth{subj}  = pow_c25_fooof_bl_smooth;
+    power_c50_fooof_bl_smooth{subj}  = pow_c50_fooof_bl_smooth;
+    power_c75_fooof_bl_smooth{subj}  = pow_c75_fooof_bl_smooth;
+    power_c100_fooof_bl_smooth{subj} = pow_c100_fooof_bl_smooth;
 end
 
 %% Compute grand averages
 cfg = [];
-cfg.keepindividual='yes';
+cfg.keepindividual = 'yes';
 
-gapow_c25 = ft_freqgrandaverage(cfg, power_c25{:});
-gapow_c50 = ft_freqgrandaverage(cfg, power_c50{:});
-gapow_c75 = ft_freqgrandaverage(cfg, power_c75{:});
+gapow_c25  = ft_freqgrandaverage(cfg, power_c25{:});
+gapow_c50  = ft_freqgrandaverage(cfg, power_c50{:});
+gapow_c75  = ft_freqgrandaverage(cfg, power_c75{:});
 gapow_c100 = ft_freqgrandaverage(cfg, power_c100{:});
 
-gapow_c25_baselined = ft_freqgrandaverage(cfg, power_c25_baselined{:});
-gapow_c50_baselined = ft_freqgrandaverage(cfg, power_c50_baselined{:});
-gapow_c75_baselined = ft_freqgrandaverage(cfg, power_c75_baselined{:});
+gapow_c25_baselined  = ft_freqgrandaverage(cfg, power_c25_baselined{:});
+gapow_c50_baselined  = ft_freqgrandaverage(cfg, power_c50_baselined{:});
+gapow_c75_baselined  = ft_freqgrandaverage(cfg, power_c75_baselined{:});
 gapow_c100_baselined = ft_freqgrandaverage(cfg, power_c100_baselined{:});
 
-gapow_c25_baseline_period = ft_freqgrandaverage(cfg, power_c25_baseline_period{:});
-gapow_c50_baseline_period = ft_freqgrandaverage(cfg, power_c50_baseline_period{:});
-gapow_c75_baseline_period = ft_freqgrandaverage(cfg, power_c75_baseline_period{:});
+gapow_c25_baseline_period  = ft_freqgrandaverage(cfg, power_c25_baseline_period{:});
+gapow_c50_baseline_period  = ft_freqgrandaverage(cfg, power_c50_baseline_period{:});
+gapow_c75_baseline_period  = ft_freqgrandaverage(cfg, power_c75_baseline_period{:});
 gapow_c100_baseline_period = ft_freqgrandaverage(cfg, power_c100_baseline_period{:});
+
+gapow_c25_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c25_fooof_bl_smooth{:});
+gapow_c50_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c50_fooof_bl_smooth{:});
+gapow_c75_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c75_fooof_bl_smooth{:});
+gapow_c100_fooof_bl_smooth = ft_freqgrandaverage(cfg, power_c100_fooof_bl_smooth{:});
 
 %% Define channels
 datapath = strcat(path, subjects{1}, '/eeg');
@@ -80,11 +87,11 @@ cfg.figure = 'gcf';
 cfg.linewidth = 1;
 
 % Plot for all contrasts
-ft_singleplotER(cfg, gapow_c25_baselined, gapow_c50_baselined, gapow_c75_baselined, gapow_c100_baselined);
+ft_singleplotER(cfg, gapow_c25_fooof_bl_smooth, gapow_c50_fooof_bl_smooth, gapow_c75_fooof_bl_smooth, gapow_c100_fooof_bl_smooth);
 hold on;
 
 % Add shaded error bars for each condition
-conditions = {gapow_c25_baselined, gapow_c50_baselined, gapow_c75_baselined, gapow_c100_baselined};
+conditions = {gapow_c25_fooof_bl_smooth, gapow_c50_fooof_bl_smooth, gapow_c75_fooof_bl_smooth, gapow_c100_fooof_bl_smooth};
 col_indices = [1, 2, 3, 4];
 for i = 1:4
     curr_cond = conditions{i};
@@ -323,7 +330,7 @@ for subj = 1:num_subs
 
     % Define colors for each condition
     condition_colors = colors(1:4, :);
-    
+
     % Add shaded error bars for each condition
     conditions = {pow_c25_subj, pow_c50_subj, pow_c75_subj, pow_c100_subj};
     shadedEBs = cell(1, 4);
@@ -363,11 +370,11 @@ for subj = 1:num_subs
     end
 
     max_spctrm = max(peak_powers);
-        if subj == 4
-            max_spctrm = 0.55
-        elseif subj == 6
-            max_spctrm = 0.5
-        end
+    if subj == 4
+        max_spctrm = 0.55
+    elseif subj == 6
+        max_spctrm = 0.5
+    end
     ylim([-max_spctrm*1.25 max_spctrm*1.25]);
     xlim([30 90]);
     xticks(30:10:90);
