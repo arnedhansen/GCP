@@ -15,7 +15,7 @@ startup
 
 %% Extract TFR
 % Read data, segment and convert to FieldTrip data structure
-for subj = 1 : length(subjects)
+for subj = 2 : length(subjects)
     datapath = strcat(path, subjects{subj}, '/eeg');
     %if ~isfile(strcat([datapath, '/data_tfr.mat'])) % only new data
     cd(datapath)
@@ -57,8 +57,11 @@ for subj = 1 : length(subjects)
     tfr_c100 = ft_freqanalysis(cfg,dataEEG_c100);
 
     %% FOOOF
+    orig_freq = 30:5:120;
     tfrs = {tfr_c25, tfr_c50, tfr_c75, tfr_c100};
     for tfr_contrast = 1:4
+        clc
+        disp('FOOOFing...')
         clear fspctrm
         tfr = tfrs{1, tfr_contrast};
         for t = 1 :length(tfr.time)
@@ -74,9 +77,11 @@ for subj = 1 : length(subjects)
 
                 % FOOOF settings
                 settings = struct();  % Use defaults
+                settings.verbose = false; % Suppress warnings about too low peak_width_limits
                 f_range = [tfr.freq(1), tfr.freq(end)];
 
                 % Run FOOOF
+                freqs = orig_freq'; % Equidistant freq distribution
                 fooof_results = fooof(freqs, psd, f_range, settings, true);
                 powspctrmff(chan,:) = fooof_results.fooofed_spectrum-fooof_results.ap_fit;
             end
@@ -97,6 +102,7 @@ for subj = 1 : length(subjects)
             tfr_c100_fooof.powspctrm = fooofedtrl;
         end
     end
+    disp(upper('FOOOF done...'))
 
     %% Baseline
     % Raw powspctrm baselined
@@ -116,6 +122,7 @@ for subj = 1 : length(subjects)
     tfr_c50_fooof_bl                 = ft_freqbaseline(cfg, tfr_c50_fooof);
     tfr_c75_fooof_bl                 = ft_freqbaseline(cfg, tfr_c75_fooof);
     tfr_c100_fooof_bl                = ft_freqbaseline(cfg, tfr_c100_fooof);
+    disp(upper('Baseline done...'))
 
     %% Smooth powerspectra
     orig_freq = 30:5:120; % 19 values
@@ -124,6 +131,7 @@ for subj = 1 : length(subjects)
     tfr_c50_fooof_bl_smooth  = smooth_tfr(tfr_c50_fooof_bl, orig_freq, new_freq);
     tfr_c75_fooof_bl_smooth  = smooth_tfr(tfr_c75_fooof_bl, orig_freq, new_freq);
     tfr_c100_fooof_bl_smooth = smooth_tfr(tfr_c100_fooof_bl, orig_freq, new_freq);
+    disp(upper('Smoothing done...'))
 
     %% Save data
     cd(datapath)
@@ -133,7 +141,7 @@ for subj = 1 : length(subjects)
         tfr_c25_fooof_bl tfr_c50_fooof_bl tfr_c75_fooof_bl tfr_c100_fooof_bl ...
         tfr_c25_fooof_bl_smooth tfr_c50_fooof_bl_smooth tfr_c75_fooof_bl_smooth tfr_c100_fooof_bl_smooth
     clc
-    fprintf('Subject %.3d/%.3d TFR DATA computed \n', subj, length(subjects))
+    fprintf('Subject GCP %s (%.3d/%.3d) TFR DATA computed... \n', num2str(subjects{subj}), subj, length(subjects))
     %end
 end
 
@@ -249,12 +257,12 @@ for subj = 1:length(subjects)
     end
 
     % Find channels and frequencies of interest
-    channels_idx = ismember(pow_c25_baselined.label, channels);
-    freq_idx = find(pow_c25_baselined.freq >= 30 & pow_c100_baselined.freq <= 90);
+    channels_idx = ismember(pow_c25_fooof_bl_smooth.label, channels);
+    freq_idx = find(pow_c25_fooof_bl_smooth.freq >= 30 & pow_c100_baselined.freq <= 90);
 
     % Find gamma peak for 25% contrast
-    c25_gamma_power = mean(pow_c25_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(c25_gamma_power, pow_c25_baselined.freq(freq_idx));
+    c25_gamma_power = mean(pow_c25_fooof_bl_smooth.powspctrm(channels_idx, freq_idx), 1);
+    [peaks, locs] = findpeaks(c25_gamma_power, pow_c25_fooof_bl_smooth.freq(freq_idx));
     [c25_pow, peak_idx] = max(peaks);
     c25_freq = locs(peak_idx);
 
@@ -266,20 +274,20 @@ for subj = 1:length(subjects)
     % c25_pow = mean(c25_gamma_power(c25_freq_idx_range));
 
     % Find gamma peak for 50% contrast
-    c50_gamma_power = mean(pow_c50_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(c50_gamma_power, pow_c50_baselined.freq(freq_idx));
+    c50_gamma_power = mean(pow_c50_fooof_bl_smooth.powspctrm(channels_idx, freq_idx), 1);
+    [peaks, locs] = findpeaks(c50_gamma_power, pow_c50_fooof_bl_smooth.freq(freq_idx));
     [c50_pow, peak_idx] = max(peaks);
     c50_freq = locs(peak_idx);
 
     % Find gamma peak for 75% contrast
-    c75_gamma_power = mean(pow_c75_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(c75_gamma_power, pow_c75_baselined.freq(freq_idx));
+    c75_gamma_power = mean(pow_c75_fooof_bl_smooth.powspctrm(channels_idx, freq_idx), 1);
+    [peaks, locs] = findpeaks(c75_gamma_power, pow_c75_fooof_bl_smooth.freq(freq_idx));
     [c75_pow, peak_idx] = max(peaks);
     c75_freq = locs(peak_idx);
 
     % Find gamma peak for 100% contrast
-    c100_gamma_power = mean(pow_c100_baselined.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(c100_gamma_power, pow_c100_baselined.freq(freq_idx));
+    c100_gamma_power = mean(pow_c100_fooof_bl_smooth.powspctrm(channels_idx, freq_idx), 1);
+    [peaks, locs] = findpeaks(c100_gamma_power, pow_c100_fooof_bl_smooth.freq(freq_idx));
     [c100_pow, peak_idx] = max(peaks);
     c100_freq = locs(peak_idx);
 
