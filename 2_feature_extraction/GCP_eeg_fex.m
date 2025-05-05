@@ -15,8 +15,8 @@ startup
 
 %% Extract TFR
 % Read data, segment and convert to FieldTrip data structure
-for subj = 1 %: length(subjects)
-    datapath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg');
+for subj = 1 : length(subjects)
+    datapath = strcat(path, subjects{subj}, '/eeg');
     %if ~isfile(strcat([datapath, '/data_tfr.mat'])) % only new data
     cd(datapath)
     close all
@@ -35,10 +35,10 @@ for subj = 1 %: length(subjects)
     cfg.method      = 'mtmconvol';
     cfg.taper       = 'dpss';
     cfg.foi         = 30:5:120;                         % Analysis 30 to 120 Hz in steps of 5 Hz
-    cfg.tapsmofrq   = 5;
+    cfg.tapsmofrq   = 5;                                % Analysis of FOI +/- 5 Hz
     cfg.t_ftimwin   = ones(length(cfg.foi),1).*0.5;     % Length of time window = 0.5 sec
     cfg.toi          = -1.5:0.05:2;                     % Time window "slides" from -0.5 to 1.5 sec in steps of 0.05 sec (50 ms)
-    cfg.keeptrials  = 'no';
+    cfg.keeptrials  = 'no';                         
 
     % 25% contrast concentric dynamic inward
     cfg.trials = ind61;
@@ -84,57 +84,60 @@ for subj = 1 %: length(subjects)
         end
         fooofedtrl(:,:,:) = fspctrm;
         if tfr_contrast == 1
-            tfr_c25_ff = tfr;
-            tfr25ff.powspctrm = fooofedtrl;
+            tfr_c25_fooof = tfr;
+            tfr_c25_fooof.powspctrm = fooofedtrl;
         elseif tfr_contrast == 2
-            tfr_c50_ff = tfr;
-            tfr50ff.powspctrm = fooofedtrl;
+            tfr_c50_fooof = tfr;
+            tfr_c50_fooof.powspctrm = fooofedtrl;
         elseif tfr_contrast == 3
-            tfr_c75_ff = tfr;
-            tfr75ff.powspctrm = fooofedtrl;
+            tfr_c75_fooof = tfr;
+            tfr_c75_fooof.powspctrm = fooofedtrl;
         elseif tfr_contrast == 4
-            tfr_c100_ff = tfr;
-            tfr100ff.powspctrm = fooofedtrl;
+            tfr_c100_fooof = tfr;
+            tfr_c100_fooof.powspctrm = fooofedtrl;
         end
     end
 
     %% Baseline
+    % Raw powspctrm baselined
+    cfg              = [];
+    cfg.baseline     = [-1.5 -.25];
+    cfg.baselinetype = 'db';
+    tfr_c25_bl                       = ft_freqbaseline(cfg, tfr_c25);
+    tfr_c50_bl                       = ft_freqbaseline(cfg, tfr_c50);
+    tfr_c75_bl                       = ft_freqbaseline(cfg, tfr_c75);
+    tfr_c100_bl                      = ft_freqbaseline(cfg, tfr_c100);
+
+    % FOOOFed powspctrm baselined
     cfg              = [];
     cfg.baseline     = [-1.5 -.25];
     cfg.baselinetype = 'absolute';   % FOOOF already sets log scale, so no 'dB' here
-    tfr_c25_bl                       = ft_freqbaseline(cfg, tfr_c25_ff);
-    tfr_c50_bl                       = ft_freqbaseline(cfg, tfr_c50_ff);
-    tfr_c75_bl                       = ft_freqbaseline(cfg, tfr_c75_ff);
-    tfr_c100_bl                      = ft_freqbaseline(cfg, tfr_c100_ff);
+    tfr_c25_fooof_bl                 = ft_freqbaseline(cfg, tfr_c25_fooof);
+    tfr_c50_fooof_bl                 = ft_freqbaseline(cfg, tfr_c50_fooof);
+    tfr_c75_fooof_bl                 = ft_freqbaseline(cfg, tfr_c75_fooof);
+    tfr_c100_fooof_bl                = ft_freqbaseline(cfg, tfr_c100_fooof);
 
     %% Smooth powerspectra
-    tfr_c25_bl_smooth  = tfr_c25_bl;
-    tfr_c50_bl_smooth  = tfr_c50_bl;
-    tfr_c75_bl_smooth  = tfr_c75_bl;
-    tfr_c100_bl_smooth = tfr_c100_bl;
-
-    % Define original and new frequency vectors
-    orig_freq = 30:5:120;  % 19 values
-    new_freq  = 30:1:120;   % 91 values
-    
-    % Apply smoothing to all datasets
-    tfr_c25_bl_smooth  = smooth_tfr(tfr_c25_bl, orig_freq, new_freq);
-    tfr_c50_bl_smooth  = smooth_tfr(tfr_c50_bl, orig_freq, new_freq);
-    tfr_c75_bl_smooth  = smooth_tfr(tfr_c75_bl, orig_freq, new_freq);
-    tfr_c100_bl_smooth = smooth_tfr(tfr_c100_bl, orig_freq, new_freq);
+    orig_freq = 30:5:120; % 19 values
+    new_freq  = 30:1:120; % 91 values
+    tfr_c25_fooof_bl_smooth  = smooth_tfr(tfr_c25_fooof_bl, orig_freq, new_freq);
+    tfr_c50_fooof_bl_smooth  = smooth_tfr(tfr_c50_fooof_bl, orig_freq, new_freq);
+    tfr_c75_fooof_bl_smooth  = smooth_tfr(tfr_c75_fooof_bl, orig_freq, new_freq);
+    tfr_c100_fooof_bl_smooth = smooth_tfr(tfr_c100_fooof_bl, orig_freq, new_freq);
 
     %% Save data
     cd(datapath)
-    save data_tfr tfr_c25 tfr_c50 tfr_c75 tfr_c100 ... 
-        tfr_c25_ff tfr_c50_ff tfr_c75_ff tfr_c100_ff ...
+    save data_tfr tfr_c25 tfr_c50 tfr_c75 tfr_c100 ...
+        tfr_c25_fooof tfr_c50_fooof tfr_c75_fooof tfr_c100_fooof ...
         tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl ...
-        tfr_c25_bl_smooth tfr_c50_bl_smooth tfr_c75_bl_smooth tfr_c100_bl_smooth
+        tfr_c25_fooof_bl tfr_c50_fooof_bl tfr_c75_fooof_bl tfr_c100_fooof_bl ...
+        tfr_c25_fooof_bl_smooth tfr_c50_fooof_bl_smooth tfr_c75_fooof_bl_smooth tfr_c100_fooof_bl_smooth
     clc
     fprintf('Subject %.3d/%.3d TFR DATA computed \n', subj, length(subjects))
     %end
 end
 
-%% Load data and convert TFR data to POWSCPTRM (channels x frequency)
+%% Convert TFR data to POWSCPTRM (channels x frequency)
 clc
 disp('POWER ANALYSIS')
 % Set analysis to 0-300ms or 300ms-2000ms after stimulus presentation
@@ -150,49 +153,57 @@ freq_range = [30 90];
 
 for subj = 1 : length(subjects)
     datapath = strcat(path, subjects{subj}, '/eeg');
-    if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
-        cd(datapath);
-
+    %if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
         % Load data
+        cd(datapath);
         load('data_tfr.mat');
 
         %% Select analysis and baseline period data
         % (1) Analysis period data, no baseline
         % (2) Analysis period data, baselined
-        % (3) Baseline period data (to compare with (1) non-baselined data for percentage change)
+        % (3) Analysis period data, FOOOFed, baselined, and smoothed
+        % (4) Baseline period data (to compare with (1) non-baselined data for percentage change)
 
-        %% Power spectra calculations
+        %% Select data
         pow_c25                                       = select_data(analysis_period, freq_range, tfr_c25);
         pow_c25_baselined                             = select_data(analysis_period, freq_range, tfr_c25_bl);
+        pow_c25_fooof_bl_smooth                       = select_data(analysis_period, freq_range, tfr_c25_fooof_bl_smooth);
         pow_c25_baseline_period                       = select_data(baseline_period, freq_range, tfr_c25);
 
         pow_c50                                       = select_data(analysis_period, freq_range, tfr_c50);
         pow_c50_baselined                             = select_data(analysis_period, freq_range, tfr_c50_bl);
+        pow_c50_fooof_bl_smooth                       = select_data(analysis_period, freq_range, tfr_c50_fooof_bl_smooth);
         pow_c50_baseline_period                       = select_data(baseline_period, freq_range, tfr_c50);
 
         pow_c75                                       = select_data(analysis_period, freq_range, tfr_c75);
         pow_c75_baselined                             = select_data(analysis_period, freq_range, tfr_c75_bl);
+        pow_c75_fooof_bl_smooth                       = select_data(analysis_period, freq_range, tfr_c75_fooof_bl_smooth);
         pow_c75_baseline_period                       = select_data(baseline_period, freq_range, tfr_c75);
 
         pow_c100                                       = select_data(analysis_period, freq_range, tfr_c100);
         pow_c100_baselined                             = select_data(analysis_period, freq_range, tfr_c100_bl);
+        pow_c100_fooof_bl_smooth                       = select_data(analysis_period, freq_range, tfr_c100_fooof_bl_smooth);
         pow_c100_baseline_period                       = select_data(baseline_period, freq_range, tfr_c100);
 
         %% Remove time dimension for POWSCPTRM (channels x frequency)
         pow_c25                                       = remove_time_dimension(pow_c25);
         pow_c25_baselined                             = remove_time_dimension(pow_c25_baselined);
+        pow_c25_fooof_bl_smooth                       = remove_time_dimension(pow_c25_fooof_bl_smooth);
         pow_c25_baseline_period                       = remove_time_dimension(pow_c25_baseline_period);
 
         pow_c50                                       = remove_time_dimension(pow_c50);
         pow_c50_baselined                             = remove_time_dimension(pow_c50_baselined);
+        pow_c50_fooof_bl_smooth                       = remove_time_dimension(pow_c50_fooof_bl_smooth);
         pow_c50_baseline_period                       = remove_time_dimension(pow_c50_baseline_period);
 
         pow_c75                                       = remove_time_dimension(pow_c75);
         pow_c75_baselined                             = remove_time_dimension(pow_c75_baselined);
+        pow_c75_fooof_bl_smooth                       = remove_time_dimension(pow_c75_fooof_bl_smooth);
         pow_c75_baseline_period                       = remove_time_dimension(pow_c75_baseline_period);
 
         pow_c100                                       = remove_time_dimension(pow_c100);
         pow_c100_baselined                             = remove_time_dimension(pow_c100_baselined);
+        pow_c100_fooof_bl_smooth                       = remove_time_dimension(pow_c100_fooof_bl_smooth);
         pow_c100_baseline_period                       = remove_time_dimension(pow_c100_baseline_period);
 
         %% Save data
@@ -200,17 +211,17 @@ for subj = 1 : length(subjects)
         mkdir(savepath)
         cd(savepath)
         if anal_period == 1
-            save power_spectra_300 pow_c25 pow_c25_baselined pow_c25_baseline_period ...
-                pow_c50 pow_c50_baselined pow_c50_baseline_period ...
-                pow_c75 pow_c75_baselined pow_c75_baseline_period ...
-                pow_c100 pow_c100_baselined pow_c100_baseline_period
+            save power_spectra_300 pow_c25 pow_c25_baselined pow_c25_fooof_bl_smooth pow_c25_baseline_period ...
+                pow_c50 pow_c50_baselined pow_c50_fooof_bl_smooth pow_c50_baseline_period ...
+                pow_c75 pow_c75_baselined pow_c75_fooof_bl_smooth pow_c75_baseline_period ...
+                pow_c100 pow_c100_baselined pow_c100_fooof_bl_smooth pow_c100_baseline_period
         else
-            save power_spectra pow_c25 pow_c25_baselined pow_c25_baseline_period ...
-                pow_c50 pow_c50_baselined pow_c50_baseline_period ...
-                pow_c75 pow_c75_baselined pow_c75_baseline_period ...
-                pow_c100 pow_c100_baselined pow_c100_baseline_period
+            save power_spectra pow_c25 pow_c25_baselined pow_c25_fooof_bl_smooth pow_c25_baseline_period ...
+                pow_c50 pow_c50_baselined pow_c50_fooof_bl_smooth pow_c50_baseline_period ...
+                pow_c75 pow_c75_baselined pow_c75_fooof_bl_smooth pow_c75_baseline_period ...
+                pow_c100 pow_c100_baselined pow_c100_fooof_bl_smooth pow_c100_baseline_period
         end
-    end
+    %end
 end
 
 %% Define channels
