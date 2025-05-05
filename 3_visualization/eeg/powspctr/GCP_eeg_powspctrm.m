@@ -13,38 +13,47 @@ for subj = 1:length(subjects)
         load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
     end
 
-    % Contrast conditions
+    % Raw powerspectra
     power_c25{subj} = pow_c25;
     power_c50{subj} = pow_c50;
     power_c75{subj} = pow_c75;
     power_c100{subj} = pow_c100;
 
+    % Baselined powerspectra
     power_c25_baselined{subj} = pow_c25_baselined;
     power_c50_baselined{subj} = pow_c50_baselined;
     power_c75_baselined{subj} = pow_c75_baselined;
     power_c100_baselined{subj} = pow_c100_baselined;
 
+    % Baseline period powerspectra
     power_c25_baseline_period{subj} = pow_c25_baseline_period;
     power_c50_baseline_period{subj} = pow_c50_baseline_period;
     power_c75_baseline_period{subj} = pow_c75_baseline_period;
     power_c100_baseline_period{subj} = pow_c100_baseline_period;
+
+    % Baselined FOOOFed powerspectra
+
+
 end
 
 %% Compute grand averages
-gapow_c25 = ft_freqgrandaverage([], power_c25{:});
-gapow_c50 = ft_freqgrandaverage([], power_c50{:});
-gapow_c75 = ft_freqgrandaverage([], power_c75{:});
-gapow_c100 = ft_freqgrandaverage([], power_c100{:});
+cfg = [];
+cfg.keepindividual='yes';
 
-gapow_c25_baselined = ft_freqgrandaverage([], power_c25_baselined{:});
-gapow_c50_baselined = ft_freqgrandaverage([], power_c50_baselined{:});
-gapow_c75_baselined = ft_freqgrandaverage([], power_c75_baselined{:});
-gapow_c100_baselined = ft_freqgrandaverage([], power_c100_baselined{:});
+gapow_c25 = ft_freqgrandaverage(cfg, power_c25{:});
+gapow_c50 = ft_freqgrandaverage(cfg, power_c50{:});
+gapow_c75 = ft_freqgrandaverage(cfg, power_c75{:});
+gapow_c100 = ft_freqgrandaverage(cfg, power_c100{:});
 
-gapow_c25_baseline_period = ft_freqgrandaverage([], power_c25_baseline_period{:});
-gapow_c50_baseline_period = ft_freqgrandaverage([], power_c50_baseline_period{:});
-gapow_c75_baseline_period = ft_freqgrandaverage([], power_c75_baseline_period{:});
-gapow_c100_baseline_period = ft_freqgrandaverage([], power_c100_baseline_period{:});
+gapow_c25_baselined = ft_freqgrandaverage(cfg, power_c25_baselined{:});
+gapow_c50_baselined = ft_freqgrandaverage(cfg, power_c50_baselined{:});
+gapow_c75_baselined = ft_freqgrandaverage(cfg, power_c75_baselined{:});
+gapow_c100_baselined = ft_freqgrandaverage(cfg, power_c100_baselined{:});
+
+gapow_c25_baseline_period = ft_freqgrandaverage(cfg, power_c25_baseline_period{:});
+gapow_c50_baseline_period = ft_freqgrandaverage(cfg, power_c50_baseline_period{:});
+gapow_c75_baseline_period = ft_freqgrandaverage(cfg, power_c75_baseline_period{:});
+gapow_c100_baseline_period = ft_freqgrandaverage(cfg, power_c100_baseline_period{:});
 
 %% Define channels
 datapath = strcat(path, subjects{1}, '/eeg');

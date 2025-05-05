@@ -108,17 +108,27 @@ for subj = 1 %: length(subjects)
     tfr_c100_bl                      = ft_freqbaseline(cfg, tfr_c100_ff);
 
     %% Smooth powerspectra
-    tfr_c25_bl = tfr_c25_bl
-    tfr_c50_bl = tfr_c50_bl
-    tfr_c75_bl = tfr_c75_bl
-    tfr_c100_bl = tfr_c100_bl
+    tfr_c25_bl_smooth  = tfr_c25_bl;
+    tfr_c50_bl_smooth  = tfr_c50_bl;
+    tfr_c75_bl_smooth  = tfr_c75_bl;
+    tfr_c100_bl_smooth = tfr_c100_bl;
+
+    % Define original and new frequency vectors
+    orig_freq = 30:5:120;  % 19 values
+    new_freq  = 30:1:120;   % 91 values
+    
+    % Apply smoothing to all datasets
+    tfr_c25_bl_smooth  = smooth_tfr(tfr_c25_bl, orig_freq, new_freq);
+    tfr_c50_bl_smooth  = smooth_tfr(tfr_c50_bl, orig_freq, new_freq);
+    tfr_c75_bl_smooth  = smooth_tfr(tfr_c75_bl, orig_freq, new_freq);
+    tfr_c100_bl_smooth = smooth_tfr(tfr_c100_bl, orig_freq, new_freq);
 
     %% Save data
     cd(datapath)
     save data_tfr tfr_c25 tfr_c50 tfr_c75 tfr_c100 ... 
         tfr_c25_ff tfr_c50_ff tfr_c75_ff tfr_c100_ff ...
-        tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl
-
+        tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl ...
+        tfr_c25_bl_smooth tfr_c50_bl_smooth tfr_c75_bl_smooth tfr_c100_bl_smooth
     clc
     fprintf('Subject %.3d/%.3d TFR DATA computed \n', subj, length(subjects))
     %end
@@ -129,7 +139,7 @@ clc
 disp('POWER ANALYSIS')
 % Set analysis to 0-300ms or 300ms-2000ms after stimulus presentation
 anal_period = 2;
-baseline_period = [-0.5 -0.25];
+baseline_period = [-1.5 -0.25];
 if anal_period == 1
     analysis_period = [0 0.3]; % only starting stimulus activity
 else
