@@ -3,10 +3,7 @@
 %% Setup
 startup
 clear
-addpath('/Users/Arne/Documents/matlabtools/eeglab2024.2');
-eeglab
-clc
-close all
+addEEGLab
 path = '/Volumes/methlab/Students/Arne/GCP/data/merged/';
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
@@ -206,7 +203,7 @@ for subj = 1:length(subjects)
         data_c75 = ft_appenddata(cfg, data_c75{:});
         data_c100 = ft_appenddata(cfg, data_c100{:});
 
-        %% Get EyeTracking data
+        %% Select EyeTracking data
         cfg = [];
         cfg.channel = {'L-GAZE-X'  'L-GAZE-Y' 'L-AREA', 'R-GAZE-X'  'R-GAZE-Y' 'R-AREA'};
         dataET_c25 = ft_selectdata(cfg, data_c25);
@@ -214,7 +211,7 @@ for subj = 1:length(subjects)
         dataET_c75 = ft_selectdata(cfg, data_c75);
         dataET_c100 = ft_selectdata(cfg, data_c100);
 
-        %% Get EEG data (excl. ET and EOG data)
+        %% Select EEG data (excl. ET and EOG data)
         cfg = [];
         cfg.channel = {'all' '-B*' '-HEOGR' '-HEOGL', '-VEOGU', '-VEOGL' ,'-L-GAZE-X' , '-L-GAZE-Y' , '-L-AREA', '-R-GAZE-X'  '-R-GAZE-Y' '-R-AREA'};
         dataEEG_c25 = ft_selectdata(cfg, data_c25);
