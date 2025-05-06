@@ -121,7 +121,6 @@ saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_eeg_topos_
 close all;
 % Common configuration
 cfg = [];
-cfg.figure      = 'gcf';
 load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
 cfg.layout = layANThead;
 allchannels = cfg.layout.label;
@@ -138,11 +137,9 @@ cmap = flipud(cbrewer('div', 'RdBu', 64));
 cfg.colormap = cmap;
 cfg.gridscale = 300;
 cfg.ylim = [30 90];
-cb = colorbar;
-set(cb, 'FontSize', 20);
-ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
 for subj = 1:length(subjects)
+    close all
     % Prepare data for subj
     pow25_subj  = pow25{subj};
     pow50_subj  = pow50{subj};
@@ -154,27 +151,50 @@ for subj = 1:length(subjects)
     set(gcf, 'Position', [0, 0, 2000, 800], 'Color', 'w');
     set(gca, 'Fontsize', 25);
     sgtitle(sprintf('Topographical Maps for Subject %s', subjects{subj}), 'FontSize', 30, 'FontWeight', 'bold');
+    cfg.figure = 'gcf';
 
-    % High Contrast
-    subplot(1, 3, 1);
-    ft_topoplotER(cfg, pow_hc_subj);
-    title('High Contrast', 'FontSize', 25);
+    % Find max power value for frequency band
+    [~, channel_idx] = ismember(channels, pow25_subj.label);
+    freq_idx = find(pow25_subj.freq >= 30 & pow25_subj.freq <= 90);
+    avgscptrm25  = mean(pow25_subj.powspctrm(channel_idx, freq_idx), 1);
+    avgscptrm50  = mean(pow50_subj.powspctrm(channel_idx, freq_idx), 1);
+    avgscptrm75  = mean(pow75_subj.powspctrm(channel_idx, freq_idx), 1);
+    avgscptrm100 = mean(pow100_subj.powspctrm(channel_idx, freq_idx), 1);
+    max_spctrm = max([
+        max(abs(avgscptrm25), [], 'all'), ...
+        max(abs(avgscptrm50), [], 'all'), ...
+        max(abs(avgscptrm75), [], 'all'), ...
+        max(abs(avgscptrm100), [], 'all')]);
+    cfg.zlim = double([-max_spctrm, max_spctrm]);
+
+    % POW25
+    subplot(2, 2, 1);
+    ft_topoplotER(cfg, pow25_subj);
+    title('25% Contrast', 'FontSize', 25);
     cb = colorbar;
     cb.FontSize = 20;
     ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
-    % Low Contrast
-    subplot(1, 3, 2);
-    ft_topoplotER(cfg, pow_lc_subj);
-    title('Low Contrast', 'FontSize', 25);
+    % POW50
+    subplot(2, 2, 2);
+    ft_topoplotER(cfg, pow50_subj);
+    title('50% Contrast', 'FontSize', 25);
     cb = colorbar;
     cb.FontSize = 20;
     ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
-    % Difference (HC - LC)
-    subplot(1, 3, 3);
-    ft_topoplotER(cfg, pow_diff_subj);
-    title('Difference (High - Low)', 'FontSize', 25);
+    % POW75
+    subplot(2, 2, 3);
+    ft_topoplotER(cfg, pow75_subj);
+    title('75% Contrast', 'FontSize', 25);
+    cb = colorbar;
+    cb.FontSize = 20;
+    ylabel(cb, 'Power [dB]', 'FontSize', 25);
+
+    % POW100
+    subplot(2, 2, 4);
+    ft_topoplotER(cfg, pow100_subj);
+    title('100% Contrast', 'FontSize', 25);
     cb = colorbar;
     cb.FontSize = 20;
     ylabel(cb, 'Power [dB]', 'FontSize', 25);
@@ -182,49 +202,3 @@ for subj = 1:length(subjects)
     % Save individual figure
     saveas(gcf, sprintf('/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_eeg_topos_subj%s.png', subjects{subj}));
 end
-
-%% Subplot of All Subjects (HC, LC, and Difference)
-close all
-% Plot all subjects' topoplots in a 3-column grid: HC, LC, and HC-LC difference
-figure;
-set(gcf, 'Position', [0, 0, 2000, 2000], 'Color', 'w');
-sgtitle('Topographical Maps for All Subjects', 'FontSize', 30, 'FontWeight', 'bold');
-
-num_subs = length(subjects);
-cols = 3;  % 3 columns for HC, LC, and Difference
-rows = num_subs; % Number of rows matches the number of subjects
-
-for subj = 1:num_subs
-    pow_hc_subj = pow_hc{subj};
-    pow_lc_subj = pow_lc{subj};
-    pow_diff_subj = pow_hc_subj;
-    pow_diff_subj.powspctrm = pow_hc_subj.powspctrm - pow_lc_subj.powspctrm;
-
-    % High Contrast
-    subplot(rows, cols, (subj-1)*cols + 1);
-    ft_topoplotER(cfg, pow_hc_subj);
-    title('High Contrast', 'FontSize', 10);
-    cb = colorbar;
-    cb.FontSize = 10;
-    ylabel(cb, 'Power [dB]', 'FontSize', 10);
-
-    % Low Contrast
-    subplot(rows, cols, (subj-1)*cols + 2);
-    ft_topoplotER(cfg, pow_lc_subj);
-    title('Low Contrast', 'FontSize', 10);
-    cb = colorbar;
-    cb.FontSize = 10;
-    ylabel(cb, 'Power [dB]', 'FontSize', 10);
-
-    % Difference (HC - LC)
-    subplot(rows, cols, (subj-1)*cols + 3);
-    ft_topoplotER(cfg, pow_diff_subj);
-    title('Difference (High - Low)', 'FontSize', 10);
-    cb = colorbar;
-    cb.FontSize = 10;
-    ylabel(cb, 'Power [dB]', 'FontSize', 10);
-
-end
-
-% Save the combined subplot figure with all subjects
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_topoplot_allsubs_HC_LC_Diff.png');
