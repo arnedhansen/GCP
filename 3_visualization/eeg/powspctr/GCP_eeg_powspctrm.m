@@ -3,7 +3,7 @@
 %% Setup
 clear
 [subjects, path, colors] = setup('GCP');
-analysis_period = 2; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus presentation
+analysis_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus presentation
 
 %% Load power spectra data
 for subj = 1:length(subjects)
@@ -31,7 +31,7 @@ for subj = 1:length(subjects)
     power_c75_baseline_period{subj}  = pow_c75_baseline_period;
     power_c100_baseline_period{subj} = pow_c100_baseline_period;
 
-    % Baselined FOOOFed powerspectra
+    % Baselined FOOOFed smoothed powerspectra
     power_c25_fooof_bl_smooth{subj}  = pow_c25_fooof_bl_smooth;
     power_c50_fooof_bl_smooth{subj}  = pow_c50_fooof_bl_smooth;
     power_c75_fooof_bl_smooth{subj}  = pow_c75_fooof_bl_smooth;
@@ -89,10 +89,10 @@ cfg.linewidth = 3;
 % OPTIONAL: Add extra smoothing to powerspectra
 channels_seb = ismember(gapow_c25_fooof_bl_smooth.label, cfg.channel);
 smoothWin = 10; % Size of smoothing window in frequency bins
-% gapow_c25_fooof_bl_smooth_extra  = gapow_c25_fooof_bl_smooth;
-% gapow_c50_fooof_bl_smooth_extra  = gapow_c50_fooof_bl_smooth;
-% gapow_c75_fooof_bl_smooth_extra  = gapow_c75_fooof_bl_smooth;
-% gapow_c100_fooof_bl_smooth_extra = gapow_c100_fooof_bl_smooth;
+gapow_c25_fooof_bl_smooth_extra  = gapow_c25_fooof_bl_smooth;
+gapow_c50_fooof_bl_smooth_extra  = gapow_c50_fooof_bl_smooth;
+gapow_c75_fooof_bl_smooth_extra  = gapow_c75_fooof_bl_smooth;
+gapow_c100_fooof_bl_smooth_extra = gapow_c100_fooof_bl_smooth;
 %  % Moving Window
 % gapow_c25_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c25_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
 % gapow_c50_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c50_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
@@ -129,7 +129,7 @@ end
 yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
 set(gcf, 'color', 'w');
 set(gca, 'FontSize', 20);
-set(gca, "YLim", [-0.035 0.035])
+set(gca, "YLim", [-0.04 0.04])
 xlim([30 90])
 xlabel('Frequency [Hz]', 'FontSize', 30);
 ylabel('Power [dB]', 'FontSize', 30);
@@ -139,7 +139,7 @@ hold off;
 
 % Save the plot
 if analysis_period == 1
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_baselined_300.png');
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_fooof_bl_smooth_300.png');
 else
     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_fooof_bl_smooth.png');
 end
@@ -216,99 +216,98 @@ end
 %     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
 % end
 
-%% Plot INDIVIDUAL power spectra BASELINED
-output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
+%% Plot INDIVIDUAL powerspectra
+% output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
+% for subj = 1:length(subjects)
+%     close all;
+%     figure;
+%     set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
+% 
+%     % Extract participant data
+%     pow_lc_subj = power_lc_baselined{subj};
+%     pow_hc_subj = power_hc_baselined{subj};
+% 
+%     % Figure common config
+%     cfg = [];
+%     cfg.channel = channels;
+%     cfg.figure = 'gcf';
+%     cfg.linewidth = 1;
+% 
+%     % Plot power spectrum for low and high contrast
+%     ft_singleplotER(cfg, pow_lc_subj, pow_hc_subj);
+%     hold on;
+% 
+%     % Add shaded error bars
+%     channels_seb = ismember(pow_lc_subj.label, cfg.channel);
+%     lceb = shadedErrorBar(pow_lc_subj.freq, mean(pow_lc_subj.powspctrm(channels_seb, :), 1), ...
+%         std(pow_lc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_lc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+%     hceb = shadedErrorBar(pow_hc_subj.freq, mean(pow_hc_subj.powspctrm(channels_seb, :), 1), ...
+%         std(pow_hc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_hc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+%     lceb.mainLine.Color = colors(1, :);
+%     hceb.mainLine.Color = colors(2, :);
+%     lceb.patch.FaceColor = colors(1, :);
+%     hceb.patch.FaceColor = colors(2, :);
+%     set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
+%     set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
+%     set(lceb.edge(1), 'Color', colors(1, :));
+%     set(lceb.edge(2), 'Color', colors(1, :));
+%     set(hceb.edge(1), 'Color', colors(2, :));
+%     set(hceb.edge(2), 'Color', colors(2, :));
+%     set(lceb.patch, 'FaceAlpha', 0.5);
+%     set(hceb.patch, 'FaceAlpha', 0.5);
+% 
+%     % Find channels and frequencies of interest
+%     channels_idx = ismember(pow_lc_subj.label, channels);
+%     freq_idx = find(pow_lc_subj.freq >= 30 & pow_hc_subj.freq <= 90);
+% 
+%     % Find gamma peak for LOW contrast
+%     lc_gamma_power = mean(pow_lc_subj.powspctrm(channels_idx, freq_idx), 1);
+%     [peaks, locs] = findpeaks(lc_gamma_power, pow_lc_subj.freq(freq_idx));
+%     [lc_pow, peak_idx] = max(peaks);
+%     lc_freq = locs(peak_idx);
+% 
+%     % Find gamma peak for HIGH contrast
+%     hc_gamma_power = mean(pow_hc_subj.powspctrm(channels_idx, freq_idx), 1);
+%     [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_subj.freq(freq_idx));
+%     [hc_pow, peak_idx] = max(peaks);
+%     hc_freq = locs(peak_idx);
+%     % if subj == 9
+%     %     hc_pow = 0.1149
+%     %     hc_freq = 86
+%     % end
+% 
+%     % Adjust plot aesthetics
+%     yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
+%     plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+%     plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+%     plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
+%     plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
+%     set(gca, 'FontSize', 20);
+%     max_spctrm = max(lc_pow, hc_pow);
+%     % if subj == 9
+%     %     max_spctrm = 0.4
+%     % elseif subj == 10
+%     %     max_spctrm = 0.55
+%     % end
+%     ylim([-max_spctrm*1.25 max_spctrm*1.25]);
+%     xlim([30 90]);
+%     xlabel('Frequency [Hz]');
+%     ylabel('Power [dB]');
+%     legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
+%     title(sprintf('Subject %s: Power Spectrum', subjects{subj}), 'FontSize', 30);
+%     hold off;
+% 
+%     % Save individual plot
+%     if analysis_period == 1
+%         output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300';
+%         save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined_300.png', subjects{subj}));
+%     else
+%         save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined.png', subjects{subj}));
+%     end
+%     saveas(gcf, save_path);
+% end
 
-for subj = 1:length(subjects)
-    close all;
-    figure;
-    set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
-
-    % Extract participant data
-    pow_lc_subj = power_lc_baselined{subj};
-    pow_hc_subj = power_hc_baselined{subj};
-
-    % Figure common config
-    cfg = [];
-    cfg.channel = channels;
-    cfg.figure = 'gcf';
-    cfg.linewidth = 1;
-
-    % Plot power spectrum for low and high contrast
-    ft_singleplotER(cfg, pow_lc_subj, pow_hc_subj);
-    hold on;
-
-    % Add shaded error bars
-    channels_seb = ismember(pow_lc_subj.label, cfg.channel);
-    lceb = shadedErrorBar(pow_lc_subj.freq, mean(pow_lc_subj.powspctrm(channels_seb, :), 1), ...
-        std(pow_lc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_lc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
-    hceb = shadedErrorBar(pow_hc_subj.freq, mean(pow_hc_subj.powspctrm(channels_seb, :), 1), ...
-        std(pow_hc_subj.powspctrm(channels_seb, :)) / sqrt(size(pow_hc_subj.powspctrm(channels_seb, :), 1)), {'-'}, 0);
-    lceb.mainLine.Color = colors(1, :);
-    hceb.mainLine.Color = colors(2, :);
-    lceb.patch.FaceColor = colors(1, :);
-    hceb.patch.FaceColor = colors(2, :);
-    set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
-    set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
-    set(lceb.edge(1), 'Color', colors(1, :));
-    set(lceb.edge(2), 'Color', colors(1, :));
-    set(hceb.edge(1), 'Color', colors(2, :));
-    set(hceb.edge(2), 'Color', colors(2, :));
-    set(lceb.patch, 'FaceAlpha', 0.5);
-    set(hceb.patch, 'FaceAlpha', 0.5);
-
-    % Find channels and frequencies of interest
-    channels_idx = ismember(pow_lc_subj.label, channels);
-    freq_idx = find(pow_lc_subj.freq >= 30 & pow_hc_subj.freq <= 90);
-
-    % Find gamma peak for LOW contrast
-    lc_gamma_power = mean(pow_lc_subj.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(lc_gamma_power, pow_lc_subj.freq(freq_idx));
-    [lc_pow, peak_idx] = max(peaks);
-    lc_freq = locs(peak_idx);
-
-    % Find gamma peak for HIGH contrast
-    hc_gamma_power = mean(pow_hc_subj.powspctrm(channels_idx, freq_idx), 1);
-    [peaks, locs] = findpeaks(hc_gamma_power, pow_hc_subj.freq(freq_idx));
-    [hc_pow, peak_idx] = max(peaks);
-    hc_freq = locs(peak_idx);
-    % if subj == 9
-    %     hc_pow = 0.1149
-    %     hc_freq = 86
-    % end
-
-    % Adjust plot aesthetics
-    yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
-    plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
-    plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
-    plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
-    plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
-    set(gca, 'FontSize', 20);
-    max_spctrm = max(lc_pow, hc_pow);
-    % if subj == 9
-    %     max_spctrm = 0.4
-    % elseif subj == 10
-    %     max_spctrm = 0.55
-    % end
-    ylim([-max_spctrm*1.25 max_spctrm*1.25]);
-    xlim([30 90]);
-    xlabel('Frequency [Hz]');
-    ylabel('Power [dB]');
-    legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
-    title(sprintf('Subject %s: Power Spectrum', subjects{subj}), 'FontSize', 30);
-    hold off;
-
-    % Save individual plot
-    if analysis_period == 1
-        output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300';
-        save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined_300.png', subjects{subj}));
-    else
-        save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined.png', subjects{subj}));
-    end
-    saveas(gcf, save_path);
-end
-
-%% Subplot with all INDIVIDUAL power spectra BASELINED
+%% Subplot with all INDIVIDUAL power spectra
 close all
 output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
 num_subs = length(subjects);
@@ -323,15 +322,15 @@ for subj = 1:num_subs
     subplot(rows, cols, subj);
 
     % Extract participant data for all four conditions
-    pow_c25_subj = power_c25_baselined{subj};
-    pow_c50_subj = power_c50_baselined{subj};
-    pow_c75_subj = power_c75_baselined{subj};
-    pow_c100_subj = power_c100_baselined{subj};
+    pow_c25_subj  = power_c25_fooof_bl_smooth{subj};
+    pow_c50_subj  = power_c50_fooof_bl_smooth{subj};
+    pow_c75_subj  = power_c75_fooof_bl_smooth{subj};
+    pow_c100_subj = power_c100_fooof_bl_smooth{subj};
 
     cfg = [];
     cfg.channel = channels;
     cfg.figure = 'gcf';
-    cfg.linewidth = 1;
+    cfg.linewidth = 2;
 
     % Plot power spectrum for all four conditions
     ft_singleplotER(cfg, pow_c25_subj, pow_c50_subj, pow_c75_subj, pow_c100_subj);
@@ -346,7 +345,7 @@ for subj = 1:num_subs
     for i = 1:4
         channels_seb = ismember(conditions{i}.label, cfg.channel);
         shadedEBs{i} = shadedErrorBar(conditions{i}.freq, mean(conditions{i}.powspctrm(channels_seb, :), 1), ...
-            std(conditions{i}.powspctrm(channels_seb, :)) / sqrt(size(conditions{i}.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+            std(conditions{i}.powspctrm(channels_seb, :)) / sqrt(size(conditions{i}.powspctrm(channels_seb, :), 1)));
         shadedEBs{i}.mainLine.Color = condition_colors(i, :);
         shadedEBs{i}.patch.FaceColor = condition_colors(i, :);
         set(shadedEBs{i}.mainLine, 'LineWidth', cfg.linewidth);
@@ -379,12 +378,12 @@ for subj = 1:num_subs
     end
 
     max_spctrm = max(peak_powers);
-    if subj == 4
-        max_spctrm = 0.55
-    elseif subj == 6
-        max_spctrm = 0.5
-    end
-    ylim([-max_spctrm*1.25 max_spctrm*1.25]);
+    % if subj == 4
+    %     max_spctrm = 0.55
+    % elseif subj == 6
+    %     max_spctrm = 0.5
+    % end
+    set(gca, "YLim", [-max_spctrm*1.25 max_spctrm*1.25])
     xlim([30 90]);
     xticks(30:10:90);
     xlabel('Freq [Hz]', 'FontSize', 20);
@@ -399,7 +398,6 @@ end
 
 % Save the combined figure with all subplots
 if analysis_period == 1
-    output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300';
     save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined_300.png');
 else
     save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined.png');

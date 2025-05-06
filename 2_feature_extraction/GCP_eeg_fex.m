@@ -149,19 +149,19 @@ end
 clc
 disp('POWER ANALYSIS')
 % Set analysis to 0-300ms or 300ms-2000ms after stimulus presentation
-anal_period = 2;
 baseline_period = [-1.5 -0.25];
-if anal_period == 1
-    analysis_period = [0 0.3]; % only starting stimulus activity
-else
-    analysis_period = [0.3 2]; % only start from 300ms after stimulus presentation
-end
-freq_range = [30 90];
-[subjects, path] = setup('GCP');
+for anal_period = 1:2
+    if anal_period == 1
+        analysis_period = [0 0.3]; % only starting stimulus activity
+    else
+        analysis_period = [0.3 2]; % only start from 300ms after stimulus presentation
+    end
+    freq_range = [30 90];
+    [subjects, path] = setup('GCP');
 
-for subj = 1 : length(subjects)
-    datapath = strcat(path, subjects{subj}, '/eeg');
-    %if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
+    for subj = 1 : length(subjects)
+        datapath = strcat(path, subjects{subj}, '/eeg');
+        %if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
         % Load data
         cd(datapath);
         load('data_tfr.mat');
@@ -229,7 +229,8 @@ for subj = 1 : length(subjects)
                 pow_c75 pow_c75_baselined pow_c75_fooof_bl_smooth pow_c75_baseline_period ...
                 pow_c100 pow_c100_baselined pow_c100_fooof_bl_smooth pow_c100_baseline_period
         end
-    %end
+        %end
+    end
 end
 
 %% Define channels
