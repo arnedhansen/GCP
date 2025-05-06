@@ -7,26 +7,18 @@ clear
 %% Load power spectra data
 for subj = 1:length(subjects)
     load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
-
-    % Low contrast
-    power_lc{subj} = pow_lc;
-    power_lc_baselined{subj} = pow_lc_baselined;
-    power_lc_baseline_period{subj} = pow_lc_baseline_period;
-
-    % High contrast
-    power_hc{subj} = pow_hc;
-    power_hc_baselined{subj} = pow_hc_baselined;
-    power_hc_baseline_period{subj} = pow_hc_baseline_period;
+    pow25{subj}  = pow_c25_fooof_bl_smooth;
+    pow50{subj}  = pow_c50_fooof_bl_smooth;
+    pow75{subj}  = pow_c75_fooof_bl_smooth;
+    pow100{subj} = pow_c100_fooof_bl_smooth;
+    fprintf('Subject %3s loaded... \n', subjects{subj})
 end
 
-%% Compute grand averages
-gapow_lc                                               = ft_freqgrandaverage([],power_lc{:});
-gapow_lc_baselined                                     = ft_freqgrandaverage([],power_lc_baselined{:});
-gapow_lc_baseline_period                               = ft_freqgrandaverage([],power_lc_baseline_period{:});
-
-gapow_hc                                               = ft_freqgrandaverage([],power_hc{:});
-gapow_hc_baselined                                     = ft_freqgrandaverage([],power_hc_baselined{:});
-gapow_hc_baseline_period                               = ft_freqgrandaverage([],power_hc_baseline_period{:});
+% Compute grand averages
+gapow25  = ft_freqgrandaverage([], pow25{:});
+gapow50  = ft_freqgrandaverage([], pow50{:});
+gapow75  = ft_freqgrandaverage([], pow75{:});
+gapow100 = ft_freqgrandaverage([], pow100{:});
 
 %% Define channels
 subj = 1;
@@ -34,100 +26,133 @@ datapath = strcat(path, subjects{subj}, '/eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
-pow_label = power_lc{1, 1};
+pow_label = pow25{1, 1};
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
-    if contains(label, {'O'}) && ~contains(label, {'P'}) || contains(label, {'I'})
+    if contains(label, {'O'}) || contains(label, {'P'}) && ~contains(label, {'T'}) ...
+        && ~contains(label, {'C'}) || contains(label, {'I'})
         occ_channels{end+1} = label;
     end
 end
 channels = occ_channels;
 
-%% Plot GRAND AVERAGE topoplots for LOW, HIGH and DIFFERENCE
+%% Plot GRAND AVERAGE topoplots
 close all
-% Define data for coditions
-gapow_LOW = gapow_lc_baselined;
-gapow_HIGH = gapow_hc_baselined;
-
-% Common configuration
-cfg = [];
-load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
-cfg.layout = layANThead;
-cfg.comment     = 'no';
-cfg.gridscale   = 300;
-cfg.figure      = 'gcf';
-cfg.xlim = [30 90];
-cfg.zlim = 'maxabs';
-% cfg.zlim = [-1.1 1.1];
-cfg.marker      = 'off';
-cfg.colormap    = '*RdBu';
-cfg.colorbartext = 'Power [dB]';
 
 % Create figure
 figure;
 set(gcf, 'Position', [0, 0, 2000, 800], 'Color', 'w');
 set(gca, 'Fontsize', 25);
-
-% Set title
 sgtitle('Topographical Maps 300 ms - 2000 ms after Stimulus Presentation (30 - 90 Hz)', 'FontSize', 30, 'FontWeight', 'bold');
 
-% LOW CONTRAST
-subplot(1, 3, 1);
-ft_topoplotER(cfg, gapow_LOW);
-title('Low Contrast', 'FontSize', 25);
+% Common configuration
+cfg = [];
+cfg.figure      = 'gcf';
+load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
+cfg.layout = layANThead;
+allchannels = cfg.layout.label;
+cfg.channel = allchannels(1:end-2);
+cfg.channel = cfg.channel(~strcmp(cfg.channel, 'M2'));
+cfg.channel = cfg.channel(~strcmp(cfg.channel, 'M1'));
+cfg.highlight = 'on';
+cfg.highlightchannel = channels;
+cfg.highlightsymbol = '.';
+cfg.highlightsize = 5;
+cfg.marker = 'off';
+cfg.comment = 'no';
+cmap = flipud(cbrewer('div', 'RdBu', 64));
+cfg.colormap = cmap;
+cfg.gridscale = 300;
+cfg.ylim = [30 90];
 cb = colorbar;
-cb.FontSize = 20;
+set(cb, 'FontSize', 20);
 ylabel(cb, 'Power [dB]', 'FontSize', 25);
-title('LOW CONTRAST', 'FontSize', 25);
 
-% HIGH CONTRAST
-subplot(1, 3, 2);
-ft_topoplotER(cfg, gapow_HIGH);
-title('High Contrast', 'FontSize', 25);
-cb = colorbar;
-cb.FontSize = 20;
-ylabel(cb, 'Power [dB]', 'FontSize', 25);
-title('HIGH CONTRAST', 'FontSize', 25);
+% Find max power value for frequency band
+[~, channel_idx] = ismember(channels, gapow25.label);
+freq_idx = find(gapow25.freq >= 30 & gapow25.freq <= 90);
+avgscptrm25  = mean(gapow25.powspctrm(channel_idx, freq_idx), 1);
+avgscptrm50  = mean(gapow50.powspctrm(channel_idx, freq_idx), 1);
+avgscptrm75  = mean(gapow75.powspctrm(channel_idx, freq_idx), 1);
+avgscptrm100 = mean(gapow100.powspctrm(channel_idx, freq_idx), 1);
+max_spctrm = max([
+    max(abs(avgscptrm25), [], 'all'), ...
+    max(abs(avgscptrm50), [], 'all'), ...
+    max(abs(avgscptrm75), [], 'all'), ...
+    max(abs(avgscptrm100), [], 'all')]);
+cfg.zlim = double([-max_spctrm * 0.9, max_spctrm * 0.9]);
 
-% DIFFERENCE
-gapow_DIFF = gapow_HIGH;
-gapow_DIFF.powspctrm = gapow_HIGH.powspctrm - gapow_LOW.powspctrm;
-subplot(1, 3, 3);
-ft_topoplotER(cfg, gapow_DIFF);
-title('Difference (High - Low)', 'FontSize', 25);
+% POW25
+subplot(2, 2, 1);
+ft_topoplotER(cfg, gapow25);
+title('25% Contrast', 'FontSize', 25);
 cb = colorbar;
 cb.FontSize = 20;
 ylabel(cb, 'Power [dB]', 'FontSize', 25);
-title('DIFFERENCE (HC-LC)', 'FontSize', 25);
+
+% POW50
+subplot(2, 2, 2);
+ft_topoplotER(cfg, gapow50);
+title('50% Contrast', 'FontSize', 25);
+cb = colorbar;
+cb.FontSize = 20;
+ylabel(cb, 'Power [dB]', 'FontSize', 25);
+
+% POW75
+subplot(2, 2, 3);
+ft_topoplotER(cfg, gapow75);
+title('75% Contrast', 'FontSize', 25);
+cb = colorbar;
+cb.FontSize = 20;
+ylabel(cb, 'Power [dB]', 'FontSize', 25);
+
+% POW100
+subplot(2, 2, 4);
+ft_topoplotER(cfg, gapow100);
+title('100% Contrast', 'FontSize', 25);
+cb = colorbar;
+cb.FontSize = 20;
+ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
 % Save figure
 saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_eeg_topos_ga.png');
 
-%% Topoplots for Individual Subjects (HC, LC, and Difference)
+%% Topoplots for Individual Subjects
 close all;
-cfg             = [];
+% Common configuration
+cfg = [];
+cfg.figure      = 'gcf';
 load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
 cfg.layout = layANThead;
-cfg.comment     = 'no';
-%cfg.channels = channels;
-cfg.gridscale   = 300;
-cfg.figure      = 'gcf';
-cfg.xlim = [30 90];
-cfg.zlim = 'maxabs';
-cfg.marker      = 'on';
-cfg.colormap = '*RdBu';
-cfg.colorbartext = 'Power [dB]';
+allchannels = cfg.layout.label;
+cfg.channel = allchannels(1:end-2);
+cfg.channel = cfg.channel(~strcmp(cfg.channel, 'M2'));
+cfg.channel = cfg.channel(~strcmp(cfg.channel, 'M1'));
+cfg.highlight = 'on';
+cfg.highlightchannel = channels;
+cfg.highlightsymbol = '.';
+cfg.highlightsize = 5;
+cfg.marker = 'off';
+cfg.comment = 'no';
+cmap = flipud(cbrewer('div', 'RdBu', 64));
+cfg.colormap = cmap;
+cfg.gridscale = 300;
+cfg.ylim = [30 90];
+cb = colorbar;
+set(cb, 'FontSize', 20);
+ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
 for subj = 1:length(subjects)
-    % Prepare data for HC, LC, and Difference
-    pow_hc_subj = pow_hc{subj};
-    pow_lc_subj = pow_lc{subj};
-    pow_diff_subj = pow_hc_subj;
-    pow_diff_subj.powspctrm = pow_hc_subj.powspctrm - pow_lc_subj.powspctrm;
+    % Prepare data for subj
+    pow25_subj  = pow25{subj};
+    pow50_subj  = pow50{subj};
+    pow75_subj  = pow75{subj};
+    pow100_subj = pow100{subj};
 
-    % Set up figure with adjusted layout and style
+    % Create figure
     figure;
     set(gcf, 'Position', [0, 0, 2000, 800], 'Color', 'w');
+    set(gca, 'Fontsize', 25);
     sgtitle(sprintf('Topographical Maps for Subject %s', subjects{subj}), 'FontSize', 30, 'FontWeight', 'bold');
 
     % High Contrast
@@ -155,7 +180,7 @@ for subj = 1:length(subjects)
     ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
     % Save individual figure
-    saveas(gcf, sprintf('/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_topoplot_subj%s_HC_LC_Diff.png', subjects{subj}));
+    saveas(gcf, sprintf('/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_eeg_topos_subj%s.png', subjects{subj}));
 end
 
 %% Subplot of All Subjects (HC, LC, and Difference)
