@@ -40,7 +40,7 @@ end
 
 %% Compute grand averages
 cfg = [];
-cfg.keepindividual = 'yes';
+%cfg.keepindividual = 'yes';
 
 gapow_c25  = ft_freqgrandaverage(cfg, power_c25{:});
 gapow_c50  = ft_freqgrandaverage(cfg, power_c50{:});
@@ -70,50 +70,70 @@ occ_channels = {};
 pow_label = pow_c25; % Assume similar structure across conditions
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
-    if contains(label, {'O'}) && ~contains(label, {'P'}) || contains(label, {'I'})
+    if contains(label, {'O'}) || contains(label, {'P'}) && ~contains(label, {'T'}) ...
+        && ~contains(label, {'C'}) || contains(label, {'I'})
         occ_channels{end+1} = label;
     end
 end
 channels = occ_channels;
 
-%% Plot GRAND AVERAGE power spectrum BASELINED
-% Plotting should include all conditions (c25, c50, c75, c100)
+%% Plot GRAND AVERAGE power spectrum
 close all;
 figure;
 set(gcf, 'Position', [0, 0, 1000, 2000], 'Color', 'w');
 cfg = [];
 cfg.channel = channels;
 cfg.figure = 'gcf';
-cfg.linewidth = 1;
+cfg.linewidth = 3;
+
+% OPTIONAL: Add extra smoothing to powerspectra
+channels_seb = ismember(gapow_c25_fooof_bl_smooth.label, cfg.channel);
+smoothWin = 10; % Size of smoothing window in frequency bins
+% gapow_c25_fooof_bl_smooth_extra  = gapow_c25_fooof_bl_smooth;
+% gapow_c50_fooof_bl_smooth_extra  = gapow_c50_fooof_bl_smooth;
+% gapow_c75_fooof_bl_smooth_extra  = gapow_c75_fooof_bl_smooth;
+% gapow_c100_fooof_bl_smooth_extra = gapow_c100_fooof_bl_smooth;
+%  % Moving Window
+% gapow_c25_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c25_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
+% gapow_c50_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c50_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
+% gapow_c75_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c75_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
+% gapow_c100_fooof_bl_smooth_extra.powspctrm(channels_seb, :) = movmean(gapow_c100_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
+%  % Gaussian Kernel
+% gapow_c25_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = smoothdata(gapow_c25_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+% gapow_c50_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = smoothdata(gapow_c50_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+% gapow_c75_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = smoothdata(gapow_c75_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+% gapow_c100_fooof_bl_smooth_extra.powspctrm(channels_seb, :) = smoothdata(gapow_c100_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
 
 % Plot for all contrasts
-ft_singleplotER(cfg, gapow_c25_fooof_bl_smooth, gapow_c50_fooof_bl_smooth, gapow_c75_fooof_bl_smooth, gapow_c100_fooof_bl_smooth);
+ft_singleplotER(cfg, gapow_c25_fooof_bl_smooth_extra, gapow_c50_fooof_bl_smooth_extra, gapow_c75_fooof_bl_smooth_extra, gapow_c100_fooof_bl_smooth_extra);
 hold on;
 
 % Add shaded error bars for each condition
-conditions = {gapow_c25_fooof_bl_smooth, gapow_c50_fooof_bl_smooth, gapow_c75_fooof_bl_smooth, gapow_c100_fooof_bl_smooth};
+conditions = {gapow_c25_fooof_bl_smooth_extra, gapow_c50_fooof_bl_smooth_extra, gapow_c75_fooof_bl_smooth_extra, gapow_c100_fooof_bl_smooth_extra};
 col_indices = [1, 2, 3, 4];
 for i = 1:4
     curr_cond = conditions{i};
-    channels_seb = ismember(curr_cond.label, cfg.channel);
+    lp     = {'-','Color', colors(col_indices(i),:)};
     seb = shadedErrorBar(curr_cond.freq, ...
         mean(curr_cond.powspctrm(channels_seb, :), 1), ...
         std(curr_cond.powspctrm(channels_seb, :)) / sqrt(size(curr_cond.powspctrm(channels_seb, :), 1)), ...
-        {'-'}, 0);
+        'lineProps', lp);
+    h(i) = seb.mainLine;
     seb.mainLine.Color = colors(col_indices(i), :);
     seb.patch.FaceColor = colors(col_indices(i), :);
     set(seb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(col_indices(i), :));
-    set(seb.patch, 'FaceAlpha', 0.5);
+    set(seb.patch, 'FaceAlpha', 0.35);
 end
 
 % Adjust plot aesthetics
 yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
 set(gcf, 'color', 'w');
 set(gca, 'FontSize', 20);
+set(gca, "YLim", [-0.035 0.035])
 xlim([30 90])
 xlabel('Frequency [Hz]', 'FontSize', 30);
 ylabel('Power [dB]', 'FontSize', 30);
-legend({'c25', 'c50', 'c75', 'c100'}, 'FontName', 'Arial', 'FontSize', 25);
+legend(h, {'c25','c50','c75','c100'}, 'FontName','Arial','FontSize',25);
 title('Grand Average Power Spectrum', 'FontSize', 40);
 hold off;
 
@@ -121,91 +141,80 @@ hold off;
 if analysis_period == 1
     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_baselined_300.png');
 else
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_baselined.png');
+    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_fooof_bl_smooth.png');
 end
-
-
-
-
-
-
-
-
-
-
-
 
 %% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
 % Percentage change formula: ((stimulus - baseline) / baseline) * 100
-percent_change_LOW = gapow_lc;
-percent_change_HIGH = gapow_hc;
-percent_change_LOW.powspctrm = ((gapow_lc.powspctrm - gapow_lc_baseline_period.powspctrm) ./ gapow_lc_baseline_period.powspctrm) * 100;
-percent_change_HIGH.powspctrm = ((gapow_hc.powspctrm - gapow_hc_baseline_period.powspctrm) ./ gapow_hc_baseline_period.powspctrm) * 100;
-
-close all;
-figure;
-set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
-cfg = [];
-cfg.channel = channels;
-cfg.figure = 'gcf';
-cfg.linewidth = 1;
-
-% Plot for low and high contrast
-ft_singleplotER(cfg, percent_change_LOW, percent_change_HIGH);
-hold on;
-
-% Add shaded error bars
-channels_seb = ismember(percent_change_LOW.label, cfg.channel);
-lceb = shadedErrorBar(percent_change_LOW.freq, mean(percent_change_LOW.powspctrm(channels_seb, :), 1), std(percent_change_LOW.powspctrm(channels_seb, :))/sqrt(size(percent_change_LOW.powspctrm(channels_seb, :), 1)), {'-'}, 0);
-hceb = shadedErrorBar(percent_change_HIGH.freq, mean(percent_change_HIGH.powspctrm(channels_seb, :), 1), std(percent_change_HIGH.powspctrm(channels_seb, :))/sqrt(size(percent_change_HIGH.powspctrm(channels_seb, :), 1)), {'-'}, 0);
-lceb.mainLine.Color = colors(1, :);
-hceb.mainLine.Color = colors(2, :);
-lceb.patch.FaceColor = colors(1, :);
-hceb.patch.FaceColor = colors(2, :);
-set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
-set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
-set(lceb.edge(1), 'Color', colors(1, :));
-set(lceb.edge(2), 'Color', colors(1, :));
-set(hceb.edge(1), 'Color', colors(2, :));
-set(hceb.edge(2), 'Color', colors(2, :));
-set(lceb.patch, 'FaceAlpha', 0.5);
-set(hceb.patch, 'FaceAlpha', 0.5);
-
-% Find GA gamma peak for LOW contrast
-lc_gamma_power = mean(percent_change_LOW.powspctrm(channels_seb, freq_idx), 1);
-[peaks, locs] = findpeaks(lc_gamma_power, percent_change_LOW.freq(freq_idx));
-[lc_pow, peak_idx] = max(peaks);
-lc_freq = locs(peak_idx);
-
-% Find GA gamma peak for HIGH contrast
-hc_gamma_power = mean(percent_change_HIGH.powspctrm(channels_seb, freq_idx), 1);
-[peaks, locs] = findpeaks(hc_gamma_power, percent_change_HIGH.freq(freq_idx));
-[hc_pow, peak_idx] = max(peaks);
-hc_freq = locs(peak_idx);
-
-% Adjust plot aesthetics
-yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
-plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
-plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
-plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
-plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
-set(gcf,'color','w');
-set(gca,'Fontsize',20);
-max_spctrm = max(lc_pow, hc_pow);
-ylim([-max_spctrm*1.25 max_spctrm*1.25]);
-xlim([30 90]) % Gamma frequency range
-xlabel('Frequency [Hz]');
-ylabel('Percentage Change [%]');
-legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
-title('Percentage Change Power Spectrum', 'FontSize', 30);
-hold off;
-
-% Save the plot
-if analysis_period == 1
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_percentage_300.png');
-else
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
-end
+% percent_change_LOW = gapow_lc;
+% percent_change_HIGH = gapow_hc;
+% percent_change_LOW.powspctrm = ((gapow_lc.powspctrm - gapow_lc_baseline_period.powspctrm) ./ gapow_lc_baseline_period.powspctrm) * 100;
+% percent_change_HIGH.powspctrm = ((gapow_hc.powspctrm - gapow_hc_baseline_period.powspctrm) ./ gapow_hc_baseline_period.powspctrm) * 100;
+% 
+% close all;
+% figure;
+% set(gcf, 'Position', [0, 0, 800, 1600], 'Color', 'w');
+% cfg = [];
+% cfg.channel = channels;
+% cfg.figure = 'gcf';
+% cfg.linewidth = 1;
+% 
+% % Plot for low and high contrast
+% ft_singleplotER(cfg, percent_change_LOW, percent_change_HIGH);
+% hold on;
+% 
+% % Add shaded error bars
+% channels_seb = ismember(percent_change_LOW.label, cfg.channel);
+% lceb = shadedErrorBar(percent_change_LOW.freq, mean(percent_change_LOW.powspctrm(channels_seb, :), 1), std(percent_change_LOW.powspctrm(channels_seb, :))/sqrt(size(percent_change_LOW.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+% hceb = shadedErrorBar(percent_change_HIGH.freq, mean(percent_change_HIGH.powspctrm(channels_seb, :), 1), std(percent_change_HIGH.powspctrm(channels_seb, :))/sqrt(size(percent_change_HIGH.powspctrm(channels_seb, :), 1)), {'-'}, 0);
+% lceb.mainLine.Color = colors(1, :);
+% hceb.mainLine.Color = colors(2, :);
+% lceb.patch.FaceColor = colors(1, :);
+% hceb.patch.FaceColor = colors(2, :);
+% set(lceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(1, :));
+% set(hceb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(2, :));
+% set(lceb.edge(1), 'Color', colors(1, :));
+% set(lceb.edge(2), 'Color', colors(1, :));
+% set(hceb.edge(1), 'Color', colors(2, :));
+% set(hceb.edge(2), 'Color', colors(2, :));
+% set(lceb.patch, 'FaceAlpha', 0.5);
+% set(hceb.patch, 'FaceAlpha', 0.5);
+% 
+% % Find GA gamma peak for LOW contrast
+% lc_gamma_power = mean(percent_change_LOW.powspctrm(channels_seb, freq_idx), 1);
+% [peaks, locs] = findpeaks(lc_gamma_power, percent_change_LOW.freq(freq_idx));
+% [lc_pow, peak_idx] = max(peaks);
+% lc_freq = locs(peak_idx);
+% 
+% % Find GA gamma peak for HIGH contrast
+% hc_gamma_power = mean(percent_change_HIGH.powspctrm(channels_seb, freq_idx), 1);
+% [peaks, locs] = findpeaks(hc_gamma_power, percent_change_HIGH.freq(freq_idx));
+% [hc_pow, peak_idx] = max(peaks);
+% hc_freq = locs(peak_idx);
+% 
+% % Adjust plot aesthetics
+% yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
+% plot([0 lc_freq], [lc_pow lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+% plot([lc_freq lc_freq], [-100 lc_pow], '--', 'Color', colors(1, :), 'LineWidth', 2);
+% plot([0 hc_freq], [hc_pow hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
+% plot([hc_freq hc_freq], [-100 hc_pow], '--', 'Color', colors(2, :), 'LineWidth', 2);
+% set(gcf,'color','w');
+% set(gca,'Fontsize',20);
+% max_spctrm = max(lc_pow, hc_pow);
+% ylim([-max_spctrm*1.25 max_spctrm*1.25]);
+% xlim([30 90]) % Gamma frequency range
+% xlabel('Frequency [Hz]');
+% ylabel('Percentage Change [%]');
+% legend([lceb.mainLine, hceb.mainLine], {'Low Contrast', 'High Contrast'}, 'FontName', 'Arial', 'FontSize', 20);
+% title('Percentage Change Power Spectrum', 'FontSize', 30);
+% hold off;
+% 
+% % Save the plot
+% if analysis_period == 1
+%     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_percentage_300.png');
+% else
+%     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
+% end
 
 %% Plot INDIVIDUAL power spectra BASELINED
 output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
