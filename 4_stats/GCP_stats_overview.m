@@ -33,15 +33,15 @@ for i = 1:length(variables)
 
     % Set axis limits
     ylim([min(data.(variables{i})) max(data.(variables{i}))])
-    xlim([0.5 2.5])
+    xlim([0.5 4.5])
 
     % Create boxplot 
-    boxplot(data.(variables{i}), data.Condition, 'Labels', {'Low Contrast', 'High Contrast'}, 'Colors', 'k');
+    boxplot(data.(variables{i}), data.Condition, 'Labels', {'25% Contrast', '50% Contrast', '75% Contrast', '100% Contrast'}, 'Colors', 'k');
     set(gca, 'FontSize', 30); 
 
     % Define jitter
-    jitterAmount = 0.1; % Adjust jitter if needed
-    for cond = 1:2
+    jitterAmount = 0.05;
+    for cond = 1:4
         cond_data = data(data.Condition == cond, :);
         x_jittered{cond} = cond_data.Condition + (rand(size(cond_data.(variables{i}))) - 0.5) * jitterAmount;
     end
@@ -51,7 +51,7 @@ for i = 1:length(variables)
         % Extract data for this subject
         subj_data = data(data.ID == subjects(subj), :);
 
-        if height(subj_data) == 2 % Ensure the subject has data for both conditions
+        if height(subj_data) == 2
             x = [x_jittered{1}'; x_jittered{2}'];
             x = x(:, subj);
             y = subj_data.(variables{i});
@@ -59,13 +59,28 @@ for i = 1:length(variables)
         end
     end
 
+    % Connect points for each subject
+    for subj = 1:length(subjects)
+        subj_data = data(data.ID == subjects(subj), :);
+        if height(subj_data) == 4  % ensure this subject has all four conditions
+            % Compute jittered x-positions for this subject
+            x = subj_data.Condition + (rand(size(subj_data.Condition)) - 0.5) * jitterAmount;
+            y = subj_data.(variables{i});
+            % Sort by condition so lines go in order
+            [x_sorted, sort_idx] = sort(x);
+            y_sorted = y(sort_idx);
+            % Plot thick, semi-transparent grey line with circle markers
+            h = plot(x_sorted, y_sorted, '-', 'Color', [0.5, 0.5, 0.5], 'LineWidth', 3);
+            h.Color(4) = 0.2;   % set the line1s transparency after plotting
+        end
+    end
+
     % Scatter individual data points
-    for cond = 1:2 % Two conditions (Low Contrast = 1, High Contrast = 2)
+    for cond = 1:4
         cond_data = data(data.Condition == cond, :);
         scatter(x_jittered{cond}, cond_data.(variables{i}), 300, 'MarkerEdgeColor', 'k', ...
             'MarkerFaceColor', colors(cond, :), 'jitter', 'off', 'SizeData', 300);
     end
-    
 
     % Add title and labels
     title(variables{i}, "FontSize", 40);
