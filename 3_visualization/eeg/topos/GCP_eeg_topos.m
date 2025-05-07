@@ -35,6 +35,7 @@ for i = 1:length(pow_label.label)
     end
 end
 channels = occ_channels;
+%channels = [{'Pz'}, {'P1'}, {'P2'}, {'P3'}, {'P4'}, {'P5'}, {'P6'}, {'P7'}, {'P8'}, {'PPO1'}, {'PPO2'}, {'PPO5h'}, {'PPO6h'} {'PO3'}, {'PO4'}, {'PO7'}, {'PO8'}, {'POz'}, {'POO3h'}, {'POO4h'}]
 
 %% Plot GRAND AVERAGE topoplots
 close all
@@ -80,6 +81,7 @@ max_spctrm = max([
     max(abs(avgscptrm50), [], 'all'), ...
     max(abs(avgscptrm75), [], 'all'), ...
     max(abs(avgscptrm100), [], 'all')]);
+max_spctrm = 0.03
 cfg.zlim = double([-max_spctrm * 0.9, max_spctrm * 0.9]);
 
 % POW25
