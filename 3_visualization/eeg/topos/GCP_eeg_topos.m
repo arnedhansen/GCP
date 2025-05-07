@@ -41,7 +41,7 @@ close all
 
 % Create figure
 figure;
-set(gcf, 'Position', [0, 0, 2000, 800], 'Color', 'w');
+set(gcf, 'Position', [0, 0, 1200, 1000], 'Color', 'w');
 set(gca, 'Fontsize', 25);
 sgtitle('Topographical Maps 300 ms - 2000 ms after Stimulus Presentation (30 - 90 Hz)', 'FontSize', 30, 'FontWeight', 'bold');
 
