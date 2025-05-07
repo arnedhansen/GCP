@@ -76,6 +76,8 @@ for i = 1:length(pow_label.label)
     end
 end
 channels = occ_channels;
+% Test channels
+%channels = [{'Pz'}, {'P1'}, {'P2'}, {'P3'}, {'P4'}, {'PPO1'}, {'PPO2'}, {'PO3'}, {'PO4'}, {'POz'}];
 
 %% Plot GRAND AVERAGE power spectrum
 close all;
@@ -129,7 +131,7 @@ end
 yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
 set(gcf, 'color', 'w');
 set(gca, 'FontSize', 20);
-set(gca, "YLim", [-0.04 0.04])
+set(gca, "YLim", [-0.035 0.035])
 xlim([30 90])
 xlabel('Frequency [Hz]', 'FontSize', 30);
 ylabel('Power [dB]', 'FontSize', 30);
@@ -327,6 +329,14 @@ for subj = 1:num_subs
     pow_c75_subj  = power_c75_fooof_bl_smooth{subj};
     pow_c100_subj = power_c100_fooof_bl_smooth{subj};
 
+    % OPTIONAL: Add extra smoothing with moving window
+    channels_seb = ismember(pow_c25_subj.label, cfg.channel);
+    smoothWin = 10; % Size of smoothing window in frequency bins    smoothWin = 10
+    pow_c25_subj.powspctrm(channels_seb, :)  = movmean(pow_c25_subj.powspctrm(channels_seb, :), smoothWin, 2);
+    pow_c50_subj.powspctrm(channels_seb, :)  = movmean(pow_c50_subj.powspctrm(channels_seb, :), smoothWin, 2);
+    pow_c75_subj.powspctrm(channels_seb, :)  = movmean(pow_c75_subj.powspctrm(channels_seb, :), smoothWin, 2);
+    pow_c100_subj.powspctrm(channels_seb, :) = movmean(pow_c100_subj.powspctrm(channels_seb, :), smoothWin, 2);
+
     cfg = [];
     cfg.channel = channels;
     cfg.figure = 'gcf';
@@ -378,11 +388,6 @@ for subj = 1:num_subs
     end
 
     max_spctrm = max(peak_powers);
-    % if subj == 4
-    %     max_spctrm = 0.55
-    % elseif subj == 6
-    %     max_spctrm = 0.5
-    % end
     set(gca, "YLim", [-max_spctrm*1.25 max_spctrm*1.25])
     xlim([30 90]);
     xticks(30:10:90);
@@ -398,8 +403,8 @@ end
 
 % Save the combined figure with all subplots
 if analysis_period == 1
-    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined_300.png');
+    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_300.png');
 else
-    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot_baselined.png');
+    save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot.png');
 end
 saveas(gcf, save_path);
