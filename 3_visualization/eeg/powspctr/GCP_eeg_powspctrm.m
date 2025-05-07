@@ -77,7 +77,7 @@ for i = 1:length(pow_label.label)
 end
 channels = occ_channels;
 % Test channels
-%channels = [{'Pz'}, {'P1'}, {'P2'}, {'P3'}, {'P4'}, {'PPO1'}, {'PPO2'}, {'PO3'}, {'PO4'}, {'POz'}];
+%channels = [{'Pz'}, {'P1'}, {'P2'}, {'P3'}, {'P4'}, {'P5'}, {'P6'}, {'PPO1'}, {'PPO2'}, {'PPO5h'}, {'PPO6h'} {'PO3'}, {'PO4'}, {'POz'}]
 
 %% Plot GRAND AVERAGE power spectrum
 close all;
