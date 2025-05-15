@@ -15,7 +15,7 @@ startup
 
 %% Extract TFR
 % Read data, segment and convert to FieldTrip data structure
-for subj = 2 : length(subjects)
+for subj = 1 : length(subjects)
     datapath = strcat(path, subjects{subj}, '/eeg');
     %if ~isfile(strcat([datapath, '/data_tfr.mat'])) % only new data
     cd(datapath)

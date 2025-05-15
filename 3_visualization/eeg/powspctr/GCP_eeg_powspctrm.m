@@ -71,7 +71,7 @@ pow_label = pow_c25; % Assume similar structure across conditions
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
     if contains(label, {'O'}) || contains(label, {'P'}) && ~contains(label, {'T'}) ...
-        && ~contains(label, {'C'}) || contains(label, {'I'})
+        && ~contains(label, {'C'}) || contains(label, {'I'}) %|| contains(label, {'CPP'}) ...
         occ_channels{end+1} = label;
     end
 end
@@ -86,15 +86,11 @@ set(gcf, 'Position', [0, 0, 1000, 2000], 'Color', 'w');
 cfg = [];
 cfg.channel = channels;
 cfg.figure = 'gcf';
-cfg.linewidth = 3;
+cfg.linewidth = 4;
+channels_seb = ismember(gapow_c25_fooof_bl_smooth.label, cfg.channel);
 
 % OPTIONAL: Add extra smoothing to powerspectra
-channels_seb = ismember(gapow_c25_fooof_bl_smooth.label, cfg.channel);
-smoothWin = 10; % Size of smoothing window in frequency bins
-gapow_c25_fooof_bl_smooth_extra  = gapow_c25_fooof_bl_smooth;
-gapow_c50_fooof_bl_smooth_extra  = gapow_c50_fooof_bl_smooth;
-gapow_c75_fooof_bl_smooth_extra  = gapow_c75_fooof_bl_smooth;
-gapow_c100_fooof_bl_smooth_extra = gapow_c100_fooof_bl_smooth;
+% smoothWin = 10; % Size of smoothing window in frequency bins
 %  % Moving Window
 % gapow_c25_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c25_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
 % gapow_c50_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c50_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
@@ -107,11 +103,11 @@ gapow_c100_fooof_bl_smooth_extra = gapow_c100_fooof_bl_smooth;
 % gapow_c100_fooof_bl_smooth_extra.powspctrm(channels_seb, :) = smoothdata(gapow_c100_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
 
 % Plot for all contrasts
-ft_singleplotER(cfg, gapow_c25_fooof_bl_smooth_extra, gapow_c50_fooof_bl_smooth_extra, gapow_c75_fooof_bl_smooth_extra, gapow_c100_fooof_bl_smooth_extra);
+ft_singleplotER(cfg, gapow_c25_fooof_bl_smooth, gapow_c50_fooof_bl_smooth, gapow_c75_fooof_bl_smooth, gapow_c100_fooof_bl_smooth);
 hold on;
 
 % Add shaded error bars for each condition
-conditions = {gapow_c25_fooof_bl_smooth_extra, gapow_c50_fooof_bl_smooth_extra, gapow_c75_fooof_bl_smooth_extra, gapow_c100_fooof_bl_smooth_extra};
+conditions = {gapow_c25_fooof_bl_smooth, gapow_c50_fooof_bl_smooth, gapow_c75_fooof_bl_smooth, gapow_c100_fooof_bl_smooth};
 col_indices = [1, 2, 3, 4];
 for i = 1:4
     curr_cond = conditions{i};

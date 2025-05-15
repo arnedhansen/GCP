@@ -14,10 +14,6 @@ variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'GazeSTD', 'MSRate', '
 save_names = {'acc', 'rt', 'gazedev', 'gazestd', 'ms', 'blink', 'fix', 'sacc', 'pow', 'freq'};
 colors = color_def('GCP');
 
-% Split the data by contrast condition
-low_contrast = data(data.Condition == 1, :);
-high_contrast = data(data.Condition == 2, :);
-
 %% BOXPLOTS for each variable
 y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Gaze STD [px]', 'Microsaccade Rate [ms/s]', 'Blinks', 'Fixations', 'Saccades', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
 
@@ -25,7 +21,7 @@ y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'G
 subjects = unique(data.ID);
 font_size = 20;
 
-for i = 1:length(variables)
+for i = 5%%%1:length(variables)
     close all
     figure;
     set(gcf, 'Position', [100, 200, 800, 800], 'Color', 'w');
