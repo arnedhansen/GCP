@@ -220,7 +220,8 @@ for subj = 1:length(subjects)
     save gaze_dev c25_gdev c50_gdev c75_gdev c100_gdev
     save gaze_std c25_gSDx c25_gSDy c50_gSDx c50_gSDy c75_gSDx c75_gSDy c100_gSDx c100_gSDy
     save pupil_size c25_pups c50_pups c75_pups c100_pups
-    save ms_rate c25_msrate c50_msrate c75_msrate c100_msrate
+    save ms_rate c25_msrate c50_msrate c75_msrate c100_msrate ...
+         ms_data_c25 ms_data_c50 ms_data_c75 ms_data_c100
     clc
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
 

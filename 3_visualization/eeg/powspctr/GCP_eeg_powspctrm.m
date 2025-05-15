@@ -336,7 +336,7 @@ for subj = 1:num_subs
     cfg = [];
     cfg.channel = channels;
     cfg.figure = 'gcf';
-    cfg.linewidth = 2;
+    cfg.linewidth = 3;
 
     % Plot power spectrum for all four conditions
     ft_singleplotER(cfg, pow_c25_subj, pow_c50_subj, pow_c75_subj, pow_c100_subj);
