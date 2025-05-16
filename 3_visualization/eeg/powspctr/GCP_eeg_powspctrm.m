@@ -38,7 +38,7 @@ for subj = 1:length(subjects)
     power_c100_fooof_bl_smooth{subj} = pow_c100_fooof_bl_smooth;
 end
 
-%% Compute grand averages
+% Compute grand averages
 cfg = [];
 %cfg.keepindividual = 'yes';
 
@@ -120,7 +120,7 @@ for i = 1:4
     seb.mainLine.Color = colors(col_indices(i), :);
     seb.patch.FaceColor = colors(col_indices(i), :);
     set(seb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(col_indices(i), :));
-    set(seb.patch, 'FaceAlpha', 0.35);
+    set(seb.patch, 'FaceAlpha', 0.25);
 end
 
 % Adjust plot aesthetics
@@ -129,9 +129,10 @@ set(gcf, 'color', 'w');
 set(gca, 'FontSize', 20);
 set(gca, "YLim", [-0.035 0.035])
 xlim([30 90])
+ylim([-0.04 0.04])
 xlabel('Frequency [Hz]', 'FontSize', 30);
 ylabel('Power [dB]', 'FontSize', 30);
-legend(h, {'c25','c50','c75','c100'}, 'FontName','Arial','FontSize',25);
+legend(h, {' 25% Contrast',' 50% Contrast',' 75% Contrast','100% Contrast'}, 'FontName','Arial','FontSize',25);
 title('Grand Average Power Spectrum', 'FontSize', 40);
 hold off;
 

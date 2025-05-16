@@ -44,11 +44,12 @@ close all
 figure;
 set(gcf, 'Position', [0, 0, 1200, 1000], 'Color', 'w');
 set(gca, 'Fontsize', 25);
-sgtitle('Topographical Maps 300 ms - 2000 ms after Stimulus Presentation (30 - 90 Hz)', 'FontSize', 30, 'FontWeight', 'bold');
+%sgtitle('Topographical Maps 300 ms - 2000 ms after Stimulus Presentation (30 - 90 Hz)', 'FontSize', 30, 'FontWeight', 'bold');
+sgtitle('Grand Average Topographical Maps', 'FontSize', 30, 'FontWeight', 'bold')
 
 % Common configuration
 cfg = [];
-cfg.figure      = 'gcf';
+cfg.figure = 'gcf';
 load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
 cfg.layout = layANThead;
 allchannels = cfg.layout.label;
@@ -81,7 +82,6 @@ max_spctrm = max([
     max(abs(avgscptrm50), [], 'all'), ...
     max(abs(avgscptrm75), [], 'all'), ...
     max(abs(avgscptrm100), [], 'all')]);
-max_spctrm = 0.03
 cfg.zlim = double([-max_spctrm * 0.9, max_spctrm * 0.9]);
 
 % POW25
@@ -142,6 +142,7 @@ cfg.ylim = [30 90];
 
 for subj = 1:length(subjects)
     close all
+    
     % Prepare data for subj
     pow25_subj  = pow25{subj};
     pow50_subj  = pow50{subj};
