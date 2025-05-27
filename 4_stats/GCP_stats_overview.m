@@ -21,7 +21,7 @@ y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'G
 subjects = unique(data.ID);
 font_size = 20;
 
-for i = 5%%%%%1:length(variables)
+for i = 1:length(variables)
     close all
     figure;
     set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w');
