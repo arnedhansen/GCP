@@ -14,220 +14,273 @@ clear
 clc
 close all
 path = '/Volumes/methlab/Students/Arne/GCP/data/features/';
-dirs = dir(path);
-folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
+dirs  = dir(path);
+folders = dirs([dirs.isdir] & ~ismember({dirs.name},{'.','..'}));
 subjects = {folders.name};
-gaze_data = struct('ID', {}, 'Condition', {}, 'GazeDeviation', {}, ...
-    'GazeStdX', {}, 'GazeStdY', {}, 'PupilSize', {}, 'MSRate', {}, ...
-    'Blinks', {}, 'Fixations', {}, 'Saccades', {});
 
-%% Load all eye movements
-for subj = 1:length(subjects)
-    datapath = strcat(path, subjects{subj}, '/gaze');
-    load([datapath, filesep, 'dataET'])
+% preallocate if you still want an across‐all‐subjects matrix of raw data
+gaze_data = struct('ID',{},'Condition',{},'GazeDeviation',{},...
+                   'GazeStdX',{},'GazeStdY',{},'PupilSize',{},...
+                   'MSRate',{},'Blinks',{},'Fixations',{},'Saccades',{});
 
-    for conds = {'c25', 'c50', 'c75', 'c100'}
-        if strcmp(conds, 'c25')
-            dataET = dataET_c25;
-        elseif strcmp(conds, 'c50')
-            dataET = dataET_c50;
-        elseif strcmp(conds, 'c75')
-            dataET = dataET_c75;
-        elseif strcmp(conds, 'c100')
-            dataET = dataET_c100;
+baseline_period = [-1.5, -0.25];
+analysis_period = [ 0.3,  2   ];
+win_size        = 50;    % blink‐removal window (samples)
+fsample         = 500;   % eye‐tracker sampling rate
+
+for subj = 1:numel(subjects)
+    
+    % where the preprocessed data live
+    datapath = fullfile(path, subjects{subj}, 'gaze');
+    load(fullfile(datapath,'dataET'));  %# loads dataET_c25, dataET_c50, …
+    
+    % loop over conditions
+    for conds = {'c25','c50','c75','c100'}
+        cond = conds{1};
+        
+        % pick the right dataET
+        switch cond
+          case 'c25', dataET = dataET_c25;
+          case 'c50', dataET = dataET_c50;
+          case 'c75', dataET = dataET_c75;
+          case 'c100', dataET = dataET_c100;
         end
-
-        %% Initialize arrays
-        subject_id = [];
-        trial_num = [];
-        num_trials = length(dataET.trialinfo);
-        condition = [];
-        gazeDev = [];
-        gazeSDx = [];
-        gazeSDy = [];
-        pupilSize = [];
-        microsaccadeRate = [];
-
-        %% Get trial-by-trial gaze data
-        for trl = 1:length(dataET.trialinfo)
-            data = dataET.trial{trl};
-
-            %% Choose data 300ms after stimulus presentation to exclude evoked activity
-            analysis_period = [0.3 2];
-            time_vector = dataET.time{trl};
-            analysis_idx = (time_vector >= analysis_period(1)) & (time_vector <= analysis_period(2));
-            data = data(:, analysis_idx);
-
-            %% Filter out data points outside the screen boundaries
-            valid_data_indices = data(1, :) >= 0 & data(1, :) <= 800 & data(2, :) >= 0 & data(2, :) <= 600;
-            valid_data = data(1:3, valid_data_indices);
-            data = valid_data;
-            data(2, :) = 600 - data(2, :); % Invert Y-axis
-
-            %% Remove blinks with a window of 100ms (= 50 samples/timepoints)
-            win_size = 50;
-            data = remove_blinks(data, win_size);
-
-            %% Extract gaze data and pupil size
-            gaze_x{subj, trl} = data(1, :);
-            gaze_y{subj, trl} = data(2, :);
-            pupil_size{subj, trl} = mean(data(3, :), 'omitnan') / 1000;
-            pups = pupil_size{subj, trl};
-
-            % Save raw gaze data
-            if strcmp(conds, 'c25')
-                gaze_x_c25{subj, trl} = gaze_x{subj, trl};
-                gaze_y_c25{subj, trl} = gaze_y{subj, trl};
-            elseif strcmp(conds, 'c50')
-                gaze_x_c50{subj, trl} = gaze_x{subj, trl};
-                gaze_y_c50{subj, trl} = gaze_y{subj, trl};
-            elseif strcmp(conds, 'c75')
-                gaze_x_c75{subj, trl} = gaze_x{subj, trl};
-                gaze_y_c75{subj, trl} = gaze_y{subj, trl};
-            elseif strcmp(conds, 'c100')
-                gaze_x_c100{subj, trl} = gaze_x{subj, trl};
-                gaze_y_c100{subj, trl} = gaze_y{subj, trl};
-            end
-
-            %% Compute gaze deviation as euclidean distances from the center and gaze standard deviation
-            x_coords = gaze_x{subj, trl};
-            y_coords = gaze_y{subj, trl};
-
-            % Calculate Euclidean distances
-            dx = x_coords - 400 - nanmean(x_coords - 400); % Distance from mean (to get rid of impact of gaze shifts)
-            dy = y_coords - 300 - nanmean(y_coords - 300); % Distance from mean (to get rid of impact of gaze shifts)
-            gaze_euclidean_dev = sqrt(dx.^2 + dy.^2);
-
-            % Calculate the mean Euclidean distance
-            mean_euclidean_distance = nanmean(gaze_euclidean_dev);
-            gaze_standard_deviation_x = nanstd(x_coords);
-            gaze_standard_deviation_y = nanstd(y_coords);
-
-            %% Compute microsaccades
-            fsample = 500; % Sample rate of 500 Hz
-            velData = [gaze_x{subj, trl}; gaze_y{subj, trl}]; % Concatenate x and y gaze coordinates to compute the velocity of eye movements in a 2D space
-            trlLength = length(dataET.time{trl});
-            [microsaccade_rate, microsaccade_details] = detect_microsaccades(fsample, velData, trlLength);
-            if strcmp(conds, 'c25')
-                ms_data_c25{trl} = microsaccade_details; % Save trial by trial ms data
-            elseif strcmp(conds, 'c50')
-                ms_data_c50{trl} = microsaccade_details; % Save trial by trial ms data
-            elseif strcmp(conds, 'c75')
-                ms_data_c75{trl} = microsaccade_details; % Save trial by trial ms data
-            elseif strcmp(conds, 'c100')
-                ms_data_c100{trl} = microsaccade_details; % Save trial by trial ms data
-            end
-
-            %% Append data for this trial
-            subject_id = [subject_id; str2num(subjects{subj})];
-            trial_num = [trial_num; trl];
-            condition = [condition; dataET.trialinfo(trl)-60];
-            gazeDev = [gazeDev; mean_euclidean_distance];
-            gazeSDx = [gazeSDx; gaze_standard_deviation_x];
-            gazeSDy = [gazeSDy; gaze_standard_deviation_y];
-            pupilSize = [pupilSize; pups];
-            microsaccadeRate = [microsaccadeRate; microsaccade_rate];
+        
+        % initialise trial‐wise containers
+        subject_id         = [];
+        trial_num          = [];
+        condition          = [];
+        
+        gazeDev            = [];  baselineGazeDev   = [];
+        gazeSDx            = [];  baselineGazeSDx   = [];
+        gazeSDy            = [];  baselineGazeSDy   = [];
+        pupilSize          = [];  baselinePupilSize = [];
+        microsaccadeRate   = [];  baselineMSRate    = [];
+        
+        for trl = 1:numel(dataET.trialinfo)
+            raw    = dataET.trial{trl};
+            tVec   = dataET.time{trl};
+            
+            %% 1) BASELINE WINDOW
+            bl_idx = tVec >= baseline_period(1) & tVec <= baseline_period(2);
+            bl_dat = raw(:,bl_idx);
+            valid  = bl_dat(1,:)>=0 & bl_dat(1,:)<=800 & bl_dat(2,:)>=0 & bl_dat(2,:)<=600;
+            bl_dat = bl_dat(1:3, valid);
+            bl_dat(2,:) = 600 - bl_dat(2,:);      % invert Y
+            bl_dat = remove_blinks(bl_dat, win_size);
+            
+            bl_x = bl_dat(1,:);  bl_y = bl_dat(2,:);
+            dx_bl = bl_x - 400 - nanmean(bl_x-400);
+            dy_bl = bl_y - 300 - nanmean(bl_y-300);
+            baseline_eucdev   = nanmean( sqrt(dx_bl.^2 + dy_bl.^2) );
+            baseline_std_x    = nanstd(bl_x);
+            baseline_std_y    = nanstd(bl_y);
+            baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
+            [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
+            
+            %% 2) ANALYSIS WINDOW
+            an_idx = tVec >= analysis_period(1) & tVec <= analysis_period(2);
+            an_dat = raw(:,an_idx);
+            valid  = an_dat(1,:)>=0 & an_dat(1,:)<=800 & an_dat(2,:)>=0 & an_dat(2,:)<=600;
+            an_dat = an_dat(1:3, valid);
+            an_dat(2,:) = 600 - an_dat(2,:);
+            an_dat = remove_blinks(an_dat, win_size);
+            
+            x = an_dat(1,:);  y = an_dat(2,:);
+            dx = x - 400 - nanmean(x-400);
+            dy = y - 300 - nanmean(y-300);
+            
+            mean_eucdev = nanmean( sqrt(dx.^2 + dy.^2) );
+            std_x       = nanstd(x);
+            std_y       = nanstd(y);
+            pupil       = mean(an_dat(3,:),'omitnan')/1000;
+            [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
+            
+            %% 3) APPEND TO TRIAL‐WISE ARRAYS
+            subject_id(end+1)       = str2double(subjects{subj});
+            trial_num(end+1)        = trl;
+            condition(end+1)        = dataET.trialinfo(trl) - 60;
+            
+            gazeDev(end+1)          = mean_eucdev;
+            baselineGazeDev(end+1)  = baseline_eucdev;
+            
+            gazeSDx(end+1)          = std_x;
+            baselineGazeSDx(end+1)  = baseline_std_x;
+            
+            gazeSDy(end+1)          = std_y;
+            baselineGazeSDy(end+1)  = baseline_std_y;
+            
+            pupilSize(end+1)        = pupil;
+            baselinePupilSize(end+1)= baseline_pupil;
+            
+            microsaccadeRate(end+1) = msrate;
+            baselineMSRate(end+1)    = baseline_msrate;
+        end % trial loop
+        
+        %% 4) SUBJECT‐BY‐CONDITION AVERAGES
+        switch cond
+          case 'c25'
+            c25_gdev      = mean(gazeDev,'omitnan');
+            c25_bl_gdev   = mean(baselineGazeDev,'omitnan');
+            c25_gSDx      = mean(gazeSDx,'omitnan');
+            c25_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
+            c25_gSDy      = mean(gazeSDy,'omitnan');
+            c25_bl_gSDy   = mean(baselineGazeSDy,'omitnan');
+            c25_pups      = mean(pupilSize,'omitnan');
+            c25_bl_pups   = mean(baselinePupilSize,'omitnan');
+            c25_msrate    = mean(microsaccadeRate,'omitnan');
+            c25_bl_msrate = mean(baselineMSRate,'omitnan');
+            
+            c25_pct_gdev    = (c25_gdev    - c25_bl_gdev   ) / c25_bl_gdev   * 100;
+            c25_pct_gSDx    = (c25_gSDx    - c25_bl_gSDx   ) / c25_bl_gSDx   * 100;
+            c25_pct_gSDy    = (c25_gSDy    - c25_bl_gSDy   ) / c25_bl_gSDy   * 100;
+            c25_pct_pups    = (c25_pups    - c25_bl_pups   ) / c25_bl_pups   * 100;
+            c25_pct_msrate  = (c25_msrate  - c25_bl_msrate ) / c25_bl_msrate * 100;
+            
+            subj_data_gaze_trial_c25      = struct( ...
+                'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
+                'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'PctGazeDeviation',   (gazeDev./baselineGazeDev-1)*100, ...
+                'GazeStdX',gazeSDx,         'BaselineGazeStdX',baselineGazeSDx,         'PctGazeStdX',         (gazeSDx./baselineGazeSDx-1)*100, ...
+                'GazeStdY',gazeSDy,         'BaselineGazeStdY',baselineGazeSDy,         'PctGazeStdY',         (gazeSDy./baselineGazeSDy-1)*100, ...
+                'PupilSize',pupilSize,      'BaselinePupilSize',baselinePupilSize,      'PctPupilSize',        (pupilSize./baselinePupilSize-1)*100, ...
+                'MSRate',microsaccadeRate,  'BaselineMSRate',baselineMSRate,            'PctMSRate',           (microsaccadeRate./baselineMSRate-1)*100);
+            
+          case 'c50'
+            % … exactly the same pattern for c50 …
+            c50_gdev      = mean(gazeDev,'omitnan');
+            c50_bl_gdev   = mean(baselineGazeDev,'omitnan');
+            c50_gSDx      = mean(gazeSDx,'omitnan');
+            c50_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
+            c50_gSDy      = mean(gazeSDy,'omitnan');
+            c50_bl_gSDy   = mean(baselineGazeSDy,'omitnan');
+            c50_pups      = mean(pupilSize,'omitnan');
+            c50_bl_pups   = mean(baselinePupilSize,'omitnan');
+            c50_msrate    = mean(microsaccadeRate,'omitnan');
+            c50_bl_msrate = mean(baselineMSRate,'omitnan');
+            
+            c50_pct_gdev    = (c50_gdev    - c50_bl_gdev   ) / c50_bl_gdev   * 100;
+            c50_pct_gSDx    = (c50_gSDx    - c50_bl_gSDx   ) / c50_bl_gSDx   * 100;
+            c50_pct_gSDy    = (c50_gSDy    - c50_bl_gSDy   ) / c50_bl_gSDy   * 100;
+            c50_pct_pups    = (c50_pups    - c50_bl_pups   ) / c50_bl_pups   * 100;
+            c50_pct_msrate  = (c50_msrate  - c50_bl_msrate ) / c50_bl_msrate * 100;
+            
+            subj_data_gaze_trial_c50 = struct( ...
+                'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
+                'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'PctGazeDeviation',(gazeDev./baselineGazeDev-1)*100, ...
+                'GazeStdX',gazeSDx,         'BaselineGazeStdX',baselineGazeSDx,         'PctGazeStdX',        (gazeSDx./baselineGazeSDx-1)*100, ...
+                'GazeStdY',gazeSDy,         'BaselineGazeStdY',baselineGazeSDy,         'PctGazeStdY',        (gazeSDy./baselineGazeSDy-1)*100, ...
+                'PupilSize',pupilSize,      'BaselinePupilSize',baselinePupilSize,      'PctPupilSize',       (pupilSize./baselinePupilSize-1)*100, ...
+                'MSRate',microsaccadeRate,  'BaselineMSRate',baselineMSRate,            'PctMSRate',          (microsaccadeRate./baselineMSRate-1)*100);
+            
+          case 'c75'
+            % … same again …
+            c75_gdev      = mean(gazeDev,'omitnan');
+            c75_bl_gdev   = mean(baselineGazeDev,'omitnan');
+            c75_gSDx      = mean(gazeSDx,'omitnan');
+            c75_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
+            c75_gSDy      = mean(gazeSDy,'omitnan');
+            c75_bl_gSDy   = mean(baselineGazeSDy,'omitnan');
+            c75_pups      = mean(pupilSize,'omitnan');
+            c75_bl_pups   = mean(baselinePupilSize,'omitnan');
+            c75_msrate    = mean(microsaccadeRate,'omitnan');
+            c75_bl_msrate = mean(baselineMSRate,'omitnan');
+            
+            c75_pct_gdev    = (c75_gdev    - c75_bl_gdev   ) / c75_bl_gdev   * 100;
+            c75_pct_gSDx    = (c75_gSDx    - c75_bl_gSDx   ) / c75_bl_gSDx   * 100;
+            c75_pct_gSDy    = (c75_gSDy    - c75_bl_gSDy   ) / c75_bl_gSDy   * 100;
+            c75_pct_pups    = (c75_pups    - c75_bl_pups   ) / c75_bl_pups   * 100;
+            c75_pct_msrate  = (c75_msrate  - c75_bl_msrate ) / c75_bl_msrate * 100;
+            
+            subj_data_gaze_trial_c75 = struct( ...
+                'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
+                'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'PctGazeDeviation',(gazeDev./baselineGazeDev-1)*100, ...
+                'GazeStdX',gazeSDx,         'BaselineGazeStdX',baselineGazeSDx,         'PctGazeStdX',        (gazeSDx./baselineGazeSDx-1)*100, ...
+                'GazeStdY',gazeSDy,         'BaselineGazeStdY',baselineGazeSDy,         'PctGazeStdY',        (gazeSDy./baselineGazeSDy-1)*100, ...
+                'PupilSize',pupilSize,      'BaselinePupilSize',baselinePupilSize,      'PctPupilSize',       (pupilSize./baselinePupilSize-1)*100, ...
+                'MSRate',microsaccadeRate,  'BaselineMSRate',baselineMSRate,            'PctMSRate',          (microsaccadeRate./baselineMSRate-1)*100);
+            
+          case 'c100'
+            % … and once more for c100 …
+            c100_gdev      = mean(gazeDev,'omitnan');
+            c100_bl_gdev   = mean(baselineGazeDev,'omitnan');
+            c100_gSDx      = mean(gazeSDx,'omitnan');
+            c100_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
+            c100_gSDy      = mean(gazeSDy,'omitnan');
+            c100_bl_gSDy   = mean(baselineGazeSDy,'omitnan');
+            c100_pups      = mean(pupilSize,'omitnan');
+            c100_bl_pups   = mean(baselinePupilSize,'omitnan');
+            c100_msrate    = mean(microsaccadeRate,'omitnan');
+            c100_bl_msrate = mean(baselineMSRate,'omitnan');
+            
+            c100_pct_gdev    = (c100_gdev    - c100_bl_gdev   ) / c100_bl_gdev   * 100;
+            c100_pct_gSDx    = (c100_gSDx    - c100_bl_gSDx   ) / c100_bl_gSDx   * 100;
+            c100_pct_gSDy    = (c100_gSDy    - c100_bl_gSDy   ) / c100_bl_gSDy   * 100;
+            c100_pct_pups    = (c100_pups    - c100_bl_pups   ) / c100_bl_pups   * 100;
+            c100_pct_msrate  = (c100_msrate  - c100_bl_msrate ) / c100_bl_msrate * 100;
+            
+            subj_data_gaze_trial_c100 = struct( ...
+                'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
+                'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'PctGazeDeviation',(gazeDev./baselineGazeDev-1)*100, ...
+                'GazeStdX',gazeSDx,         'BaselineGazeStdX',baselineGazeSDx,         'PctGazeStdX',        (gazeSDx./baselineGazeSDx-1)*100, ...
+                'GazeStdY',gazeSDy,         'BaselineGazeStdY',baselineGazeSDy,         'PctGazeStdY',        (gazeSDy./baselineGazeSDy-1)*100, ...
+                'PupilSize',pupilSize,      'BaselinePupilSize',baselinePupilSize,      'PctPupilSize',       (pupilSize./baselinePupilSize-1)*100, ...
+                'MSRate',microsaccadeRate,  'BaselineMSRate',baselineMSRate,            'PctMSRate',          (microsaccadeRate./baselineMSRate-1)*100);
         end
+    end  % end conds loop
+    
+    %% 5) CREATE SUBJECT‐LEVEL STRUCTS ACROSS CONDITIONS
+    savepath = fullfile(path, subjects{subj}, 'gaze');
+    if ~exist(savepath,'dir'); mkdir(savepath); end
+    
+    % load the pre‐extracted GCP_preprocessing metrics
+    load(fullfile(savepath,'gaze_metrics'),'c25_blinks','c50_blinks','c75_blinks','c100_blinks', ...
+                                                'c25_fixations','c50_fixations','c75_fixations','c100_fixations', ...
+                                                'c25_saccades','c50_saccades','c75_saccades','c100_saccades');
+    
+    subj_data_gaze = struct( ...
+      'ID',        num2cell(subject_id(1:4))', ...
+      'Condition', num2cell([1;2;3;4]), ...
+      'GazeDeviation', num2cell([c25_gdev;  c50_gdev;  c75_gdev;  c100_gdev]), ...
+      'GazeStdX',      num2cell([c25_gSDx;  c50_gSDx;  c75_gSDx;  c100_gSDx]), ...
+      'GazeStdY',      num2cell([c25_gSDy;  c50_gSDy;  c75_gSDy;  c100_gSDy]), ...
+      'PupilSize',     num2cell([c25_pups;  c50_pups;  c75_pups;  c100_pups]), ...
+      'MSRate',        num2cell([c25_msrate;c50_msrate;c75_msrate;c100_msrate]), ...
+      'Blinks',        num2cell([c25_blinks;c50_blinks;c75_blinks;c100_blinks]), ...
+      'Fixations',     num2cell([c25_fixations;c50_fixations;c75_fixations;c100_fixations]), ...
+      'Saccades',      num2cell([c25_saccades; c50_saccades; c75_saccades; c100_saccades]) );
 
-        %% Check data by visualizing raw gaze data
-        close all
-        % Preallocate arrays for averaged gaze data
-        num_samples = 850; % Assuming each trial has ~850 samples
-        mean_gaze_x = nan(num_samples, 1);
-        mean_gaze_y = nan(num_samples, 1);
+    subj_data_gaze_baseline = struct( ...
+      'ID',        num2cell(subject_id(1:4))', ...
+      'Condition', num2cell([1;2;3;4]), ...
+      'BaselineGazeDeviation', num2cell([c25_bl_gdev;  c50_bl_gdev;  c75_bl_gdev;  c100_bl_gdev]), ...
+      'BaselineGazeStdX',      num2cell([c25_bl_gSDx;  c50_bl_gSDx;  c75_bl_gSDx;  c100_bl_gSDx]), ...
+      'BaselineGazeStdY',      num2cell([c25_bl_gSDy;  c50_bl_gSDy;  c75_bl_gSDy;  c100_bl_gSDy]), ...
+      'BaselinePupilSize',     num2cell([c25_bl_pups;  c50_bl_pups;  c75_bl_pups;  c100_bl_pups]), ...
+      'BaselineMSRate',        num2cell([c25_bl_msrate;c50_bl_msrate;c75_bl_msrate;c100_bl_msrate]) );
 
-        % Stack trials into matrices for averaging
-        gaze_x_matrix = cell2mat(cellfun(@(x) x(:), gaze_x(subj, :), 'UniformOutput', false)');
-        gaze_y_matrix = cell2mat(cellfun(@(y) y(:), gaze_y(subj, :), 'UniformOutput', false)');
+    subj_data_gaze_pctchange = struct( ...
+      'ID',        num2cell(subject_id(1:4))', ...
+      'Condition', num2cell([1;2;3;4]), ...
+      'PctGazeDeviation', num2cell([c25_pct_gdev;  c50_pct_gdev;  c75_pct_gdev;  c100_pct_gdev]), ...
+      'PctGazeStdX',      num2cell([c25_pct_gSDx;  c50_pct_gSDx;  c75_pct_gSDx;  c100_pct_gSDx]), ...
+      'PctGazeStdY',      num2cell([c25_pct_gSDy;  c50_pct_gSDy;  c75_pct_gSDy;  c100_pct_gSDy]), ...
+      'PctPupilSize',     num2cell([c25_pct_pups;  c50_pct_pups;  c75_pct_pups;  c100_pct_pups]), ...
+      'PctMSRate',        num2cell([c25_pct_msrate;c50_pct_msrate;c75_pct_msrate;c100_pct_msrate]) );
 
-        % Calculate the mean over trials for each sample
-        mean_gaze_x = nanmean(gaze_x_matrix, 2);
-        mean_gaze_y = nanmean(gaze_y_matrix, 2);
-
-        % Plot the averaged gaze data
-        % figure;
-        % set(gcf, "Position", [200, 200, 1000, 600]);
-        % plot(mean_gaze_x, mean_gaze_y, 'o');
-        % hold on;
-        % plot(400, 300, 'rx', 'MarkerSize', 10, 'LineWidth', 2); % Centre point
-        % title('Averaged Gaze Data Distribution Across Samples');
-        % xlabel('X Coordinates');
-        % ylabel('Y Coordinates');
-        % xlim([0 800]);
-        % ylim([0 600]);
-
-        %% Create a trial-by-trial structure array for this subject
-        subj_data_gaze_trial = struct('ID', num2cell(subject_id), 'Trial', num2cell(trial_num), 'Condition', num2cell(condition), 'GazeDeviation', num2cell(gazeDev), 'GazeStdX', num2cell(gazeSDx), 'GazeStdY', num2cell(gazeSDy), 'PupilSize', num2cell(pupilSize), 'MSRate', num2cell(microsaccadeRate));
-
-        %% Calculate subject-specific data by condition (GazeDev, PupilSize, MSRate)
-        if strcmp(conds, 'c25')
-            subj_data_gaze_trial_c25 = subj_data_gaze_trial;
-            c25_gdev = mean([subj_data_gaze_trial_c25.GazeDeviation], 'omitnan');
-            c25_gSDx = mean([subj_data_gaze_trial_c25.GazeStdX], 'omitnan');
-            c25_gSDy = mean([subj_data_gaze_trial_c25.GazeStdY], 'omitnan');
-            c25_pups = mean([subj_data_gaze_trial_c25.PupilSize], 'omitnan');
-            c25_msrate = mean([subj_data_gaze_trial_c25.MSRate], 'omitnan');
-        elseif strcmp(conds, 'c50')
-            subj_data_gaze_trial_c50 = subj_data_gaze_trial;
-            c50_gdev = mean([subj_data_gaze_trial_c50.GazeDeviation], 'omitnan');
-            c50_gSDx = mean([subj_data_gaze_trial_c50.GazeStdX], 'omitnan');
-            c50_gSDy = mean([subj_data_gaze_trial_c50.GazeStdY], 'omitnan');
-            c50_gSDy = mean([subj_data_gaze_trial_c50.GazeStdY], 'omitnan');
-            c50_pups = mean([subj_data_gaze_trial_c50.PupilSize], 'omitnan');
-            c50_msrate = mean([subj_data_gaze_trial_c50.MSRate], 'omitnan');
-        elseif strcmp(conds, 'c75')
-            subj_data_gaze_trial_c75 = subj_data_gaze_trial;
-            c75_gdev = mean([subj_data_gaze_trial_c75.GazeDeviation], 'omitnan');
-            c75_gSDx = mean([subj_data_gaze_trial_c75.GazeStdX], 'omitnan');
-            c75_gSDy = mean([subj_data_gaze_trial_c75.GazeStdY], 'omitnan');
-            c75_gSDy = mean([subj_data_gaze_trial_c75.GazeStdY], 'omitnan');
-            c75_pups = mean([subj_data_gaze_trial_c75.PupilSize], 'omitnan');
-            c75_msrate = mean([subj_data_gaze_trial_c75.MSRate], 'omitnan');
-        elseif strcmp(conds, 'c100')
-            subj_data_gaze_trial_c100 = subj_data_gaze_trial;
-            c100_gdev = mean([subj_data_gaze_trial_c100.GazeDeviation], 'omitnan');
-            c100_gSDx = mean([subj_data_gaze_trial_c100.GazeStdX], 'omitnan');
-            c100_gSDy = mean([subj_data_gaze_trial_c100.GazeStdY], 'omitnan');
-            c100_gSDy = mean([subj_data_gaze_trial_c100.GazeStdY], 'omitnan');
-            c100_pups = mean([subj_data_gaze_trial_c100.PupilSize], 'omitnan');
-            c100_msrate = mean([subj_data_gaze_trial_c100.MSRate], 'omitnan');
-        end
-    end
-
-    %% Load gaze metrics (extracted in GCP_preprocessing.m)
-    load([datapath, filesep, 'gaze_metrics'])
-
-    %% Create across condition structure
-    subj_data_gaze = struct('ID', num2cell(subject_id(1:4)), ...
-        'Condition', num2cell([1; 2; 3; 4]), ...
-        'GazeDeviation', num2cell([c25_gdev; c50_gdev; c75_gdev; c100_gdev]), ...
-        'GazeStdX', num2cell([c25_gSDx; c50_gSDx; c75_gSDx; c100_gSDx]), ...
-        'GazeStdY', num2cell([c25_gSDy; c50_gSDy; c75_gSDy; c100_gSDy]), ...
-        'PupilSize', num2cell([c25_pups; c50_pups; c75_pups; c100_pups]), ...
-        'MSRate', num2cell([c25_msrate; c50_msrate; c75_msrate; c100_msrate]), ...
-        'Blinks', num2cell([c25_blinks; c50_blinks; c75_blinks; c100_blinks]), ...
-        'Fixations', num2cell([c25_fixations; c50_fixations; c75_fixations; c100_fixations]), ...
-        'Saccades', num2cell([c25_saccades; c50_saccades; c75_saccades; c100_saccades]));
-
-    %% Save data
-    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/gaze/');
-    if isempty(dir(savepath))
-        mkdir(savepath)
-    end
-    cd(savepath)
-    save gaze_matrix_trial subj_data_gaze_trial_c25 subj_data_gaze_trial_c50 subj_data_gaze_trial_c75 subj_data_gaze_trial_c100
-    save gaze_matrix_subj subj_data_gaze
-    save gaze_dev c25_gdev c50_gdev c75_gdev c100_gdev
-    save gaze_std c25_gSDx c25_gSDy c50_gSDx c50_gSDy c75_gSDx c75_gSDy c100_gSDx c100_gSDy
-    save pupil_size c25_pups c50_pups c75_pups c100_pups
-    save ms_rate c25_msrate c50_msrate c75_msrate c100_msrate ...
-         ms_data_c25 ms_data_c50 ms_data_c75 ms_data_c100
-    clc
-    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' done.'])
-
-    % Append to the final structure array
+    %% 6) SAVE EVERYTHING
+    save(fullfile(savepath,'gaze_matrix_trial'),  ...
+         'subj_data_gaze_trial_c25',  'subj_data_gaze_trial_c50',  ...
+         'subj_data_gaze_trial_c75',  'subj_data_gaze_trial_c100');
+    save(fullfile(savepath,'gaze_matrix_subj'),   'subj_data_gaze');
+    save(fullfile(savepath,'gaze_matrix_baseline'),'subj_data_gaze_baseline');
+    save(fullfile(savepath,'gaze_matrix_pctchange'),'subj_data_gaze_pctchange');
+    
+    % optionally append to your across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
+    
+    fprintf('Subject %d/%d done.\n', subj, numel(subjects));
 end
-save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_raw ...
-    gaze_x_c25 gaze_y_c25 gaze_x_c50 gaze_y_c50 gaze_x_c75 gaze_y_c75 gaze_x_c100 gaze_y_c100
-save /Volumes/methlab/Students/Arne/GCP/data/features/gaze_matrix gaze_data
+
+%% Save master files
+save(fullfile(path,'gaze_raw'),    'gaze_x_c25','gaze_y_c25','gaze_x_c50','gaze_y_c50','gaze_x_c75','gaze_y_c75','gaze_x_c100','gaze_y_c100');
+save(fullfile(path,'gaze_matrix'), 'gaze_data');
