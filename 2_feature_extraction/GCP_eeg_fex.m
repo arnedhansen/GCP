@@ -37,7 +37,7 @@ for subj = 1 : length(subjects)
     cfg.foi         = 30:5:120;                         % Analysis 30 to 120 Hz in steps of 5 Hz
     cfg.tapsmofrq   = 5;                                % Analysis of FOI +/- 5 Hz
     cfg.t_ftimwin   = ones(length(cfg.foi),1).*0.5;     % Length of time window = 0.5 sec
-    cfg.toi          = -1.5:0.05:2;                     % Time window "slides" from -0.5 to 1.5 sec in steps of 0.05 sec (50 ms)
+    cfg.toi          = -1.75:0.05:2.25;                 % Time window "slides" from -0.5 to 1.5 sec in steps of 0.05 sec (50 ms)
     cfg.keeptrials  = 'no';                         
 
     % 25% contrast concentric dynamic inward
