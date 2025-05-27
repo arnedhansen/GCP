@@ -18,35 +18,47 @@ dirs  = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name},{'.','..'}));
 subjects = {folders.name};
 
-% preallocate if you still want an across‐all‐subjects matrix of raw data
+% preallocate across‐all‐subjects matrix of raw data
 gaze_data = struct('ID',{},'Condition',{},'GazeDeviation',{},...
                    'GazeStdX',{},'GazeStdY',{},'PupilSize',{},...
                    'MSRate',{},'Blinks',{},'Fixations',{},'Saccades',{});
+gaze_data_bl = struct('ID',{},'Condition',{},'PctGazeDeviation',{},...
+                   'PctGazeStdX',{},'PctGazeStdY',{},'PctPupilSize',{},...
+                   'PctMSRate',{});
 
+% time‐windows
 baseline_period = [-1.5, -0.25];
 analysis_period = [ 0.3,  2   ];
 win_size        = 50;    % blink‐removal window (samples)
 fsample         = 500;   % eye‐tracker sampling rate
 
+
+% prepare raw gaze storage across all subjects
+gaze_x_c25   = {};  gaze_y_c25   = {};
+gaze_x_c50   = {};  gaze_y_c50   = {};
+gaze_x_c75   = {};  gaze_y_c75   = {};
+gaze_x_c100  = {};  gaze_y_c100  = {};
+
+%% Loop over subjects
 for subj = 1:numel(subjects)
     
-    % where the preprocessed data live
+    % load preprocessed eye‐tracker data
     datapath = fullfile(path, subjects{subj}, 'gaze');
-    load(fullfile(datapath,'dataET'));  %# loads dataET_c25, dataET_c50, …
+    load(fullfile(datapath,'dataET'));
     
-    % loop over conditions
+    %% Loop over conditions
     for conds = {'c25','c50','c75','c100'}
         cond = conds{1};
         
-        % pick the right dataET
+        % pick the right dataET struct
         switch cond
           case 'c25', dataET = dataET_c25;
           case 'c50', dataET = dataET_c50;
           case 'c75', dataET = dataET_c75;
-          case 'c100', dataET = dataET_c100;
+          case 'c100',dataET = dataET_c100;
         end
         
-        % initialise trial‐wise containers
+        % initialise per‐trial arrays
         subject_id         = [];
         trial_num          = [];
         condition          = [];
@@ -57,16 +69,17 @@ for subj = 1:numel(subjects)
         pupilSize          = [];  baselinePupilSize = [];
         microsaccadeRate   = [];  baselineMSRate    = [];
         
+        %% Trial loop
         for trl = 1:numel(dataET.trialinfo)
             raw    = dataET.trial{trl};
             tVec   = dataET.time{trl};
             
-            %% 1) BASELINE WINDOW
+            %—— BASELINE WINDOW ——%
             bl_idx = tVec >= baseline_period(1) & tVec <= baseline_period(2);
             bl_dat = raw(:,bl_idx);
             valid  = bl_dat(1,:)>=0 & bl_dat(1,:)<=800 & bl_dat(2,:)>=0 & bl_dat(2,:)<=600;
             bl_dat = bl_dat(1:3, valid);
-            bl_dat(2,:) = 600 - bl_dat(2,:);      % invert Y
+            bl_dat(2,:) = 600 - bl_dat(2,:);
             bl_dat = remove_blinks(bl_dat, win_size);
             
             bl_x = bl_dat(1,:);  bl_y = bl_dat(2,:);
@@ -78,7 +91,7 @@ for subj = 1:numel(subjects)
             baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
             [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
             
-            %% 2) ANALYSIS WINDOW
+            %—— ANALYSIS WINDOW ——%
             an_idx = tVec >= analysis_period(1) & tVec <= analysis_period(2);
             an_dat = raw(:,an_idx);
             valid  = an_dat(1,:)>=0 & an_dat(1,:)<=800 & an_dat(2,:)>=0 & an_dat(2,:)<=600;
@@ -86,7 +99,27 @@ for subj = 1:numel(subjects)
             an_dat(2,:) = 600 - an_dat(2,:);
             an_dat = remove_blinks(an_dat, win_size);
             
-            x = an_dat(1,:);  y = an_dat(2,:);
+            % extract the cleaned gaze trace
+            x = an_dat(1,:);  
+            y = an_dat(2,:);
+            
+            % store raw gaze traces for this subject/condition/trial
+            switch cond
+              case 'c25'
+                gaze_x_c25{subj,trl}  = x;
+                gaze_y_c25{subj,trl}  = y;
+              case 'c50'
+                gaze_x_c50{subj,trl}  = x;
+                gaze_y_c50{subj,trl}  = y;
+              case 'c75'
+                gaze_x_c75{subj,trl}  = x;
+                gaze_y_c75{subj,trl}  = y;
+              case 'c100'
+                gaze_x_c100{subj,trl} = x;
+                gaze_y_c100{subj,trl} = y;
+            end
+            
+            % compute analysis‐window metrics
             dx = x - 400 - nanmean(x-400);
             dy = y - 300 - nanmean(y-300);
             
@@ -96,7 +129,7 @@ for subj = 1:numel(subjects)
             pupil       = mean(an_dat(3,:),'omitnan')/1000;
             [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
             
-            %% 3) APPEND TO TRIAL‐WISE ARRAYS
+            % append to trial‐wise arrays
             subject_id(end+1)       = str2double(subjects{subj});
             trial_num(end+1)        = trl;
             condition(end+1)        = dataET.trialinfo(trl) - 60;
@@ -277,6 +310,7 @@ for subj = 1:numel(subjects)
     
     % optionally append to your across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
+    gaze_data_bl = [gaze_data_bl; subj_data_gaze_pctchange];
     
     fprintf('Subject %d/%d done.\n', subj, numel(subjects));
 end
@@ -284,3 +318,4 @@ end
 %% Save master files
 save(fullfile(path,'gaze_raw'),    'gaze_x_c25','gaze_y_c25','gaze_x_c50','gaze_y_c50','gaze_x_c75','gaze_y_c75','gaze_x_c100','gaze_y_c100');
 save(fullfile(path,'gaze_matrix'), 'gaze_data');
+save(fullfile(path,'gaze_matrix_bl'), 'gaze_data_bl');

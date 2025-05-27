@@ -8,9 +8,7 @@ library(colorspace)  # provides darken(), lighten(), desaturate()
 
 # Define colour palette
 pal <- c("#FF8C00", "#A034F0", "#159090", "#ADD9E6") # DataViz workshop colors
-#pal <- c("#ADD9E6", "#99CC99", "#FFB3BF") # Light AOC pastel colors
-#pal <- c("#7998A1", "#6B8F6B", "#B37D86") # Dark AOC pastel colors
-#pal <- c("#93B8C4", "#82AD82", "#D998A2") # Perfect AOC pastel colors
+pal <- c("#CCCC00", "#CC8400", "#E31A1C", "#000000" )
 
 # Read in the data (adjust the file path if needed)
 dat <- read.csv("/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv")
@@ -18,22 +16,19 @@ dat <- read.csv("/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.cs
 # Transform reaction times to milliseconds
 dat$ReactionTime <- dat$ReactionTime * 1000
 
-
-
 ################################
 dat$Accuracy <- dat$ReactionTime
 ################################
-
 
 # Convert Condition to a factor with labels
 dat$Condition <- factor(dat$Condition, levels = c(1, 2, 3, 4), labels = c("25%", "50%", "75%", "100%"))
 
 # Define the list of variables, y-axis labels and save names (to be used in file naming)
-variables <- c("Accuracy", "ReactionTime", "GazeDeviation", "MSRate", "Fixations", "Saccades", "GammaPower", "GammaFreq")
-titles <- c("Accuracy", "Reaction Time", "Gaze Deviation", "Microsaccade Rate", "Fixations", "Saccades", "Gamma Power", "Gamma Frequency")
+variables <- c("Accuracy", "ReactionTime", "GazeDeviation", "MSRate", "GammaPower", "GammaFreq")
+titles <- c("Accuracy", "Reaction Time", "Gaze Deviation", "Microsaccade Rate", "Gamma Power", "Gamma Frequency")
 y_labels  <- c("Accuracy [%]", "Reaction Time [ms]", "Gaze Deviation [px]",
-               "Microsaccade Rate [ms/s]", "Fixations", "Saccades", "Gamma Power [dB]", "Gamma Frequency [Hz]")
-save_names <- c("acc", "rt", "gazedev", "ms", "fix", "sacc", "pow", "freq")
+               "Microsaccade Rate [ms/s]", "Gamma Power [dB]", "Gamma Frequency [Hz]")
+save_names <- c("acc", "rt", "gazedev", "ms", "pow", "freq")
 
 # Remove outliers using the IQR method (1.5 * IQR rule)
 #dat <- dat %>%

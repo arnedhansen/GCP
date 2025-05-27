@@ -10,21 +10,21 @@ close all
 data = readtable('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv');
 data.ReactionTime = data.ReactionTime .* 1000;
 data.PupilSize = [];
-variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'GazeSTD', 'MSRate', 'Blinks', 'Fixations', 'Saccades', 'GammaPower', 'GammaFreq'};
-save_names = {'acc', 'rt', 'gazedev', 'gazestd', 'ms', 'blink', 'fix', 'sacc', 'pow', 'freq'};
+variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'GazeSTD', 'MSRate', 'GammaPower', 'GammaFreq'};
+save_names = {'acc', 'rt', 'gazedev', 'gazestd', 'ms', 'pow', 'freq'};
 colors = color_def('GCP');
 
 %% BOXPLOTS for each variable
-y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Gaze STD [px]', 'Microsaccade Rate [ms/s]', 'Blinks', 'Fixations', 'Saccades', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
+y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Gaze STD [px]', 'Microsaccade Rate [%]', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
 
 % Unique subject identifiers
 subjects = unique(data.ID);
 font_size = 20;
 
-for i = 1:length(variables)
+for i = 5%%%%%1:length(variables)
     close all
     figure;
-    set(gcf, 'Position', [100, 200, 800, 800], 'Color', 'w');
+    set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w');
     hold on;
 
     % Set axis limits
@@ -84,6 +84,13 @@ for i = 1:length(variables)
     set(gca, 'Box', 'off');
     ax = gca;
     ax.FontSize = font_size;
+
+    if i == 5
+        yline(0, '--')
+        box on
+        title('Microsaccade Rate', "FontSize", 40);
+        ylim([-60 60])
+    end
 
     % Save individual subplot
     saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_boxplots_', save_names{i}, '.png'));
@@ -273,9 +280,6 @@ metrics = {
     'Gaze Deviation Diff. [%]', gaze_deviation_diff;
     'Gaze STD Diff. [%]', gaze_std_diff;
     'Microsaccade Rate Diff. [%]', ms_rate_diff;
-    'Blink Diff. [%]', blink_diff;
-    'Fixation Diff. [%]', fix_diff;
-    'Saccade Diff. [%]', sacc_diff
 };
 
 % Number of metrics
