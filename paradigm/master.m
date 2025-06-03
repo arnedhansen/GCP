@@ -1,14 +1,12 @@
 %% Master script for the GCP (Gamma Contrast Perception) Study
-% Test with different contrast conditions for the  gratings: 
-% 25%, 50%, 75%, 100%
 %
 % - Resting EEG
 % - Gratings Training (10 trials)
-% - Gratings (800 trials)
-%   - 200x contrast 25% 
-%   - 200x contrast 50% 
-%   - 200x contrast 75% 
-%   - 200x contrast 100%
+% - Gratings (704 trials: 160x4 = 640 valid trials + 16x4 = 64 trials with task condition)
+%   - 176x contrast 25%
+%   - 176x contrast 50%
+%   - 176x contrast 75%
+%   - 176x contrast 100%
 
 %% General settings, screens and paths
 
@@ -26,20 +24,19 @@ addpath(FUNS_PATH) % Add path to folder with functions
 screenSettings % Manage screens
 
 %% Collect ID and Age
-dialogID;
-%subject.ID = 991; %Set to 999 for tests
-
+%dialogID;
+subject.ID = 991; %Set to 999 for tests
 
 %% Protect Matlab code from participant keyboard input
 ListenChar(2);
 
 %% Check for existing files and start tasks
 
-if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_Resting.mat']])
-    restingEEG
-else
-    disp('RESTING EEG DATA ALREADY EXISTS');
-end
+% if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_Resting.mat']])
+%     restingEEG
+% else
+%     disp('RESTING EEG DATA ALREADY EXISTS');
+% end
 
 if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
     TRAINING = 1;
