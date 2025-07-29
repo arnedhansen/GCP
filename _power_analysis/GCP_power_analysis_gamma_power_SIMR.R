@@ -17,8 +17,9 @@ summary(model)
 
 # Extend the model to allow for sample size calculation
 extended_model <- extend(model, along = "Subject", n=100) # Extend to a larger sample size
+sigma(extended_model) <- 2.5 # Set the residual standard deviation
 
-# Set the fixed effect size for condition (as estimated from the model; Effect size of contrast condition on GAMMA POWER)
+# Set the fixed effect size for condition (Effect size of contrast condition on GAMMA POWER)
 fixef(extended_model)["conditionB"] <- 1.14
 
 # Power analysis
