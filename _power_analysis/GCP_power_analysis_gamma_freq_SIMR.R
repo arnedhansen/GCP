@@ -1,4 +1,4 @@
-## AOC Simulation for Power Analysis on STERNBERG CONDITION using SIMR
+## GCP Simulation for Power Analysis on GAMMA FREQUENCY using SIMR
 # Tutorial: https://besjournals.onlinelibrary.wiley.com/doi/10.1111/2041-210X.12504
 library(lme4)
 library(simr)
@@ -8,25 +8,24 @@ library(ggplot2)
 set.seed(123)
 Subject <- factor(rep(1:30, each=10))
 condition <- factor(rep(c("A", "B"), 150)) # Lowest and highest condition
-alpha_power <- rnorm(300, mean=0, sd=1) + ifelse(condition == "A", 1, 0)
-data <- data.frame(Subject, condition, alpha_power)
+gamma_frequency <- rnorm(300, mean=0, sd=1) + ifelse(condition == "A", 1, 0)
+data <- data.frame(Subject, condition, gamma_frequency)
 
 # Fit the mixed model
-model <- lmer(alpha_power ~ condition + (1 | Subject), data=data)
+model <- lmer(gamma_frequency ~ condition + (1 | Subject), data=data)
 summary(model)
 
 # Extend the model to allow for sample size calculation
-extended_model <- extend(model, along = "Subject", n=125) # Extend to a larger sample size
+extended_model <- extend(model, along = "Subject", n=100) # Extend to a larger sample size
 
-# Set the fixed effect size for condition (as estimated from the model)
-# Effect size of Sternberg condition on alpha: d = 0.1887975 (calculated using t-values from Hu et al., 2019)
-fixef(extended_model)["conditionB"] <- 0.19
+# Set the fixed effect size for condition (as estimated from the model; Effect size of contrast condition on GAMMA POWER)
+fixef(extended_model)["conditionB"] <- 1.6/2
 
 # Power analysis
-sim <- powerSim(extended_model, nsim = 1000, progress = FALSE)
+sim <- powerSim(extended_model, nsim = 100, progress = FALSE)
 
 # Compute power curve for a range of sample sizes
-power_curve <- powerCurve(extended_model, along = "Subject", nsim = 1000, breaks = seq(5, 125, by=5))
+power_curve <- powerCurve(extended_model, along = "Subject", nsim = 200, breaks = seq(5, 50, by=5))
 
 # Print, plot and save the power curve
 print(power_curve)
@@ -38,14 +37,14 @@ power_curve_df <- data.frame(
   Lower = power_curve_summary$lower,
   Upper = power_curve_summary$upper
 )
-png(file = "/Volumes/methlab/Students/Arne/AOC/figures/power_analysis/SIMR/AOC_power_anal_sternberg.png", width = 1800, height = 1400, res = 300)
+png(file = "/Volumes/methlab/Students/Arne/GCP/figures/power_analysis/GCP_power_analysis_gamma_frequency.png", width = 1800, height = 1400, res = 300)
 ggplot(power_curve_df, aes(x = Subjects, y = Power)) +
   geom_point(size = 2, color = "blue") +
   geom_line(color = "blue", linetype = "dotted") +
   geom_errorbar(aes(ymin = Lower, ymax = Upper), width = 3, color = "blue", alpha = 0.5) +
   geom_hline(yintercept = 0.90, linetype = "dashed", color = "grey", size = 0.5) +  
   scale_x_continuous(
-    breaks = c(0, 25, 50, 75, 100, 125)  
+    breaks = c(0, 10, 20, 30, 40, 50)  
   ) +
   scale_y_continuous(
     labels = scales::percent_format(),
