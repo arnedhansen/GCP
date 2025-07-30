@@ -55,34 +55,69 @@ for subj = 1 : length(subjects)
     ord    = [1 7];                       % superresolution orders 1→7
     mult   = 1;                           % multiplicative superlets
 
-    % Extract [buffers×samples] matrix
-    supletMatrix25  = cell2mat(cellfun(@(trl) trl(chn,:), dataEEG_c25.trial(ind61), 'uni', 0));
-    supletMatrix25  = reshape(supletMatrix25, length(ind61), []); % trials as buffers
-    supletMatrix50  = cell2mat(cellfun(@(trl) trl(chn,:), dataEEG_c50.trial(ind62), 'uni', 0));
-    supletMatrix50  = reshape(supletMatrix50, length(ind62), []);
-    supletMatrix75  = cell2mat(cellfun(@(trl) trl(chn,:), dataEEG_c75.trial(ind63), 'uni', 0));
-    supletMatrix75  = reshape(supletMatrix75, length(ind63), []);
-    supletMatrix100 = cell2mat(cellfun(@(trl) trl(chn,:), dataEEG_c100.trial(ind64), 'uni', 0));
-    supletMatrix100 = reshape(supletMatrix100, length(ind64), []);
+    % Preallocate output arrays: [nChan × nFreq × nTime]
+    nCh = numel(chn);
+    nF  = numel(F);
+    nT  = numel(dataEEG_c25.time{1});
+    suplet25_pow  = zeros(nCh, nF, nT);
+    suplet50_pow  = zeros(nCh, nF, nT);
+    suplet75_pow  = zeros(nCh, nF, nT);
+    suplet100_pow = zeros(nCh, nF, nT);
 
-    % Compute Superlet TFR
-    suplet25  = aslt(supletMatrix25, Fs, F, Ncyc, ord, mult); % size: [numel(F) × timepoints]
-    suplet50  = aslt(supletMatrix50, Fs, F, Ncyc, ord, mult);
-    suplet75  = aslt(supletMatrix75, Fs, F, Ncyc, ord, mult);
-    suplet100 = aslt(supletMatrix100, Fs, F, Ncyc, ord, mult);
+    % Loop over channels
+    for c = 1:nCh
+        % Build [buffers×samples] for each condition and channel c
+        X25 = cell2mat( cellfun(@(trl) trl(chn(c),:), dataEEG_c25.trial(ind61),  'uni',0) );
+        X25 = reshape(X25, length(ind61), []);
+        X50 = cell2mat( cellfun(@(trl) trl(chn(c),:), dataEEG_c50.trial(ind62),  'uni',0) );
+        X50 = reshape(X50, length(ind62), []);
+        X75 = cell2mat( cellfun(@(trl) trl(chn(c),:), dataEEG_c75.trial(ind63),  'uni',0) );
+        X75 = reshape(X75, length(ind63), []);
+        X100= cell2mat( cellfun(@(trl) trl(chn(c),:), dataEEG_c100.trial(ind64),'uni',0) );
+        X100= reshape(X100, length(ind64), []);
+
+        % Compute Superlet TFR for this channel
+        suplet25  = aslt(X25,  Fs, F, Ncyc, ord, mult); % [nFreq × nTime]
+        suplet50  = aslt(X50,  Fs, F, Ncyc, ord, mult);
+        suplet75  = aslt(X75,  Fs, F, Ncyc, ord, mult);
+        suplet100 = aslt(X100, Fs, F, Ncyc, ord, mult);
+
+        % Store into 3D arrays
+        suplet25_pow(c,:,:)  = suplet25;
+        suplet50_pow(c,:,:)  = suplet50;
+        suplet75_pow(c,:,:)  = suplet75;
+        suplet100_pow(c,:,:) = suplet100;
+    end
 
     % Convert back to FieldTrip structure
     % 25% contrast concentric dynamic inward
-    tfr_c25 = [];
-    tfr_c25.powspctrm = permute(suplet25, [3 1 2] ); % [trials×freq×time]
-    tfr_c25.freq      = F;
-    tfr_c25.time      = dataEEG_c25.time{1};
-    tfr_c25.label     = dataEEG_c25.label(chn);
+    tfr_c25            = [];
+    tfr_c25.powspctrm  = suplet25_pow;       % [nChan × nFreq × nTime]
+    tfr_c25.freq       = F;
+    tfr_c25.time       = dataEEG_c25.time{1};
+    tfr_c25.label      = dataEEG_c25.label(chn);
 
     % 50% contrast concentric dynamic inward
-    % 75% contrast concentric dynamic inward
-    % 100% contrast concentric dynamic inward
+    tfr_c50            = [];
+    tfr_c50.powspctrm  = suplet50_pow;
+    tfr_c50.freq       = F;
+    tfr_c50.time       = dataEEG_c50.time{1};
+    tfr_c50.label      = dataEEG_c50.label(chn);
 
+    % 75% contrast concentric dynamic inward
+    tfr_c75            = [];
+    tfr_c75.powspctrm  = suplet75_pow;
+    tfr_c75.freq       = F;
+    tfr_c75.time       = dataEEG_c75.time{1};
+    tfr_c75.label      = dataEEG_c75.label(chn);
+
+    % 100% contrast concentric dynamic inward
+    tfr_c100           = [];
+    tfr_c100.powspctrm = suplet100_pow;
+    tfr_c100.freq      = F;
+    tfr_c100.time      = dataEEG_c100.time{1};
+    tfr_c100.label     = dataEEG_c100.label(chn);
+    
     %% FOOOF
     orig_freq = 30:5:120;
     tfrs = {tfr_c25, tfr_c50, tfr_c75, tfr_c100};
@@ -136,19 +171,19 @@ for subj = 1 : length(subjects)
     cfg              = [];
     cfg.baseline     = [-1.5 -.25];
     cfg.baselinetype = 'db';
-    tfr_c25_bl                       = ft_freqbaseline(cfg, tfr_c25);
-    tfr_c50_bl                       = ft_freqbaseline(cfg, tfr_c50);
-    tfr_c75_bl                       = ft_freqbaseline(cfg, tfr_c75);
-    tfr_c100_bl                      = ft_freqbaseline(cfg, tfr_c100);
+    tfr_c25_bl       = ft_freqbaseline(cfg, tfr_c25);
+    tfr_c50_bl       = ft_freqbaseline(cfg, tfr_c50);
+    tfr_c75_bl       = ft_freqbaseline(cfg, tfr_c75);
+    tfr_c100_bl      = ft_freqbaseline(cfg, tfr_c100);
 
     % FOOOFed powspctrm baselined
     cfg              = [];
     cfg.baseline     = [-1.5 -.25];
     cfg.baselinetype = 'absolute';   % FOOOF already sets log scale, so no 'dB' here
-    tfr_c25_fooof_bl                 = ft_freqbaseline(cfg, tfr_c25_fooof);
-    tfr_c50_fooof_bl                 = ft_freqbaseline(cfg, tfr_c50_fooof);
-    tfr_c75_fooof_bl                 = ft_freqbaseline(cfg, tfr_c75_fooof);
-    tfr_c100_fooof_bl                = ft_freqbaseline(cfg, tfr_c100_fooof);
+    tfr_c25_fooof_bl = ft_freqbaseline(cfg, tfr_c25_fooof);
+    tfr_c50_fooof_bl = ft_freqbaseline(cfg, tfr_c50_fooof);
+    tfr_c75_fooof_bl = ft_freqbaseline(cfg, tfr_c75_fooof);
+    tfr_c100_fooof_bl= ft_freqbaseline(cfg, tfr_c100_fooof);
     disp(upper('Baseline done...'))
 
     %% Smooth powerspectra
@@ -162,7 +197,7 @@ for subj = 1 : length(subjects)
 
     %% Save data
     cd(datapath)
-    save data_tfr_superlets tfr_c25 tfr_c50 tfr_c75 tfr_c100 ...
+    save data_tfr tfr_c25 tfr_c50 tfr_c75 tfr_c100 ...
         tfr_c25_fooof tfr_c50_fooof tfr_c75_fooof tfr_c100_fooof ...
         tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl ...
         tfr_c25_fooof_bl tfr_c50_fooof_bl tfr_c75_fooof_bl tfr_c100_fooof_bl ...
@@ -170,6 +205,7 @@ for subj = 1 : length(subjects)
     clc
     fprintf('Subject GCP %s (%.3d/%.3d) TFR DATA computed... \n', num2str(subjects{subj}), subj, length(subjects))
 end
+
 
 %% Convert TFR data to POWSCPTRM (channels x frequency)
 clc
@@ -278,9 +314,9 @@ eeg_data = [];
 for subj = 1:length(subjects)
     % Load power spectra data
     if anal_period == 1
-        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
+        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300_superlets'))
     else
-        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_superlets'))
     end
 
     % Find channels and frequencies of interest
