@@ -8,7 +8,11 @@ library(ggplot2)
 set.seed(123)
 Subject <- factor(rep(1:30, each=10))
 condition <- factor(rep(c("A", "B"), 150)) # Lowest and highest condition
-gamma_power <- rnorm(300, mean=0, sd=1) + ifelse(condition == "A", 1, 0)
+#gamma_power <- rnorm(300, mean=0, sd=1) + ifelse(condition == "A", 1, 0)
+sd_subj <- 0.5 # Standard deviation for subject effects
+sd_res <- 2 # Standard deviations for residual effects
+subj_eff  <- rnorm(30, 0, sd_subj)
+gamma_power <- subj_eff[Subject] + rnorm(300, 0, sd_res) + ifelse(condition=="A", 1, 0)
 data <- data.frame(Subject, condition, gamma_power)
 
 # Fit the mixed model
@@ -23,10 +27,10 @@ sigma(extended_model) <- 2.5 # Set the residual standard deviation
 fixef(extended_model)["conditionB"] <- 1.14
 
 # Power analysis
-sim <- powerSim(extended_model, nsim = 100, progress = FALSE)
+sim <- powerSim(extended_model, nsim = 1000, progress = FALSE)
 
 # Compute power curve for a range of sample sizes
-power_curve <- powerCurve(extended_model, along = "Subject", nsim = 200, breaks = seq(5, 50, by=5))
+power_curve <- powerCurve(extended_model, along = "Subject", nsim = 1000, breaks = seq(5, 50, by=5))
 
 # Print, plot and save the power curve
 print(power_curve)

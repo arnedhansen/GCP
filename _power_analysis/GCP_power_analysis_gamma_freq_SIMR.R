@@ -8,7 +8,11 @@ library(ggplot2)
 set.seed(123)
 Subject <- factor(rep(1:30, each=10))
 condition <- factor(rep(c("A", "B"), 150)) # Lowest and highest condition
-gamma_frequency <- rnorm(300, mean=0, sd=1) + ifelse(condition == "A", 1, 0)
+#gamma_frequency <- rnorm(300, mean=0, sd=1) + ifelse(condition == "A", 1, 0)
+sd_subj <- 0.5 # Standard deviation for subject effects
+sd_res <- 2 # Standard deviations for residual effects
+subj_eff  <- rnorm(30, 0, sd_subj)
+gamma_frequency <- subj_eff[Subject] + rnorm(300, 0, sd_res) + ifelse(condition=="A", 1, 0)
 data <- data.frame(Subject, condition, gamma_frequency)
 
 # Fit the mixed model
