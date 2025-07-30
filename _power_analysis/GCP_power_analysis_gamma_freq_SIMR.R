@@ -27,10 +27,10 @@ sigma(extended_model) <- 2.5 # Set the residual standard deviation
 fixef(extended_model)["conditionB"] <- 1.6
 
 # Power analysis
-sim <- powerSim(extended_model, nsim = 100, progress = FALSE)
+sim <- powerSim(extended_model, nsim = 1000, progress = FALSE)
 
 # Compute power curve for a range of sample sizes
-power_curve <- powerCurve(extended_model, along = "Subject", nsim = 200, breaks = seq(5, 50, by=5))
+power_curve <- powerCurve(extended_model, along = "Subject", nsim = 1000, breaks = seq(5, 50, by=5))
 
 # Print, plot and save the power curve
 print(power_curve)
