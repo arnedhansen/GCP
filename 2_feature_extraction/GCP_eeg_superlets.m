@@ -35,6 +35,7 @@ for subj = 1 : length(subjects)
     datapath = strcat(path, subjects{subj}, '/eeg');
     cd(datapath)
     close all
+    fprintf('Loading data for Subject GCP %s (%.2d/%.2d)... \n', num2str(subjects{subj}), subj, length(subjects))
     load dataEEG
     load('/Volumes/methlab/Students/Arne/MA/headmodel/ant128lay.mat');
 
@@ -202,10 +203,10 @@ for subj = 1 : length(subjects)
         tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl ...
         tfr_c25_fooof_bl tfr_c50_fooof_bl tfr_c75_fooof_bl tfr_c100_fooof_bl ...
         tfr_c25_fooof_bl_smooth tfr_c50_fooof_bl_smooth tfr_c75_fooof_bl_smooth tfr_c100_fooof_bl_smooth
+    save superlets suplet25_pow suplet50_pow suplet75_pow suplet100_pow
     clc
     fprintf('Subject GCP %s (%.3d/%.3d) TFR DATA computed... \n', num2str(subjects{subj}), subj, length(subjects))
 end
-
 
 %% Convert TFR data to POWSCPTRM (channels x frequency)
 clc
