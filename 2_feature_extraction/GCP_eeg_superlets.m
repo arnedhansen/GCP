@@ -97,6 +97,7 @@ for subj = 1 : length(subjects)
     tfr_c25.freq       = F;
     tfr_c25.time       = dataEEG_c25.time{1};
     tfr_c25.label      = dataEEG_c25.label(chn);
+    tfr_c25.dimord     = 'chan_freq_time';
 
     % 50% contrast concentric dynamic inward
     tfr_c50            = [];
@@ -104,6 +105,7 @@ for subj = 1 : length(subjects)
     tfr_c50.freq       = F;
     tfr_c50.time       = dataEEG_c50.time{1};
     tfr_c50.label      = dataEEG_c50.label(chn);
+    tfr_c50.dimord     = 'chan_freq_time';
 
     % 75% contrast concentric dynamic inward
     tfr_c75            = [];
@@ -111,6 +113,7 @@ for subj = 1 : length(subjects)
     tfr_c75.freq       = F;
     tfr_c75.time       = dataEEG_c75.time{1};
     tfr_c75.label      = dataEEG_c75.label(chn);
+    tfr_c75.dimord     = 'chan_freq_time';
 
     % 100% contrast concentric dynamic inward
     tfr_c100           = [];
@@ -118,13 +121,14 @@ for subj = 1 : length(subjects)
     tfr_c100.freq      = F;
     tfr_c100.time      = dataEEG_c100.time{1};
     tfr_c100.label     = dataEEG_c100.label(chn);
+    tfr_c100.dimord     = 'chan_freq_time';
     
     %% FOOOF
     orig_freq = 30:5:120;
     tfrs = {tfr_c25, tfr_c50, tfr_c75, tfr_c100};
     for tfr_contrast = 1:4
         clc
-        disp('FOOOFing...')
+        fprintf('FOOOFing Subject GCP %s (%.2d/%.2d)... Contrast %.1d/4 \n', num2str(subjects{subj}), subj, length(subjects), tfr_contrast)
         clear fspctrm
         tfr = tfrs{1, tfr_contrast};
         for t = 1 :length(tfr.time)
