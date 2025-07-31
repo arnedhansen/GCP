@@ -9,10 +9,6 @@ set.seed(123)
 Subject <- factor(rep(1:30, each=10))
 condition <- factor(rep(c("A", "B"), 150)) # Lowest and highest condition
 gamma_power <- rnorm(300, mean=0, sd=1) + ifelse(condition == "A", 1, 0)
-#sd_subj <- 0.25 # Standard deviation for subject effects
-#sd_res <- 1 # Standard deviations for residual effects
-#subj_eff  <- rnorm(30, 0, sd_subj)
-#gamma_power <- subj_eff[Subject] + rnorm(300, 0, sd_res) + ifelse(condition=="A", 1, 0)
 data <- data.frame(Subject, condition, gamma_power)
 
 # Fit the mixed model
