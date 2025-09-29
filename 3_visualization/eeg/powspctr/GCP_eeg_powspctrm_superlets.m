@@ -7,7 +7,7 @@ analysis_period = 0; % 1 = ONLY 0–300 ms, otherwise 300–2000 ms after stimul
 
 %% Load power spectra data
 for subj = 1:length(subjects)
-    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_superlets'))
+    load(strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_superlets'))
 
     % Raw powerspectra
     power_c25{subj}  = pow_c25;
@@ -148,13 +148,13 @@ hold off;
 
 % Save the plot
 if analysis_period == 1
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_pct_powspctrm_fooof_bl_smooth_300.png');
+    saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_pct_powspctrm_fooof_bl_smooth_300.png');
 else
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_pct_powspctrm_fooof_bl_smooth.png');
+    saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_pct_powspctrm_fooof_bl_smooth.png');
 end
 
 %% Figure 2: Subplots of individual percentage change spectra
-output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
+output_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/';
 num_subs = length(subjects);
 cols = 5;
 rows = ceil(num_subs / cols);

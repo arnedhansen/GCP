@@ -7,11 +7,12 @@ analysis_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus pre
 
 %% Load power spectra data
 for subj = 1:length(subjects)
-    if analysis_period == 1
-        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
-    else
-        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
-    end
+    % if analysis_period == 1
+    %     load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
+    % else
+    %     load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    % end
+    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_superlets'))
 
     % Raw powerspectra
     power_c25{subj}  = pow_c25;
@@ -30,6 +31,12 @@ for subj = 1:length(subjects)
     power_c50_baseline_period{subj}  = pow_c50_baseline_period;
     power_c75_baseline_period{subj}  = pow_c75_baseline_period;
     power_c100_baseline_period{subj} = pow_c100_baseline_period;
+
+    % FOOOFed powerspectra
+    power_c25_fooof{subj}  = pow_c25_fooof;
+    power_c50_fooof{subj}  = pow_c50_fooof;
+    power_c75_fooof{subj}  = pow_c75_fooof;
+    power_c100_fooof{subj} = pow_c100_fooof;
 
     % Baselined FOOOFed smoothed powerspectra
     power_c25_fooof_bl_smooth{subj}  = pow_c25_fooof_bl_smooth;
@@ -56,6 +63,11 @@ gapow_c25_baseline_period  = ft_freqgrandaverage(cfg, power_c25_baseline_period{
 gapow_c50_baseline_period  = ft_freqgrandaverage(cfg, power_c50_baseline_period{:});
 gapow_c75_baseline_period  = ft_freqgrandaverage(cfg, power_c75_baseline_period{:});
 gapow_c100_baseline_period = ft_freqgrandaverage(cfg, power_c100_baseline_period{:});
+
+gapow_c25_fooof  = ft_freqgrandaverage(cfg, power_c25_fooof{:});
+gapow_c50_fooof  = ft_freqgrandaverage(cfg, power_c50_fooof{:});
+gapow_c75_fooof  = ft_freqgrandaverage(cfg, power_c75_fooof{:});
+gapow_c100_fooof = ft_freqgrandaverage(cfg, power_c100_fooof{:});
 
 gapow_c25_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c25_fooof_bl_smooth{:});
 gapow_c50_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c50_fooof_bl_smooth{:});
@@ -89,9 +101,13 @@ cfg.figure = 'gcf';
 cfg.linewidth = 4;
 channels_seb = ismember(gapow_c25_fooof_bl_smooth.label, cfg.channel);
 
-% OPTIONAL: Add extra smoothing to powerspectra
-% smoothWin = 10; % Size of smoothing window in frequency bins
-%  % Moving Window
+% %OPTIONAL: Add extra smoothing to powerspectra
+% smoothWin = 20; % Size of smoothing window in frequency bins
+% gapow_c25_fooof_bl_smooth_extra  = gapow_c25_fooof_bl_smooth;
+% gapow_c50_fooof_bl_smooth_extra  = gapow_c50_fooof_bl_smooth;
+% gapow_c75_fooof_bl_smooth_extra  = gapow_c75_fooof_bl_smooth;
+% gapow_c100_fooof_bl_smooth_extra = gapow_c100_fooof_bl_smooth;
+ % Moving Window
 % gapow_c25_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c25_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
 % gapow_c50_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c50_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
 % gapow_c75_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c75_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
@@ -102,12 +118,27 @@ channels_seb = ismember(gapow_c25_fooof_bl_smooth.label, cfg.channel);
 % gapow_c75_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = smoothdata(gapow_c75_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
 % gapow_c100_fooof_bl_smooth_extra.powspctrm(channels_seb, :) = smoothdata(gapow_c100_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
 
+% %OPTIONAL: Add extra smoothing to powerspectra
+smoothWin = 10; % Size of smoothing window in frequency bins
+gapow_c25_fooof.powspctrm  = smoothdata(gapow_c25_fooof.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+gapow_c50_fooof.powspctrm  = smoothdata(gapow_c50_fooof.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+gapow_c75_fooof.powspctrm  = smoothdata(gapow_c75_fooof.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+gapow_c100_fooof.powspctrm = smoothdata(gapow_c100_fooof.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+
+
+% Set data to plot
+ga25=  gapow_c25_fooof%_bl_smooth_extra ;
+ga50=  gapow_c50_fooof%_bl_smooth_extra ;
+ga75=  gapow_c75_fooof%_bl_smooth_extra ;
+ga100=gapow_c100_fooof%_bl_smooth_extra;
+
+
 % Plot for all contrasts
-ft_singleplotER(cfg, gapow_c25_fooof_bl_smooth, gapow_c50_fooof_bl_smooth, gapow_c75_fooof_bl_smooth, gapow_c100_fooof_bl_smooth);
+ft_singleplotER(cfg, ga25, ga50, ga75, ga100);
 hold on;
 
 % Add shaded error bars for each condition
-conditions = {gapow_c25_fooof_bl_smooth, gapow_c50_fooof_bl_smooth, gapow_c75_fooof_bl_smooth, gapow_c100_fooof_bl_smooth};
+conditions = {ga25, ga50, ga75, ga100};
 col_indices = [1, 2, 3, 4];
 for i = 1:4
     curr_cond = conditions{i};
@@ -127,9 +158,8 @@ end
 yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
 set(gcf, 'color', 'w');
 set(gca, 'FontSize', 20);
-set(gca, "YLim", [-0.035 0.035])
-xlim([30 90])
-ylim([-0.04 0.04])
+% xlim([30 90])
+%ylim([-0.04 0.04])
 xlabel('Frequency [Hz]', 'FontSize', 30);
 ylabel('Power [dB]', 'FontSize', 30);
 legend(h, {' 25% Contrast',' 50% Contrast',' 75% Contrast','100% Contrast'}, 'FontName','Arial','FontSize',25);
