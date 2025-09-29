@@ -7,7 +7,7 @@
 clc
 clear
 close all
-data = readtable('/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv');
+data = readtable('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/merged_data.csv');
 data.ReactionTime = data.ReactionTime .* 1000;
 data.PupilSize = [];
 variables = {'Accuracy', 'ReactionTime', 'GazeDeviation', 'GazeSTD', 'MSRate', 'GammaPower', 'GammaFreq'};
@@ -21,7 +21,7 @@ y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'G
 subjects = unique(data.ID);
 font_size = 20;
 
-for i = 1:length(variables)
+for i = 6:7%%%%%1:length(variables)
     close all
     figure;
     set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w');
@@ -80,6 +80,11 @@ for i = 1:length(variables)
 
     % Add title and labels
     title(variables{i}, "FontSize", 40);
+    if i == 6
+        title('Gamma Power', "FontSize", 40)
+    elseif i == 7
+        title('Gamma Frequency', "FontSize", 40)
+    end
     ylabel(y_axis_labels{i}, "FontSize", 30);
     set(gca, 'Box', 'off');
     ax = gca;
@@ -93,7 +98,7 @@ for i = 1:length(variables)
     end
 
     % Save individual subplot
-    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_boxplots_', save_names{i}, '.png'));
+    saveas(gcf, strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/overview/GCP_stats_boxplots_', save_names{i}, '.png'));
 end
 
 %% BOXPLOTS OVERVIEW
@@ -152,7 +157,7 @@ for i = 1:length(variables)
     ylabel(y_axis_labels{i}, "FontSize", 15);
     hold off;
 end
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_boxplots.png');
+saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_boxplots.png');
 
 %% PERCENTAGE CHANGE BARPLOTS for each variable
 close all;
@@ -202,7 +207,7 @@ for i = 1:length(variables)
     hold off;
 
     % Save individual bar plot
-    saveas(gcf, strcat('/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_barplots_', save_names{i}, '.png'));
+    saveas(gcf, strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/overview/GCP_stats_barplots_', save_names{i}, '.png'));
 
     % Close the individual figure to free memory
     close(gcf);
@@ -258,7 +263,7 @@ for i = 1:length(variables)
     hold off;
 end
 sgtitle('Percentage Change (HC - LC)', 'FontSize', 24);
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_barplots_percentage_change.png');
+saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_barplots_percentage_change.png');
 
 %% Plot DIFFERENCES in GAMMA POWER and FREQUENCY against GAZE METRICS: MICROSACCADES,
 %  GAZE DEVIATION and labels by ET (BLINKS, FIXATIONS, SACCADES)
@@ -301,7 +306,7 @@ for i = 1:n_metrics
     title(['Pow vs ', metrics{i, 1}], 'FontSize', 18);
     hold off;
 end
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations_pow.png');
+saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations_pow.png');
 
 % Create figure for Gamma Frequency
 figure;
@@ -319,7 +324,7 @@ for i = 1:n_metrics
     title(['Freq vs ', metrics{i, 1}], 'FontSize', 18);
     hold off;
 end
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations_freq.png');
+saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_associations_freq.png');
 
 %% CORRELATION matrix
 % close all
@@ -367,4 +372,4 @@ saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats
 % h.ColorLimits = [-1, 1]; % Color limits to ensure proper color mapping
 % h.FontSize = 12; % Increase the size of the x and y axis tick labels
 % hTitle.FontSize = 25;
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_correlation_matrix.png');
+saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview_correlation_matrix.png');
