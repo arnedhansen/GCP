@@ -11,7 +11,7 @@ subjects = {folders.name};
 
 %% Load data
 load('/Volumes/methlab/Students/Arne/GCP/data/features/behavioral_matrix.mat');
-load('/Volumes/methlab/Students/Arne/GCP/data/features/eeg_matrix.mat');
+load('/Volumes/methlab/Students/Arne/GCP/data/features/eeg_matrix_superlets.mat');
 load('/Volumes/methlab/Students/Arne/GCP/data/features/gaze_matrix_bl.mat');
 
 %% Merge structures
