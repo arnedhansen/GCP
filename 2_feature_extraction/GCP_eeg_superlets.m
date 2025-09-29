@@ -202,7 +202,7 @@ for subj = 1 : length(subjects)
 
     %% Save data
     cd(datapath)
-    save data_tfr tfr_c25 tfr_c50 tfr_c75 tfr_c100 ...
+    save data_tfr_superlets tfr_c25 tfr_c50 tfr_c75 tfr_c100 ...
         tfr_c25_fooof tfr_c50_fooof tfr_c75_fooof tfr_c100_fooof ...
         tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl ...
         tfr_c25_fooof_bl tfr_c50_fooof_bl tfr_c75_fooof_bl tfr_c100_fooof_bl ...
@@ -228,7 +228,6 @@ for anal_period = 1:2
 
     for subj = 1 : length(subjects)
         datapath = strcat(path, subjects{subj}, '/eeg');
-        %if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
         % Load data
         cd(datapath);
         load('data_tfr.mat');
@@ -242,61 +241,68 @@ for anal_period = 1:2
         %% Select data
         pow_c25                                       = select_data(analysis_period, freq_range, tfr_c25);
         pow_c25_baselined                             = select_data(analysis_period, freq_range, tfr_c25_bl);
+        pow_c25_fooof                                 = select_data(analysis_period, freq_range, tfr_c25_fooof);
         pow_c25_fooof_bl_smooth                       = select_data(analysis_period, freq_range, tfr_c25_fooof_bl_smooth);
-        pow_c25_baseline_period                       = select_data(baseline_period, freq_range, tfr_c25);
+        pow_c25_baseline_period                       = select_data(baseline_period, freq_range, tfr_c25_fooof);
 
         pow_c50                                       = select_data(analysis_period, freq_range, tfr_c50);
         pow_c50_baselined                             = select_data(analysis_period, freq_range, tfr_c50_bl);
+        pow_c50_fooof                                 = select_data(analysis_period, freq_range, tfr_c50_fooof);
         pow_c50_fooof_bl_smooth                       = select_data(analysis_period, freq_range, tfr_c50_fooof_bl_smooth);
-        pow_c50_baseline_period                       = select_data(baseline_period, freq_range, tfr_c50);
+        pow_c50_baseline_period                       = select_data(baseline_period, freq_range, tfr_c50_fooof);
 
         pow_c75                                       = select_data(analysis_period, freq_range, tfr_c75);
         pow_c75_baselined                             = select_data(analysis_period, freq_range, tfr_c75_bl);
+        pow_c75_fooof                                 = select_data(analysis_period, freq_range, tfr_c75_fooof);
         pow_c75_fooof_bl_smooth                       = select_data(analysis_period, freq_range, tfr_c75_fooof_bl_smooth);
-        pow_c75_baseline_period                       = select_data(baseline_period, freq_range, tfr_c75);
+        pow_c75_baseline_period                       = select_data(baseline_period, freq_range, tfr_c75_fooof);
 
-        pow_c100                                       = select_data(analysis_period, freq_range, tfr_c100);
-        pow_c100_baselined                             = select_data(analysis_period, freq_range, tfr_c100_bl);
-        pow_c100_fooof_bl_smooth                       = select_data(analysis_period, freq_range, tfr_c100_fooof_bl_smooth);
-        pow_c100_baseline_period                       = select_data(baseline_period, freq_range, tfr_c100);
+        pow_c100                                      = select_data(analysis_period, freq_range, tfr_c100);
+        pow_c100_baselined                            = select_data(analysis_period, freq_range, tfr_c100_bl);
+        pow_c100_fooof                                = select_data(analysis_period, freq_range, tfr_c100_fooof);
+        pow_c100_fooof_bl_smooth                      = select_data(analysis_period, freq_range, tfr_c100_fooof_bl_smooth);
+        pow_c100_baseline_period                      = select_data(baseline_period, freq_range, tfr_c100_fooof);
 
         %% Remove time dimension for POWSCPTRM (channels x frequency)
         pow_c25                                       = remove_time_dimension(pow_c25);
         pow_c25_baselined                             = remove_time_dimension(pow_c25_baselined);
+        pow_c25_fooof                                 = remove_time_dimension(pow_c25_fooof);
         pow_c25_fooof_bl_smooth                       = remove_time_dimension(pow_c25_fooof_bl_smooth);
         pow_c25_baseline_period                       = remove_time_dimension(pow_c25_baseline_period);
 
         pow_c50                                       = remove_time_dimension(pow_c50);
         pow_c50_baselined                             = remove_time_dimension(pow_c50_baselined);
+        pow_c50_fooof                                 = remove_time_dimension(pow_c50_fooof);
         pow_c50_fooof_bl_smooth                       = remove_time_dimension(pow_c50_fooof_bl_smooth);
         pow_c50_baseline_period                       = remove_time_dimension(pow_c50_baseline_period);
 
         pow_c75                                       = remove_time_dimension(pow_c75);
         pow_c75_baselined                             = remove_time_dimension(pow_c75_baselined);
+        pow_c75_fooof                                 = remove_time_dimension(pow_c75_fooof);
         pow_c75_fooof_bl_smooth                       = remove_time_dimension(pow_c75_fooof_bl_smooth);
         pow_c75_baseline_period                       = remove_time_dimension(pow_c75_baseline_period);
 
-        pow_c100                                       = remove_time_dimension(pow_c100);
-        pow_c100_baselined                             = remove_time_dimension(pow_c100_baselined);
-        pow_c100_fooof_bl_smooth                       = remove_time_dimension(pow_c100_fooof_bl_smooth);
-        pow_c100_baseline_period                       = remove_time_dimension(pow_c100_baseline_period);
+        pow_c100                                      = remove_time_dimension(pow_c100);
+        pow_c100_baselined                            = remove_time_dimension(pow_c100_baselined);
+        pow_c100_fooof                                = remove_time_dimension(pow_c100_fooof);
+        pow_c100_fooof_bl_smooth                      = remove_time_dimension(pow_c100_fooof_bl_smooth);
+        pow_c100_baseline_period                      = remove_time_dimension(pow_c100_baseline_period);
 
         %% Save data
         savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
         mkdir(savepath)
         cd(savepath)
         if anal_period == 1
-            save power_spectra_300_superlets pow_c25 pow_c25_baselined pow_c25_fooof_bl_smooth pow_c25_baseline_period ...
-                pow_c50 pow_c50_baselined pow_c50_fooof_bl_smooth pow_c50_baseline_period ...
-                pow_c75 pow_c75_baselined pow_c75_fooof_bl_smooth pow_c75_baseline_period ...
-                pow_c100 pow_c100_baselined pow_c100_fooof_bl_smooth pow_c100_baseline_period
+            save power_spectra_300_superlets pow_c25 pow_c25_baselined pow_c25_fooof pow_c25_fooof_bl_smooth pow_c25_baseline_period ...
+                pow_c50 pow_c50_baselined pow_c50_fooof pow_c50_fooof_bl_smooth pow_c50_baseline_period ...
+                pow_c75 pow_c75_baselined pow_c75_fooof pow_c75_fooof_bl_smooth pow_c75_baseline_period ...
+                pow_c100 pow_c100_baselined pow_c100_fooof pow_c100_fooof_bl_smooth pow_c100_baseline_period
         else
-            save power_spectra_superlets pow_c25 pow_c25_baselined pow_c25_fooof_bl_smooth pow_c25_baseline_period ...
-                pow_c50 pow_c50_baselined pow_c50_fooof_bl_smooth pow_c50_baseline_period ...
-                pow_c75 pow_c75_baselined pow_c75_fooof_bl_smooth pow_c75_baseline_period ...
-                pow_c100 pow_c100_baselined pow_c100_fooof_bl_smooth pow_c100_baseline_period
+            save power_spectra_superlets pow_c25 pow_c25_baselined pow_c25_fooof pow_c25_fooof_bl_smooth pow_c25_baseline_period ...
+                pow_c50 pow_c50_baselined pow_c50_fooof pow_c50_fooof_bl_smooth pow_c50_baseline_period ...
+                pow_c75 pow_c75_baselined pow_c75_fooof pow_c75_fooof_bl_smooth pow_c75_baseline_period ...
+                pow_c100 pow_c100_baselined pow_c100_fooof pow_c100_fooof_bl_smooth pow_c100_baseline_period
         end
-        %end
     end
 end
 
@@ -317,6 +323,9 @@ channels = occ_channels;
 %% Extract gamma peak power and frequency
 eeg_data = [];
 for subj = 1:length(subjects)
+    clc
+    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracting...'])
+
     % Load power spectra data
     if anal_period == 1
         load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300_superlets'))
@@ -359,15 +368,37 @@ for subj = 1:length(subjects)
     [c100_pow, peak_idx] = max(peaks);
     c100_freq = locs(peak_idx);
 
+    % Compute percentage differences to baseline
+    orig_freq = 30:5:90; % 13 values
+    new_freq  = 30:1:90; % 61 values
+    pow_c25_baseline_period  = smooth_tfr(pow_c25_baseline_period, orig_freq, new_freq);
+    pow_c50_baseline_period  = smooth_tfr(pow_c50_baseline_period, orig_freq, new_freq);
+    pow_c75_baseline_period  = smooth_tfr(pow_c75_baseline_period, orig_freq, new_freq);
+    pow_c100_baseline_period = smooth_tfr(pow_c100_baseline_period, orig_freq, new_freq);
+
+    % Get baseline gamma power for each condition (mean across same channels and same freq range)
+    c25_baseline_power = mean(pow_c25_baseline_period.powspctrm(channels_idx, freq_idx), 'all');
+    c50_baseline_power = mean(pow_c50_baseline_period.powspctrm(channels_idx, freq_idx), 'all');
+    c75_baseline_power = mean(pow_c75_baseline_period.powspctrm(channels_idx, freq_idx), 'all');
+    c100_baseline_power= mean(pow_c100_baseline_period.powspctrm(channels_idx, freq_idx), 'all');
+
+    % Compute percentage differences between stimulus power and baseline power
+    c25_pow_diff = (c25_pow - c25_baseline_power) / c25_baseline_power * 100;
+    c50_pow_diff = (c50_pow - c50_baseline_power) / c50_baseline_power * 100;
+    c75_pow_diff = (c75_pow - c75_baseline_power) / c75_baseline_power * 100;
+    c100_pow_diff= (c100_pow - c100_baseline_power) / c100_baseline_power * 100;
+
     % Create across condition structure
     subject_id = repmat(str2num(subjects{subj}), 4, 1);
     conditions = [1; 2; 3; 4];
     powers = [c25_pow; c50_pow; c75_pow; c100_pow];
+    powersPerc = [c25_pow_diff; c50_pow_diff; c75_pow_diff; c100_pow_diff];
     frequencies = [c25_freq; c50_freq; c75_freq; c100_freq];
 
     subj_data_eeg = struct('ID', num2cell(subject_id), ...
         'Condition', num2cell(conditions), ...
         'Power', num2cell(powers), ...
+        'PowerPercentage', num2cell(powers), ...
         'Frequency', num2cell(frequencies));
 
     % Save data
