@@ -37,7 +37,7 @@ for subj = 1 : length(subjects)
     close all
     fprintf('Loading data for Subject GCP %s (%.2d/%.2d)... \n', num2str(subjects{subj}), subj, length(subjects))
     load dataEEG
-    load('/Volumes/methlab/Students/Arne/MA/headmodel/ant128lay.mat');
+    load('/Volumes/g_psyplafor_methlab$/Students/Arne/MA/headmodel/ant128lay.mat');
 
     %% Identify indices of trials belonging to conditions
     ind61 = find(dataEEG_c25.trialinfo  == 61);
@@ -289,7 +289,7 @@ for anal_period = 1:2
         pow_c100_baseline_period                      = remove_time_dimension(pow_c100_baseline_period);
 
         %% Save data
-        savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
+        savepath = strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
         mkdir(savepath)
         cd(savepath)
         if anal_period == 1
@@ -327,11 +327,7 @@ for subj = 1:length(subjects)
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracting...'])
 
     % Load power spectra data
-    if anal_period == 1
-        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300_superlets'))
-    else
-        load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_superlets'))
-    end
+    load(strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_superlets'))
 
     % Find channels and frequencies of interest
     channels_idx = ismember(pow_c25_fooof_bl_smooth.label, channels);
@@ -402,23 +398,17 @@ for subj = 1:length(subjects)
         'Frequency', num2cell(frequencies));
 
     % Save data
-    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
+    savepath = strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
     mkdir(savepath)
     cd(savepath)
-    if anal_period == 1
-        save eeg_matrix_subj300_superlets subj_data_eeg
-        save pow300_superlets c25_pow c50_pow c75_pow c100_pow
-        save freq300_superlets c25_freq c50_freq c75_freq c100_freq
-    else
-        save eeg_matrix_subj_superlets subj_data_eeg
-        save pow_superlets c25_pow c50_pow c75_pow c100_pow
-        save freq_superlets c25_freq c50_freq c75_freq c100_freq
-    end
+    save eeg_matrix_subj_superlets subj_data_eeg
+    save pow_superlets c25_pow c50_pow c75_pow c100_pow
+    save freq_superlets c25_freq c50_freq c75_freq c100_freq
 
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracted.'])
 
     % Append to the final structure array
     eeg_data = [eeg_data; subj_data_eeg];
 end
-save /Volumes/methlab/Students/Arne/GCP/data/features/eeg_matrix_superlets eeg_data
+save /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/eeg_matrix_superlets eeg_data
 disp('EEG Feature Matrix created')
