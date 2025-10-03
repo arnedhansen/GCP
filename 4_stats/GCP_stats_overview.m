@@ -15,13 +15,13 @@ save_names = {'acc', 'rt', 'gazedev', 'gazestd', 'ms', 'pow', 'freq'};
 colors = color_def('GCP');
 
 %% BOXPLOTS for each variable
-y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Gaze STD [px]', 'Microsaccade Rate [%]', 'Gamma Power [dB]', 'Gamma Frequency [Hz]'};
+y_axis_labels = {'Accuracy [%]', 'Reaction Time [ms]', 'Gaze Deviation [px]', 'Gaze STD [px]', 'Microsaccade Rate [%]', 'Gamma Power [%]', 'Gamma Frequency [Hz]'};
 
 % Unique subject identifiers
 subjects = unique(data.ID);
 font_size = 20;
 
-for i = 6:7%%%%%1:length(variables)
+for i = 1:length(variables)
     close all
     figure;
     set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w');
@@ -79,17 +79,18 @@ for i = 6:7%%%%%1:length(variables)
     end
 
     % Add title and labels
+    ylabel(y_axis_labels{i}, "FontSize", 30);
+    set(gca, 'Box', 'off');
+    ax = gca;
+    ax.FontSize = font_size;
     title(variables{i}, "FontSize", 40);
     if i == 6
         title('Gamma Power', "FontSize", 40)
     elseif i == 7
         title('Gamma Frequency', "FontSize", 40)
     end
-    ylabel(y_axis_labels{i}, "FontSize", 30);
-    set(gca, 'Box', 'off');
-    ax = gca;
-    ax.FontSize = font_size;
 
+    % Add customization to microsaccade plot
     if i == 5
         yline(0, '--')
         box on

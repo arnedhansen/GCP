@@ -93,7 +93,7 @@ for subj = 1 : length(subjects)
     % Convert back to FieldTrip structure
     % 25% contrast concentric dynamic inward
     tfr_c25            = [];
-    tfr_c25.powspctrm  = suplet25_pow;       % [nChan × nFreq × nTime]
+    tfr_c25.powspctrm  = suplet25_pow; % [nChan × nFreq × nTime]
     tfr_c25.freq       = F;
     tfr_c25.time       = dataEEG_c25.time{1};
     tfr_c25.label      = dataEEG_c25.label(chn);
