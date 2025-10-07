@@ -1,18 +1,17 @@
 %% GCP Gamma Peak Power and Frequency
 
 %% Setup
-clear
+startup
 [subjects, path, colors] = setup('GCP');
 analysis_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus presentation
 
 %% Load power spectra data
 for subj = 1:length(subjects)
-    % if analysis_period == 1
-    %     load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
-    % else
-    %     load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
-    % end
-    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_superlets'))
+    if analysis_period == 1
+        load(strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
+    else
+        load(strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    end
 
     % Raw powerspectra
     power_c25{subj}  = pow_c25;
@@ -32,12 +31,12 @@ for subj = 1:length(subjects)
     power_c75_baseline_period{subj}  = pow_c75_baseline_period;
     power_c100_baseline_period{subj} = pow_c100_baseline_period;
 
-    % FOOOFed powerspectra
-    power_c25_fooof{subj}  = pow_c25_fooof;
-    power_c50_fooof{subj}  = pow_c50_fooof;
-    power_c75_fooof{subj}  = pow_c75_fooof;
-    power_c100_fooof{subj} = pow_c100_fooof;
-
+    % % FOOOFed powerspectra
+    % power_c25_fooof{subj}  = pow_c25_fooof;
+    % power_c50_fooof{subj}  = pow_c50_fooof;
+    % power_c75_fooof{subj}  = pow_c75_fooof;
+    % power_c100_fooof{subj} = pow_c100_fooof;
+    
     % Baselined FOOOFed smoothed powerspectra
     power_c25_fooof_bl_smooth{subj}  = pow_c25_fooof_bl_smooth;
     power_c50_fooof_bl_smooth{subj}  = pow_c50_fooof_bl_smooth;
@@ -64,10 +63,10 @@ gapow_c50_baseline_period  = ft_freqgrandaverage(cfg, power_c50_baseline_period{
 gapow_c75_baseline_period  = ft_freqgrandaverage(cfg, power_c75_baseline_period{:});
 gapow_c100_baseline_period = ft_freqgrandaverage(cfg, power_c100_baseline_period{:});
 
-gapow_c25_fooof  = ft_freqgrandaverage(cfg, power_c25_fooof{:});
-gapow_c50_fooof  = ft_freqgrandaverage(cfg, power_c50_fooof{:});
-gapow_c75_fooof  = ft_freqgrandaverage(cfg, power_c75_fooof{:});
-gapow_c100_fooof = ft_freqgrandaverage(cfg, power_c100_fooof{:});
+% gapow_c25_fooof  = ft_freqgrandaverage(cfg, power_c25_fooof{:});
+% gapow_c50_fooof  = ft_freqgrandaverage(cfg, power_c50_fooof{:});
+% gapow_c75_fooof  = ft_freqgrandaverage(cfg, power_c75_fooof{:});
+% gapow_c100_fooof = ft_freqgrandaverage(cfg, power_c100_fooof{:});
 
 gapow_c25_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c25_fooof_bl_smooth{:});
 gapow_c50_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c50_fooof_bl_smooth{:});
@@ -102,36 +101,27 @@ cfg.linewidth = 4;
 channels_seb = ismember(gapow_c25_fooof_bl_smooth.label, cfg.channel);
 
 % %OPTIONAL: Add extra smoothing to powerspectra
-% smoothWin = 20; % Size of smoothing window in frequency bins
-% gapow_c25_fooof_bl_smooth_extra  = gapow_c25_fooof_bl_smooth;
-% gapow_c50_fooof_bl_smooth_extra  = gapow_c50_fooof_bl_smooth;
-% gapow_c75_fooof_bl_smooth_extra  = gapow_c75_fooof_bl_smooth;
-% gapow_c100_fooof_bl_smooth_extra = gapow_c100_fooof_bl_smooth;
+smoothWin = 10; % Size of smoothing window in frequency bins
+gapow_c25_fooof_bl_smooth_extra  = gapow_c25_fooof_bl_smooth;
+gapow_c50_fooof_bl_smooth_extra  = gapow_c50_fooof_bl_smooth;
+gapow_c75_fooof_bl_smooth_extra  = gapow_c75_fooof_bl_smooth;
+gapow_c100_fooof_bl_smooth_extra = gapow_c100_fooof_bl_smooth;
  % Moving Window
-% gapow_c25_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c25_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
-% gapow_c50_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c50_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
-% gapow_c75_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c75_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
-% gapow_c100_fooof_bl_smooth_extra.powspctrm(channels_seb, :) = movmean(gapow_c100_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
+gapow_c25_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c25_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
+gapow_c50_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c50_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
+gapow_c75_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = movmean(gapow_c75_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
+gapow_c100_fooof_bl_smooth_extra.powspctrm(channels_seb, :) = movmean(gapow_c100_fooof_bl_smooth.powspctrm(channels_seb, :), smoothWin, 2);
 %  % Gaussian Kernel
 % gapow_c25_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = smoothdata(gapow_c25_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
 % gapow_c50_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = smoothdata(gapow_c50_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
 % gapow_c75_fooof_bl_smooth_extra.powspctrm(channels_seb, :)  = smoothdata(gapow_c75_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
 % gapow_c100_fooof_bl_smooth_extra.powspctrm(channels_seb, :) = smoothdata(gapow_c100_fooof_bl_smooth.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
 
-% %OPTIONAL: Add extra smoothing to powerspectra
-smoothWin = 10; % Size of smoothing window in frequency bins
-gapow_c25_fooof.powspctrm  = smoothdata(gapow_c25_fooof.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
-gapow_c50_fooof.powspctrm  = smoothdata(gapow_c50_fooof.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
-gapow_c75_fooof.powspctrm  = smoothdata(gapow_c75_fooof.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
-gapow_c100_fooof.powspctrm = smoothdata(gapow_c100_fooof.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
-
-
 % Set data to plot
-ga25=  gapow_c25_fooof%_bl_smooth_extra ;
-ga50=  gapow_c50_fooof%_bl_smooth_extra ;
-ga75=  gapow_c75_fooof%_bl_smooth_extra ;
-ga100=gapow_c100_fooof%_bl_smooth_extra;
-
+ga25=  gapow_c25_fooof_bl_smooth_extra ;
+ga50=  gapow_c50_fooof_bl_smooth_extra ;
+ga75=  gapow_c75_fooof_bl_smooth_extra ;
+ga100=gapow_c100_fooof_bl_smooth_extra;
 
 % Plot for all contrasts
 ft_singleplotER(cfg, ga25, ga50, ga75, ga100);
@@ -159,7 +149,7 @@ yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
 set(gcf, 'color', 'w');
 set(gca, 'FontSize', 20);
 % xlim([30 90])
-%ylim([-0.04 0.04])
+ylim([-0.0275 0.0275])
 xlabel('Frequency [Hz]', 'FontSize', 30);
 ylabel('Power [dB]', 'FontSize', 30);
 legend(h, {' 25% Contrast',' 50% Contrast',' 75% Contrast','100% Contrast'}, 'FontName','Arial','FontSize',25);
@@ -168,9 +158,9 @@ hold off;
 
 % Save the plot
 if analysis_period == 1
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_fooof_bl_smooth_300.png');
+    saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_fooof_bl_smooth_300.png');
 else
-    saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_fooof_bl_smooth.png');
+    saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_fooof_bl_smooth_extra.png');
 end
 
 %% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
@@ -240,13 +230,13 @@ end
 % 
 % % Save the plot
 % if analysis_period == 1
-%     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_percentage_300.png');
+%     saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_percentage_300.png');
 % else
-%     saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
+%     saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
 % end
 
 %% Plot INDIVIDUAL powerspectra
-% output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
+% output_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/';
 % for subj = 1:length(subjects)
 %     close all;
 %     figure;
@@ -328,7 +318,7 @@ end
 % 
 %     % Save individual plot
 %     if analysis_period == 1
-%         output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300';
+%         output_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300';
 %         save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined_300.png', subjects{subj}));
 %     else
 %         save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined.png', subjects{subj}));
@@ -338,7 +328,7 @@ end
 
 %% Subplot with all INDIVIDUAL power spectra
 close all
-output_dir = '/Volumes/methlab/Students/Arne/GCP/figures/eeg/powspctrm/';
+output_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/';
 num_subs = length(subjects);
 cols = 5;  % Number of columns
 rows = ceil(num_subs / cols); % Number of rows dynamically calculated
