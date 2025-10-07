@@ -1,64 +1,34 @@
 %% GCP Gamma Peak Power and Frequency SUPERLETS (Percentage Change Version)
 
 %% Setup
-clear
+startup
 [subjects, path, colors] = setup('GCP');
 analysis_period = 0; % 1 = ONLY 0–300 ms, otherwise 300–2000 ms after stimulus presentation
 
 %% Load power spectra data
 for subj = 1:length(subjects)
     load(strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_superlets'))
+    sprintf('LOADING sub')
 
-    % Raw powerspectra
-    power_c25{subj}  = pow_c25;
-    power_c50{subj}  = pow_c50;
-    power_c75{subj}  = pow_c75;
-    power_c100{subj} = pow_c100;
-
-    % Baselined powerspectra
-    power_c25_baselined{subj}  = pow_c25_baselined;
-    power_c50_baselined{subj}  = pow_c50_baselined;
-    power_c75_baselined{subj}  = pow_c75_baselined;
-    power_c100_baselined{subj} = pow_c100_baselined;
-
-    % Baseline period powerspectra
-    power_c25_baseline_period{subj}  = pow_c25_baseline_period;
-    power_c50_baseline_period{subj}  = pow_c50_baseline_period;
-    power_c75_baseline_period{subj}  = pow_c75_baseline_period;
-    power_c100_baseline_period{subj} = pow_c100_baseline_period;
-
-    % Re-adjust frequency smoothing
-    orig_freq = 30:5:90; % 13 values
-    new_freq  = 30:1:90; % 61 values
-    power_c25_baseline_period{subj}  = smooth_tfr(power_c25_baseline_period{subj}, orig_freq, new_freq);
-    power_c50_baseline_period{subj}  = smooth_tfr(power_c50_baseline_period{subj}, orig_freq, new_freq);
-    power_c75_baseline_period{subj}  = smooth_tfr(power_c75_baseline_period{subj}, orig_freq, new_freq);
-    power_c100_baseline_period{subj} = smooth_tfr(power_c100_baseline_period{subj}, orig_freq, new_freq);
-
-    % FOOOFed powerspectra
-    power_c25_fooof{subj}  = pow_c25_fooof;
-    power_c50_fooof{subj}  = pow_c50_fooof;
-    power_c75_fooof{subj}  = pow_c75_fooof;
-    power_c100_fooof{subj} = pow_c100_fooof;
-
-    % Baselined FOOOFed smoothed powerspectra
-    power_c25_fooof_bl_smooth{subj}  = pow_c25_fooof_bl_smooth;
-    power_c50_fooof_bl_smooth{subj}  = pow_c50_fooof_bl_smooth;
-    power_c75_fooof_bl_smooth{subj}  = pow_c75_fooof_bl_smooth;
-    power_c100_fooof_bl_smooth{subj} = pow_c100_fooof_bl_smooth;
+    % % Raw powerspectra
+    % power_c25{subj}  = pow_c25;
+    % power_c50{subj}  = pow_c50;
+    % power_c75{subj}  = pow_c75;
+    % power_c100{subj} = pow_c100;
+    % 
+    % % Baselined powerspectra
+    power_c25_bl{subj}  = pow_c25_baselined;
+    power_c50_bl{subj}  = pow_c50_baselined;
+    power_c75_bl{subj}  = pow_c75_baselined;
+    power_c100_bl{subj} = pow_c100_baselined;
 end
 
 % Compute grand averages
 cfg = [];
-gapow_c25_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c25_fooof_bl_smooth{:});
-gapow_c50_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c50_fooof_bl_smooth{:});
-gapow_c75_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c75_fooof_bl_smooth{:});
-gapow_c100_fooof_bl_smooth = ft_freqgrandaverage(cfg, power_c100_fooof_bl_smooth{:});
-
-gapow_c25_baseline_period  = ft_freqgrandaverage(cfg, power_c25_baseline_period{:});
-gapow_c50_baseline_period  = ft_freqgrandaverage(cfg, power_c50_baseline_period{:});
-gapow_c75_baseline_period  = ft_freqgrandaverage(cfg, power_c75_baseline_period{:});
-gapow_c100_baseline_period = ft_freqgrandaverage(cfg, power_c100_baseline_period{:});
+gapow_c25_bl  = ft_freqgrandaverage(cfg, power_c25_bl{:});
+gapow_c50_bl  = ft_freqgrandaverage(cfg, power_c50_bl{:});
+gapow_c75_bl  = ft_freqgrandaverage(cfg, power_c75_bl{:});
+gapow_c100_bl = ft_freqgrandaverage(cfg, power_c100_bl{:});
 
 %% Define channels
 datapath = strcat(path, subjects{1}, '/eeg');
@@ -74,6 +44,71 @@ for i = 1:length(pow_label.label)
     end
 end
 channels = occ_channels;
+
+%% Plot GRAND AVERAGE power spectrum
+close all;
+figure;
+set(gcf, 'Position', [0, 0, 1000, 2000], 'Color', 'w');
+cfg = [];
+cfg.channel = channels;
+cfg.figure = 'gcf';
+cfg.linewidth = 4;
+channels_seb = ismember(gapow_c25_bl.label, cfg.channel);
+
+% Smooth
+gapow_c25_bl_smooth  = gapow_c25_bl;
+gapow_c50_bl_smooth  = gapow_c50_bl;
+gapow_c75_bl_smooth  = gapow_c75_bl;
+gapow_c100_bl_smooth = gapow_c100_bl;
+smoothWin = 5;
+gapow_c25_bl_smooth.powspctrm(channels_seb, :)  = smoothdata(gapow_c25_bl.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+gapow_c50_bl_smooth.powspctrm(channels_seb, :)  = smoothdata(gapow_c50_bl.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+gapow_c75_bl_smooth.powspctrm(channels_seb, :)  = smoothdata(gapow_c75_bl.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+gapow_c100_bl_smooth.powspctrm(channels_seb, :)  = smoothdata(gapow_c100_bl.powspctrm(channels_seb, :), 2, 'gaussian', smoothWin);
+
+% Set data to plot
+ga25=   gapow_c25_bl_smooth;
+ga50=   gapow_c50_bl_smooth;
+ga75=   gapow_c75_bl_smooth;
+ga100= gapow_c100_bl_smooth;
+
+% Plot for all contrasts
+ft_singleplotER(cfg, ga25, ga50, ga75, ga100);
+hold on;
+
+% Add shaded error bars for each condition
+conditions = {ga25, ga50, ga75, ga100};
+col_indices = [1, 2, 3, 4];
+for i = 1:4
+    curr_cond = conditions{i};
+    lp     = {'-','Color', colors(col_indices(i),:)};
+    seb = shadedErrorBar(curr_cond.freq, ...
+        mean(curr_cond.powspctrm(channels_seb, :), 1), ...
+        std(curr_cond.powspctrm(channels_seb, :)) / sqrt(size(curr_cond.powspctrm(channels_seb, :), 1)), ...
+        'lineProps', lp);
+    h(i) = seb.mainLine;
+    seb.mainLine.Color = colors(col_indices(i), :);
+    seb.patch.FaceColor = colors(col_indices(i), :);
+    set(seb.mainLine, 'LineWidth', cfg.linewidth, 'Color', colors(col_indices(i), :));
+    set(seb.patch, 'FaceAlpha', 0.25);
+end
+
+% Adjust plot aesthetics
+yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
+set(gcf, 'color', 'w');
+set(gca, 'FontSize', 20);
+% xlim([30 90])
+%ylim([-0.025 0.025])
+xlabel('Frequency [Hz]', 'FontSize', 30);
+ylabel('Power [dB]', 'FontSize', 30);
+legend(h, {' 25% Contrast',' 50% Contrast',' 75% Contrast','100% Contrast'}, 'FontName','Arial','FontSize',25);
+title('Grand Average Power Spectrum (Superlets)', 'FontSize', 40);
+hold off;
+
+% Save the plot
+saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_superlets_bl.png');
+
+disp(1)
 
 %% Figure 1: Grand average percentage change spectrum
 % Compute percentage change grand averages
