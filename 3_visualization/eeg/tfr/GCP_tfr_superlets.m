@@ -1,6 +1,7 @@
 %% Gamma Time Frequency Analysis for GCP data
 
 %% Setup
+startup
 clear
 [subjects, path, ~, layANThead] = setup('GCP');
 
@@ -10,10 +11,10 @@ for subj = 1:length(subjects)
     datapath = strcat(path,subjects{subj}, '/eeg');
     cd(datapath)
     load('data_tfr_superlets.mat');
-    tfr25{subj}  = tfr_c25_fooof_bl_smooth;
-    tfr50{subj}  = tfr_c50_fooof_bl_smooth;
-    tfr75{subj}  = tfr_c75_fooof_bl_smooth;
-    tfr100{subj} = tfr_c100_fooof_bl_smooth;
+    tfr25{subj}  = tfr_c25_bl;
+    tfr50{subj}  = tfr_c50_bl;
+    tfr75{subj}  = tfr_c75_bl;
+    tfr100{subj} = tfr_c100_bl;
 
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' TFR loaded.'])
 end
@@ -27,7 +28,7 @@ gatfr100 = ft_freqgrandaverage([], tfr100{:});
 %% Define occipital channels
 % Occipital channels
 occ_channels = {};
-tfrlabel = gatfr25.label;
+tfrlabel = tfr25{1}.label;
 for i = 1:length(tfrlabel)
     label = tfrlabel{i};
     if contains(label, {'O'}) || contains(label, {'P'}) && ~contains(label, {'T'}) ...
@@ -53,12 +54,12 @@ max_spctrm = max([
     max(abs(avgscptrm50), [], 'all'), ...
     max(abs(avgscptrm75), [], 'all'), ...
     max(abs(avgscptrm100), [], 'all')]);
-clim = double([-max_spctrm * 0.9, max_spctrm * 0.9]);
+clim = double([-max_spctrm * 0.75, max_spctrm * 0.75]);
 
 % Figure
 figure;
 set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
-sgtitle('Grand Average Time-Frequency Representations', 'FontSize', 30, 'FontWeight', 'bold')
+sgtitle('Grand Average Time-Frequency Representations (Superlets)', 'FontSize', 30, 'FontWeight', 'bold')
 
 % Common configuration
 cfg = [];
@@ -126,7 +127,7 @@ set(gca, 'FontSize', 20)
 title('100% Contrast');
 
 % Save
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_superlets.png');
+saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_superlets_bl.png');
 
 %% Difference
 diff = gatfr100;
@@ -144,4 +145,4 @@ ylabel('Frequency [Hz]');
 rectangle('Position', [0.3, 30, 1.7, 60], 'EdgeColor', 'r', 'LineWidth', 5);
 set(gca, 'FontSize', 25)
 title('TFR Difference: 100% Contrast - 50% Contrast');
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_diff_superlets.png');
+saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_diff_superlets_bl.png');
