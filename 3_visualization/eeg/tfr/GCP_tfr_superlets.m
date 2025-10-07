@@ -71,7 +71,6 @@ cfg.colorbar = 'yes';
 cfg.zlim = 'maxabs';
 cfg.xlim = ([-0.5 2.5]);
 cfg.ylim = [30 90];
-%load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
 color_map = flipud(cbrewer('div', 'RdBu', 64));
 
 % TFR2
