@@ -2,24 +2,17 @@
 
 %% Setup
 startup
-clear
-addpath('/Users/Arne/Documents/matlabtools/eeglab2024.2');
-eeglab
-clc
-close all
-path = '/Volumes/methlab/Students/Arne/GCP/data/merged/';
-dirs = dir(path);
-folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
-subjects = {folders.name};
+addEEGLab
+[subjects, path, ~, ~] = setup('GCP');
 
 %% General Eigendecomposition
-for subj = 10%:length(subjects)
+for subj = 1:length(subjects)
     datapath = strcat(path, subjects{subj});
     cd(datapath)
         
     % Read blocks
     EEG_all = [];
-    for block = 1:1
+    for block = 1:3
         try % Do not load empty blocks
             load(strcat(subjects{subj}, '_EEG_ET_GCP_block', num2str(block), '_merged.mat'))
             
