@@ -51,13 +51,30 @@ for subj = 1:numel(subjects)
     for conds = {'c25','c50','c75','c100'}
         cond = conds{1};
         
-        % pick the right dataET struct
+        % Pick dataET
+        % and compute eye velocity
+        window_size = 50; % 50 samples before/after = 100ms window
         switch cond
           case 'c25', dataET = dataET_c25;
+                      [velocityTrlAvg_c25, velocityTimeSeries_c25] = computeEyeVelocity(dataET, window_size);
           case 'c50', dataET = dataET_c50;
+                      [velocityTrlAvg_c50, velocityTimeSeries_c50] = computeEyeVelocity(dataET, window_size);
           case 'c75', dataET = dataET_c75;
+                      [velocityTrlAvg_c75, velocityTimeSeries_c75] = computeEyeVelocity(dataET, window_size);
           case 'c100',dataET = dataET_c100;
+                      [velocityTrlAvg_c100, velocityTimeSeries_c100] = computeEyeVelocity(dataET, window_size);
         end
+        %   velocityTrlAvg     - [3 x nTrials] matrix with trial-wise average velocity
+        %                        over the interval 0.3–2.0 s:
+        %                           col 1 = mean |vx|   (horizontal)
+        %                           col 2 = mean |vy|   (vertical)
+        %                           col 3 = mean speed  (2D Euclidean)
+        %
+        %   velocityTimeSeries - struct with the same format as dataET, but:
+        %                           trial{trl}(1,:) = smoothed |X-velocity|
+        %                           trial{trl}(2,:) = smoothed |Y-velocity|
+        %                           trial{trl}(3,:) = smoothed 2D speed
+        %                           time{trl}       = time stamps for velocity samples
         
         % initialise per‐trial arrays
         subject_id         = [];
@@ -104,7 +121,7 @@ for subj = 1:numel(subjects)
             x = an_dat(1,:);  
             y = an_dat(2,:);
             
-            % store raw gaze traces for this subject/condition/trial
+            % Store raw gaze traces for this subject/condition/trial
             switch cond
               case 'c25'
                 gaze_x_c25{subj,trl}  = x;
@@ -120,7 +137,7 @@ for subj = 1:numel(subjects)
                 gaze_y_c100{subj,trl} = y;
             end
             
-            % compute analysis‐window metrics
+            % Compute GazeDev & Microsaccades
             dx = x - 400 - nanmean(x-400);
             dy = y - 300 - nanmean(y-300);
             
@@ -134,22 +151,17 @@ for subj = 1:numel(subjects)
             subject_id(end+1)       = str2double(subjects{subj});
             trial_num(end+1)        = trl;
             condition(end+1)        = dataET.trialinfo(trl) - 60;
-            
             gazeDev(end+1)          = mean_eucdev;
             baselineGazeDev(end+1)  = baseline_eucdev;
-            
             gazeSDx(end+1)          = std_x;
             baselineGazeSDx(end+1)  = baseline_std_x;
-            
             gazeSDy(end+1)          = std_y;
             baselineGazeSDy(end+1)  = baseline_std_y;
-            
             pupilSize(end+1)        = pupil;
             baselinePupilSize(end+1)= baseline_pupil;
-            
             microsaccadeRate(end+1) = msrate;
             baselineMSRate(end+1)    = baseline_msrate;
-        end % trial loop
+        end
         
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
