@@ -26,7 +26,7 @@ nRows = ceil(nVars / nCols);
 
 % Prepare figure
 figure;
-set(gcf, 'Position', [100 100 1600 900]);
+set(gcf, 'Position', [0 0 1512 982]);
 
 % Loop through variables
 for i = 1:nVars
@@ -47,3 +47,4 @@ for i = 1:nVars
 end
 
 sgtitle('Merged Data Overview: Boxplots per Condition');
+saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview.png')
