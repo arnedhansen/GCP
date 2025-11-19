@@ -45,8 +45,8 @@ gaze_x_c100  = {};  gaze_y_c100  = {};
 %% Loop over subjects
 clc
 for subj = 1:numel(subjects)
-
-    % load preprocessed eye‐tracker data
+    clc
+    % Load preprocessed ET data
     datapath = fullfile(path, subjects{subj}, 'gaze');
     load(fullfile(datapath,'dataET'));
 
