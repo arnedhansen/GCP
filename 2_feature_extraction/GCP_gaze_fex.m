@@ -1,4 +1,4 @@
-%% GCP Gaze Feature Extraction Sternberg
+%% GCP Gaze Feature Extraction
 %
 % Extracted features:
 %   Gaze deviation (Euclidean distances)
@@ -31,10 +31,11 @@ gaze_data_bl = struct('ID',{},'Condition',{},'PctGazeDeviation',{},...
     'PctVelH',{},'PctVelV',{},'PctVel2D',{});
 
 % time‐windows
-baseline_period = [-1.5, -0.25];
-analysis_period = [ 0.3,  2   ];
-win_size        = 50;    % blink‐removal window (samples)
-fsample         = 500;   % eye‐tracker sampling rate
+baseline_period   = [-1.5, -0.25];
+analysis_period   = [ 0.3,  2   ];
+analysis_periodTS = [ -1 ,  2   ];
+win_size          = 50;    % blink‐removal window (samples)
+fsample           = 500;   % eye‐tracker sampling rate
 
 % prepare raw gaze storage across all subjects
 gaze_x_c25   = {};  gaze_y_c25   = {};
@@ -45,8 +46,10 @@ gaze_x_c100  = {};  gaze_y_c100  = {};
 %% Loop over subjects
 clc
 for subj = 1:numel(subjects)
-    clc
+
     % Load preprocessed ET data
+    clc
+    fprintf('Loading Subject %d/%d...\n', subj, numel(subjects));
     datapath = fullfile(path, subjects{subj}, 'gaze');
     load(fullfile(datapath,'dataET'));
 
@@ -283,7 +286,7 @@ for subj = 1:numel(subjects)
 
         % Timelocked average without baseline
         cfg = [];
-        cfg.latency    = analysis_period;   % [0.3 2]
+        cfg.latency    = analysis_periodTS;   % [0.3 2]
         cfg.keeptrials = 'no';
         velTS_noBL = ft_timelockanalysis(cfg, velFT);
 
@@ -294,7 +297,7 @@ for subj = 1:numel(subjects)
         velFT_bl = ft_timelockbaseline(cfg, velFT);
 
         cfg = [];
-        cfg.latency    = analysis_period;
+        cfg.latency    = analysis_periodTS;
         cfg.keeptrials = 'no';
         velTS_BL = ft_timelockanalysis(cfg, velFT_bl);
 
@@ -305,7 +308,7 @@ for subj = 1:numel(subjects)
         velFT_bl_pct = ft_timelockbaseline(cfg, velFT);
 
         cfg = [];
-        cfg.latency    = analysis_period;
+        cfg.latency    = analysis_periodTS;
         cfg.keeptrials = 'no';
         velTS_BL_pct = ft_timelockanalysis(cfg, velFT_bl_pct);
         velTS_BL_pct.avg = velTS_BL_pct.avg * 100;
@@ -580,8 +583,6 @@ for subj = 1:numel(subjects)
     % Append to across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
     gaze_data_bl = [gaze_data_bl; subj_data_gaze_pctchange];
-
-    fprintf('Subject %d/%d done.\n', subj, numel(subjects));
 end
 
 % Copy percentage fields from gaze_data_bl into gaze_data
