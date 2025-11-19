@@ -32,7 +32,7 @@ xtickLabs = strcat(num2str(condLevels*25), "% Contrast");
 subjIDs = unique(T.ID);
 
 %% Loop through variables
-for iVar = 22%%%%%1:numel(numericVars)
+for iVar = 1:numel(numericVars)
     close all
 
     varName = numericVars{iVar};
@@ -40,7 +40,7 @@ for iVar = 22%%%%%1:numel(numericVars)
 
     % New figure for this variable
     figure;
-    set(gcf, 'Position', [200 200 900 700]);
+    set(gcf, 'Position', [0 0 1200 982]);
     hold on
 
     % First: subject-wise lines across conditions (light grey)
@@ -66,54 +66,46 @@ for iVar = 22%%%%%1:numel(numericVars)
     end
 
     % Boxplot per condition (using condIdx so positions are 1..nCond)
-    boxplot(y, condIdx, ...
-        'Positions', 1:nCond, ...
-        'Symbol', '');  % no outlier symbols
-    set(findobj(gca, 'Tag', 'Box'), 'LineWidth', 1.5);
+    boxplot(y, condIdx, 'Colors', 'k', 'Symbol', '');
 
+    hold on
     % Overlay jittered dots + mean/range markers per condition
-    jitterWidth = 0.15;
-
     for c = 1:nCond
         idxC = condIdx == c;
         yC   = y(idxC);
 
-        % Jittered x positions
-        xJit = c + (rand(sum(idxC), 1) - 0.5) * 2 * jitterWidth;
-
-        scatter(xJit, yC, 125, colors(c, :), ...
-            'filled', 'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
-
-        % Vertical range line (min–max)
-        if ~isempty(yC)
-            yMin = min(yC);
-            yMax = max(yC);
-            plot([c c], [yMin yMax], ':', ...
-                'Color', [0.5 0.5 0.5], 'LineWidth', 1);
-
-            % Mean marker
-            plot(c, mean(yC), 'o', ...
-                'MarkerFaceColor', colors(c, :), ...
-                'MarkerEdgeColor', 'k', ...
-                'MarkerSize', 7, ...
-                'LineWidth', 1);
-        end
+        xJit = c + (rand(sum(idxC),1)-0.5)*0.1;
+        scatter(xJit, yC, 250, colors(c,:), 'filled', ...
+            'MarkerEdgeColor','k', 'LineWidth',0.5)
     end
 
     % Zero line
     yline(0, '--', 'Color', [0.6 0.6 0.6], 'LineWidth', 1);
 
     % Axes formatting
+    xlabel('');
+    maxval = max(abs(y));
+    if contains(varName, 'Pct')
+        ylim([-maxval*1.1 maxval*1.1])
+    else
+        ylim([0 maxval*1.1])
+    end
     xlim([0.5 nCond + 0.5]);
     xticks(1:nCond);
+
     xticklabels(xtickLabs);
-
-    % Titles and labels (pretty-print variable name)
     prettyName = strrep(varName, '_', ' ');
-    title(prettyName, 'FontSize', 20, 'FontWeight', 'bold');
-    xlabel('Contrast');
     ylabel(prettyName, 'Interpreter', 'none');
+    set(gca, 'FontSize', 20, 'Box', 'off');
+    title(prettyName, 'FontSize', 30, 'FontWeight', 'bold');
+    if strcmp(varName, 'PctMSRate')
+        ylabel('Microsaccade Rate [%]')
+        title('Microsaccade Rate', 'FontSize', 30, 'FontWeight', 'bold')
+    elseif strcmp(varName, 'PctVel2D')
+        ylabel('Eye Velocity [%]')
+        title('Combined Eye Velocity', 'FontSize', 30, 'FontWeight', 'bold')
+    end
 
-    set(gca, 'FontSize', 12, 'Box', 'off');
+    % Save
     saveas(gcf, ['/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/boxplots/GCP_stats_boxplot_', varName, '.png'])
 end
