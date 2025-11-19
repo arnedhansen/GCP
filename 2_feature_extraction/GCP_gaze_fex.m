@@ -36,7 +36,6 @@ analysis_period = [ 0.3,  2   ];
 win_size        = 50;    % blink‐removal window (samples)
 fsample         = 500;   % eye‐tracker sampling rate
 
-
 % prepare raw gaze storage across all subjects
 gaze_x_c25   = {};  gaze_y_c25   = {};
 gaze_x_c50   = {};  gaze_y_c50   = {};
@@ -116,24 +115,23 @@ for subj = 1:numel(subjects)
             baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
             [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
 
-            % Baseline eye velocity (100 ms moving window)
+            % Baseline eye velocity (full baseline window)
             if numel(bl_x) > 1
                 bl_x_sm = movmean(bl_x, vel_win_size);
                 bl_y_sm = movmean(bl_y, vel_win_size);
 
-                vx_bl = diff(bl_x_sm) * fsample;   % px/s
-                vy_bl = diff(bl_y_sm) * fsample;   % px/s
+                vx_bl    = diff(bl_x_sm) * fsample;        % px/s
+                vy_bl    = diff(bl_y_sm) * fsample;        % px/s
                 speed_bl = sqrt(vx_bl.^2 + vy_bl.^2);
 
-                baselineVelH(end+1)  = mean(abs(vx_bl),'omitnan');
-                baselineVelV(end+1)  = mean(abs(vy_bl),'omitnan');
-                baselineVel2D(end+1) = mean(speed_bl,'omitnan');
+                baselineVelH(trl)  = mean(abs(vx_bl), 'omitnan');
+                baselineVelV(trl)  = mean(abs(vy_bl), 'omitnan');
+                baselineVel2D(trl) = mean(speed_bl,   'omitnan');
             else
-                baselineVelH(end+1)  = NaN;
-                baselineVelV(end+1)  = NaN;
-                baselineVel2D(end+1) = NaN;
+                baselineVelH(trl)  = NaN;
+                baselineVelV(trl)  = NaN;
+                baselineVel2D(trl) = NaN;
             end
-
 
             % ANALYSIS WINDOW
             an_idx = tVec >= analysis_period(1) & tVec <= analysis_period(2);
@@ -173,23 +171,62 @@ for subj = 1:numel(subjects)
             pupil       = mean(an_dat(3,:),'omitnan')/1000;
             [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
 
-            % Eye velocity (100 ms moving window)
+            % Velocity time series in analysis window [0.3, 2.0] s
             if numel(x) > 1
                 x_sm = movmean(x, vel_win_size);
                 y_sm = movmean(y, vel_win_size);
 
-                vx = diff(x_sm) * fsample;   % px/s
-                vy = diff(y_sm) * fsample;   % px/s
-                speed = sqrt(vx.^2 + vy.^2);
+                vx = diff(x_sm) * fsample;      % px/s
+                vy = diff(y_sm) * fsample;      % px/s
+                speed = sqrt(vx.^2 + vy.^2);    % 2D speed
 
-                velH(end+1)  = mean(abs(vx),'omitnan');
-                velV(end+1)  = mean(abs(vy),'omitnan');
-                vel2D(end+1) = mean(speed,'omitnan');
+                % Time axis for velocity (one sample shorter than position)
+                t_an   = tVec(an_idx);          % analysis window times
+                t_vel  = t_an(1:numel(speed));  % trim to match diff()
+
+                % Store raw velocity time series
+                velocityData.trial{trl} = zeros(3, numel(speed));
+                velocityData.trial{trl}(1,:) = abs(vx);
+                velocityData.trial{trl}(2,:) = abs(vy);
+                velocityData.trial{trl}(3,:) = speed;
+                velocityData.time{trl}       = t_vel;
+
+                % Trial-wise mean velocities (for scalar features)
+                velH(trl)   = mean(abs(vx), 'omitnan');
+                velV(trl)   = mean(abs(vy), 'omitnan');
+                vel2D(trl)  = mean(speed,   'omitnan');
+
+                % Baseline-normalised velocity time series (% change)
+                if ~isnan(baselineVelH(trl))
+                    pct_vx    = (abs(vx) ./ baselineVelH(trl)  - 1) * 100;
+                else
+                    pct_vx    = nan(size(vx));
+                end
+                if ~isnan(baselineVelV(trl))
+                    pct_vy    = (abs(vy) ./ baselineVelV(trl)  - 1) * 100;
+                else
+                    pct_vy    = nan(size(vy));
+                end
+                if ~isnan(baselineVel2D(trl))
+                    pct_speed = (speed   ./ baselineVel2D(trl) - 1) * 100;
+                else
+                    pct_speed = nan(size(speed));
+                end
+
+                velocityData_pct.trial{trl} = zeros(3, numel(speed));
+                velocityData_pct.trial{trl}(1,:) = pct_vx;
+                velocityData_pct.trial{trl}(2,:) = pct_vy;
+                velocityData_pct.trial{trl}(3,:) = pct_speed;
+                velocityData_pct.time{trl}       = t_vel;
+
             else
-                velH(end+1)  = NaN;
-                velV(end+1)  = NaN;
-                vel2D(end+1) = NaN;
+                % Too few points → fill with NaNs
+                velocityData.trial{trl}      = nan(3,0);
+                velocityData.time{trl}       = [];
+                velocityData_pct.trial{trl}  = nan(3,0);
+                velocityData_pct.time{trl}   = [];
             end
+
 
             % append to trial‐wise arrays
             subject_id(end+1)       = str2double(subjects{subj});
@@ -377,6 +414,22 @@ for subj = 1:numel(subjects)
                     'VelV',velV,               'BaselineVelV',baselineVelV,               'PctVelV',          (velV./baselineVelV-1)*100, ...
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
         end
+
+        % Store eye velocity time series data
+        switch cond
+            case 'c25'
+                velTS_c25      = velocityData;
+                velTS_pct_c25  = velocityData_pct;
+            case 'c50'
+                velTS_c50      = velocityData;
+                velTS_pct_c50  = velocityData_pct;
+            case 'c75'
+                velTS_c75      = velocityData;
+                velTS_pct_c75  = velocityData_pct;
+            case 'c100'
+                velTS_c100     = velocityData;
+                velTS_pct_c100 = velocityData_pct;
+        end
     end
 
     %% CREATE SUBJECT‐LEVEL STRUCTS ACROSS CONDITIONS
@@ -435,6 +488,9 @@ for subj = 1:numel(subjects)
     save(fullfile(savepath,'gaze_matrix_subj'),   'subj_data_gaze');
     save(fullfile(savepath,'gaze_matrix_baseline'),'subj_data_gaze_baseline');
     save(fullfile(savepath,'gaze_matrix_pctchange'),'subj_data_gaze_pctchange');
+    save(fullfile(savepath, 'gaze_velocity_timeseries'), ...
+     'velTS_c25','velTS_c50','velTS_c75','velTS_c100', ...
+     'velTS_pct_c25','velTS_pct_c50','velTS_pct_c75','velTS_pct_c100');
 
     % Append to across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
