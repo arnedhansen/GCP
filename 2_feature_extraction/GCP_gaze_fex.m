@@ -85,8 +85,8 @@ for subj = 1:numel(subjects)
         nTrials          = numel(dataET.trial);
 
         % For linking baseline and trial-wise means
-        velH        = nan(1, nTrials);
-        velV        = nan(1, nTrials);
+        velHorz        = nan(1, nTrials);
+        velVert        = nan(1, nTrials);
         vel2D       = nan(1, nTrials);
         baselineVelH  = nan(1, nTrials);
         baselineVelV  = nan(1, nTrials);
@@ -192,8 +192,8 @@ for subj = 1:numel(subjects)
                 velocityData.time{trl}       = t_vel;
 
                 % Trial-wise mean velocities (for scalar features)
-                velH(trl)   = mean(abs(vx), 'omitnan');
-                velV(trl)   = mean(abs(vy), 'omitnan');
+                velHorz(trl)   = mean(abs(vx), 'omitnan');
+                velVert(trl)   = mean(abs(vy), 'omitnan');
                 vel2D(trl)  = mean(speed,   'omitnan');
 
                 % Baseline-normalised velocity time series (% change)
@@ -259,10 +259,10 @@ for subj = 1:numel(subjects)
                 c25_bl_msrate = mean(baselineMSRate,'omitnan');
 
                 % Velocity: raw and baseline means
-                c25_velH      = mean(velH,'omitnan');
-                c25_bl_velH   = mean(baselineVelH,'omitnan');
-                c25_velV      = mean(velV,'omitnan');
-                c25_bl_velV   = mean(baselineVelV,'omitnan');
+                c25_velHorz      = mean(velHorz,'omitnan');
+                c25_bl_velHorz   = mean(baselineVelH,'omitnan');
+                c25_velVert      = mean(velVert,'omitnan');
+                c25_bl_velVert   = mean(baselineVelV,'omitnan');
                 c25_vel2D     = mean(vel2D,'omitnan');
                 c25_bl_vel2D  = mean(baselineVel2D,'omitnan');
 
@@ -273,8 +273,8 @@ for subj = 1:numel(subjects)
                 c25_pct_pups    = (c25_pups    - c25_bl_pups   ) / c25_bl_pups   * 100;
                 c25_pct_msrate  = (c25_msrate  - c25_bl_msrate ) / c25_bl_msrate * 100;
 
-                c25_pct_velH    = (c25_velH    - c25_bl_velH   ) / c25_bl_velH   * 100;
-                c25_pct_velV    = (c25_velV    - c25_bl_velV   ) / c25_bl_velV   * 100;
+                c25_pct_velHorz    = (c25_velHorz    - c25_bl_velHorz   ) / c25_bl_velHorz   * 100;
+                c25_pct_velVert    = (c25_velVert    - c25_bl_velVert   ) / c25_bl_velVert   * 100;
                 c25_pct_vel2D   = (c25_vel2D   - c25_bl_vel2D  ) / c25_bl_vel2D  * 100;
 
                 subj_data_gaze_trial_c25 = struct( ...
@@ -284,8 +284,8 @@ for subj = 1:numel(subjects)
                     'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
                     'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
                     'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velH,               'BaselineVelH',baselineVelH,               'PctVelH',          (velH./baselineVelH-1)*100, ...
-                    'VelV',velV,               'BaselineVelV',baselineVelV,               'PctVelV',          (velV./baselineVelV-1)*100, ...
+                    'VelH',velHorz,               'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
+                    'VelV',velVert,               'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
 
             case 'c50'
@@ -301,10 +301,10 @@ for subj = 1:numel(subjects)
                 c50_bl_msrate = mean(baselineMSRate,'omitnan');
 
                 % Velocity: raw and baseline means
-                c50_velH      = mean(velH,'omitnan');
-                c50_bl_velH   = mean(baselineVelH,'omitnan');
-                c50_velV      = mean(velV,'omitnan');
-                c50_bl_velV   = mean(baselineVelV,'omitnan');
+                c50_velHorz      = mean(velHorz,'omitnan');
+                c50_bl_velHorz   = mean(baselineVelH,'omitnan');
+                c50_velVert      = mean(velVert,'omitnan');
+                c50_bl_velVert   = mean(baselineVelV,'omitnan');
                 c50_vel2D     = mean(vel2D,'omitnan');
                 c50_bl_vel2D  = mean(baselineVel2D,'omitnan');
 
@@ -315,8 +315,8 @@ for subj = 1:numel(subjects)
                 c50_pct_pups    = (c50_pups    - c50_bl_pups   ) / c50_bl_pups   * 100;
                 c50_pct_msrate  = (c50_msrate  - c50_bl_msrate ) / c50_bl_msrate * 100;
 
-                c50_pct_velH    = (c50_velH    - c50_bl_velH   ) / c50_bl_velH   * 100;
-                c50_pct_velV    = (c50_velV    - c50_bl_velV   ) / c50_bl_velV   * 100;
+                c50_pct_velHorz    = (c50_velHorz    - c50_bl_velHorz   ) / c50_bl_velHorz   * 100;
+                c50_pct_velVert    = (c50_velVert    - c50_bl_velVert   ) / c50_bl_velVert   * 100;
                 c50_pct_vel2D   = (c50_vel2D   - c50_bl_vel2D  ) / c50_bl_vel2D  * 100;
 
                 subj_data_gaze_trial_c50 = struct( ...
@@ -326,8 +326,8 @@ for subj = 1:numel(subjects)
                     'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
                     'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
                     'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velH,               'BaselineVelH',baselineVelH,               'PctVelH',          (velH./baselineVelH-1)*100, ...
-                    'VelV',velV,               'BaselineVelV',baselineVelV,               'PctVelV',          (velV./baselineVelV-1)*100, ...
+                    'VelH',velHorz,               'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
+                    'VelV',velVert,               'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
 
             case 'c75'
@@ -343,10 +343,10 @@ for subj = 1:numel(subjects)
                 c75_bl_msrate = mean(baselineMSRate,'omitnan');
 
                 % Velocity: raw and baseline means
-                c75_velH      = mean(velH,'omitnan');
-                c75_bl_velH   = mean(baselineVelH,'omitnan');
-                c75_velV      = mean(velV,'omitnan');
-                c75_bl_velV   = mean(baselineVelV,'omitnan');
+                c75_velHorz      = mean(velHorz,'omitnan');
+                c75_bl_velHorz   = mean(baselineVelH,'omitnan');
+                c75_velVert      = mean(velVert,'omitnan');
+                c75_bl_velVert   = mean(baselineVelV,'omitnan');
                 c75_vel2D     = mean(vel2D,'omitnan');
                 c75_bl_vel2D  = mean(baselineVel2D,'omitnan');
 
@@ -357,8 +357,8 @@ for subj = 1:numel(subjects)
                 c75_pct_pups    = (c75_pups    - c75_bl_pups   ) / c75_bl_pups   * 100;
                 c75_pct_msrate  = (c75_msrate  - c75_bl_msrate ) / c75_bl_msrate * 100;
 
-                c75_pct_velH    = (c75_velH    - c75_bl_velH   ) / c75_bl_velH   * 100;
-                c75_pct_velV    = (c75_velV    - c75_bl_velV   ) / c75_bl_velV   * 100;
+                c75_pct_velHorz    = (c75_velHorz    - c75_bl_velHorz   ) / c75_bl_velHorz   * 100;
+                c75_pct_velVert    = (c75_velVert    - c75_bl_velVert   ) / c75_bl_velVert   * 100;
                 c75_pct_vel2D   = (c75_vel2D   - c75_bl_vel2D  ) / c75_bl_vel2D  * 100;
 
                 subj_data_gaze_trial_c75 = struct( ...
@@ -368,8 +368,8 @@ for subj = 1:numel(subjects)
                     'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
                     'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
                     'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velH,               'BaselineVelH',baselineVelH,               'PctVelH',          (velH./baselineVelH-1)*100, ...
-                    'VelV',velV,               'BaselineVelV',baselineVelV,               'PctVelV',          (velV./baselineVelV-1)*100, ...
+                    'VelH',velHorz,               'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
+                    'VelV',velVert,               'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
 
             case 'c100'
@@ -385,10 +385,10 @@ for subj = 1:numel(subjects)
                 c100_bl_msrate = mean(baselineMSRate,'omitnan');
 
                 % Velocity: raw and baseline means
-                c100_velH      = mean(velH,'omitnan');
-                c100_bl_velH   = mean(baselineVelH,'omitnan');
-                c100_velV      = mean(velV,'omitnan');
-                c100_bl_velV   = mean(baselineVelV,'omitnan');
+                c100_velHorz      = mean(velHorz,'omitnan');
+                c100_bl_velHorz   = mean(baselineVelH,'omitnan');
+                c100_velVert      = mean(velVert,'omitnan');
+                c100_bl_velVert   = mean(baselineVelV,'omitnan');
                 c100_vel2D     = mean(vel2D,'omitnan');
                 c100_bl_vel2D  = mean(baselineVel2D,'omitnan');
 
@@ -399,8 +399,8 @@ for subj = 1:numel(subjects)
                 c100_pct_pups    = (c100_pups    - c100_bl_pups   ) / c100_bl_pups   * 100;
                 c100_pct_msrate  = (c100_msrate  - c100_bl_msrate ) / c100_bl_msrate * 100;
 
-                c100_pct_velH    = (c100_velH    - c100_bl_velH   ) / c100_bl_velH   * 100;
-                c100_pct_velV    = (c100_velV    - c100_bl_velV   ) / c100_bl_velV   * 100;
+                c100_pct_velHorz    = (c100_velHorz    - c100_bl_velHorz   ) / c100_bl_velHorz   * 100;
+                c100_pct_velVert    = (c100_velVert    - c100_bl_velVert   ) / c100_bl_velVert   * 100;
                 c100_pct_vel2D   = (c100_vel2D   - c100_bl_vel2D  ) / c100_bl_vel2D  * 100;
 
                 subj_data_gaze_trial_c100 = struct( ...
@@ -410,8 +410,8 @@ for subj = 1:numel(subjects)
                     'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
                     'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
                     'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velH,               'BaselineVelH',baselineVelH,               'PctVelH',          (velH./baselineVelH-1)*100, ...
-                    'VelV',velV,               'BaselineVelV',baselineVelV,               'PctVelV',          (velV./baselineVelV-1)*100, ...
+                    'VelH',velHorz,               'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
+                    'VelV',velVert,               'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
         end
 
@@ -449,8 +449,8 @@ for subj = 1:numel(subjects)
         'GazeStdY',      num2cell([c25_gSDy;   c50_gSDy;   c75_gSDy;   c100_gSDy]), ...
         'PupilSize',     num2cell([c25_pups;   c50_pups;   c75_pups;   c100_pups]), ...
         'MSRate',        num2cell([c25_msrate; c50_msrate; c75_msrate; c100_msrate]), ...
-        'VelH',          num2cell([c25_velH;   c50_velH;   c75_velH;   c100_velH]), ...
-        'VelV',          num2cell([c25_velV;   c50_velV;   c75_velV;   c100_velV]), ...
+        'VelH',          num2cell([c25_velHorz;   c50_velHorz;   c75_velHorz;   c100_velHorz]), ...
+        'VelV',          num2cell([c25_velVert;   c50_velVert;   c75_velVert;   c100_velVert]), ...
         'Vel2D',         num2cell([c25_vel2D;  c50_vel2D;  c75_vel2D;  c100_vel2D]), ...
         'Blinks',        num2cell([c25_blinks; c50_blinks; c75_blinks; c100_blinks]), ...
         'Fixations',     num2cell([c25_fixations;c50_fixations;c75_fixations;c100_fixations]), ...
@@ -464,8 +464,8 @@ for subj = 1:numel(subjects)
         'BaselineGazeStdY',      num2cell([c25_bl_gSDy;   c50_bl_gSDy;   c75_bl_gSDy;   c100_bl_gSDy]), ...
         'BaselinePupilSize',     num2cell([c25_bl_pups;   c50_bl_pups;   c75_bl_pups;   c100_bl_pups]), ...
         'BaselineMSRate',        num2cell([c25_bl_msrate; c50_bl_msrate; c75_bl_msrate; c100_bl_msrate]), ...
-        'BaselineVelH',          num2cell([c25_bl_velH;   c50_bl_velH;   c75_bl_velH;   c100_bl_velH]), ...
-        'BaselineVelV',          num2cell([c25_bl_velV;   c50_bl_velV;   c75_bl_velV;   c100_bl_velV]), ...
+        'BaselineVelH',          num2cell([c25_bl_velHorz;   c50_bl_velHorz;   c75_bl_velHorz;   c100_bl_velHorz]), ...
+        'BaselineVelV',          num2cell([c25_bl_velVert;   c50_bl_velVert;   c75_bl_velVert;   c100_bl_velVert]), ...
         'BaselineVel2D',         num2cell([c25_bl_vel2D;  c50_bl_vel2D;  c75_bl_vel2D;  c100_bl_vel2D]) );
 
     subj_data_gaze_pctchange = struct( ...
@@ -476,8 +476,8 @@ for subj = 1:numel(subjects)
         'PctGazeStdY',      num2cell([c25_pct_gSDy;   c50_pct_gSDy;   c75_pct_gSDy;   c100_pct_gSDy]), ...
         'PctPupilSize',     num2cell([c25_pct_pups;   c50_pct_pups;   c75_pct_pups;   c100_pct_pups]), ...
         'PctMSRate',        num2cell([c25_pct_msrate; c50_pct_msrate; c75_pct_msrate; c100_pct_msrate]), ...
-        'PctVelH',          num2cell([c25_pct_velH;   c50_pct_velH;   c75_pct_velH;   c100_pct_velH]), ...
-        'PctVelV',          num2cell([c25_pct_velV;   c50_pct_velV;   c75_pct_velV;   c100_pct_velV]), ...
+        'PctVelH',          num2cell([c25_pct_velHorz;   c50_pct_velHorz;   c75_pct_velHorz;   c100_pct_velHorz]), ...
+        'PctVelV',          num2cell([c25_pct_velVert;   c50_pct_velVert;   c75_pct_velVert;   c100_pct_velVert]), ...
         'PctVel2D',         num2cell([c25_pct_vel2D;  c50_pct_vel2D;  c75_pct_vel2D;  c100_pct_vel2D]) );
 
 
@@ -489,8 +489,8 @@ for subj = 1:numel(subjects)
     save(fullfile(savepath,'gaze_matrix_baseline'),'subj_data_gaze_baseline');
     save(fullfile(savepath,'gaze_matrix_pctchange'),'subj_data_gaze_pctchange');
     save(fullfile(savepath, 'gaze_velocity_timeseries'), ...
-     'velTS_c25','velTS_c50','velTS_c75','velTS_c100', ...
-     'velTS_pct_c25','velTS_pct_c50','velTS_pct_c75','velTS_pct_c100');
+        'velTS_c25','velTS_c50','velTS_c75','velTS_c100', ...
+        'velTS_pct_c25','velTS_pct_c50','velTS_pct_c75','velTS_pct_c100');
 
     % Append to across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
@@ -499,7 +499,16 @@ for subj = 1:numel(subjects)
     fprintf('Subject %d/%d done.\n', subj, numel(subjects));
 end
 
+% Copy percentage fields from gaze_data_bl into gaze_data
+fn_bl = fieldnames(gaze_data_bl);
+fn_bl(ismember(fn_bl, {'ID','Condition'})) = [];
+
+for k = 1:numel(gaze_data)
+    for f = 1:numel(fn_bl)
+        gaze_data(k).(fn_bl{f}) = gaze_data_bl(k).(fn_bl{f});
+    end
+end
+
 %% Save files
 save(fullfile(path,'gaze_raw'),    'gaze_x_c25','gaze_y_c25','gaze_x_c50','gaze_y_c50','gaze_x_c75','gaze_y_c75','gaze_x_c100','gaze_y_c100');
 save(fullfile(path,'gaze_matrix'), 'gaze_data');
-save(fullfile(path,'gaze_matrix_bl'), 'gaze_data_bl');
