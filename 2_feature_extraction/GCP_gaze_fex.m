@@ -5,7 +5,7 @@
 %   Gaze standard deviation
 %   Pupil size
 %   Microsaccades
-%   Eye Velocity
+%   Eye Velocity (Raw, Baselined, Baselined Percentage Changes)
 %
 % Gaze metrics labelled by eye-tracker (saccades, blinks and
 % fixations) are extracted already in GCP_preprocessing.m
@@ -479,7 +479,6 @@ for subj = 1:numel(subjects)
         'PctVelH',          num2cell([c25_pct_velHorz;   c50_pct_velHorz;   c75_pct_velHorz;   c100_pct_velHorz]), ...
         'PctVelV',          num2cell([c25_pct_velVert;   c50_pct_velVert;   c75_pct_velVert;   c100_pct_velVert]), ...
         'PctVel2D',         num2cell([c25_pct_vel2D;  c50_pct_vel2D;  c75_pct_vel2D;  c100_pct_vel2D]) );
-
 
     %% Save
     save(fullfile(savepath,'gaze_matrix_trial'),  ...
