@@ -77,7 +77,8 @@ for subj = 1:numel(subjects)
         velocityData     = dataET;    % copy meta-info
         velocityData.label = {'VelH','VelV','Vel2D'};
 
-        velocityData_pct = dataET;    % baseline-normalised (% change)
+        % trial-level percentage-change (scalar baseline) as before
+        velocityData_pct = dataET;
         velocityData_pct.label = {'PctVelH','PctVelV','PctVel2D'};
 
         fsample          = dataET.fsample;
@@ -87,18 +88,53 @@ for subj = 1:numel(subjects)
         % For linking baseline and trial-wise means
         velHorz        = nan(1, nTrials);
         velVert        = nan(1, nTrials);
-        vel2D       = nan(1, nTrials);
-        baselineVelH  = nan(1, nTrials);
-        baselineVelV  = nan(1, nTrials);
-        baselineVel2D = nan(1, nTrials);
+        vel2D          = nan(1, nTrials);
+        baselineVelH   = nan(1, nTrials);
+        baselineVelV   = nan(1, nTrials);
+        baselineVel2D  = nan(1, nTrials);
 
+        % FieldTrip-ready velocity container (full baseline + analysis window)
+        velFT = [];
+        velFT.label     = {'VelH','VelV','Vel2D'};
+        velFT.fsample   = fsample;
+        velFT.trial     = cell(1, nTrials);
+        velFT.time      = cell(1, nTrials);
+        velFT.trialinfo = dataET.trialinfo;
 
         %% Trial loop
         for trl = 1:numel(dataET.trialinfo)
             raw    = dataET.trial{trl};
             tVec   = dataET.time{trl};
 
-            % BASELINE WINDOW
+            % FieldTrip velocity: full window [-1.5, 2]
+            full_idx = tVec >= baseline_period(1) & tVec <= analysis_period(2);
+            x_full   = raw(1, full_idx);
+            y_full   = raw(2, full_idx);
+
+            % flip y axis to screen coordinates
+            y_full   = 600 - y_full;
+
+            if numel(x_full) > 1
+                x_full_sm   = movmean(x_full, vel_win_size);
+                y_full_sm   = movmean(y_full, vel_win_size);
+                vx_full     = diff(x_full_sm) * fsample;              % px/s
+                vy_full     = diff(y_full_sm) * fsample;              % px/s
+                speed_full  = sqrt(vx_full.^2 + vy_full.^2);          % 2D speed
+
+                t_full      = tVec(full_idx);
+                t_full_vel  = t_full(1:numel(speed_full));
+
+                velFT.trial{trl} = zeros(3, numel(speed_full));
+                velFT.trial{trl}(1,:) = abs(vx_full);
+                velFT.trial{trl}(2,:) = abs(vy_full);
+                velFT.trial{trl}(3,:) = speed_full;
+                velFT.time{trl}       = t_full_vel;
+            else
+                velFT.trial{trl} = nan(3,0);
+                velFT.time{trl}  = [];
+            end
+
+            % BASELINE WINDOW (position-based metrics)
             bl_idx = tVec >= baseline_period(1) & tVec <= baseline_period(2);
             bl_dat = raw(:,bl_idx);
             valid  = bl_dat(1,:)>=0 & bl_dat(1,:)<=800 & bl_dat(2,:)>=0 & bl_dat(2,:)<=600;
@@ -115,7 +151,7 @@ for subj = 1:numel(subjects)
             baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
             [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
 
-            % Baseline eye velocity (full baseline window)
+            % Baseline eye velocity (full baseline window; scalar for % change)
             if numel(bl_x) > 1
                 bl_x_sm = movmean(bl_x, vel_win_size);
                 bl_y_sm = movmean(bl_y, vel_win_size);
@@ -133,7 +169,7 @@ for subj = 1:numel(subjects)
                 baselineVel2D(trl) = NaN;
             end
 
-            % ANALYSIS WINDOW
+            % ANALYSIS WINDOW [0.3, 2.0] (cleaned position, as before)
             an_idx = tVec >= analysis_period(1) & tVec <= analysis_period(2);
             an_dat = raw(:,an_idx);
             valid  = an_dat(1,:)>=0 & an_dat(1,:)<=800 & an_dat(2,:)>=0 & an_dat(2,:)<=600;
@@ -171,7 +207,7 @@ for subj = 1:numel(subjects)
             pupil       = mean(an_dat(3,:),'omitnan')/1000;
             [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
 
-            % Velocity time series in analysis window [0.3, 2.0] s
+            % Velocity time series in analysis window [0.3, 2.0] s (cleaned)
             if numel(x) > 1
                 x_sm = movmean(x, vel_win_size);
                 y_sm = movmean(y, vel_win_size);
@@ -184,7 +220,7 @@ for subj = 1:numel(subjects)
                 t_an   = tVec(an_idx);          % analysis window times
                 t_vel  = t_an(1:numel(speed));  % trim to match diff()
 
-                % Store raw velocity time series
+                % Store raw velocity time series (cleaned, analysis-only)
                 velocityData.trial{trl} = zeros(3, numel(speed));
                 velocityData.trial{trl}(1,:) = abs(vx);
                 velocityData.trial{trl}(2,:) = abs(vy);
@@ -194,9 +230,9 @@ for subj = 1:numel(subjects)
                 % Trial-wise mean velocities (for scalar features)
                 velHorz(trl)   = mean(abs(vx), 'omitnan');
                 velVert(trl)   = mean(abs(vy), 'omitnan');
-                vel2D(trl)  = mean(speed,   'omitnan');
+                vel2D(trl)     = mean(speed,   'omitnan');
 
-                % Baseline-normalised velocity time series (% change)
+                % Baseline-normalised velocity time series (% change, scalar baseline)
                 if ~isnan(baselineVelH(trl))
                     pct_vx    = (abs(vx) ./ baselineVelH(trl)  - 1) * 100;
                 else
@@ -227,7 +263,6 @@ for subj = 1:numel(subjects)
                 velocityData_pct.time{trl}   = [];
             end
 
-
             % append to trial‐wise arrays
             subject_id(end+1)       = str2double(subjects{subj});
             trial_num(end+1)        = trl;
@@ -243,6 +278,37 @@ for subj = 1:numel(subjects)
             microsaccadeRate(end+1) = msrate;
             baselineMSRate(end+1)   = baseline_msrate;
         end
+
+        % FieldTrip timelock and baseline on velFT
+
+        % Timelocked average without baseline
+        cfg = [];
+        cfg.latency    = analysis_period;   % [0.3 2]
+        cfg.keeptrials = 'no';
+        velTS_noBL = ft_timelockanalysis(cfg, velFT);
+
+        % Subtractive baseline: mean in baseline_period subtracted
+        cfg = [];
+        cfg.baseline     = baseline_period;   % [-1.5 -0.25]
+        cfg.baselinetype = 'absolute';
+        velFT_bl = ft_timelockbaseline(cfg, velFT);
+
+        cfg = [];
+        cfg.latency    = analysis_period;
+        cfg.keeptrials = 'no';
+        velTS_BL = ft_timelockanalysis(cfg, velFT_bl);
+
+        % Percentage baseline: (x - baseline) / baseline * 100
+        cfg = [];
+        cfg.baseline     = baseline_period;
+        cfg.baselinetype = 'relativechange';
+        velFT_bl_pct = ft_timelockbaseline(cfg, velFT);
+
+        cfg = [];
+        cfg.latency    = analysis_period;
+        cfg.keeptrials = 'no';
+        velTS_BL_pct = ft_timelockanalysis(cfg, velFT_bl_pct);
+        velTS_BL_pct.avg = velTS_BL_pct.avg * 100;
 
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
@@ -263,8 +329,8 @@ for subj = 1:numel(subjects)
                 c25_bl_velHorz   = mean(baselineVelH,'omitnan');
                 c25_velVert      = mean(velVert,'omitnan');
                 c25_bl_velVert   = mean(baselineVelV,'omitnan');
-                c25_vel2D     = mean(vel2D,'omitnan');
-                c25_bl_vel2D  = mean(baselineVel2D,'omitnan');
+                c25_vel2D        = mean(vel2D,'omitnan');
+                c25_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
                 % Percentage change relative to baseline
                 c25_pct_gdev    = (c25_gdev    - c25_bl_gdev   ) / c25_bl_gdev   * 100;
@@ -273,8 +339,8 @@ for subj = 1:numel(subjects)
                 c25_pct_pups    = (c25_pups    - c25_bl_pups   ) / c25_bl_pups   * 100;
                 c25_pct_msrate  = (c25_msrate  - c25_bl_msrate ) / c25_bl_msrate * 100;
 
-                c25_pct_velHorz    = (c25_velHorz    - c25_bl_velHorz   ) / c25_bl_velHorz   * 100;
-                c25_pct_velVert    = (c25_velVert    - c25_bl_velVert   ) / c25_bl_velVert   * 100;
+                c25_pct_velHorz = (c25_velHorz - c25_bl_velHorz) / c25_bl_velHorz * 100;
+                c25_pct_velVert = (c25_velVert - c25_bl_velVert) / c25_bl_velVert * 100;
                 c25_pct_vel2D   = (c25_vel2D   - c25_bl_vel2D  ) / c25_bl_vel2D  * 100;
 
                 subj_data_gaze_trial_c25 = struct( ...
@@ -284,9 +350,18 @@ for subj = 1:numel(subjects)
                     'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
                     'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
                     'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velHorz,               'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
-                    'VelV',velVert,               'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
+                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
+                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
+
+                % Store FieldTrip velocity for this condition
+                velTS_c25        = velTS_noBL;
+                velTS_c25_bl     = velTS_BL;
+                velTS_c25_bl_pct = velTS_BL_pct;
+
+                % Store trial-level velocity structs under explicit names
+                velTS_trials_c25      = velocityData;
+                velTS_pct_trials_c25  = velocityData_pct;
 
             case 'c50'
                 c50_gdev      = mean(gazeDev,'omitnan');
@@ -305,8 +380,8 @@ for subj = 1:numel(subjects)
                 c50_bl_velHorz   = mean(baselineVelH,'omitnan');
                 c50_velVert      = mean(velVert,'omitnan');
                 c50_bl_velVert   = mean(baselineVelV,'omitnan');
-                c50_vel2D     = mean(vel2D,'omitnan');
-                c50_bl_vel2D  = mean(baselineVel2D,'omitnan');
+                c50_vel2D        = mean(vel2D,'omitnan');
+                c50_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
                 % Percentage change relative to baseline
                 c50_pct_gdev    = (c50_gdev    - c50_bl_gdev   ) / c50_bl_gdev   * 100;
@@ -315,8 +390,8 @@ for subj = 1:numel(subjects)
                 c50_pct_pups    = (c50_pups    - c50_bl_pups   ) / c50_bl_pups   * 100;
                 c50_pct_msrate  = (c50_msrate  - c50_bl_msrate ) / c50_bl_msrate * 100;
 
-                c50_pct_velHorz    = (c50_velHorz    - c50_bl_velHorz   ) / c50_bl_velHorz   * 100;
-                c50_pct_velVert    = (c50_velVert    - c50_bl_velVert   ) / c50_bl_velVert   * 100;
+                c50_pct_velHorz = (c50_velHorz - c50_bl_velHorz) / c50_bl_velHorz * 100;
+                c50_pct_velVert = (c50_velVert - c50_bl_velVert) / c50_bl_velVert * 100;
                 c50_pct_vel2D   = (c50_vel2D   - c50_bl_vel2D  ) / c50_bl_vel2D  * 100;
 
                 subj_data_gaze_trial_c50 = struct( ...
@@ -326,9 +401,16 @@ for subj = 1:numel(subjects)
                     'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
                     'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
                     'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velHorz,               'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
-                    'VelV',velVert,               'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
+                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
+                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
+
+                velTS_c50        = velTS_noBL;
+                velTS_c50_bl     = velTS_BL;
+                velTS_c50_bl_pct = velTS_BL_pct;
+
+                velTS_trials_c50      = velocityData;
+                velTS_pct_trials_c50  = velocityData_pct;
 
             case 'c75'
                 c75_gdev      = mean(gazeDev,'omitnan');
@@ -347,8 +429,8 @@ for subj = 1:numel(subjects)
                 c75_bl_velHorz   = mean(baselineVelH,'omitnan');
                 c75_velVert      = mean(velVert,'omitnan');
                 c75_bl_velVert   = mean(baselineVelV,'omitnan');
-                c75_vel2D     = mean(vel2D,'omitnan');
-                c75_bl_vel2D  = mean(baselineVel2D,'omitnan');
+                c75_vel2D        = mean(vel2D,'omitnan');
+                c75_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
                 % Percentage change relative to baseline
                 c75_pct_gdev    = (c75_gdev    - c75_bl_gdev   ) / c75_bl_gdev   * 100;
@@ -357,8 +439,8 @@ for subj = 1:numel(subjects)
                 c75_pct_pups    = (c75_pups    - c75_bl_pups   ) / c75_bl_pups   * 100;
                 c75_pct_msrate  = (c75_msrate  - c75_bl_msrate ) / c75_bl_msrate * 100;
 
-                c75_pct_velHorz    = (c75_velHorz    - c75_bl_velHorz   ) / c75_bl_velHorz   * 100;
-                c75_pct_velVert    = (c75_velVert    - c75_bl_velVert   ) / c75_bl_velVert   * 100;
+                c75_pct_velHorz = (c75_velHorz - c75_bl_velHorz) / c75_bl_velHorz * 100;
+                c75_pct_velVert = (c75_velVert - c75_bl_velVert) / c75_bl_velVert * 100;
                 c75_pct_vel2D   = (c75_vel2D   - c75_bl_vel2D  ) / c75_bl_vel2D  * 100;
 
                 subj_data_gaze_trial_c75 = struct( ...
@@ -368,9 +450,16 @@ for subj = 1:numel(subjects)
                     'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
                     'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
                     'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velHorz,               'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
-                    'VelV',velVert,               'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
+                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
+                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
+
+                velTS_c75        = velTS_noBL;
+                velTS_c75_bl     = velTS_BL;
+                velTS_c75_bl_pct = velTS_BL_pct;
+
+                velTS_trials_c75      = velocityData;
+                velTS_pct_trials_c75  = velocityData_pct;
 
             case 'c100'
                 c100_gdev      = mean(gazeDev,'omitnan');
@@ -389,8 +478,8 @@ for subj = 1:numel(subjects)
                 c100_bl_velHorz   = mean(baselineVelH,'omitnan');
                 c100_velVert      = mean(velVert,'omitnan');
                 c100_bl_velVert   = mean(baselineVelV,'omitnan');
-                c100_vel2D     = mean(vel2D,'omitnan');
-                c100_bl_vel2D  = mean(baselineVel2D,'omitnan');
+                c100_vel2D        = mean(vel2D,'omitnan');
+                c100_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
                 % Percentage change relative to baseline
                 c100_pct_gdev    = (c100_gdev    - c100_bl_gdev   ) / c100_bl_gdev   * 100;
@@ -399,8 +488,8 @@ for subj = 1:numel(subjects)
                 c100_pct_pups    = (c100_pups    - c100_bl_pups   ) / c100_bl_pups   * 100;
                 c100_pct_msrate  = (c100_msrate  - c100_bl_msrate ) / c100_bl_msrate * 100;
 
-                c100_pct_velHorz    = (c100_velHorz    - c100_bl_velHorz   ) / c100_bl_velHorz   * 100;
-                c100_pct_velVert    = (c100_velVert    - c100_bl_velVert   ) / c100_bl_velVert   * 100;
+                c100_pct_velHorz = (c100_velHorz - c100_bl_velHorz) / c100_bl_velHorz * 100;
+                c100_pct_velVert = (c100_velVert - c100_bl_velVert) / c100_bl_velVert * 100;
                 c100_pct_vel2D   = (c100_vel2D   - c100_bl_vel2D  ) / c100_bl_vel2D  * 100;
 
                 subj_data_gaze_trial_c100 = struct( ...
@@ -410,25 +499,16 @@ for subj = 1:numel(subjects)
                     'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
                     'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
                     'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velHorz,               'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
-                    'VelV',velVert,               'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
+                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
+                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
-        end
 
-        % Store eye velocity time series data
-        switch cond
-            case 'c25'
-                velTS_c25      = velocityData;
-                velTS_pct_c25  = velocityData_pct;
-            case 'c50'
-                velTS_c50      = velocityData;
-                velTS_pct_c50  = velocityData_pct;
-            case 'c75'
-                velTS_c75      = velocityData;
-                velTS_pct_c75  = velocityData_pct;
-            case 'c100'
-                velTS_c100     = velocityData;
-                velTS_pct_c100 = velocityData_pct;
+                velTS_c100        = velTS_noBL;
+                velTS_c100_bl     = velTS_BL;
+                velTS_c100_bl_pct = velTS_BL_pct;
+
+                velTS_trials_c100      = velocityData;
+                velTS_pct_trials_c100  = velocityData_pct;
         end
     end
 
@@ -480,6 +560,7 @@ for subj = 1:numel(subjects)
         'PctVelV',          num2cell([c25_pct_velVert;   c50_pct_velVert;   c75_pct_velVert;   c100_pct_velVert]), ...
         'PctVel2D',         num2cell([c25_pct_vel2D;  c50_pct_vel2D;  c75_pct_vel2D;  c100_pct_vel2D]) );
 
+
     %% Save
     save(fullfile(savepath,'gaze_matrix_trial'),  ...
         'subj_data_gaze_trial_c25',  'subj_data_gaze_trial_c50',  ...
@@ -487,9 +568,14 @@ for subj = 1:numel(subjects)
     save(fullfile(savepath,'gaze_matrix_subj'),   'subj_data_gaze');
     save(fullfile(savepath,'gaze_matrix_baseline'),'subj_data_gaze_baseline');
     save(fullfile(savepath,'gaze_matrix_pctchange'),'subj_data_gaze_pctchange');
+
+    % velocity time series and FieldTrip timelocked data
     save(fullfile(savepath, 'gaze_velocity_timeseries'), ...
         'velTS_c25','velTS_c50','velTS_c75','velTS_c100', ...
-        'velTS_pct_c25','velTS_pct_c50','velTS_pct_c75','velTS_pct_c100');
+        'velTS_c25_bl','velTS_c50_bl','velTS_c75_bl','velTS_c100_bl', ...
+        'velTS_c25_bl_pct','velTS_c50_bl_pct','velTS_c75_bl_pct','velTS_c100_bl_pct', ...
+        'velTS_trials_c25','velTS_trials_c50','velTS_trials_c75','velTS_trials_c100', ...
+        'velTS_pct_trials_c25','velTS_pct_trials_c50','velTS_pct_trials_c75','velTS_pct_trials_c100');
 
     % Append to across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
