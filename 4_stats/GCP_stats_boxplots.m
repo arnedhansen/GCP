@@ -87,12 +87,13 @@ for iVar = 1:numel(numericVars)
     maxval = max(abs(y));
     if contains(varName, 'Pct')
         ylim([-maxval*1.1 maxval*1.1])
+    elseif strcmp(varName, 'Frequency')
+        ylim([30 90])
     else
         ylim([0 maxval*1.1])
     end
     xlim([0.5 nCond + 0.5]);
     xticks(1:nCond);
-
     xticklabels(xtickLabs);
     prettyName = strrep(varName, '_', ' ');
     ylabel(prettyName, 'Interpreter', 'none');
