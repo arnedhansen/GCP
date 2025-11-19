@@ -5,18 +5,18 @@
 %   Gaze standard deviation
 %   Pupil size
 %   Microsaccades
+%   Eye Velocity
 %
 % Gaze metrics labelled by eye-tracker (saccades, blinks and
 % fixations) are extracted already in GCP_preprocessing.m
 
 %% Setup
-clear
-clc
-close all
-path = '/Volumes/methlab/Students/Arne/GCP/data/features/';
-dirs  = dir(path);
-folders = dirs([dirs.isdir] & ~ismember({dirs.name},{'.','..'}));
-subjects = {folders.name};
+startup
+[subjects, path, colors, headmodel] = setup('GCP');
+% path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/';
+% dirs  = dir(path);
+% folders = dirs([dirs.isdir] & ~ismember({dirs.name},{'.','..'}));
+% subjects = {folders.name};
 
 % preallocate across‐all‐subjects matrix of raw data
 gaze_data = struct('ID',{},'Condition',{},'GazeDeviation',{},...
@@ -40,6 +40,7 @@ gaze_x_c75   = {};  gaze_y_c75   = {};
 gaze_x_c100  = {};  gaze_y_c100  = {};
 
 %% Loop over subjects
+clc
 for subj = 1:numel(subjects)
     
     % load preprocessed eye‐tracker data
@@ -150,7 +151,7 @@ for subj = 1:numel(subjects)
             baselineMSRate(end+1)    = baseline_msrate;
         end % trial loop
         
-        %% 4) SUBJECT‐BY‐CONDITION AVERAGES
+        %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
           case 'c25'
             c25_gdev      = mean(gazeDev,'omitnan');
@@ -179,7 +180,6 @@ for subj = 1:numel(subjects)
                 'MSRate',microsaccadeRate,  'BaselineMSRate',baselineMSRate,            'PctMSRate',           (microsaccadeRate./baselineMSRate-1)*100);
             
           case 'c50'
-            % … exactly the same pattern for c50 …
             c50_gdev      = mean(gazeDev,'omitnan');
             c50_bl_gdev   = mean(baselineGazeDev,'omitnan');
             c50_gSDx      = mean(gazeSDx,'omitnan');
@@ -206,7 +206,6 @@ for subj = 1:numel(subjects)
                 'MSRate',microsaccadeRate,  'BaselineMSRate',baselineMSRate,            'PctMSRate',          (microsaccadeRate./baselineMSRate-1)*100);
             
           case 'c75'
-            % … same again …
             c75_gdev      = mean(gazeDev,'omitnan');
             c75_bl_gdev   = mean(baselineGazeDev,'omitnan');
             c75_gSDx      = mean(gazeSDx,'omitnan');
@@ -233,7 +232,6 @@ for subj = 1:numel(subjects)
                 'MSRate',microsaccadeRate,  'BaselineMSRate',baselineMSRate,            'PctMSRate',          (microsaccadeRate./baselineMSRate-1)*100);
             
           case 'c100'
-            % … and once more for c100 …
             c100_gdev      = mean(gazeDev,'omitnan');
             c100_bl_gdev   = mean(baselineGazeDev,'omitnan');
             c100_gSDx      = mean(gazeSDx,'omitnan');
@@ -259,9 +257,9 @@ for subj = 1:numel(subjects)
                 'PupilSize',pupilSize,      'BaselinePupilSize',baselinePupilSize,      'PctPupilSize',       (pupilSize./baselinePupilSize-1)*100, ...
                 'MSRate',microsaccadeRate,  'BaselineMSRate',baselineMSRate,            'PctMSRate',          (microsaccadeRate./baselineMSRate-1)*100);
         end
-    end  % end conds loop
+    end
     
-    %% 5) CREATE SUBJECT‐LEVEL STRUCTS ACROSS CONDITIONS
+    %% CREATE SUBJECT‐LEVEL STRUCTS ACROSS CONDITIONS
     savepath = fullfile(path, subjects{subj}, 'gaze');
     if ~exist(savepath,'dir'); mkdir(savepath); end
     
@@ -300,7 +298,7 @@ for subj = 1:numel(subjects)
       'PctPupilSize',     num2cell([c25_pct_pups;  c50_pct_pups;  c75_pct_pups;  c100_pct_pups]), ...
       'PctMSRate',        num2cell([c25_pct_msrate;c50_pct_msrate;c75_pct_msrate;c100_pct_msrate]) );
 
-    %% 6) SAVE EVERYTHING
+    %% Save
     save(fullfile(savepath,'gaze_matrix_trial'),  ...
          'subj_data_gaze_trial_c25',  'subj_data_gaze_trial_c50',  ...
          'subj_data_gaze_trial_c75',  'subj_data_gaze_trial_c100');
@@ -308,14 +306,14 @@ for subj = 1:numel(subjects)
     save(fullfile(savepath,'gaze_matrix_baseline'),'subj_data_gaze_baseline');
     save(fullfile(savepath,'gaze_matrix_pctchange'),'subj_data_gaze_pctchange');
     
-    % optionally append to your across‐subjects raw struct
+    % Append to across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
     gaze_data_bl = [gaze_data_bl; subj_data_gaze_pctchange];
     
     fprintf('Subject %d/%d done.\n', subj, numel(subjects));
 end
 
-%% Save master files
+%% Save files
 save(fullfile(path,'gaze_raw'),    'gaze_x_c25','gaze_y_c25','gaze_x_c50','gaze_y_c50','gaze_x_c75','gaze_y_c75','gaze_x_c100','gaze_y_c100');
 save(fullfile(path,'gaze_matrix'), 'gaze_data');
 save(fullfile(path,'gaze_matrix_bl'), 'gaze_data_bl');
