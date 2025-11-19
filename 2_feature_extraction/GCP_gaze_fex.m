@@ -74,7 +74,7 @@ for subj = 1:numel(subjects)
             raw    = dataET.trial{trl};
             tVec   = dataET.time{trl};
             
-            %—— BASELINE WINDOW ——%
+            % BASELINE WINDOW
             bl_idx = tVec >= baseline_period(1) & tVec <= baseline_period(2);
             bl_dat = raw(:,bl_idx);
             valid  = bl_dat(1,:)>=0 & bl_dat(1,:)<=800 & bl_dat(2,:)>=0 & bl_dat(2,:)<=600;
@@ -91,7 +91,7 @@ for subj = 1:numel(subjects)
             baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
             [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
             
-            %—— ANALYSIS WINDOW ——%
+            % ANALYSIS WINDOW
             an_idx = tVec >= analysis_period(1) & tVec <= analysis_period(2);
             an_dat = raw(:,an_idx);
             valid  = an_dat(1,:)>=0 & an_dat(1,:)<=800 & an_dat(2,:)>=0 & an_dat(2,:)<=600;
