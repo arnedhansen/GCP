@@ -9,15 +9,15 @@ modes = {'raw','bl','pct'};
 
 % y-labels
 ylabs_px = {'Eye Velocity X [px/s]', ...
-            'Eye Velocity Y [px/s]', ...
-            'Combined Eye Velocity [px/s]'};
+    'Eye Velocity Y [px/s]', ...
+    'Combined Eye Velocity [px/s]'};
 
 ylabs_pct = {'Eye Velocity X [%]', ...
-             'Eye Velocity Y [%]', ...
-             'Combined Eye Velocity [%]'};
+    'Eye Velocity Y [%]', ...
+    'Combined Eye Velocity [%]'};
 
 channels      = {'VelH','VelV','Vel2D'};
-channeltitles = {'horizontal velocity','vertical velocity','2D velocity'};
+channeltitles = {'Horizontal Velocity','Vertical Velocity','Combined Velocity'};
 labels        = {'25% contrast','50% contrast','75% contrast','100% contrast'};
 
 %% Loop over data modes: raw → baselined → baselined %
@@ -88,11 +88,14 @@ for m = 1:numel(modes)
     % assume equal n_subj across contrasts
     n_subj = size(ga25et.individual, 1);
 
-    figure('Color','w');
-    set(gcf, "Position", [0 0 1512/2 982])
+    fig_ga = figure('Color','w');
+    set(fig_ga, "Position", [0 0 1512/2 982])
+
+    ax = gobjects(1, numel(channels));  % store axes handles
 
     for c = 1:numel(channels)
-        subplot(3,1,c); hold on;
+        ax(c) = subplot(3,1,c);
+        hold(ax(c), 'on');
 
         cfg = [];
         cfg.figure      = 'gcf';
@@ -123,8 +126,8 @@ for m = 1:numel(modes)
             faceC = 0.8*colors(k,:) + 0.2*[1 1 1];
 
             hp = patch([x; x(end:-1:1); x(1)], ...
-                       [low; high(end:-1:1); low(1)], ...
-                       colors(k,:));
+                [low; high(end:-1:1); low(1)], ...
+                colors(k,:));
             set(hp, 'facecolor', faceC, 'edgecolor', 'none', 'facealpha', 0.6);
 
             hl(k) = plot(x, y, 'LineWidth', 2, 'Color', colors(k,:));
@@ -156,7 +159,40 @@ for m = 1:numel(modes)
     end
 
     saveName = sprintf(['/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/' ...
-                        'gaze/velocity/GCP_gaze_velocity_%s.png'], suffix);
+        'gaze/velocity/GCP_gaze_velocity_%s.png'], suffix);
     saveas(gcf, saveName);
 
+    % Also save individual channel plots for this mode
+    outdir_single = ['/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/' ...
+        'gaze/velocity/'];
+    if ~exist(outdir_single, 'dir')
+        mkdir(outdir_single);
+    end
+
+    for c = 1:numel(channels)
+        fig_single = figure('Color', 'w');
+        set(fig_single, 'Position', [0 0 1512/2 982]);
+
+        % copy this subplot's axes into its own figure
+        ax_new = copyobj(ax(c), fig_single);
+        set(ax_new, 'Position', [0.13 0.15 0.8 0.75]);  % nice full-figure layout
+
+        % optional: add a figure-level title indicating mode + channel
+        switch data_mode
+            case 'raw'
+                mode_title = 'RAW';
+            case 'bl'
+                mode_title = 'BASELINED';
+            case 'pct'
+                mode_title = 'PERCENTAGE CHANGE';
+        end
+        sgtitle(fig_single, sprintf('GCP Gaze Velocity %s — %s', ...
+            mode_title, channeltitles{c}));
+
+        % build filename like GCP_gaze_velocity_raw_VelH.png
+        saveName_single = sprintf('%sGCP_gaze_velocity_%s_%s.png', ...
+            outdir_single, suffix, channels{c});
+        saveas(fig_single, saveName_single);
+        close(fig_single);
+    end
 end
