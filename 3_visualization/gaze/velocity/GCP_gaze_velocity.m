@@ -22,12 +22,11 @@ labels        = {'25% contrast','50% contrast','75% contrast','100% contrast'};
 
 %% Loop over data modes: raw → baselined → baselined %
 for m = 1:numel(modes)
-
+    clc
     data_mode = modes{m};
     fprintf('\nGCP Eye Velocity: plotting %s data\n', data_mode);
 
     %% Load data (per subject, pick correct representation)
-    clc
     alltlk25et  = cell(1, numel(subjects));
     alltlk50et  = cell(1, numel(subjects));
     alltlk75et  = cell(1, numel(subjects));
@@ -89,7 +88,7 @@ for m = 1:numel(modes)
     n_subj = size(ga25et.individual, 1);
 
     fig_ga = figure('Color','w');
-    set(fig_ga, "Position", [0 0 1512/2 982])
+    set(fig_ga, "Position", [0 0 1512 982])
 
     ax = gobjects(1, numel(channels));  % store axes handles
 
@@ -128,7 +127,7 @@ for m = 1:numel(modes)
             hp = patch([x; x(end:-1:1); x(1)], ...
                 [low; high(end:-1:1); low(1)], ...
                 colors(k,:));
-            set(hp, 'facecolor', faceC, 'edgecolor', 'none', 'facealpha', 0.6);
+            set(hp, 'facecolor', faceC, 'edgecolor', 'none', 'facealpha', 0.4);
 
             hl(k) = plot(x, y, 'LineWidth', 2, 'Color', colors(k,:));
         end
@@ -163,15 +162,9 @@ for m = 1:numel(modes)
     saveas(gcf, saveName);
 
     % Also save individual channel plots for this mode
-    outdir_single = ['/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/' ...
-        'gaze/velocity/'];
-    if ~exist(outdir_single, 'dir')
-        mkdir(outdir_single);
-    end
-
     for c = 1:numel(channels)
         fig_single = figure('Color', 'w');
-        set(fig_single, 'Position', [0 0 1512/2 982]);
+        set(fig_single, 'Position', [0 0 1512 982]);
 
         % copy this subplot's axes into its own figure
         ax_new = copyobj(ax(c), fig_single);
@@ -189,7 +182,8 @@ for m = 1:numel(modes)
         sgtitle(fig_single, sprintf('GCP Gaze Velocity %s — %s', ...
             mode_title, channeltitles{c}));
 
-        % build filename like GCP_gaze_velocity_raw_VelH.png
+        % build single plots filename
+        outdir_single = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/velocity/';
         saveName_single = sprintf('%sGCP_gaze_velocity_%s_%s.png', ...
             outdir_single, suffix, channels{c});
         saveas(fig_single, saveName_single);
