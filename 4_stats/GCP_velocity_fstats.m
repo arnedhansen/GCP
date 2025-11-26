@@ -171,13 +171,8 @@ for m = 1:numel(modes)
         end
     end
 
-    %% Save figure + stats for this mode
-    outdir_stats = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/velocity/';
-
+    % Save
+    outdir_stats = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/velocity_f-tests/';
     saveas(figF, fullfile(outdir_stats, ...
-        sprintf('GCP_gaze_velocity_Ftest_%s.png', suffix)));
-
-    save(fullfile(outdir_stats, ...
-        sprintf('GCP_gaze_velocity_Ftest_%s.mat', suffix)), ...
-        'statF_eyevelocity');
+        sprintf('GCP_gaze_velocity_overview_%s_Ftest.png', suffix)));
 end

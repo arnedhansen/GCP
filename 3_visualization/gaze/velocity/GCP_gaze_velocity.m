@@ -138,10 +138,8 @@ for m = 1:numel(modes)
         yline(0, '--');
         title(strrep(channeltitles{c}, '_', '\_'));
 
-        if c == 1
-            lgd = legend(hl, labels, 'Location', 'northeast', 'FontSize', 12);
-            set(lgd, 'Color', 'none');
-        end
+        lgd = legend(hl, labels, 'Location', 'northeast', 'FontSize', 12);
+        set(lgd, 'Color', 'none');
     end
 
     % Add title and save with appropriate suffix
@@ -158,7 +156,7 @@ for m = 1:numel(modes)
     end
 
     saveName = sprintf(['/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/' ...
-        'gaze/velocity/GCP_gaze_velocity_%s.png'], suffix);
+        'gaze/velocity/GCP_gaze_velocity_overview_%s.png'], suffix);
     saveas(gcf, saveName);
 
     % Also save individual channel plots for this mode
@@ -170,6 +168,11 @@ for m = 1:numel(modes)
         ax_new = copyobj(ax(c), fig_single);
         set(ax_new, 'Position', [0.13 0.15 0.8 0.75]);  % nice full-figure layout
 
+        % set legend
+        cond_lines = findobj(ax_new, 'Type', 'line', '-not', 'LineStyle', '--');
+        cond_lines = flipud(cond_lines);
+        legend(ax_new, cond_lines, labels, 'Location', 'northeast', 'FontSize', 15);
+
         % optional: add a figure-level title indicating mode + channel
         switch data_mode
             case 'raw'
@@ -179,13 +182,14 @@ for m = 1:numel(modes)
             case 'pct'
                 mode_title = 'PERCENTAGE CHANGE';
         end
+
         sgtitle(fig_single, sprintf('GCP Gaze Velocity %s — %s', ...
             mode_title, channeltitles{c}));
 
         % build single plots filename
-        outdir_single = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/velocity/';
+        outdir_single   = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/velocity/';
         saveName_single = sprintf('%sGCP_gaze_velocity_%s_%s.png', ...
-            outdir_single, suffix, channels{c});
+            outdir_single, channels{c}, suffix);
         saveas(fig_single, saveName_single);
         close(fig_single);
     end
