@@ -243,50 +243,85 @@ for subj = 1:length(subjects)
     channels_idx = ismember(pow_c25_fooof_bl_smooth.label, channels);
     freq_idx = find(pow_c25_fooof_bl_smooth.freq >= 30 & pow_c25_fooof_bl_smooth.freq <= 90);
 
-    % Find gamma peak for 25% contrast
+    % Extract gamma peak power and freq for analysis time window
+    % -------- 25% contrast --------
     c25_gamma_power = mean(pow_c25_fooof_bl_smooth.powspctrm(channels_idx, freq_idx), 1);
     [peaks, locs] = findpeaks(c25_gamma_power, pow_c25_fooof_bl_smooth.freq(freq_idx));
-    [c25_pow, peak_idx] = max(peaks);
-    c25_freq = locs(peak_idx);
-    % Compute the peak gamma power as the mean power in the ±5 Hz range
-    c25_freq_range = c25_freq + [-5, 5];  % ±5 Hz range
-    c25_freq_idx_range = find(pow_c25_baselined.freq >= c25_freq_range(1) & pow_c25_baselined.freq <= c25_freq_range(2));
-    c25_pow = mean(c25_gamma_power(c25_freq_idx_range));
 
-    % Find gamma peak for 50% contrast
+    if isempty(peaks)
+        c25_pow  = NaN;
+        c25_freq = NaN;
+    else
+        [c25_pow, peak_idx] = max(peaks);
+        c25_freq = locs(peak_idx);
+
+        % ±5 Hz range
+        c25_freq_range = c25_freq + [-5 5];
+        c25_freq_idx_range = find(pow_c25_baselined.freq >= c25_freq_range(1) & ...
+            pow_c25_baselined.freq <= c25_freq_range(2));
+
+        c25_pow = mean(c25_gamma_power(c25_freq_idx_range));
+    end
+
+
+    % -------- 50% contrast --------
     c50_gamma_power = mean(pow_c50_fooof_bl_smooth.powspctrm(channels_idx, freq_idx), 1);
     [peaks, locs] = findpeaks(c50_gamma_power, pow_c50_fooof_bl_smooth.freq(freq_idx));
-    [c50_pow, peak_idx] = max(peaks);
-    c50_freq = locs(peak_idx);
-    % Compute the peak gamma power as the mean power in the ±5 Hz range
-    c50_freq_range = c50_freq + [-5, 5];  % ±5 Hz range
-    c50_freq_idx_range = find(pow_c50_baselined.freq >= c50_freq_range(1) & pow_c50_baselined.freq <= c50_freq_range(2));
-    c50_pow = mean(c50_gamma_power(c50_freq_idx_range));
 
-    % Find gamma peak for 75% contrast
+    if isempty(peaks)
+        c50_pow  = NaN;
+        c50_freq = NaN;
+    else
+        [c50_pow, peak_idx] = max(peaks);
+        c50_freq = locs(peak_idx);
+
+        % ±5 Hz range
+        c50_freq_range = c50_freq + [-5 5];
+        c50_freq_idx_range = find(pow_c50_baselined.freq >= c50_freq_range(1) & ...
+            pow_c50_baselined.freq <= c50_freq_range(2));
+
+        c50_pow = mean(c50_gamma_power(c50_freq_idx_range));
+    end
+
+
+    % -------- 75% contrast --------
     c75_gamma_power = mean(pow_c75_fooof_bl_smooth.powspctrm(channels_idx, freq_idx), 1);
     [peaks, locs] = findpeaks(c75_gamma_power, pow_c75_fooof_bl_smooth.freq(freq_idx));
+
     if isempty(peaks)
-        c75_pow = NaN;
+        c75_pow  = NaN;
         c75_freq = NaN;
     else
         [c75_pow, peak_idx] = max(peaks);
         c75_freq = locs(peak_idx);
-        % Compute the peak gamma power as the mean power in the ±5 Hz range
-        c75_freq_range = c75_freq + [-5, 5];  % ±5 Hz range
-        c75_freq_idx_range = find(pow_c75_baselined.freq >= c75_freq_range(1) & pow_c75_baselined.freq <= c75_freq_range(2));
+
+        % ±5 Hz range
+        c75_freq_range = c75_freq + [-5 5];
+        c75_freq_idx_range = find(pow_c75_baselined.freq >= c75_freq_range(1) & ...
+            pow_c75_baselined.freq <= c75_freq_range(2));
+
         c75_pow = mean(c75_gamma_power(c75_freq_idx_range));
     end
 
-    % Find gamma peak for 100% contrast
+
+    % -------- 100% contrast --------
     c100_gamma_power = mean(pow_c100_fooof_bl_smooth.powspctrm(channels_idx, freq_idx), 1);
     [peaks, locs] = findpeaks(c100_gamma_power, pow_c100_fooof_bl_smooth.freq(freq_idx));
-    [c100_pow, peak_idx] = max(peaks);
-    c100_freq = locs(peak_idx);
-    % Compute the peak gamma power as the mean power in the ±5 Hz range
-    c100_freq_range = c100_freq + [-5, 5];  % ±5 Hz range
-    c100_freq_idx_range = find(pow_c100_baselined.freq >= c100_freq_range(1) & pow_c100_baselined.freq <= c100_freq_range(2));
-    c100_pow = mean(c100_gamma_power(c100_freq_idx_range));
+
+    if isempty(peaks)
+        c100_pow  = NaN;
+        c100_freq = NaN;
+    else
+        [c100_pow, peak_idx] = max(peaks);
+        c100_freq = locs(peak_idx);
+
+        % ±5 Hz range
+        c100_freq_range = c100_freq + [-5 5];
+        c100_freq_idx_range = find(pow_c100_baselined.freq >= c100_freq_range(1) & ...
+            pow_c100_baselined.freq <= c100_freq_range(2));
+
+        c100_pow = mean(c100_gamma_power(c100_freq_idx_range));
+    end
 
     % Create across condition structure
     subject_id = repmat(str2num(subjects{subj}), 4, 1);
@@ -295,10 +330,9 @@ for subj = 1:length(subjects)
     frequencies = [c25_freq; c50_freq; c75_freq; c100_freq];
 
     subj_data_eeg = struct('ID', num2cell(subject_id), ...
-        'Condition', num2cell(conditions), ...
-        'Power', num2cell(powers), ...
-        'Frequency', num2cell(frequencies));
-
+        'Condition',     num2cell(conditions), ...
+        'Power',         num2cell(powers), ...
+        'Frequency',     num2cell(frequencies));
     % Save data
     savepath = strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
     mkdir(savepath)
