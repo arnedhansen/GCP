@@ -93,7 +93,7 @@ channels = occ_channels;
 %% Plot GRAND AVERAGE power spectrum
 close all;
 figure;
-set(gcf, 'Position', [0, 0, 1000, 2000], 'Color', 'w');
+set(gcf, 'Position', [0, 0, 1200, 982], 'Color', 'w');
 cfg = [];
 cfg.channel = channels;
 cfg.figure = 'gcf';
@@ -149,7 +149,7 @@ yline(0, '--', 'Color', [0.3 0.3 0.3], 'LineWidth', 0.25);
 set(gcf, 'color', 'w');
 set(gca, 'FontSize', 20);
 % xlim([30 90])
-ylim([-0.0275 0.0275])
+ylim([-0.03 0.03])
 xlabel('Frequency [Hz]', 'FontSize', 30);
 ylabel('Power [dB]', 'FontSize', 30);
 legend(h, {' 25% Contrast',' 50% Contrast',' 75% Contrast','100% Contrast'}, 'FontName','Arial','FontSize',25);

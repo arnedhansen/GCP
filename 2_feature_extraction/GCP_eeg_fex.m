@@ -11,7 +11,7 @@
 
 %% Setup
 startup
-[subjects, path, colors, ~] = setup('GCP');
+[subjects, path, ~, ~] = setup('GCP');
 
 %% Extract TFR
 % Read data, segment and convert to FieldTrip data structure
@@ -257,8 +257,8 @@ for subj = 1:length(subjects)
 
         % ±5 Hz range
         c25_freq_range = c25_freq + [-5 5];
-        c25_freq_idx_range = find(pow_c25_baselined.freq >= c25_freq_range(1) & ...
-            pow_c25_baselined.freq <= c25_freq_range(2));
+        c25_freq_idx_range = find(pow_c25_fooof_bl_smooth.freq >= c25_freq_range(1) & ...
+            pow_c25_fooof_bl_smooth.freq <= c25_freq_range(2));
 
         c25_pow = mean(c25_gamma_power(c25_freq_idx_range));
     end
@@ -277,8 +277,8 @@ for subj = 1:length(subjects)
 
         % ±5 Hz range
         c50_freq_range = c50_freq + [-5 5];
-        c50_freq_idx_range = find(pow_c50_baselined.freq >= c50_freq_range(1) & ...
-            pow_c50_baselined.freq <= c50_freq_range(2));
+        c50_freq_idx_range = find(pow_c50_fooof_bl_smooth.freq >= c50_freq_range(1) & ...
+            pow_c50_fooof_bl_smooth.freq <= c50_freq_range(2));
 
         c50_pow = mean(c50_gamma_power(c50_freq_idx_range));
     end
@@ -297,8 +297,8 @@ for subj = 1:length(subjects)
 
         % ±5 Hz range
         c75_freq_range = c75_freq + [-5 5];
-        c75_freq_idx_range = find(pow_c75_baselined.freq >= c75_freq_range(1) & ...
-            pow_c75_baselined.freq <= c75_freq_range(2));
+        c75_freq_idx_range = find(pow_c75_fooof_bl_smooth.freq >= c75_freq_range(1) & ...
+            pow_c75_fooof_bl_smooth.freq <= c75_freq_range(2));
 
         c75_pow = mean(c75_gamma_power(c75_freq_idx_range));
     end
@@ -317,8 +317,8 @@ for subj = 1:length(subjects)
 
         % ±5 Hz range
         c100_freq_range = c100_freq + [-5 5];
-        c100_freq_idx_range = find(pow_c100_baselined.freq >= c100_freq_range(1) & ...
-            pow_c100_baselined.freq <= c100_freq_range(2));
+        c100_freq_idx_range = find(pow_c100_fooof_bl_smooth.freq >= c100_freq_range(1) & ...
+            pow_c100_fooof_bl_smooth.freq <= c100_freq_range(2));
 
         c100_pow = mean(c100_gamma_power(c100_freq_idx_range));
     end
@@ -344,10 +344,14 @@ for subj = 1:length(subjects)
     title(['Subj ' num2str(subjects{subj}) ': FOOOFed baselined powerspectrum'])
     maxylim = max([abs(c25_gamma_power), abs(c50_gamma_power), abs(c75_gamma_power), abs(c100_gamma_power)]);
     ylim([-maxylim*1.2 maxylim*1.2])
-    text(31, -maxylim*0.5, [num2str(c25_freq) 'Hz'], 'FontSize', 25, 'Color', colors(1, :))
-    text(36, -maxylim*0.5, [num2str(c50_freq) 'Hz'], 'FontSize', 25, 'Color', colors(2, :))
-    text(41, -maxylim*0.5, [num2str(c75_freq) 'Hz'], 'FontSize', 25, 'Color', colors(3, :))
-    text(46, -maxylim*0.5, [num2str(c100_freq) 'Hz'], 'FontSize', 25, 'Color', colors(4, :))
+    text(30, -maxylim*0.5, [num2str(c25_freq) 'Hz'], 'FontSize', 25, 'Color', colors(1, :))
+    text(38, -maxylim*0.5, [num2str(c50_freq) 'Hz'], 'FontSize', 25, 'Color', colors(2, :))
+    text(46, -maxylim*0.5, [num2str(c75_freq) 'Hz'], 'FontSize', 25, 'Color', colors(3, :))
+    text(54, -maxylim*0.5, [num2str(c100_freq) 'Hz'], 'FontSize', 25, 'Color', colors(4, :))
+    text(30, -maxylim*0.65, [num2str(round(c25_pow, 4)) ], 'FontSize', 25, 'Color', colors(1, :))
+    text(38, -maxylim*0.65, [num2str(round(c50_pow, 4)) ], 'FontSize', 25, 'Color', colors(2, :))
+    text(46, -maxylim*0.65, [num2str(round(c75_pow, 4)) ], 'FontSize', 25, 'Color', colors(3, :))
+    text(54, -maxylim*0.65, [num2str(round(c100_pow, 4))], 'FontSize', 25, 'Color', colors(4, :))
     saveas(gcf, ['/Users/Arne/Documents/GitHub/GCP/controls/powspctrm/GCP_controls_powscptrm_subj' num2str(subjects{subj}), '.png'])
 
     % Create across condition structure

@@ -38,6 +38,6 @@ merged_data = table2struct(T_merge);
 save /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/merged_data.mat merged_data
 
 %% Save as .csv
-merged_table = struct2table(merged_data);
+merged_table = struct2table(merged_data)
 csv_filename = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/merged_data.csv';
 writetable(merged_table, csv_filename);
