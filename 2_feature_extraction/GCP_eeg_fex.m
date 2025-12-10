@@ -11,7 +11,7 @@
 
 %% Setup
 startup
-[subjects, path] = setup('GCP');
+[subjects, path, colors, ~] = setup('GCP');
 
 %% Extract TFR
 % Read data, segment and convert to FieldTrip data structure
@@ -323,6 +323,33 @@ for subj = 1:length(subjects)
         c100_pow = mean(c100_gamma_power(c100_freq_idx_range));
     end
 
+    % Control figure
+    colors = color_def('GCP');
+    close all
+    figure('Position',  [0 0 1512 982], 'Color', 'W');
+    plot(pow_c25_fooof_bl_smooth.freq(freq_idx), c25_gamma_power, 'Color', colors(1, :), 'LineWidth', 5)
+    xlabel('Frequency')
+    ylabel('Power [dB]')
+    hold on
+    plot(pow_c50_fooof_bl_smooth.freq(freq_idx), c50_gamma_power, 'Color', colors(2, :), 'LineWidth', 5)
+    plot(pow_c75_fooof_bl_smooth.freq(freq_idx), c75_gamma_power, 'Color', colors(3, :), 'LineWidth', 5)
+    plot(pow_c100_fooof_bl_smooth.freq(freq_idx), c100_gamma_power, 'Color', colors(4, :), 'LineWidth', 5)
+    legend({'25%', '50%', '75%', '100%'})
+    set(gca, 'FontSize', 25)
+    xline(c25_freq, 'LineStyle', '--', 'LineWidth', 5, 'Color', colors(1, :))
+    xline(c50_freq, 'LineStyle', '--', 'LineWidth', 5, 'Color', colors(2, :))
+    xline(c75_freq, 'LineStyle', '--',  'LineWidth', 5, 'Color', colors(3, :))
+    xline(c100_freq, 'LineStyle', '--',  'LineWidth', 5, 'Color', colors(4, :))
+    yline(0, '--');
+    title(['Subj ' num2str(subjects{subj}) ': FOOOFed baselined powerspectrum'])
+    maxylim = max([abs(c25_gamma_power), abs(c50_gamma_power), abs(c75_gamma_power), abs(c100_gamma_power)]);
+    ylim([-maxylim*1.2 maxylim*1.2])
+    text(31, -maxylim*0.5, [num2str(c25_freq) 'Hz'], 'FontSize', 25, 'Color', colors(1, :))
+    text(36, -maxylim*0.5, [num2str(c50_freq) 'Hz'], 'FontSize', 25, 'Color', colors(2, :))
+    text(41, -maxylim*0.5, [num2str(c75_freq) 'Hz'], 'FontSize', 25, 'Color', colors(3, :))
+    text(46, -maxylim*0.5, [num2str(c100_freq) 'Hz'], 'FontSize', 25, 'Color', colors(4, :))
+    saveas(gcf, ['/Users/Arne/Documents/GitHub/GCP/controls/powspctrm/GCP_controls_powscptrm_subj' num2str(subjects{subj}), '.png'])
+
     % Create across condition structure
     subject_id = repmat(str2num(subjects{subj}), 4, 1);
     conditions = [1; 2; 3; 4];
@@ -333,6 +360,7 @@ for subj = 1:length(subjects)
         'Condition',     num2cell(conditions), ...
         'Power',         num2cell(powers), ...
         'Frequency',     num2cell(frequencies));
+
     % Save data
     savepath = strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
     mkdir(savepath)
@@ -347,4 +375,5 @@ for subj = 1:length(subjects)
     eeg_data = [eeg_data; subj_data_eeg];
 end
 save /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/eeg_matrix eeg_data
+clc
 disp('EEG Feature Matrix created')
