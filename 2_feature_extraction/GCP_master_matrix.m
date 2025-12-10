@@ -15,7 +15,7 @@ subjects = {folders.name};
 % demog_data = table2struct(demog_data(1:120, :));
 
 load('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/behavioral_matrix.mat');
-load('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/eeg_matrix_superlets.mat');
+load('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/eeg_matrix.mat');
 load('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/gaze_matrix.mat');
 
 %% Merge structures
