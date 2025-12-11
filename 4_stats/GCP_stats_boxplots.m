@@ -32,7 +32,7 @@ xtickLabs = strcat(num2str(condLevels*25), "% Contrast");
 subjIDs = unique(T.ID);
 
 %% Loop through variables
-for iVar = 1:numel(numericVars)
+for iVar = 3%%%%%1:numel(numericVars)
     close all
 
     varName = numericVars{iVar};
@@ -89,6 +89,8 @@ for iVar = 1:numel(numericVars)
         ylim([-maxval*1.1 maxval*1.1])
     elseif strcmp(varName, 'Frequency')
         ylim([30 90])
+    % elseif strcmp(varName, 'Power')
+        %set(gca, 'YScale', 'log')
     else
         ylim([0 maxval*1.1])
     end
@@ -102,6 +104,15 @@ for iVar = 1:numel(numericVars)
     if strcmp(varName, 'PctMSRate')
         ylabel('Microsaccade Rate [%]')
         title('Microsaccade Rate', 'FontSize', 30, 'FontWeight', 'bold')
+    elseif strcmp(varName, 'PctPupilSize')
+        ylabel('Pupil Size [%]')
+        title('Pupil Size', 'FontSize', 30, 'FontWeight', 'bold')
+    elseif strcmp(varName, 'Power')
+        ylabel('Power [dB]')
+        title('Gamma Power', 'FontSize', 30, 'FontWeight', 'bold')
+    elseif strcmp(varName, 'PctGazeDeviation')
+        ylabel('Gaze Deviation [%]')
+        title('Gaze Deviation', 'FontSize', 30, 'FontWeight', 'bold')
     elseif strcmp(varName, 'PctVel2D')
         ylabel('Eye Velocity [%]')
         title('Combined Eye Velocity', 'FontSize', 30, 'FontWeight', 'bold')
