@@ -1,7 +1,7 @@
 %% Gamma Time Frequency Analysis for GCP data
 
 %% Setup
-clear
+startup
 [subjects, path, ~, layANThead] = setup('GCP');
 
 %% Compute grand average time and frequency data GATFR
@@ -57,7 +57,7 @@ clim = double([-max_spctrm * 0.9, max_spctrm * 0.9]);
 
 % Figure
 figure;
-set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+set(gcf, 'Position', [0, 0, 1512, 982], 'Color', 'w');
 sgtitle('Grand Average Time-Frequency Representations', 'FontSize', 30, 'FontWeight', 'bold')
 
 % Common configuration
@@ -70,7 +70,7 @@ cfg.colorbar = 'yes';
 cfg.zlim = 'maxabs';
 cfg.xlim = ([-0.5 2.5]);
 cfg.ylim = [30 90];
-%load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
+%load('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/headmodel/layANThead.mat')
 color_map = flipud(cbrewer('div', 'RdBu', 64));
 
 % TFR2
@@ -82,7 +82,7 @@ colb = colorbar;
 colb.Label.String = 'Power [dB]';
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
-rectangle('Position', [0.3, 30, 1.7, 60], 'EdgeColor', 'r', 'LineWidth', 5);
+%rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
 set(gca, 'FontSize', 20)
 title('25% Contrast');
 
@@ -95,7 +95,7 @@ colb = colorbar;
 colb.Label.String = 'Power [dB]';
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
-rectangle('Position', [0.3, 30, 1.7, 60], 'EdgeColor', 'r', 'LineWidth', 5);
+%rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
 set(gca, 'FontSize', 20)
 title('50% Contrast');
 
@@ -108,7 +108,7 @@ colb = colorbar;
 colb.Label.String = 'Power [dB]';
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
-rectangle('Position', [0.3, 30, 1.7, 60], 'EdgeColor', 'r', 'LineWidth', 5);
+%rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
 set(gca, 'FontSize', 20)
 title('75% Contrast');
 
@@ -121,19 +121,19 @@ colb = colorbar;
 colb.Label.String = 'Power [dB]';
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
-rectangle('Position', [0.3, 30, 1.7, 60], 'EdgeColor', 'r', 'LineWidth', 5);
+%rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
 set(gca, 'FontSize', 20)
 title('100% Contrast');
 
 % Save
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr.png');
+print(set(gcf, 'Renderer', 'painters'), '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr.png', '-dpng', '-r600')
 
 %% Difference
 diff = gatfr100;
 diff.powspctrm = gatfr100.powspctrm - gatfr50.powspctrm;
 
 figure;
-set(gcf, 'Position', [100, 200, 2000, 1200], 'Color', 'w');
+set(gcf, 'Position', [0, 0, 1512, 982], 'Color', 'w');
 ft_singleplotTFR(cfg, diff);
 colormap(color_map);
 set(gca, 'CLim', clim);
@@ -141,7 +141,7 @@ colb = colorbar;
 colb.Label.String = 'Power [dB]';
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
-rectangle('Position', [0.3, 30, 1.7, 60], 'EdgeColor', 'r', 'LineWidth', 5);
+%rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
 set(gca, 'FontSize', 25)
 title('TFR Difference: 100% Contrast - 50% Contrast');
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_diff.png');
+print(set(gcf, 'Renderer', 'painters'), '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_diff.png', '-dpng', '-r600')
