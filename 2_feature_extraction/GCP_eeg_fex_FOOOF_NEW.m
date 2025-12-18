@@ -12,6 +12,10 @@ startup
 [subjects, path, ~, ~] = setup('GCP');
 
 %% DataQueue for parfor progress
+function printProgress(s)
+fprintf('Subj %d | Cond %d | Time %d/%d finished\n', ...
+    s.subj, s.cond, s.time, s.nTimePnts);
+end
 D = parallel.pool.DataQueue;
 afterEach(D, @printProgress);
 
@@ -121,7 +125,7 @@ for subj = 1:length(subjects)
         fooof_powspec    = nan(nChan, nFreq, nTimePnts);   % input power spectrum (FOOOF/log space)
         fooof_aperiodic  = nan(nChan, 4,    nTimePnts);    % [offset exponent error r^2]
 
-        parfor timePnt = 1:nTimePnts
+        for timePnt = 1:nTimePnts
 
             cfg_sel         = [];
             cfg_sel.latency = startWin_FOOOF + steps_FOOOF * (timePnt-1);
