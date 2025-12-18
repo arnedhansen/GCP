@@ -43,7 +43,7 @@ for subj = 1:length(subjects)
     cfg.output      = 'pow';
     cfg.method      = 'mtmconvol';
     cfg.taper       = 'dpss';
-    cfg.foi         = 30:5:120;
+    cfg.foi         = 30:1:90;
     cfg.tapsmofrq   = 5;
     cfg.t_ftimwin   = ones(length(cfg.foi),1) .* 0.5;
     cfg.toi         = -1.75:0.05:2;
@@ -104,7 +104,7 @@ for subj = 1:length(subjects)
         cfg_fooof            = [];
         cfg_fooof.method     = 'mtmfft';
         cfg_fooof.taper      = 'hanning';
-        cfg_fooof.foilim     = [30 120];
+        cfg_fooof.foilim     = [30 90];
         cfg_fooof.pad        = 5;
         cfg_fooof.output     = 'fooof';
         cfg_fooof.keeptrials = 'no';
@@ -132,7 +132,15 @@ for subj = 1:length(subjects)
             cfg_sel.trials  = trlIdx;
             dat_win         = ft_selectdata(cfg_sel, dat);
 
-            fooof_out = ft_freqanalysis_Arne_FOOOF(cfg_fooof, dat_win);
+            % Tracker
+            clc
+            disp(['Running FOOOF for Subject ', num2str(subjects{subj})])
+            disp(['Subject:    ', num2str(subj), ' / ', num2str(length(subjects))])
+            disp(['Condition:  ', num2str(cond), ' / 4'])
+            disp(['Time Point: ', num2str(timePnt), ' / ', num2str(nTimePnts)])
+
+            % fooof_out = ft_freqanalysis_Arne_FOOOF(cfg_fooof, dat_win);
+            out = evalc('fooof_out = ft_freqanalysis_Arne_FOOOF(cfg_fooof, dat_win);');
 
             if iscell(fooof_out.fooofparams)
                 repdata = fooof_out.fooofparams{1};
@@ -216,7 +224,7 @@ for subj = 1:length(subjects)
             s.cond      = cond;
             s.time      = timePnt;
             s.nTimePnts = nTimePnts;
-            send(D, s);
+            %send(D, s);
         end
 
         % Build FieldTrip-like freq struct
