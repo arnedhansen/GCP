@@ -2,23 +2,21 @@
 %
 % Outputs per subject:
 %   TFR (mtmconvol) raw + baseline (for visualisation)
-%   TFR_FOOOF (sliding windows): powspctrm = log10(FOOOFed spectrum) per window centre
-%   plus: power_spectrum + aperiodic params (offset/slope/error/r^2) per window
-  
+%   TFR_FOOOF (sliding windows): powspctrm = model fit (aperiodic + peaks) in FOOOF/log space
+%   plus: power_spectrum + aperiodic params (offset/exponent/error/r^2) per window
+
+clear; close all; clc
+
 %% Setup
 startup
-[subjects, path, ~, headmodel] = setup('GCP');
+[subjects, path, ~, ~] = setup('GCP');
 
 %% DataQueue for parfor progress
 D = parallel.pool.DataQueue;
 afterEach(D, @printProgress);
-function printProgress(s)
-fprintf('Subj %d | Cond %d | Time %d/%d finished\n', ...
-    s.subj, s.cond, s.time, s.nTimePnts);
-end
 
 %% Loop subjects
-for subj = 1 : length(subjects)
+for subj = 1:length(subjects)
 
     datapath = strcat(path, subjects{subj}, filesep, 'eeg');
     cd(datapath)
@@ -26,10 +24,11 @@ for subj = 1 : length(subjects)
     clc
 
     disp(['Processing GCP TFR + sliding-window FOOOF for subject ', num2str(subjects{subj})])
+
     load dataEEG
+    load('/Volumes/g_psyplafor_methlab$/Students/Arne/MA/headmodel/ant128lay.mat');
 
     %% Identify trial indices (per dataset)
-    % Note: adjust if your trialinfo is not a vector or codes differ per file.
     ind61 = find(dataEEG_c25.trialinfo  == 61);
     ind62 = find(dataEEG_c50.trialinfo  == 62);
     ind63 = find(dataEEG_c75.trialinfo  == 63);
@@ -40,7 +39,7 @@ for subj = 1 : length(subjects)
     cfg.output      = 'pow';
     cfg.method      = 'mtmconvol';
     cfg.taper       = 'dpss';
-    cfg.foi         = 30:2.5:100;
+    cfg.foi         = 30:5:120;
     cfg.tapsmofrq   = 5;
     cfg.t_ftimwin   = ones(length(cfg.foi),1) .* 0.5;
     cfg.toi         = -1.75:0.05:2;
@@ -72,26 +71,25 @@ for subj = 1 : length(subjects)
     toi_centres    = startWin_FOOOF(1):steps_FOOOF:(startWin_FOOOF(1) + steps_FOOOF*(nTimePnts-1));
     toi_centres    = toi_centres + 0.25;  % shift by half window length
 
-    % Conditions container
     tfr_fooof = cell(1,4);
 
     for cond = 1:4
 
         if cond == 1
-            dat    = dataEEG_c25;
-            trlIdx = ind61;
+            dat      = dataEEG_c25;
+            trlIdx   = ind61;
             condName = 'c25';
         elseif cond == 2
-            dat    = dataEEG_c50;
-            trlIdx = ind62;
+            dat      = dataEEG_c50;
+            trlIdx   = ind62;
             condName = 'c50';
         elseif cond == 3
-            dat    = dataEEG_c75;
-            trlIdx = ind63;
+            dat      = dataEEG_c75;
+            trlIdx   = ind63;
             condName = 'c75';
-        elseif cond == 4
-            dat    = dataEEG_c100;
-            trlIdx = ind64;
+        else
+            dat      = dataEEG_c100;
+            trlIdx   = ind64;
             condName = 'c100';
         end
 
@@ -102,12 +100,12 @@ for subj = 1 : length(subjects)
         cfg_fooof            = [];
         cfg_fooof.method     = 'mtmfft';
         cfg_fooof.taper      = 'hanning';
-        cfg_fooof.foilim     = [30 100];
+        cfg_fooof.foilim     = [30 120];
         cfg_fooof.pad        = 5;
         cfg_fooof.output     = 'fooof';
         cfg_fooof.keeptrials = 'no';
 
-        % One test window for sizing
+        % One test window for sizing / master freq grid
         cfg_sel0         = [];
         cfg_sel0.latency = startWin_FOOOF;
         cfg_sel0.trials  = trlIdx;
@@ -116,14 +114,14 @@ for subj = 1 : length(subjects)
         fooof_test       = ft_freqanalysis_Arne_FOOOF(cfg_fooof, dat_win0);
 
         nChan            = numel(fooof_test.label);
-        nFreq            = numel(fooof_test.freq);
+        freq_master      = fooof_test.freq(:);
+        nFreq            = numel(freq_master);
 
-        fooof_powspctrm  = nan(nChan, nFreq, nTimePnts);
-        fooof_powspec    = nan(nChan, nFreq, nTimePnts);
-        fooof_aperiodic  = nan(nChan, 4,    nTimePnts);   % [offset slope error r^2]
+        fooof_powspctrm  = nan(nChan, nFreq, nTimePnts);   % model fit (FOOOF/log space)
+        fooof_powspec    = nan(nChan, nFreq, nTimePnts);   % input power spectrum (FOOOF/log space)
+        fooof_aperiodic  = nan(nChan, 4,    nTimePnts);    % [offset exponent error r^2]
 
-        % parfor over timepoints
-        parfor timePnt = 1 : nTimePnts
+        parfor timePnt = 1:nTimePnts
 
             cfg_sel         = [];
             cfg_sel.latency = startWin_FOOOF + steps_FOOOF * (timePnt-1);
@@ -132,71 +130,82 @@ for subj = 1 : length(subjects)
 
             fooof_out = ft_freqanalysis_Arne_FOOOF(cfg_fooof, dat_win);
 
-            freq_master = fooof_test.freq(:);
-            freq_now    = fooof_out.freq(:);
-
-            % Index mapping: where does freq_now land on freq_master?
-            [tf, loc] = ismembertol(freq_now, freq_master, 1e-10);
-
-            % Preallocate local arrays on the MASTER grid
-            local_pow = nan(nChan, numel(freq_master));
-            local_ps  = nan(nChan, numel(freq_master));
-
             if iscell(fooof_out.fooofparams)
                 repdata = fooof_out.fooofparams{1};
             else
                 repdata = fooof_out.fooofparams;
             end
 
-            tmpaper      = {repdata.aperiodic_params};
-            tmperror     = {repdata.error};
-            tmpr_sq      = {repdata.r_squared};
-            tmp_pwr_spec = {repdata.power_spectrum};
+            freq_now = fooof_out.freq(:);
 
-            local_aper = nan(nChan, 2);
-            local_err  = nan(nChan, 1);
-            local_rsq  = nan(nChan, 1);
+            % Map freq_now onto the master grid
+            [tf, loc] = ismembertol(freq_now, freq_master, 1e-10);
+
+            local_model  = nan(nChan, nFreq);
+            local_ps     = nan(nChan, nFreq);
+
+            local_offset = nan(nChan, 1);
+            local_expo   = nan(nChan, 1);
+            local_err    = nan(nChan, 1);
+            local_rsq    = nan(nChan, 1);
 
             for ch = 1:nChan
 
-                ap               = tmpaper{ch};
-                local_aper(ch,:) = ap(:).';
-
-                local_err(ch,1)  = tmperror{ch};
-                local_rsq(ch,1)  = tmpr_sq{ch};
-
-                ps_tmp = tmp_pwr_spec{ch}(:);
-
-                % Write only matching bins into the master grid
+                % Input spectrum from FOOOF wrapper (already in FOOOF/log space)
+                ps_tmp = repdata(ch).power_spectrum(:);
                 if numel(ps_tmp) == numel(freq_now)
-                    local_ps(ch, loc(tf))  = ps_tmp(tf).';
+                    local_ps(ch, loc(tf)) = ps_tmp(tf).';
                 else
-                    % defensive: if wrapper returns mismatch internally
                     nMin = min(numel(ps_tmp), numel(freq_now));
                     local_ps(ch, loc(tf(1:nMin))) = ps_tmp(1:nMin).';
                 end
+
+                % Aperiodic
+                ap = repdata(ch).aperiodic_params(:);
+
+                local_err(ch) = repdata(ch).error;
+                local_rsq(ch) = repdata(ch).r_squared;
+
+                if numel(ap) == 2
+                    offset = ap(1);
+                    expo   = ap(2);
+                    ap_fit = offset - expo .* log10(freq_now);
+                else
+                    offset = ap(1);
+                    knee   = ap(2);
+                    expo   = ap(3);
+                    ap_fit = offset - log10(knee + freq_now.^expo);
+                end
+
+                local_offset(ch) = offset;
+                local_expo(ch)   = expo;
+
+                % Peaks -> sum of Gaussians
+                pk = repdata(ch).peak_params;
+                gauss_sum = zeros(numel(freq_now), 1);
+
+                if ~isempty(pk)
+                    for p = 1:size(pk,1)
+                        cf  = pk(p,1);
+                        amp = pk(p,2);
+                        bw  = pk(p,3);
+                        gauss_sum = gauss_sum + amp .* exp(-(freq_now - cf).^2 ./ (2*bw.^2));
+                    end
+                end
+
+                model_now = ap_fit + gauss_sum;
+
+                % Write into master grid
+                local_model(ch, loc(tf)) = model_now(tf).';
             end
 
-            % Same alignment for powspctrm (FOOOF-space) if its freq grid matches freq_now
-            pow_tmp = fooof_out.powspctrm;
-            if size(pow_tmp,2) == numel(freq_now)
-                local_pow(:, loc(tf)) = log10(pow_tmp(:, tf));
-            else
-                % last-resort: just log10 the available columns and align what you can
-                nMin = min(size(pow_tmp,2), numel(freq_now));
-                local_pow(:, loc(tf(1:nMin))) = log10(pow_tmp(:, 1:nMin));
-            end
-
-            fooof_powspctrm(:, :, timePnt) = local_pow;
+            fooof_powspctrm(:, :, timePnt) = local_model;
             fooof_powspec(:,   :, timePnt) = local_ps;
 
-            local_aper_all       = nan(nChan, 4);
-            local_aper_all(:,1)  = local_aper(:,1);
-            local_aper_all(:,2)  = local_aper(:,2);
-            local_aper_all(:,3)  = local_err;
-            local_aper_all(:,4)  = local_rsq;
-
-            fooof_aperiodic(:, :, timePnt) = local_aper_all;
+            fooof_aperiodic(:, 1, timePnt) = local_offset;
+            fooof_aperiodic(:, 2, timePnt) = local_expo;
+            fooof_aperiodic(:, 3, timePnt) = local_err;
+            fooof_aperiodic(:, 4, timePnt) = local_rsq;
 
             s           = struct();
             s.subj      = subj;
@@ -207,16 +216,16 @@ for subj = 1 : length(subjects)
         end
 
         % Build FieldTrip-like freq struct
-        tfr_ff                    = [];
-        tfr_ff.label              = fooof_test.label;
-        tfr_ff.freq               = fooof_test.freq;
-        tfr_ff.time               = toi_centres(:).';
-        tfr_ff.powspctrm          = fooof_powspctrm;
-        tfr_ff.power_spectrum     = fooof_powspec;
-        tfr_ff.fooofparams        = fooof_aperiodic;
-        tfr_ff.dimord             = 'chan_freq_time';
+        tfr_ff                = [];
+        tfr_ff.label          = fooof_test.label;
+        tfr_ff.freq           = fooof_test.freq;
+        tfr_ff.time           = toi_centres(:).';
+        tfr_ff.powspctrm      = fooof_powspctrm;
+        tfr_ff.power_spectrum = fooof_powspec;
+        tfr_ff.fooofparams    = fooof_aperiodic;
+        tfr_ff.dimord         = 'chan_freq_time';
 
-        tfr_fooof{cond}           = tfr_ff;
+        tfr_fooof{cond}       = tfr_ff;
     end
 
     tfr_c25_fooof  = tfr_fooof{1};
