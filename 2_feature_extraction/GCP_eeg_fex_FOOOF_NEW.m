@@ -7,7 +7,7 @@
   
 %% Setup
 startup
-[subjects, path, ~, ~] = setup('GCP');
+[subjects, path, ~, headmodel] = setup('GCP');
 
 %% DataQueue for parfor progress
 D = parallel.pool.DataQueue;
@@ -26,9 +26,7 @@ for subj = 1 : length(subjects)
     clc
 
     disp(['Processing GCP TFR + sliding-window FOOOF for subject ', num2str(subjects{subj})])
-
     load dataEEG
-    load('/Volumes/g_psyplafor_methlab$/Students/Arne/MA/headmodel/ant128lay.mat');
 
     %% Identify trial indices (per dataset)
     % Note: adjust if your trialinfo is not a vector or codes differ per file.
@@ -42,7 +40,7 @@ for subj = 1 : length(subjects)
     cfg.output      = 'pow';
     cfg.method      = 'mtmconvol';
     cfg.taper       = 'dpss';
-    cfg.foi         = 30:5:120;
+    cfg.foi         = 30:2.5:100;
     cfg.tapsmofrq   = 5;
     cfg.t_ftimwin   = ones(length(cfg.foi),1) .* 0.5;
     cfg.toi         = -1.75:0.05:2;
@@ -104,7 +102,7 @@ for subj = 1 : length(subjects)
         cfg_fooof            = [];
         cfg_fooof.method     = 'mtmfft';
         cfg_fooof.taper      = 'hanning';
-        cfg_fooof.foilim     = [30 120];
+        cfg_fooof.foilim     = [30 100];
         cfg_fooof.pad        = 5;
         cfg_fooof.output     = 'fooof';
         cfg_fooof.keeptrials = 'no';
