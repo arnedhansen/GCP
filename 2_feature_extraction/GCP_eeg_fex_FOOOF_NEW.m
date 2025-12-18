@@ -4,7 +4,7 @@
 %   TFR (mtmconvol) raw + baseline (for visualisation)
 %   TFR_FOOOF (sliding windows): powspctrm = log10(FOOOFed spectrum) per window centre
 %   plus: power_spectrum + aperiodic params (offset/slope/error/r^2) per window
-
+  
 %% Setup
 startup
 [subjects, path, ~, ~] = setup('GCP');
