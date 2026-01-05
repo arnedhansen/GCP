@@ -64,5 +64,13 @@ set(ax, 'Box','off', ...
         'FontSize', 30)
 legend({'  25% Contrast', '  50% Contrast', '  75% Contrast', '100% Contrast'}, "Box", "off", "FontSize", 30)
 
+% Hide axis ticks
+xticks([]);
+yticks([]);
+ax.XLabel.Units = 'normalized';
+ax.YLabel.Units = 'normalized';
+ax.XLabel.Position(2) = ax.XLabel.Position(2) - 0.02;
+ax.YLabel.Position(1) = ax.YLabel.Position(1) - 0.02;
+
 % Save
 print(set(fig, 'Renderer', 'painters'), '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/hypotheses/GCP_hypotheses.png', '-dpng', '-r600')
