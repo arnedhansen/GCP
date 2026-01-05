@@ -43,7 +43,7 @@ for subj = 1:length(subjects)
     cfg.output      = 'pow';
     cfg.method      = 'mtmconvol';
     cfg.taper       = 'dpss';
-    cfg.foi         = 30:1:90;
+    cfg.foi         = 1:1:100;
     cfg.tapsmofrq   = 5;
     cfg.t_ftimwin   = ones(length(cfg.foi),1) .* 0.5;
     cfg.toi         = -1.75:0.05:2;
@@ -104,7 +104,7 @@ for subj = 1:length(subjects)
         cfg_fooof            = [];
         cfg_fooof.method     = 'mtmfft';
         cfg_fooof.taper      = 'hanning';
-        cfg_fooof.foilim     = [30 90];
+        cfg_fooof.foilim     = [1 100];
         cfg_fooof.pad        = 5;
         cfg_fooof.output     = 'fooof';
         cfg_fooof.keeptrials = 'no';
@@ -248,116 +248,116 @@ for subj = 1:length(subjects)
     disp(upper('FOOOF done on trial-averaged spectra (sliding windows)...'))
 
     %% Sanity Check: rerun ONE window per condition (same logic as your check)
-    % latWin = [0.25 0.75];
-    % 
-    % tfr_all     = {tfr_c25_fooof, tfr_c50_fooof, tfr_c75_fooof, tfr_c100_fooof};
-    % cond_titles = {'25% Contrast','50% Contrast','75% Contrast','100% Contrast'};
-    % 
-    % figure('Position', [0 0 1512 500], 'Color', 'w');
-    % 
-    % for c = 1:4
-    % 
-    %     if c == 1
-    %         dat      = dataEEG_c25;
-    %         trlIdx = ind61;
-    %     elseif c == 2
-    %         dat      = dataEEG_c50;
-    %         trlIdx = ind62;
-    %     elseif c == 3
-    %         dat      = dataEEG_c75;
-    %         trlIdx = ind63;
-    %     elseif c == 4
-    %         dat      = dataEEG_c100;
-    %         trlIdx = ind64;
-    %     end
-    % 
-    %     freq = tfr_all{c}.freq;
-    % 
-    %     cfg_sel         = [];
-    %     cfg_sel.latency = latWin;
-    %     cfg_sel.trials  = trlIdx;
-    %     datTFR_win_sc   = ft_selectdata(cfg_sel, dat);
-    % 
-    %     fooof_sc = ft_freqanalysis_Arne_FOOOF(cfg_fooof, datTFR_win_sc);
-    % 
-    %     if iscell(fooof_sc.fooofparams)
-    %         repdata_sc = fooof_sc.fooofparams{1};
-    %     else
-    %         repdata_sc = fooof_sc.fooofparams;
-    %     end
-    % 
-    %     nChan = numel(repdata_sc);
-    % 
-    %     ps_all    = nan(numel(freq), nChan);
-    %     ap_all    = nan(numel(freq), nChan);
-    %     gauss_all = nan(numel(freq), nChan);
-    % 
-    %     for ch = 1:nChan
-    % 
-    %         ps_all(:, ch) = repdata_sc(ch).power_spectrum(:);
-    % 
-    %         ap = repdata_sc(ch).aperiodic_params(:);
-    % 
-    %         if numel(ap) == 2
-    %             offset = ap(1);
-    %             expo   = ap(2);
-    %             ap_all(:, ch) = offset - expo .* log10(freq(:));
-    %         else
-    %             offset = ap(1);
-    %             knee   = ap(2);
-    %             expo   = ap(3);
-    %             ap_all(:, ch) = offset - log10(knee + freq(:).^expo);
-    %         end
-    % 
-    %         pk = repdata_sc(ch).peak_params;
-    %         gauss_tmp = zeros(numel(freq), 1);
-    % 
-    %         if ~isempty(pk)
-    %             for p = 1:size(pk,1)
-    %                 cf  = pk(p,1);
-    %                 amp = pk(p,2);
-    %                 bw  = pk(p,3);
-    %                 gauss_tmp = gauss_tmp + amp .* exp(-(freq(:) - cf).^2 ./ (2*bw.^2));
-    %             end
-    %         end
-    % 
-    %         gauss_all(:, ch) = gauss_tmp;
-    %     end
-    % 
-    %     ps_in     = mean(ps_all,    2, 'omitnan');
-    %     ap_fit    = mean(ap_all,    2, 'omitnan');
-    %     gauss_sum = mean(gauss_all, 2, 'omitnan');
-    % 
-    %     model_fit = ap_fit + gauss_sum;
-    % 
-    %     subplot(1,3,c); hold on
-    %     plot(freq, ps_in,     'LineWidth', 3)
-    %     plot(freq, model_fit, 'LineWidth', 3)
-    %     plot(freq, ap_fit,    '--', 'LineWidth', 3)
-    % 
-    %     xlabel('Frequency (Hz)')
-    %     if c == 1
-    %         ylabel('Power (FOOOF space)')
-    %         legend({'Input spectrum','Model fit','Aperiodic fit'}, 'Location', 'best')
-    %     end
-    %     title(sprintf('%s | t = %.2f s', cond_titles{c}, tfr_all{c}.time(tim)))
-    %     set(gca, 'FontSize', 15)
-    % end
-    % 
-    % sgtitle(sprintf('FOOOF sanity check: Subject %s | Window [%.2f %.2f] s', ...
-    %     subjects{subj}, latWin(1), latWin(2)), 'FontSize', 20)
-    % 
-    % if ispc
-    %     savePathControls = 'W:\Students\Arne\GCP\data\controls\FOOOF\';
-    % else
-    %     savePathControls = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/controls/FOOOF/';
-    % end
-    % if ~exist(savePathControls, 'dir')
-    %     mkdir(savePathControls)
-    % end
-    % 
-    % saveName = sprintf('GCP_controls_FOOOF_powspctrm_stern_subj%s.png', subjects{subj});
-    % saveas(gcf, fullfile(savePathControls, saveName));
+    latWin = [0.25 0.75];
+
+    tfr_all     = {tfr_c25_fooof, tfr_c50_fooof, tfr_c75_fooof, tfr_c100_fooof};
+    cond_titles = {'25% Contrast','50% Contrast','75% Contrast','100% Contrast'};
+
+    figure('Position', [0 0 1512 500], 'Color', 'w');
+
+    for c = 1:4
+
+        if c == 1
+            dat      = dataEEG_c25;
+            trlIdx = ind61;
+        elseif c == 2
+            dat      = dataEEG_c50;
+            trlIdx = ind62;
+        elseif c == 3
+            dat      = dataEEG_c75;
+            trlIdx = ind63;
+        elseif c == 4
+            dat      = dataEEG_c100;
+            trlIdx = ind64;
+        end
+
+        freq = tfr_all{c}.freq;
+
+        cfg_sel         = [];
+        cfg_sel.latency = latWin;
+        cfg_sel.trials  = trlIdx;
+        datTFR_win_sc   = ft_selectdata(cfg_sel, dat);
+
+        fooof_sc = ft_freqanalysis_Arne_FOOOF(cfg_fooof, datTFR_win_sc);
+
+        if iscell(fooof_sc.fooofparams)
+            repdata_sc = fooof_sc.fooofparams{1};
+        else
+            repdata_sc = fooof_sc.fooofparams;
+        end
+
+        nChan = numel(repdata_sc);
+
+        ps_all    = nan(numel(freq), nChan);
+        ap_all    = nan(numel(freq), nChan);
+        gauss_all = nan(numel(freq), nChan);
+
+        for ch = 1:nChan
+
+            ps_all(:, ch) = repdata_sc(ch).power_spectrum(:);
+
+            ap = repdata_sc(ch).aperiodic_params(:);
+
+            if numel(ap) == 2
+                offset = ap(1);
+                expo   = ap(2);
+                ap_all(:, ch) = offset - expo .* log10(freq(:));
+            else
+                offset = ap(1);
+                knee   = ap(2);
+                expo   = ap(3);
+                ap_all(:, ch) = offset - log10(knee + freq(:).^expo);
+            end
+
+            pk = repdata_sc(ch).peak_params;
+            gauss_tmp = zeros(numel(freq), 1);
+
+            if ~isempty(pk)
+                for p = 1:size(pk,1)
+                    cf  = pk(p,1);
+                    amp = pk(p,2);
+                    bw  = pk(p,3);
+                    gauss_tmp = gauss_tmp + amp .* exp(-(freq(:) - cf).^2 ./ (2*bw.^2));
+                end
+            end
+
+            gauss_all(:, ch) = gauss_tmp;
+        end
+
+        ps_in     = mean(ps_all,    2, 'omitnan');
+        ap_fit    = mean(ap_all,    2, 'omitnan');
+        gauss_sum = mean(gauss_all, 2, 'omitnan');
+
+        model_fit = ap_fit + gauss_sum;
+
+        subplot(1,3,c); hold on
+        plot(freq, ps_in,     'LineWidth', 3)
+        plot(freq, model_fit, 'LineWidth', 3)
+        plot(freq, ap_fit,    '--', 'LineWidth', 3)
+
+        xlabel('Frequency (Hz)')
+        if c == 1
+            ylabel('Power (FOOOF space)')
+            legend({'Input spectrum','Model fit','Aperiodic fit'}, 'Location', 'best')
+        end
+        title(sprintf('%s | t = %.2f s', cond_titles{c}, tfr_all{c}.time(tim)))
+        set(gca, 'FontSize', 15)
+    end
+
+    sgtitle(sprintf('FOOOF sanity check: Subject %s | Window [%.2f %.2f] s', ...
+        subjects{subj}, latWin(1), latWin(2)), 'FontSize', 20)
+
+    if ispc
+        savePathControls = 'W:\Students\Arne\GCP\data\controls\FOOOF\';
+    else
+        savePathControls = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/controls/FOOOF/';
+    end
+    if ~exist(savePathControls, 'dir')
+        mkdir(savePathControls)
+    end
+
+    saveName = sprintf('GCP_controls_FOOOF_powspctrm_stern_subj%s.png', subjects{subj});
+    saveas(gcf, fullfile(savePathControls, saveName));
 
     %% Baseline (FOOOFed TFR)
     cfg              = [];
