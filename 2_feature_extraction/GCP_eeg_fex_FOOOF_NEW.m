@@ -30,7 +30,11 @@ for subj = 1:length(subjects)
     disp(['Processing GCP TFR + sliding-window FOOOF for subject ', num2str(subjects{subj})])
 
     load dataEEG
-    load('/Volumes/g_psyplafor_methlab$/Students/Arne/MA/headmodel/ant128lay.mat');
+    if ispc
+        load('W:\Students\Arne\MA\headmodel\ant128lay.mat');
+    else
+        load('/Volumes/g_psyplafor_methlab$/Students/Arne/MA/headmodel/ant128lay.mat');
+    end
 
     %% Identify trial indices (per dataset)
     ind61 = find(dataEEG_c25.trialinfo  == 61);
