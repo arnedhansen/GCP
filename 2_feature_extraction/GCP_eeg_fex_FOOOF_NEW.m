@@ -74,13 +74,15 @@ for subj = 1:length(subjects)
     startWin_FOOOF = [-1.75 -1.25];   % 500 ms window
     steps_FOOOF    = 0.05;            % 50 ms step
     toi_FOOOF      = -1.75:0.05:2;    % desired centre times (matching your TFR toi)
-    nTimePnts      = numel(toi_FOOOF);
-
-    toi_centres    = startWin_FOOOF(1):steps_FOOOF:(startWin_FOOOF(1) + steps_FOOOF*(nTimePnts-1));
-    toi_centres    = toi_centres + 0.25;  % shift by half window length
+    winLen         = 0.5;
+    halfWin        = winLen/2;
+    step           = 0.05;
+    tmin           = dat.time{1}(1);
+    tmax           = dat.time{1}(end);
+    toi_centres    = (tmin + halfWin) : step : (tmax - halfWin);
+    nTimePnts      = numel(toi_centres);
 
     tfr_fooof = cell(1,4);
-
     for cond = 1:4
 
         if cond == 1
@@ -131,10 +133,11 @@ for subj = 1:length(subjects)
 
         for timePnt = 1:nTimePnts
 
-            cfg_sel         = [];
-            cfg_sel.latency = startWin_FOOOF + steps_FOOOF * (timePnt-1);
+            centre = toi_centres(timePnt);
+            cfg_sel = [];
+            cfg_sel.latency = [centre - halfWin, centre + halfWin];
             cfg_sel.trials  = trlIdx;
-            dat_win         = ft_selectdata(cfg_sel, dat);
+            dat_win = ft_selectdata(cfg_sel, dat);
 
             % Tracker
             clc
@@ -215,9 +218,9 @@ for subj = 1:length(subjects)
                 local_model(ch, loc(tf)) = model_now(tf).';
             end
 
-            fooof_powspctrm(:, :, timePnt) = local_model;
+            % fooof_powspctrm(:, :, timePnt) = local_model; % Full model
+            fooof_powspctrm = local_model - ap_fit_mapped; % aperiodic-removed spectrum
             fooof_powspec(:,   :, timePnt) = local_ps;
-
             fooof_aperiodic(:, 1, timePnt) = local_offset;
             fooof_aperiodic(:, 2, timePnt) = local_expo;
             fooof_aperiodic(:, 3, timePnt) = local_err;
