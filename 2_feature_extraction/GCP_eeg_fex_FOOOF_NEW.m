@@ -77,10 +77,6 @@ for subj = 1:length(subjects)
     winLen         = 0.5;
     halfWin        = winLen/2;
     step           = 0.05;
-    tmin           = dat.time{1}(1);
-    tmax           = dat.time{1}(end);
-    toi_centres    = (tmin + halfWin) : step : (tmax - halfWin);
-    nTimePnts      = numel(toi_centres);
 
     tfr_fooof = cell(1,4);
     for cond = 1:4
@@ -102,6 +98,11 @@ for subj = 1:length(subjects)
             trlIdx   = ind64;
             condName = 'c100';
         end
+
+        tmin           = dat.time{1}(1);
+        tmax           = dat.time{1}(end);
+        toi_centres    = (tmin + halfWin) : step : (tmax - halfWin);
+        nTimePnts      = numel(toi_centres);
 
         disp(' ')
         disp(['Running sliding-window FOOOF for condition ', condName])
@@ -219,7 +220,7 @@ for subj = 1:length(subjects)
             end
 
             % fooof_powspctrm(:, :, timePnt) = local_model; % Full model
-            fooof_powspctrm = local_model - ap_fit_mapped; % aperiodic-removed spectrum
+            fooof_powspctrm = local_model - ap_fit; % aperiodic-removed spectrum
             fooof_powspec(:,   :, timePnt) = local_ps;
             fooof_aperiodic(:, 1, timePnt) = local_offset;
             fooof_aperiodic(:, 2, timePnt) = local_expo;
