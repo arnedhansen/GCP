@@ -104,6 +104,14 @@ for subj = 1:numel(subjects)
         velFT.time      = cell(1, nTrials);
         velFT.trialinfo = dataET.trialinfo;
 
+        % FieldTrip-ready pupil container (full baseline + analysis window)
+        pupFT = [];
+        pupFT.label     = {'Pupil'};
+        pupFT.fsample   = fsample;
+        pupFT.trial     = cell(1, nTrials);
+        pupFT.time      = cell(1, nTrials);
+        pupFT.trialinfo = dataET.trialinfo;
+
         %% Trial loop
         for trl = 1:numel(dataET.trialinfo)
             raw    = dataET.trial{trl};
@@ -266,6 +274,22 @@ for subj = 1:numel(subjects)
                 velocityData_pct.time{trl}   = [];
             end
 
+            % Pupil full window [-1.5, 2] (match velFT time range)
+            p_full = raw(3, full_idx);
+
+            % OPTIONAL: keep units consistent with your scalar extraction
+            % (you do /1000 for scalars)
+            p_full = p_full ./ 1000;
+
+            % blink-removal for pupil (recommended if blinks are still present as zeros/NaNs)
+            p_full(p_full == 0) = NaN;
+            tmp = [nan(1,numel(p_full)); nan(1,numel(p_full)); p_full];
+            tmp = remove_blinks(tmp, win_size);
+            p_full = tmp(3,:);
+            t_full     = tVec(full_idx);
+            pupFT.trial{trl} = p_full;     % 1 x time
+            pupFT.time{trl}  = t_full;
+
             % append to trial‐wise arrays
             subject_id(end+1)       = str2double(subjects{subj});
             trial_num(end+1)        = trl;
@@ -312,6 +336,35 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         velTS_BL_pct = ft_timelockanalysis(cfg, velFT_bl_pct);
         velTS_BL_pct.avg = velTS_BL_pct.avg * 100;
+
+        % Timelocked average without baseline
+        cfg = [];
+        cfg.latency    = analysis_periodTS;   % [-1 2] in your current script
+        cfg.keeptrials = 'no';
+        pupTS_noBL = ft_timelockanalysis(cfg, pupFT);
+
+        % Subtractive baseline
+        cfg = [];
+        cfg.baseline     = baseline_period;
+        cfg.baselinetype = 'absolute';
+        pupFT_bl = ft_timelockbaseline(cfg, pupFT);
+
+        cfg = [];
+        cfg.latency    = analysis_periodTS;
+        cfg.keeptrials = 'no';
+        pupTS_BL = ft_timelockanalysis(cfg, pupFT_bl);
+
+        % Percentage baseline: relativechange * 100
+        cfg = [];
+        cfg.baseline     = baseline_period;
+        cfg.baselinetype = 'relativechange';
+        pupFT_bl_pct = ft_timelockbaseline(cfg, pupFT);
+
+        cfg = [];
+        cfg.latency    = analysis_periodTS;
+        cfg.keeptrials = 'no';
+        pupTS_BL_pct = ft_timelockanalysis(cfg, pupFT_bl_pct);
+        pupTS_BL_pct.avg = pupTS_BL_pct.avg * 100;
 
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
@@ -366,6 +419,11 @@ for subj = 1:numel(subjects)
                 velTS_trials_c25      = velocityData;
                 velTS_pct_trials_c25  = velocityData_pct;
 
+                % Store pupil size 
+                pupTS_c25        = pupTS_noBL;
+                pupTS_c25_bl     = pupTS_BL;
+                pupTS_c25_bl_pct = pupTS_BL_pct;
+
             case 'c50'
                 c50_gdev      = mean(gazeDev,'omitnan');
                 c50_bl_gdev   = mean(baselineGazeDev,'omitnan');
@@ -414,6 +472,10 @@ for subj = 1:numel(subjects)
 
                 velTS_trials_c50      = velocityData;
                 velTS_pct_trials_c50  = velocityData_pct;
+
+                pupTS_c50        = pupTS_noBL;
+                pupTS_c50_bl     = pupTS_BL;
+                pupTS_c50_bl_pct = pupTS_BL_pct;
 
             case 'c75'
                 c75_gdev      = mean(gazeDev,'omitnan');
@@ -464,6 +526,10 @@ for subj = 1:numel(subjects)
                 velTS_trials_c75      = velocityData;
                 velTS_pct_trials_c75  = velocityData_pct;
 
+                pupTS_c75        = pupTS_noBL;
+                pupTS_c75_bl     = pupTS_BL;
+                pupTS_c75_bl_pct = pupTS_BL_pct;
+
             case 'c100'
                 c100_gdev      = mean(gazeDev,'omitnan');
                 c100_bl_gdev   = mean(baselineGazeDev,'omitnan');
@@ -512,6 +578,10 @@ for subj = 1:numel(subjects)
 
                 velTS_trials_c100      = velocityData;
                 velTS_pct_trials_c100  = velocityData_pct;
+
+                pupTS_c100        = pupTS_noBL;
+                pupTS_c100_bl     = pupTS_BL;
+                pupTS_c100_bl_pct = pupTS_BL_pct;
         end
     end
 
@@ -579,6 +649,12 @@ for subj = 1:numel(subjects)
         'velTS_c25_bl_pct','velTS_c50_bl_pct','velTS_c75_bl_pct','velTS_c100_bl_pct', ...
         'velTS_trials_c25','velTS_trials_c50','velTS_trials_c75','velTS_trials_c100', ...
         'velTS_pct_trials_c25','velTS_pct_trials_c50','velTS_pct_trials_c75','velTS_pct_trials_c100');
+
+    % pupil size time series
+    save(fullfile(savepath, 'gaze_pupil_timeseries'), ...
+    'pupTS_c25','pupTS_c50','pupTS_c75','pupTS_c100', ...
+    'pupTS_c25_bl','pupTS_c50_bl','pupTS_c75_bl','pupTS_c100_bl', ...
+    'pupTS_c25_bl_pct','pupTS_c50_bl_pct','pupTS_c75_bl_pct','pupTS_c100_bl_pct');
 
     % Append to across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
