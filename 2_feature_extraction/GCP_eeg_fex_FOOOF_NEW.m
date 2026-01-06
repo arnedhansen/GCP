@@ -162,16 +162,17 @@ for subj = 1:length(subjects)
             [tf, loc] = ismembertol(freq_now, freq_master, 1e-10);
 
             local_model  = nan(nChan, nFreq);
-            local_ps     = nan(nChan, nFreq);
-
             local_offset = nan(nChan, 1);
             local_expo   = nan(nChan, 1);
             local_err    = nan(nChan, 1);
             local_rsq    = nan(nChan, 1);
 
+            local_peaks = nan(nChan, nFreq);   % peaks-only (aperiodic removed), on master grid
+            local_ps    = nan(nChan, nFreq);
+
             for ch = 1:nChan
 
-                % Input spectrum from FOOOF wrapper (already in FOOOF/log space)
+                % input spectrum
                 ps_tmp = repdata(ch).power_spectrum(:);
                 if numel(ps_tmp) == numel(freq_now)
                     local_ps(ch, loc(tf)) = ps_tmp(tf).';
@@ -180,9 +181,8 @@ for subj = 1:length(subjects)
                     local_ps(ch, loc(tf(1:nMin))) = ps_tmp(1:nMin).';
                 end
 
-                % Aperiodic
+                % aperiodic params (store as before)
                 ap = repdata(ch).aperiodic_params(:);
-
                 local_err(ch) = repdata(ch).error;
                 local_rsq(ch) = repdata(ch).r_squared;
 
@@ -200,10 +200,9 @@ for subj = 1:length(subjects)
                 local_offset(ch) = offset;
                 local_expo(ch)   = expo;
 
-                % Peaks -> sum of Gaussians
+                % peaks (Gaussian sum)
                 pk = repdata(ch).peak_params;
                 gauss_sum = zeros(numel(freq_now), 1);
-
                 if ~isempty(pk)
                     for p = 1:size(pk,1)
                         cf  = pk(p,1);
@@ -213,15 +212,14 @@ for subj = 1:length(subjects)
                     end
                 end
 
-                model_now = ap_fit + gauss_sum;
-
-                % Write into master grid
-                local_model(ch, loc(tf)) = model_now(tf).';
+                % map peaks to master grid
+                local_peaks(ch, loc(tf)) = gauss_sum(tf).';
             end
 
-            % fooof_powspctrm(:, :, timePnt) = local_model; % Full model
-            fooof_powspctrm = local_model - ap_fit; % aperiodic-removed spectrum
+            % store outputs
+            fooof_powspctrm(:, :, timePnt) = local_peaks;   %aperiodic-removed
             fooof_powspec(:,   :, timePnt) = local_ps;
+
             fooof_aperiodic(:, 1, timePnt) = local_offset;
             fooof_aperiodic(:, 2, timePnt) = local_expo;
             fooof_aperiodic(:, 3, timePnt) = local_err;
