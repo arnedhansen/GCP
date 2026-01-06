@@ -274,20 +274,12 @@ for subj = 1:numel(subjects)
                 velocityData_pct.time{trl}   = [];
             end
 
-            % Pupil full window [-1.5, 2] (match velFT time range)
-            p_full = raw(3, full_idx);
-
-            % OPTIONAL: keep units consistent with your scalar extraction
-            % (you do /1000 for scalars)
-            p_full = p_full ./ 1000;
-
-            % blink-removal for pupil (recommended if blinks are still present as zeros/NaNs)
-            p_full(p_full == 0) = NaN;
-            tmp = [nan(1,numel(p_full)); nan(1,numel(p_full)); p_full];
-            tmp = remove_blinks(tmp, win_size);
-            p_full = tmp(3,:);
-            t_full     = tVec(full_idx);
-            pupFT.trial{trl} = p_full;     % 1 x time
+            % Ensure FieldTrip format for pupil data
+            % Pupil full window [-1.5, 2]
+            t_full = tVec(full_idx);
+            p_full = raw(3, full_idx);    % 1 x N already
+            p_full = p_full ./ 1000;      % keep units consistent with scalar pupil features
+            pupFT.trial{trl} = p_full;
             pupFT.time{trl}  = t_full;
 
             % append to trial‐wise arrays
