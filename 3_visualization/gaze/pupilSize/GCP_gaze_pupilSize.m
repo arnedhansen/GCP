@@ -8,19 +8,17 @@ startup
 modes = {'raw','bl','pct'};
 
 % y-labels
-ylabs_px = {'Pupil Size [a.u.]'};
-
-ylabs_pct = {'Pupil Size [%]'};
-
-channels      = {'VelH','VelV','Vel2D'};
-channeltitles = {'Horizontal Velocity', 'Combined Velocity'};
+channels      = {'Pupil'};
+channeltitles = {'Pupil Size'};
+ylabs_px      = {'Pupil Size [a.u.]'};
+ylabs_pct     = {'Pupil Size [%]'};
 labels        = {'25% contrast','50% contrast','75% contrast','100% contrast'};
 
 %% Loop over data modes: raw → baselined → baselined %
 for m = 1:numel(modes)
     clc
     data_mode = modes{m};
-    fprintf('\nGCP Eye Velocity: plotting %s data\n', data_mode);
+    fprintf('\nGCP Eye Pupil Size: plotting %s data\n', data_mode);
 
     %% Load data (per subject, pick correct representation)
     alltlk25et  = cell(1, numel(subjects));
@@ -31,34 +29,32 @@ for m = 1:numel(modes)
     for subj = 1:length(subjects)
         datapath = strcat(path, subjects{subj}, '/gaze');
         disp(['Loading Subject ', num2str(subjects{subj})])
-        load([datapath, filesep 'gaze_velocity_timeseries'])
+        load([datapath, filesep 'gaze_pupil_timeseries'])
 
-        % velTS_cXX           = timelocked average velocity (no baseline)
+        % velTS_cXX           = timelocked average Pupil Size (no baseline)
         % velTS_cXX_bl        = timelocked average with subtractive baseline
         % velTS_cXX_bl_pct    = timelocked average with relative-change baseline (%)
 
         switch data_mode
             case 'raw'
-                alltlk25et{subj}  = velTS_c25;
-                alltlk50et{subj}  = velTS_c50;
-                alltlk75et{subj}  = velTS_c75;
-                alltlk100et{subj} = velTS_c100;
+                alltlk25et{subj}  = pupTS_c25;
+                alltlk50et{subj}  = pupTS_c50;
+                alltlk75et{subj}  = pupTS_c75;
+                alltlk100et{subj} = pupTS_c100;
 
             case 'bl'
-                alltlk25et{subj}  = velTS_c25_bl;
-                alltlk50et{subj}  = velTS_c50_bl;
-                alltlk75et{subj}  = velTS_c75_bl;
-                alltlk100et{subj} = velTS_c100_bl;
+                alltlk25et{subj}  = pupTS_c25_bl;
+                alltlk50et{subj}  = pupTS_c50_bl;
+                alltlk75et{subj}  = pupTS_c75_bl;
+                alltlk100et{subj} = pupTS_c100_bl;
 
             case 'pct'
-                alltlk25et{subj}  = velTS_c25_bl_pct;
-                alltlk50et{subj}  = velTS_c50_bl_pct;
-                alltlk75et{subj}  = velTS_c75_bl_pct;
-                alltlk100et{subj} = velTS_c100_bl_pct;
-
-            otherwise
-                error('Unknown data_mode: %s', data_mode);
+                alltlk25et{subj}  = pupTS_c25_bl_pct;
+                alltlk50et{subj}  = pupTS_c50_bl_pct;
+                alltlk75et{subj}  = pupTS_c75_bl_pct;
+                alltlk100et{subj} = pupTS_c100_bl_pct;
         end
+
     end
 
     %% Grand average
@@ -69,7 +65,7 @@ for m = 1:numel(modes)
     ga75et  = ft_timelockgrandaverage(cfg, alltlk75et{:});
     ga100et = ft_timelockgrandaverage(cfg, alltlk100et{:});
 
-    %% Plot Eye Velocity for 25/50/75/100% contrast (mean ± SEM)
+    %% Plot Eye Pupil Size for 25/50/75/100% contrast (mean ± SEM)
     close all
 
     % choose y-labels depending on representation
@@ -89,7 +85,7 @@ for m = 1:numel(modes)
     ax = gobjects(1, numel(channels));  % store axes handles
 
     for c = 1:numel(channels)
-        ax(c) = subplot(3,1,c);
+        ax(c) = subplot(1,1,c);
         hold(ax(c), 'on');
 
         cfg = [];
@@ -131,7 +127,9 @@ for m = 1:numel(modes)
         set(gca, 'FontSize', 18);
         xlabel('Time [sec]');
         ylabel(ylabs{c});
-        yline(0, '--');
+        if ismember(data_mode, {'bl','pct'})
+            yline(0, '--');
+        end
         title(strrep(channeltitles{c}, '_', '\_'));
 
         lgd = legend(hl, labels, 'Location', 'northeast', 'FontSize', 12);
@@ -142,17 +140,17 @@ for m = 1:numel(modes)
     switch data_mode
         case 'raw'
             suffix = 'raw';
-            sgtitle('GCP Gaze Velocity RAW');
+            sgtitle('GCP Gaze Pupil Size RAW');
         case 'bl'
             suffix = 'bl';
-            sgtitle('GCP Gaze Velocity BASELINED');
+            sgtitle('GCP Gaze Pupil Size BASELINED');
         case 'pct'
             suffix = 'blpct';
-            sgtitle('GCP Gaze Velocity PERCENTAGE CHANGE');
+            sgtitle('GCP Gaze Pupil Size PERCENTAGE CHANGE');
     end
 
-    saveName = sprintf(['/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/' ...
-        'gaze/velocity/GCP_gaze_velocity_overview_%s.png'], suffix);
+    outdir_overview = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/pupil/';
+    saveName = sprintf('%sGCP_gaze_pupil_overview_%s.png', outdir_overview, suffix);
     saveas(gcf, saveName);
 
     % Also save individual channel plots for this mode
@@ -179,13 +177,12 @@ for m = 1:numel(modes)
                 mode_title = 'PERCENTAGE CHANGE';
         end
 
-        sgtitle(fig_single, sprintf('GCP Gaze Velocity %s — %s', ...
+        sgtitle(fig_single, sprintf('GCP Gaze Pupil Size %s — %s', ...
             mode_title, channeltitles{c}));
 
         % build single plots filename
-        outdir_single   = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/pupil/';
-        saveName_single = sprintf('%sGCP_gaze_pupil_%s_%s.png', ...
-            outdir_single, channels{c}, suffix);
+        outdir_single = outdir_overview;
+        saveName_single = sprintf('%sGCP_gaze_pupil_%s_%s.png', outdir_single, channels{c}, suffix);
         saveas(fig_single, saveName_single);
         close(fig_single);
     end

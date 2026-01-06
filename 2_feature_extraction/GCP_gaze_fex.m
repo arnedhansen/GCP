@@ -3,9 +3,9 @@
 % Extracted features:
 %   Gaze deviation (Euclidean distances)
 %   Gaze standard deviation
-%   Pupil size
+%   Pupil size (Time Series Raw, Baselined, Baselined Percentage Changes)
 %   Microsaccades
-%   Eye Velocity (Raw, Baselined, Baselined Percentage Changes)
+%   Eye Velocity (Time Series Raw, Baselined, Baselined Percentage Changes)
 %
 % Gaze metrics labelled by eye-tracker (saccades, blinks and
 % fixations) are extracted already in GCP_preprocessing.m
