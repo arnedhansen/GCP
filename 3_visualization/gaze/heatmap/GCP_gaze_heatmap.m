@@ -1,4 +1,4 @@
-%% Heatmap for GCP gaze data
+%% Heatmap for GCP gaze
 
 %% Setup
 startup
