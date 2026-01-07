@@ -172,16 +172,10 @@ for subj = 1:length(subjects)
 
             for ch = 1:nChan
 
-                % input spectrum
+                % input spectrum (FOOOF/log space)
                 ps_tmp = repdata(ch).power_spectrum(:);
-                if numel(ps_tmp) == numel(freq_now)
-                    local_ps(ch, loc(tf)) = ps_tmp(tf).';
-                else
-                    nMin = min(numel(ps_tmp), numel(freq_now));
-                    local_ps(ch, loc(tf(1:nMin))) = ps_tmp(1:nMin).';
-                end
 
-                % aperiodic params (store as before)
+                % build aperiodic fit on fooof_out.freq
                 ap = repdata(ch).aperiodic_params(:);
                 local_err(ch) = repdata(ch).error;
                 local_rsq(ch) = repdata(ch).r_squared;
@@ -197,26 +191,38 @@ for subj = 1:length(subjects)
                     ap_fit = offset - log10(knee + freq_now.^expo);
                 end
 
-                % aperiodic-corrected *input* spectrum
-                ps_corr = ps_tmp - ap_fit;   % both in FOOOF/log space, vectors over freq_now
-                local_model(ch, loc(tf)) = ps_corr(tf).';
+                % enforce equal length between ps_tmp and ap_fit (THIS FIXES YOUR CRASH)
+                nMin = min(numel(ps_tmp), numel(ap_fit));
+                ps_use   = ps_tmp(1:nMin);
+                ap_use   = ap_fit(1:nMin);
+                freq_use = freq_now(1:nMin);
+
+                % remap indices using the truncated grid (not freq_now)
+                [tf_use, loc_use] = ismembertol(freq_use, freq_master, 1e-10);
+
+                % store input spectrum on master grid
+                local_ps(ch, loc_use(tf_use)) = ps_use(tf_use).';
+
+                % aperiodic-corrected input spectrum on the same grid
+                ps_corr = ps_use - ap_use;
+                local_model(ch, loc_use(tf_use)) = ps_corr(tf_use).';
+
                 local_offset(ch) = offset;
                 local_expo(ch)   = expo;
 
-                % peaks (Gaussian sum)
+                % peaks (Gaussian sum) on freq_use (NOT freq_now)
                 pk = repdata(ch).peak_params;
-                gauss_sum = zeros(numel(freq_now), 1);
+                gauss_sum = zeros(numel(freq_use), 1);
                 if ~isempty(pk)
                     for p = 1:size(pk,1)
                         cf  = pk(p,1);
                         amp = pk(p,2);
                         bw  = pk(p,3);
-                        gauss_sum = gauss_sum + amp .* exp(-(freq_now - cf).^2 ./ (2*bw.^2));
+                        gauss_sum = gauss_sum + amp .* exp(-(freq_use - cf).^2 ./ (2*bw.^2));
                     end
                 end
 
-                % map peaks to master grid
-                local_peaks(ch, loc(tf)) = gauss_sum(tf).';
+                local_peaks(ch, loc_use(tf_use)) = gauss_sum(tf_use).';
             end
 
             % store outputs
