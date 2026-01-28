@@ -18,7 +18,7 @@ labels        = {'25% contrast','50% contrast','75% contrast','100% contrast'};
 for m = 1:numel(modes)
     clc
     data_mode = modes{m};
-    fprintf('\nGCP Eye Pupil Size: plotting %s data\n', data_mode);
+    fprintf('\nGCP Pupil Size: plotting %s data\n', data_mode);
 
     %% Load data (per subject, pick correct representation)
     alltlk25et  = cell(1, numel(subjects));
@@ -65,7 +65,7 @@ for m = 1:numel(modes)
     ga75et  = ft_timelockgrandaverage(cfg, alltlk75et{:});
     ga100et = ft_timelockgrandaverage(cfg, alltlk100et{:});
 
-    %% Plot Eye Pupil Size for 25/50/75/100% contrast (mean ± SEM)
+    %% Plot Pupil Size for 25/50/75/100% contrast (mean ± SEM)
     close all
 
     % choose y-labels depending on representation
