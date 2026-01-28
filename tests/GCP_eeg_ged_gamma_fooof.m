@@ -6,14 +6,18 @@
 % for gamma activity, helping to identify peak gamma frequency and power
 % more reliably than single-subject power spectra.
 %
+% Implementation follows Cohen (2022) NeuroImage tutorial:
+% "A tutorial on generalized eigendecomposition for denoising, contrast 
+%  enhancement, and dimension reduction in multichannel electrophysiology"
+%
 % Input: Preprocessed and FOOOFed data (dataEEG)
 % Output: GED components, power spectra, peak frequencies/powers, and visualizations
 %
 % For each condition separately:
 %   1. Filter data to gamma band (30-90 Hz)
-%   2. Compute baseline and stimulus covariance matrices
-%   3. Perform GED (eig(covStim, covBase))
-%   4. Extract top component(s)
+%   2. Compute baseline and stimulus covariance matrices (per trial, then average)
+%   3. Perform GED (eig(covStim, covBase)) with shrinkage regularization
+%   4. Extract top component(s) and handle sign uncertainty
 %   5. Compute power spectrum of GED component time series
 %   6. Identify peak gamma frequency and power
 %   7. Visualize results
@@ -22,7 +26,7 @@ clear; close all; clc
 
 %% Setup
 startup
-[subjects, path, colors, ~] = setup('GCP');
+[subjects, path, colors, headmodel] = setup('GCP');
 
 % Limit to first 10 pilot participants
 nPilot = min(10, length(subjects));
@@ -132,36 +136,46 @@ for subj = 1:nPilot
         cfg_stim.latency = stimulus_window;
         dat_stim = ft_selectdata(cfg_stim, dat_gamma);
         
-        % Concatenate all trials for covariance computation
-        % Baseline data
-        base_data = [];
-        for trl = 1:length(dat_base.trial)
-            base_data = [base_data, dat_base.trial{trl}];
+        % Compute covariance matrices per trial, then average (as recommended in Cohen 2022)
+        % This approach is more robust than concatenating all trials
+        nTrials_base = length(dat_base.trial);
+        nTrials_stim = length(dat_stim.trial);
+        
+        % Initialize covariance matrices
+        nChans = length(dat_base.label);
+        covBase_trials = zeros(nChans, nChans, nTrials_base);
+        covStim_trials = zeros(nChans, nChans, nTrials_stim);
+        
+        % Compute covariance for each baseline trial
+        for trl = 1:nTrials_base
+            trial_data = double(dat_base.trial{trl});
+            % Mean-center each trial separately (critical: mean-center per trial)
+            trial_data = bsxfun(@minus, trial_data, mean(trial_data, 2));
+            nTimePnts = size(trial_data, 2);
+            covBase_trials(:, :, trl) = (trial_data * trial_data') / nTimePnts;
         end
-        base_data = double(base_data);
         
-        % Stimulus data
-        stim_data = [];
-        for trl = 1:length(dat_stim.trial)
-            stim_data = [stim_data, dat_stim.trial{trl}];
+        % Compute covariance for each stimulus trial
+        for trl = 1:nTrials_stim
+            trial_data = double(dat_stim.trial{trl});
+            % Mean-center each trial separately (critical: mean-center per trial)
+            trial_data = bsxfun(@minus, trial_data, mean(trial_data, 2));
+            nTimePnts = size(trial_data, 2);
+            covStim_trials(:, :, trl) = (trial_data * trial_data') / nTimePnts;
         end
-        stim_data = double(stim_data);
         
-        % Remove mean (center the data)
-        base_data = bsxfun(@minus, base_data, mean(base_data, 2));
-        stim_data = bsxfun(@minus, stim_data, mean(stim_data, 2));
+        % Average covariance matrices across trials
+        covBase = mean(covBase_trials, 3);
+        covStim = mean(covStim_trials, 3);
         
-        % Compute covariance matrices
-        nBase = size(base_data, 2);
-        nStim = size(stim_data, 2);
-        
-        covBase = (base_data * base_data') / nBase;
-        covStim = (stim_data * stim_data') / nStim;
-        
-        % Regularize covariance matrices (add small value to diagonal for stability)
-        regParam = 0.01 * trace(covBase) / size(covBase, 1);
-        covBase = covBase + regParam * eye(size(covBase));
-        covStim = covStim + regParam * eye(size(covStim));
+        % Apply shrinkage regularization (Cohen 2022, Section 3.4)
+        % R_reg = (1-λ)*R + λ*mean(diag(R))*I
+        % This preserves the trace of the matrix
+        lambda = 0.01;  % Regularization parameter
+        meanDiagBase = mean(diag(covBase));
+        meanDiagStim = mean(diag(covStim));
+        covBase = (1-lambda) * covBase + lambda * meanDiagBase * eye(size(covBase));
+        covStim = (1-lambda) * covStim + lambda * meanDiagStim * eye(size(covStim));
         
         % Perform GED: eig(covStim, covBase)
         % This finds components that maximize signal (stimulus) relative to noise (baseline)
@@ -178,7 +192,16 @@ for subj = 1:nPilot
         % Extract top component
         topComp = eigenvecs_sorted(:, 1);
         
+        % Handle sign uncertainty (Cohen 2022, Section 3.5)
+        % Flip eigenvector so that the largest absolute value in the component map is positive
+        topo_temp = covStim * topComp;
+        [~, maxIdx] = max(abs(topo_temp));
+        if topo_temp(maxIdx) < 0
+            topComp = -topComp;
+        end
+        
         % Compute topography (forward model)
+        % Component map: covStim * eigenvector (Cohen 2022, Section 3.6)
         topo = covStim * topComp;
         % Ensure topo is a column vector matching number of channels
         if size(topo, 1) ~= length(dat.label)
@@ -196,16 +219,19 @@ for subj = 1:nPilot
         end
         
         % Project data onto top component to get component time series
+        % Component time series: w' * data (Cohen 2022, Section 3.6)
+        % Note: The spatial filter can be applied to any data, not just the data
+        % used to construct the covariance matrices
         % Baseline period
         base_comp_ts = [];
         for trl = 1:length(dat_base.trial)
-            base_comp_ts = [base_comp_ts, topComp' * dat_base.trial{trl}];
+            base_comp_ts = [base_comp_ts, topComp' * double(dat_base.trial{trl})];
         end
         
         % Stimulus period
         stim_comp_ts = [];
         for trl = 1:length(dat_stim.trial)
-            stim_comp_ts = [stim_comp_ts, topComp' * dat_stim.trial{trl}];
+            stim_comp_ts = [stim_comp_ts, topComp' * double(dat_stim.trial{trl})];
         end
         
         % Get time vectors
@@ -288,7 +314,7 @@ for subj = 1:nPilot
         all_peak_freqs(:, subj), all_peak_powers(:, subj), ...
         all_eigenvals(:, subj), all_component_ts_stim(:, subj), ...
         all_component_ts_base(:, subj), all_times_stim(:, subj), ...
-        all_times_base(:, subj), chanlocs_all, layANThead, colors, ...
+        all_times_base(:, subj), chanlocs_all, headmodel.layANThead, colors, ...
         fig_save_dir);
     
 end  % End subject loop
