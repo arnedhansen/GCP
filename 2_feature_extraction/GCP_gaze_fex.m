@@ -112,6 +112,22 @@ for subj = 1:numel(subjects)
         pupFT.time      = cell(1, nTrials);
         pupFT.trialinfo = dataET.trialinfo;
 
+% FieldTrip-ready microsaccade rate container (full baseline + analysis window)
+msFT = [];
+msFT.label     = {'MSRate'};   % Hz
+msFT.fsample   = fsample;
+msFT.trial     = cell(1, nTrials);
+msFT.time      = cell(1, nTrials);
+msFT.trialinfo = dataET.trialinfo;
+
+% Kernel for microsaccade rate (event density -> Hz)
+ms_sigma_s   = 0.02;                             % 20 ms (tune 10–30 ms)
+ms_sigma_smp = max(1, round(ms_sigma_s*fsample));
+ker_half     = 4 * ms_sigma_smp;                 % +/- 4 sigma
+ker_x        = -ker_half:ker_half;
+ms_kernel    = exp(-0.5 * (ker_x/ms_sigma_smp).^2);
+ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
+
         %% Trial loop
         for trl = 1:numel(dataET.trialinfo)
             raw    = dataET.trial{trl};
@@ -282,6 +298,46 @@ for subj = 1:numel(subjects)
             pupFT.trial{trl} = p_full;
             pupFT.time{trl}  = t_full;
 
+            % Microsaccade rate time series in full window [-1.5, 2]
+            t_full = tVec(full_idx);
+
+            x_full = raw(1, full_idx);
+            y_full = raw(2, full_idx);
+
+            % Apply same screen-coordinate flip as elsewhere
+            y_full = 600 - y_full;
+
+            % Validity mask (match your position pipeline)
+            valid_full = x_full>=0 & x_full<=800 & y_full>=0 & y_full<=600;
+
+            x_full = x_full(valid_full);
+            y_full = y_full(valid_full);
+            t_full = t_full(valid_full);
+
+            % Blink removal (same function you already rely on)
+            full_dat = [x_full; y_full; nan(1, numel(x_full))];
+            full_dat = remove_blinks(full_dat, win_size);
+            x_full = full_dat(1,:);
+            y_full = full_dat(2,:);
+
+            % Detect microsaccades (returns onset indices in this cleaned trace)
+            [~, ms_det] = detect_microsaccades(fsample, [x_full; y_full], numel(x_full));
+
+            % Impulse train (1 at microsaccade onset sample)
+            ms_imp = zeros(1, numel(x_full));
+            if ~isempty(ms_det.Onset)
+                onsets = ms_det.Onset(:)';
+                onsets = onsets(onsets >= 1 & onsets <= numel(ms_imp));
+                ms_imp(onsets) = 1;
+            end
+
+            % Smooth impulses -> event density per sample; convert to rate in Hz
+            ms_rate = conv(ms_imp, ms_kernel, 'same') * fsample;
+
+            % Store in FieldTrip struct (1 x time)
+            msFT.trial{trl} = ms_rate;
+            msFT.time{trl}  = t_full;
+
             % append to trial‐wise arrays
             subject_id(end+1)       = str2double(subjects{subj});
             trial_num(end+1)        = trl;
@@ -358,6 +414,35 @@ for subj = 1:numel(subjects)
         pupTS_BL_pct = ft_timelockanalysis(cfg, pupFT_bl_pct);
         pupTS_BL_pct.avg = pupTS_BL_pct.avg * 100;
 
+        % Timelocked average without baseline
+cfg = [];
+cfg.latency    = analysis_periodTS;
+cfg.keeptrials = 'no';
+msTS_noBL = ft_timelockanalysis(cfg, msFT);
+
+% Subtractive baseline (recommended for sparse rates)
+cfg = [];
+cfg.baseline     = baseline_period;
+cfg.baselinetype = 'absolute';
+msFT_bl = ft_timelockbaseline(cfg, msFT);
+
+cfg = [];
+cfg.latency    = analysis_periodTS;
+cfg.keeptrials = 'no';
+msTS_BL = ft_timelockanalysis(cfg, msFT_bl);
+
+% Percentage change baseline (often unstable if baseline ~ 0)
+cfg = [];
+cfg.baseline     = baseline_period;
+cfg.baselinetype = 'relativechange';
+msFT_bl_pct = ft_timelockbaseline(cfg, msFT);
+
+cfg = [];
+cfg.latency    = analysis_periodTS;
+cfg.keeptrials = 'no';
+msTS_BL_pct = ft_timelockanalysis(cfg, msFT_bl_pct);
+msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
+
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
             case 'c25'
@@ -416,6 +501,11 @@ for subj = 1:numel(subjects)
                 pupTS_c25_bl     = pupTS_BL;
                 pupTS_c25_bl_pct = pupTS_BL_pct;
 
+                % Store MS
+                msTS_c25        = msTS_noBL;
+                msTS_c25_bl     = msTS_BL;
+                msTS_c25_bl_pct = msTS_BL_pct;
+
             case 'c50'
                 c50_gdev      = mean(gazeDev,'omitnan');
                 c50_bl_gdev   = mean(baselineGazeDev,'omitnan');
@@ -468,6 +558,10 @@ for subj = 1:numel(subjects)
                 pupTS_c50        = pupTS_noBL;
                 pupTS_c50_bl     = pupTS_BL;
                 pupTS_c50_bl_pct = pupTS_BL_pct;
+
+                msTS_c50        = msTS_noBL;
+                msTS_c50_bl     = msTS_BL;
+                msTS_c50_bl_pct = msTS_BL_pct;
 
             case 'c75'
                 c75_gdev      = mean(gazeDev,'omitnan');
@@ -522,6 +616,10 @@ for subj = 1:numel(subjects)
                 pupTS_c75_bl     = pupTS_BL;
                 pupTS_c75_bl_pct = pupTS_BL_pct;
 
+                msTS_c75        = msTS_noBL;
+                msTS_c75_bl     = msTS_BL;
+                msTS_c75_bl_pct = msTS_BL_pct;
+
             case 'c100'
                 c100_gdev      = mean(gazeDev,'omitnan');
                 c100_bl_gdev   = mean(baselineGazeDev,'omitnan');
@@ -574,6 +672,10 @@ for subj = 1:numel(subjects)
                 pupTS_c100        = pupTS_noBL;
                 pupTS_c100_bl     = pupTS_BL;
                 pupTS_c100_bl_pct = pupTS_BL_pct;
+
+                msTS_c100        = msTS_noBL;
+                msTS_c100_bl     = msTS_BL;
+                msTS_c100_bl_pct = msTS_BL_pct;
         end
     end
 
@@ -647,6 +749,12 @@ for subj = 1:numel(subjects)
     'pupTS_c25','pupTS_c50','pupTS_c75','pupTS_c100', ...
     'pupTS_c25_bl','pupTS_c50_bl','pupTS_c75_bl','pupTS_c100_bl', ...
     'pupTS_c25_bl_pct','pupTS_c50_bl_pct','pupTS_c75_bl_pct','pupTS_c100_bl_pct');
+
+    % ms time series
+    save(fullfile(savepath, 'gaze_microsaccade_timeseries'), ...
+    'msTS_c25','msTS_c50','msTS_c75','msTS_c100', ...
+    'msTS_c25_bl','msTS_c50_bl','msTS_c75_bl','msTS_c100_bl', ...
+    'msTS_c25_bl_pct','msTS_c50_bl_pct','msTS_c75_bl_pct','msTS_c100_bl_pct');
 
     % Append to across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
