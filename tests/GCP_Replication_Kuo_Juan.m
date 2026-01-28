@@ -47,14 +47,10 @@ if ~exist(fig_save_dir, 'dir')
     mkdir(fig_save_dir);
 end
 
-%% Load raw gaze data
-fprintf('Loading raw gaze data...\n');
-if exist(gaze_path, 'file')
-    load(gaze_path, 'gaze_x_c25', 'gaze_y_c25', 'gaze_x_c50', 'gaze_y_c50', ...
-         'gaze_x_c75', 'gaze_y_c75', 'gaze_x_c100', 'gaze_y_c100');
-else
-    error('Raw gaze data file not found. Please run GCP_gaze_fex.m first.');
-end
+%% Load raw gaze data (optional - for reference, but we'll use full dataET for analysis)
+fprintf('Loading data...\n');
+% Note: gaze_raw.mat contains windowed data [0.3, 2.0] s, but we need full epoch data
+% So we'll extract directly from dataET instead
 
 % Load preprocessed ET data for timing information
 fprintf('Loading preprocessed ET data for timing...\n');
@@ -96,57 +92,34 @@ for subj = 1:length(subjects)
     fprintf('  Processing subject %d/%d...\n', subj, length(subjects));
     
     for cond = 1:4
-        % Get gaze data for this condition
-        switch cond
-            case 1
-                gaze_x = gaze_x_c25(subj, :);
-                gaze_y = gaze_y_c25(subj, :);
-            case 2
-                gaze_x = gaze_x_c50(subj, :);
-                gaze_y = gaze_y_c50(subj, :);
-            case 3
-                gaze_x = gaze_x_c75(subj, :);
-                gaze_y = gaze_y_c75(subj, :);
-            case 4
-                gaze_x = gaze_x_c100(subj, :);
-                gaze_y = gaze_y_c100(subj, :);
+        % Get dataET for this condition
+        if isempty(all_dataET{subj, cond})
+            continue;
         end
         
-        % Get timing information
-        if ~isempty(all_dataET{subj, cond})
-            dataET = all_dataET{subj, cond};
-            n_trials = length(dataET.trial);
-        else
-            n_trials = length(gaze_x);
-        end
+        dataET = all_dataET{subj, cond};
+        n_trials = length(dataET.trial);
         
         for trl = 1:n_trials
-            % Handle cell array access
-            if iscell(gaze_x)
-                if trl > length(gaze_x) || isempty(gaze_x{trl})
-                    continue;
-                end
-                x = gaze_x{trl};
-                y = gaze_y{trl};
-            else
-                % Handle matrix access (if stored differently)
-                if trl > size(gaze_x, 2)
-                    continue;
-                end
-                x = gaze_x(:, trl);
-                y = gaze_y(:, trl);
-            end
+            % Extract full gaze data from dataET (not windowed)
+            raw = dataET.trial{trl};
+            tVec = dataET.time{trl};
+            
+            % Extract gaze coordinates
+            x_raw = raw(1, :);
+            y_raw = raw(2, :);
+            
+            % Flip Y axis to screen coordinates
+            y_raw = 600 - y_raw;
+            
+            % Apply validity filter (remove points outside screen)
+            valid = x_raw >= 0 & x_raw <= 800 & y_raw >= 0 & y_raw <= 600;
+            x = x_raw(valid);
+            y = y_raw(valid);
+            tVec = tVec(valid);
             
             if length(x) < 10 || length(y) < 10
                 continue;
-            end
-            
-            % Get time vector
-            if ~isempty(all_dataET{subj, cond}) && trl <= length(dataET.time)
-                tVec = dataET.time{trl};
-            else
-                % Estimate time vector
-                tVec = (0:length(x)-1) / fsample - 1.5;  % Assume starts at -1.5s
             end
             
             % Ensure time vector matches data length
@@ -295,22 +268,6 @@ all_ms_for_mainseq = cell(n_contrasts, 1);
 for cond = 1:n_contrasts
     fprintf('  Processing contrast %d%%...\n', contrast_levels(cond));
     
-    % Get gaze data for this condition
-    switch cond
-        case 1
-            gaze_x_cond = gaze_x_c25;
-            gaze_y_cond = gaze_y_c25;
-        case 2
-            gaze_x_cond = gaze_x_c50;
-            gaze_y_cond = gaze_y_c50;
-        case 3
-            gaze_x_cond = gaze_x_c75;
-            gaze_y_cond = gaze_y_c75;
-        case 4
-            gaze_x_cond = gaze_x_c100;
-            gaze_y_cond = gaze_y_c100;
-    end
-    
     % Collect all microsaccades from all trials for this condition
     all_ms_times = [];
     all_ms_peak_vels = [];
@@ -324,49 +281,35 @@ for cond = 1:n_contrasts
     
     % Process each subject
     for subj = 1:length(subjects)
-        if subj > size(gaze_x_cond, 1)
+        % Get dataET for this condition
+        if isempty(all_dataET{subj, cond})
             continue;
         end
         
-        % Get timing information
-        if ~isempty(all_dataET{subj, cond})
-            dataET = all_dataET{subj, cond};
-            n_trials = length(dataET.trial);
-        else
-            if iscell(gaze_x_cond)
-                n_trials = length(gaze_x_cond(subj, :));
-            else
-                n_trials = size(gaze_x_cond, 2);
-            end
-        end
+        dataET = all_dataET{subj, cond};
+        n_trials = length(dataET.trial);
         
         % Process each trial
         for trl = 1:n_trials
-            % Get gaze data
-            if iscell(gaze_x_cond)
-                if trl > length(gaze_x_cond(subj, :)) || isempty(gaze_x_cond{subj, trl})
-                    continue;
-                end
-                x = gaze_x_cond{subj, trl};
-                y = gaze_y_cond{subj, trl};
-            else
-                if trl > size(gaze_x_cond, 2)
-                    continue;
-                end
-                x = gaze_x_cond(:, trl);
-                y = gaze_y_cond(:, trl);
-            end
+            % Extract FULL gaze data from dataET (not windowed)
+            raw = dataET.trial{trl};
+            tVec = dataET.time{trl};
+            
+            % Extract gaze coordinates
+            x_raw = raw(1, :);
+            y_raw = raw(2, :);
+            
+            % Flip Y axis to screen coordinates
+            y_raw = 600 - y_raw;
+            
+            % Apply validity filter (remove points outside screen)
+            valid = x_raw >= 0 & x_raw <= 800 & y_raw >= 0 & y_raw <= 600;
+            x = x_raw(valid);
+            y = y_raw(valid);
+            tVec = tVec(valid);
             
             if length(x) < 10 || length(y) < 10
                 continue;
-            end
-            
-            % Get time vector
-            if ~isempty(all_dataET{subj, cond}) && trl <= length(dataET.time)
-                tVec = dataET.time{trl};
-            else
-                % Estimate time vector (assuming starts at -1.5s)
-                tVec = (0:length(x)-1) / fsample - 1.5;
             end
             
             % Ensure time vector matches data length
@@ -699,7 +642,7 @@ end
 xline(0, 'k--', 'LineWidth', 1);
 xline(target_epoch(1), 'r--', 'LineWidth', 1);
 xline(target_epoch(2), 'r--', 'LineWidth', 1);
-max_rate = max(ms_rate_time(:), 'omitnan');
+max_rate = max(ms_rate_time(:));
 if ~isnan(max_rate) && max_rate > 0
     patch([target_epoch(1), target_epoch(2), target_epoch(2), target_epoch(1)], ...
           [0, 0, max_rate, max_rate], 'k', 'FaceAlpha', 0.1, 'EdgeColor', 'none');
@@ -728,7 +671,7 @@ end
 xline(0, 'k--', 'LineWidth', 1);
 xline(target_epoch(1), 'r--', 'LineWidth', 1);
 xline(target_epoch(2), 'r--', 'LineWidth', 1);
-max_vel = max(ms_peak_vel_time(:), 'omitnan');
+max_vel = max(ms_peak_vel_time(:));
 if ~isnan(max_vel) && max_vel > 0
     patch([target_epoch(1), target_epoch(2), target_epoch(2), target_epoch(1)], ...
           [0, 0, max_vel, max_vel], 'k', 'FaceAlpha', 0.1, 'EdgeColor', 'none');
@@ -757,7 +700,7 @@ end
 xline(0, 'k--', 'LineWidth', 1);
 xline(target_epoch(1), 'r--', 'LineWidth', 1);
 xline(target_epoch(2), 'r--', 'LineWidth', 1);
-max_amp = max(ms_amplitude_time(:), 'omitnan');
+max_amp = max(ms_amplitude_time(:));
 if ~isnan(max_amp) && max_amp > 0
     patch([target_epoch(1), target_epoch(2), target_epoch(2), target_epoch(1)], ...
           [0, 0, max_amp, max_amp], 'k', 'FaceAlpha', 0.1, 'EdgeColor', 'none');
@@ -870,6 +813,14 @@ function [ms_rate, ms_details] = detect_microsaccades(fsample, gaze_data, tVec, 
     end
     if nargin < 7
         amplitude_max = 2.0;
+    end
+    
+    % Ensure tVec and gaze_data have matching lengths
+    if length(tVec) ~= size(gaze_data, 2)
+        % If mismatch, use the shorter length
+        min_len = min(length(tVec), size(gaze_data, 2));
+        tVec = tVec(1:min_len);
+        gaze_data = gaze_data(:, 1:min_len);
     end
     
     % Extract data within time window
