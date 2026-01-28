@@ -9,11 +9,11 @@ startup
 for subj = 1:length(subjects)
     datapath = strcat(path,subjects{subj}, '/eeg');
     cd(datapath)
-    load('data_tfr.mat');
-    tfr25{subj}  = tfr_c25_fooof_bl_smooth;
-    tfr50{subj}  = tfr_c50_fooof_bl_smooth;
-    tfr75{subj}  = tfr_c75_fooof_bl_smooth;
-    tfr100{subj} = tfr_c100_fooof_bl_smooth;
+    load('data_tfr_fooof_sw.mat');
+    tfr25{subj}  = tfr_c25_fooof_bl;
+    tfr50{subj}  = tfr_c50_fooof_bl;
+    tfr75{subj}  = tfr_c75_fooof_bl;
+    tfr100{subj} = tfr_c100_fooof_bl;
 
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' TFR loaded.'])
 end
@@ -53,6 +53,8 @@ max_spctrm = max([
     max(abs(avgscptrm50), [], 'all'), ...
     max(abs(avgscptrm75), [], 'all'), ...
     max(abs(avgscptrm100), [], 'all')]);
+max_spctrm = max_spctrm * 0.95
+%max_spctrm = 0.05
 clim = double([-max_spctrm * 0.9, max_spctrm * 0.9]);
 
 % Figure
@@ -68,9 +70,10 @@ cfg.showlabels = 'yes';
 cfg.channel = channels;
 cfg.colorbar = 'yes';
 cfg.zlim = 'maxabs';
-cfg.xlim = ([-0.5 2.5]);
+cfg.xlim = ([-.5 2]);
 cfg.ylim = [30 90];
-%load('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/headmodel/layANThead.mat')
+%cfg.ylim = [1 100];
+cfg.shading = 'interp';
 color_map = flipud(cbrewer('div', 'RdBu', 64));
 
 % TFR2
@@ -82,7 +85,9 @@ colb = colorbar;
 colb.Label.String = 'Power [dB]';
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
+yticks([30 40 50 60 70 80 90]);
 %rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
+xline(0, '--');
 set(gca, 'FontSize', 20)
 title('25% Contrast');
 
@@ -95,7 +100,9 @@ colb = colorbar;
 colb.Label.String = 'Power [dB]';
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
+yticks([30 40 50 60 70 80 90]);
 %rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
+xline(0, '--');
 set(gca, 'FontSize', 20)
 title('50% Contrast');
 
@@ -108,7 +115,9 @@ colb = colorbar;
 colb.Label.String = 'Power [dB]';
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
+yticks([30 40 50 60 70 80 90]);
 %rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
+xline(0, '--');
 set(gca, 'FontSize', 20)
 title('75% Contrast');
 
@@ -121,7 +130,9 @@ colb = colorbar;
 colb.Label.String = 'Power [dB]';
 xlabel('Time [s]');
 ylabel('Frequency [Hz]');
+yticks([30 40 50 60 70 80 90]);
 %rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
+xline(0, '--');
 set(gca, 'FontSize', 20)
 title('100% Contrast');
 
