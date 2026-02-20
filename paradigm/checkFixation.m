@@ -1,34 +1,57 @@
-function noFixation = checkFixation(screenWidth, screenHeight, screenCentreX, screenCentreY)
-    numSamples = 125; % 500ms 250; % 1 second 
-    fixThresh = numSamples * 0.75; % 75% threshold
-    distOK = 45 + 45; % 1 degree from the center (+ 0.5 deg of ET error)
+function noFixation = checkFixation(screenCentreX, screenCentreY, fixCheckDuration)
+    % checkFixation  Online pre-stimulus fixation check via EyeLink.
+    %
+    %   noFixation = checkFixation(screenCentreX, screenCentreY, fixCheckDuration)
+    %
+    %   Polls EyeLink gaze samples for fixCheckDuration seconds and evaluates
+    %   whether the participant maintained fixation within a window around screen
+    %   center. Call this while a fixation cross is already drawn on screen —
+    %   the function does not perform any Screen operations.
+    %
+    %   Returns:
+    %       noFixation = 0  — participant was fixating (pass)
+    %       noFixation = 1  — participant was NOT fixating (fail)
 
-    % Initialize noFixation counter
+    sampleInterval = 0.004; % 4 ms between samples (~250 Hz effective polling)
+    numSamples = ceil(fixCheckDuration / sampleInterval);
+    fixThresh = 0.80; % 80% of valid samples must be within fixation window
+    distOK = 90; % Fixation window radius in pixels (~1.8 dva at 50 ppd)
+
     noFixation = 0;
+    samples = NaN(numSamples, 2);
+    nCollected = 0;
 
-    % Collect gaze data for a specified number of samples
-    samples = zeros(numSamples, 2); % Initialize matrix for gaze samples
-
+    startTime = GetSecs;
     for i = 1:numSamples
-        % Fetch gaze data sample
+        if (GetSecs - startTime) >= fixCheckDuration
+            break;
+        end
+
         evt = Eyelink('NewestFloatSample');
-        gaze_x = evt.gx(1);
-        gaze_y = evt.gy(1);
-        samples(i, :) = [gaze_x, gaze_y]; % Store gaze sample
-        WaitSecs(0.002) % 2 ms for 125 Hz            (0.004); % Wait for 4 ms to get approximately 250 Hz sampling rate
+        gx = evt.gx(1);
+        gy = evt.gy(1);
+
+        % EyeLink returns large negative values (e.g. -32768) for missing data
+        if gx >= 0 && gy >= 0
+            nCollected = nCollected + 1;
+            samples(nCollected, :) = [gx, gy];
+        end
+
+        WaitSecs(sampleInterval);
     end
 
-    % Check fixation
-    validSamples = sum(samples(:, 1) > 0 & samples(:, 2) > 0); % Count valid samples
-    if validSamples > fixThresh % Ensure enough valid samples before checking fixation
-        xFix = sum(samples(:, 1) > screenCentreX - distOK & samples(:, 1) < screenCentreX + distOK);
-        yFix = sum(samples(:, 2) > screenCentreY - distOK & samples(:, 2) < screenCentreY + distOK);
+    minValidSamples = round(numSamples * 0.50);
+    if nCollected < minValidSamples
+        noFixation = 1;
+        return;
+    end
 
-        if xFix <= fixThresh || yFix <= fixThresh
-            % No fixation detected
-            noFixation = 1;
-        end
-    else
-        disp('Not enough valid samples for fixation check.');
+    validSamples = samples(1:nCollected, :);
+    withinWindow = abs(validSamples(:,1) - screenCentreX) < distOK & ...
+                   abs(validSamples(:,2) - screenCentreY) < distOK;
+    fixRatio = sum(withinWindow) / nCollected;
+
+    if fixRatio < fixThresh
+        noFixation = 1;
     end
 end

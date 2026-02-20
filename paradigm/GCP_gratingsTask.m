@@ -77,6 +77,8 @@ RESP_NO                  = 88; % Trigger for response no (no input)
 
 TASK_END                 = 90; % Trigger for ET cutting
 
+FIXATION_REMINDER        = 91; % Trigger for fixation reminder
+
 %% Set up experiment parameters
 % Block and Trial Number
 exp.nTrlTrain = 10; % n gratings per training block
@@ -190,6 +192,7 @@ fixPos                = [screen.centerX, screen.centerY];
 timing.cfilower       = 2000; % Lower limit of CFI duration
 timing.cfiupper       = 3000; % Upper limit of CFI duration
 timing.cfi_task       = 0.5;  % Duration of white fixation cross
+timing.fixCheckDuration = 0.5; % Pre-stimulus fixation check during last 500ms of CFI
 
 %% Settings for inward moving circular grating
 % Size
@@ -376,55 +379,74 @@ for trl = 1:exp.nTrials
         end
     end
 
-    %% Present fixation cross (white for task condition)
-    % Fill gray screen
+    %% Present fixation cross and check pre-stimulus fixation
     Screen('FillRect', ptbWindow, backgroundColorGray);
     Screen('Flip', ptbWindow);
-    % Set jittered trial-specific durations for CFIs
-    timing.cfi(trl) = (randsample(timing.cfilower:timing.cfiupper, 1))/1000; % Randomize the jittered central fixation interval on trial
-    start_time = GetSecs;
-    while (GetSecs - start_time) < timing.cfi(trl)
-        if data.whiteCross(trl) == 0 % No task condition
-            Screen('DrawLines', ptbWindow, fixCoords,fixationLineWidth,fixationColorBlack,[screen.centerX screen.centerY],2);
-            Screen('Flip', ptbWindow);
-            screenshot('GCP_screenshot_blackcross.png', ptbWindow, enableScreenshots);
-            TRIGGER = FIXCROSSB;
-            if TRAINING == 1
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-            else
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-                sendtrigger(TRIGGER,port,SITE,stayup);
-            end
-            WaitSecs(timing.cfi(trl));
-        elseif data.whiteCross(trl) == 1 % Task condition
-            Screen('DrawLines', ptbWindow, fixCoords,fixationLineWidth,fixationColorWhite,[screen.centerX screen.centerY],2);
-            Screen('Flip', ptbWindow);
-            TRIGGER = FIXCROSSR;
-            screenshot('GCP_screenshot_whiteCross.png', ptbWindow, enableScreenshots);
-            if TRAINING == 1
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-            else
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-                sendtrigger(TRIGGER,port,SITE,stayup);
-            end
-            WaitSecs(timing.cfi_task); % Show white cross for 500 ms
-            Screen('DrawLines', ptbWindow, fixCoords,fixationLineWidth,fixationColorBlack,[screen.centerX screen.centerY],2);
-            Screen('Flip', ptbWindow);
-            TRIGGER = FIXCROSSB;
-            if TRAINING == 1
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-            else
-                Eyelink('Message', num2str(TRIGGER));
-                Eyelink('command', 'record_status_message "FIXCROSS"');
-                sendtrigger(TRIGGER,port,SITE,stayup);
-            end
-            WaitSecs(timing.cfi(trl)-timing.cfi_task); % Show black cross for the rest of the CFI time
+    timing.cfi(trl) = (randsample(timing.cfilower:timing.cfiupper, 1))/1000;
+
+    if data.whiteCross(trl) == 0 % No task condition
+        Screen('DrawLines', ptbWindow, fixCoords, fixationLineWidth, fixationColorBlack, [screen.centerX screen.centerY], 2);
+        Screen('Flip', ptbWindow);
+        screenshot('GCP_screenshot_blackcross.png', ptbWindow, enableScreenshots);
+        TRIGGER = FIXCROSSB;
+        if TRAINING == 1
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
+        else
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
+            sendtrigger(TRIGGER, port, SITE, stayup);
         end
+        WaitSecs(timing.cfi(trl) - timing.fixCheckDuration);
+        noFixation = checkFixation(screen.centerX, screen.centerY, timing.fixCheckDuration);
+
+    elseif data.whiteCross(trl) == 1 % Task condition
+        Screen('DrawLines', ptbWindow, fixCoords, fixationLineWidth, fixationColorWhite, [screen.centerX screen.centerY], 2);
+        Screen('Flip', ptbWindow);
+        TRIGGER = FIXCROSSR;
+        screenshot('GCP_screenshot_whiteCross.png', ptbWindow, enableScreenshots);
+        if TRAINING == 1
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
+        else
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
+            sendtrigger(TRIGGER, port, SITE, stayup);
+        end
+        WaitSecs(timing.cfi_task);
+        Screen('DrawLines', ptbWindow, fixCoords, fixationLineWidth, fixationColorBlack, [screen.centerX screen.centerY], 2);
+        Screen('Flip', ptbWindow);
+        TRIGGER = FIXCROSSB;
+        if TRAINING == 1
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
+        else
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIXCROSS"');
+            sendtrigger(TRIGGER, port, SITE, stayup);
+        end
+        WaitSecs(timing.cfi(trl) - timing.cfi_task - timing.fixCheckDuration);
+        noFixation = checkFixation(screen.centerX, screen.centerY, timing.fixCheckDuration);
+    end
+
+    % Store fixation result (1 = fixating, 0 = not fixating)
+    data.fixation(trl) = ~noFixation;
+
+    % Show fixation reminder if participant was not fixating
+    if noFixation
+        DrawFormattedText(ptbWindow, 'Please fixate on the cross!', 'center', 'center', black);
+        Screen('DrawDots', ptbWindow, backPos, backDiameter, backColor, [], 1);
+        Screen('Flip', ptbWindow);
+        TRIGGER = FIXATION_REMINDER;
+        if TRAINING == 1
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIX_REMINDER"');
+        else
+            Eyelink('Message', num2str(TRIGGER));
+            Eyelink('command', 'record_status_message "FIX_REMINDER"');
+            sendtrigger(TRIGGER, port, SITE, stayup);
+        end
+        WaitSecs(1);
     end
 
     %% Define grating depending on sequence number
@@ -564,16 +586,21 @@ for trl = 1:exp.nTrials
     %% Trial Info CW output
     overall_accuracy = round((sum(data.correct(1:trl))/trl)*100);
     reactionTime = num2str(round(data.reactionTime(trl), 2), '%.2f');
+    if data.fixation(trl)
+        fixLabel = 'Y';
+    else
+        fixLabel = 'N';
+    end
     if trl < 10
         disp(['Response to Trial ' num2str(trl) '/' num2str(exp.nTrials) ...
             ' in Block ' num2str(BLOCK) ' is ' feedbackText '  (White FixCross: ' ...
             '' num2str(data.whiteCross(trl)) ' | Acc: ' num2str(overall_accuracy) ...
-            '% | RT: ' reactionTime 's | ' gratingForm ')']);
+            '% | RT: ' reactionTime 's | Fix: ' fixLabel ' | ' gratingForm ')']);
     else
         disp(['Response to Trial ' num2str(trl) '/' num2str(exp.nTrials) ...
             ' in Block ' num2str(BLOCK) ' is ' feedbackText ' (White FixCross: ' ...
             num2str(data.whiteCross(trl)) ' | Acc: ' num2str(overall_accuracy) ...
-            '% | RT: ' reactionTime 's | ' gratingForm ')']);
+            '% | RT: ' reactionTime 's | Fix: ' fixLabel ' | ' gratingForm ')']);
     end
 
     % Save trial duration in seconds
@@ -679,6 +706,8 @@ trigger.BLOCK0_END              = BLOCK0_END;
 
 trigger.RESP_YES                = RESP_YES;
 trigger.RESP_NO                 = RESP_NO;
+
+trigger.FIXATION_REMINDER       = FIXATION_REMINDER;
 
 trigger.TASK_END                = TASK_END;
 
