@@ -70,16 +70,19 @@ all_fs_hist_freqs  = cell(4, nSubj);
 all_fs_hist_counts = cell(4, nSubj);
 all_fs_peakfreq    = nan(4, nSubj);
 all_fs_median      = nan(4, nSubj);
+all_fs_topos       = cell(4, nSubj);  % topography at freq sliding peak (±2.5 Hz)
+
+% GED component power spectra
+all_powspec_stim  = cell(4, nSubj);  % stimulus power spectrum (GED component)
+all_powspec_base  = cell(4, nSubj);  % baseline power spectrum
+all_powspec_diff  = cell(4, nSubj);  % baseline-corrected (stim - base)
+all_powspec_freqs = cell(4, nSubj);  % frequency vector
 
 % Channel labels
 chanlocs_all = {};
 
 %% Process each subject
 for subj = 1:nSubj
-
-    fprintf('\n========================================\n');
-    fprintf('Processing Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
-    fprintf('========================================\n');
 
     datapath = strcat(path, subjects{subj}, filesep, 'eeg');
     cd(datapath)
@@ -101,12 +104,9 @@ for subj = 1:nSubj
     %% Process each condition
     for cond = 1:4
 
-        fprintf('  Condition %d/4: %s\n', cond, condLabels{cond});
-
         dat    = dataStructs{cond};
         trlIdx = trialIndices{cond};
         if isempty(trlIdx)
-            warning('No trials for condition %d, subject %s', cond, subjects{subj});
             continue;
         end
 
@@ -123,6 +123,9 @@ for subj = 1:nSubj
         eigspec = nan(1, length(scan_freqs));
 
         for fi = 1:length(scan_freqs)
+            clc
+            fprintf('Subject    %s (%d/%d)\nCondition  %d/4\nFrequency  %d/%d\n', ...
+                subjects{subj}, subj, nSubj, cond, fi, length(scan_freqs));
             cf = scan_freqs(fi);
             bpfreq = [max(cf - scan_width/2, 1), cf + scan_width/2];
 
@@ -278,6 +281,103 @@ for subj = 1:nSubj
         all_fs_peakfreq(cond, subj) = bin_centers(mode_idx);
         all_fs_median(cond, subj)   = median(all_inst_freq);
 
+        % --- Topography at freq sliding peak frequency (±2.5 Hz) ---
+        fs_peak = all_fs_peakfreq(cond, subj);
+        bpfreq_fs = [max(fs_peak - 2.5, 1), fs_peak + 2.5];
+
+        cfg_filt_fs = [];
+        cfg_filt_fs.bpfilter   = 'yes';
+        cfg_filt_fs.bpfreq     = bpfreq_fs;
+        cfg_filt_fs.bpfilttype = 'fir';
+        cfg_filt_fs.bpfiltord  = round(3 * fsample / bpfreq_fs(1));
+        dat_fs_nb = ft_preprocessing(cfg_filt_fs, dat);
+
+        cfg_t_fs = [];
+        cfg_t_fs.latency = stimulus_window;
+        dat_stim_fs = ft_selectdata(cfg_t_fs, dat_fs_nb);
+
+        covStim_fs = zeros(nChans);
+        for trl = 1:length(dat_stim_fs.trial)
+            d = double(dat_stim_fs.trial{trl});
+            d = bsxfun(@minus, d, mean(d, 2));
+            covStim_fs = covStim_fs + (d * d') / size(d, 2);
+        end
+        covStim_fs = covStim_fs / length(dat_stim_fs.trial);
+
+        cfg_t_fs.latency = baseline_window;
+        dat_base_fs = ft_selectdata(cfg_t_fs, dat_fs_nb);
+
+        covBase_fs = zeros(nChans);
+        for trl = 1:length(dat_base_fs.trial)
+            d = double(dat_base_fs.trial{trl});
+            d = bsxfun(@minus, d, mean(d, 2));
+            covBase_fs = covBase_fs + (d * d') / size(d, 2);
+        end
+        covBase_fs = covBase_fs / length(dat_base_fs.trial);
+
+        covBase_fs = (1-lambda)*covBase_fs + lambda*mean(diag(covBase_fs))*eye(nChans);
+        covStim_fs = (1-lambda)*covStim_fs + lambda*mean(diag(covStim_fs))*eye(nChans);
+
+        [W_fs, D_fs] = eig(covStim_fs, covBase_fs);
+        [~, topIdx_fs] = max(real(diag(D_fs)));
+        topComp_fs = W_fs(:, topIdx_fs);
+
+        topo_temp_fs = covStim_fs * topComp_fs;
+        [~, mxI_fs] = max(abs(topo_temp_fs));
+        if topo_temp_fs(mxI_fs) < 0, topComp_fs = -topComp_fs; end
+
+        all_fs_topos{cond, subj} = covStim_fs * topComp_fs;
+
+        %% ============================================================
+        %  GED Component Power Spectrum
+        %  ============================================================
+        %  Project unfiltered data through the freq-sliding spatial filter,
+        %  then compute FFT power spectra for stimulus and baseline.
+
+        cfg_t_pow = [];
+        cfg_t_pow.latency = stimulus_window;
+        dat_stim_raw = ft_selectdata(cfg_t_pow, dat);
+
+        cfg_t_pow.latency = baseline_window;
+        dat_base_raw = ft_selectdata(cfg_t_pow, dat);
+
+        % Concatenate trials projected through spatial filter
+        stim_comp = [];
+        for trl = 1:length(dat_stim_raw.trial)
+            stim_comp = [stim_comp, topComp_fs' * double(dat_stim_raw.trial{trl})];
+        end
+
+        base_comp = [];
+        for trl = 1:length(dat_base_raw.trial)
+            base_comp = [base_comp, topComp_fs' * double(dat_base_raw.trial{trl})];
+        end
+
+        % FFT power spectra
+        N_stim = length(stim_comp);
+        Y_stim = fft(stim_comp);
+        P_stim = abs(Y_stim / N_stim).^2;
+        P_stim = P_stim(1:floor(N_stim/2)+1);
+        P_stim(2:end-1) = 2 * P_stim(2:end-1);
+        freq_stim = fsample * (0:floor(N_stim/2)) / N_stim;
+
+        N_base = length(base_comp);
+        Y_base = fft(base_comp);
+        P_base = abs(Y_base / N_base).^2;
+        P_base = P_base(1:floor(N_base/2)+1);
+        P_base(2:end-1) = 2 * P_base(2:end-1);
+        freq_base = fsample * (0:floor(N_base/2)) / N_base;
+
+        % Interpolate to common frequency grid within gamma range
+        freq_common_pow = 30:0.5:90;
+        pow_stim_interp = interp1(freq_stim, P_stim, freq_common_pow, 'linear', 0);
+        pow_base_interp = interp1(freq_base, P_base, freq_common_pow, 'linear', 0);
+        pow_diff_interp = pow_stim_interp - pow_base_interp;
+
+        all_powspec_stim{cond, subj}  = pow_stim_interp;
+        all_powspec_base{cond, subj}  = pow_base_interp;
+        all_powspec_diff{cond, subj}  = pow_diff_interp;
+        all_powspec_freqs{cond, subj} = freq_common_pow;
+
     end % condition loop
 
     %% ================================================================
@@ -285,7 +385,7 @@ for subj = 1:nSubj
     %  ================================================================
     close all
     fig = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf('GED Gamma Peak Detection — Subject %s', subjects{subj}), ...
+    sgtitle(sprintf('GED Gamma Peak Detection: Subject %s', subjects{subj}), ...
         'FontSize', 20, 'FontWeight', 'bold');
 
     % --- Row 1: Raw + detrended eigenvalue spectra (Method 1) ---
@@ -301,7 +401,7 @@ for subj = 1:nSubj
             plot(scan_freqs, polyval(p, scan_freqs), 'k--', 'LineWidth', 1.5);
         end
         xlabel('Freq [Hz]'); ylabel('\lambda');
-        title(sprintf('%s — Raw Eigspec', condLabels{cond}), 'FontSize', 12);
+        title(sprintf('%s Raw Eigspec', condLabels{cond}), 'FontSize', 12);
         set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
     end
 
@@ -322,7 +422,7 @@ for subj = 1:nSubj
                 'FontSize', 12, 'Color', colors(cond,:), 'FontWeight', 'bold');
         end
         xlabel('Freq [Hz]'); ylabel('\Delta\lambda');
-        title(sprintf('%s — Detrended', condLabels{cond}), 'FontSize', 12);
+        title(sprintf('%s Detrended', condLabels{cond}), 'FontSize', 12);
         set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
     end
 
@@ -340,11 +440,11 @@ for subj = 1:nSubj
                 'FontSize', 12, 'Color', colors(cond,:), 'FontWeight', 'bold');
         end
         xlabel('Freq [Hz]'); ylabel('P(f)');
-        title(sprintf('%s — Freq Sliding', condLabels{cond}), 'FontSize', 12);
+        title(sprintf('%s Freq Sliding', condLabels{cond}), 'FontSize', 12);
         set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
     end
 
-    % --- Row 4: Topographies at GED peak frequency ---
+    % --- Row 4: Topographies at freq sliding peak (±2.5 Hz) ---
     cfg_topo = [];
     cfg_topo.layout    = headmodel.layANThead;
     cfg_topo.comment   = 'no';
@@ -357,10 +457,10 @@ for subj = 1:nSubj
 
     for cond = 1:4
         subplot(4, 4, 12 + cond);
-        if ~isempty(all_ged_topos{cond, subj})
+        if ~isempty(all_fs_topos{cond, subj})
             topo_data = [];
             topo_data.label  = chanlocs_all;
-            topo_data.avg    = all_ged_topos{cond, subj};
+            topo_data.avg    = all_fs_topos{cond, subj};
             topo_data.dimord = 'chan';
             try
                 ft_topoplotER(cfg_topo, topo_data);
@@ -369,8 +469,8 @@ for subj = 1:nSubj
             catch
                 imagesc(topo_data.avg); colorbar;
             end
-            title(sprintf('%s — Topo @ %.0f Hz', condLabels{cond}, ...
-                all_ged_peakfreq(cond, subj)), 'FontSize', 12);
+            title(sprintf('%s Topo %.0f\\pm2.5 Hz', condLabels{cond}, ...
+                all_fs_peakfreq(cond, subj)), 'FontSize', 12);
         end
     end
 
@@ -385,7 +485,7 @@ fprintf('\nCreating grand average figures...\n');
 close all
 
 fig_ga1 = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle(sprintf('Narrowband Scanning GED — Grand Average (N=%d)', nSubj), ...
+sgtitle(sprintf('Narrowband Scanning GED: Grand Average (N=%d)', nSubj), ...
     'FontSize', 20, 'FontWeight', 'bold');
 
 % --- Left: Raw eigenvalue spectra ---
@@ -535,7 +635,7 @@ saveas(fig_ga2, fullfile(fig_save_dir, 'GED_method_comparison.png'));
 %  ====================================================================
 nRows = ceil(nSubj / 5);
 fig_all = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle(sprintf('Detrended Eigenvalue Spectra — All Subjects (N=%d)', nSubj), ...
+sgtitle(sprintf('Detrended Eigenvalue Spectra: All Subjects (N=%d)', nSubj), ...
     'FontSize', 18, 'FontWeight', 'bold');
 
 for s = 1:nSubj
@@ -630,6 +730,72 @@ title('Frequency Sliding Peak Frequency', 'FontSize', 30, 'FontWeight', 'bold');
 
 saveas(fig_box2, fullfile(fig_save_dir, 'GED_boxplot_peakfreq_FreqSliding.png'));
 
+%% ====================================================================
+%  POWER SPECTRUM FIGURE 1: All subjects subplot
+%  ====================================================================
+freq_common_pow = 30:0.5:90;
+nRows_pow = ceil(nSubj / 5);
+fig_pow_all = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle(sprintf('GED Component Power Spectra: All Subjects (N=%d)', nSubj), ...
+    'FontSize', 18, 'FontWeight', 'bold');
+
+for s = 1:nSubj
+    subplot(nRows_pow, 5, s); hold on;
+    for cond = 1:4
+        if ~isempty(all_powspec_diff{cond, s})
+            plot(freq_common_pow, all_powspec_diff{cond, s}, '-', ...
+                'Color', colors(cond,:), 'LineWidth', 2);
+            xline(all_fs_peakfreq(cond, s), '--', 'Color', colors(cond,:), ...
+                'LineWidth', 1.2);
+        end
+    end
+    yline(0, 'k--', 'LineWidth', 0.5);
+    xlabel('Freq [Hz]'); ylabel('Power');
+    title(sprintf('Subj %s', subjects{s}), 'FontSize', 11);
+    set(gca, 'FontSize', 10); xlim([30 90]); grid on; box on;
+    if s == 1
+        legend(condLabels, 'FontSize', 8, 'Location', 'best');
+    end
+end
+saveas(fig_pow_all, fullfile(fig_save_dir, 'GED_powspec_all_subjects.png'));
+
+%% ====================================================================
+%  POWER SPECTRUM FIGURE 2: Grand average
+%  ====================================================================
+fig_pow_ga = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle(sprintf('GED Component Power Spectrum: Grand Average (N=%d)', nSubj), ...
+    'FontSize', 20, 'FontWeight', 'bold');
+hold on;
+
+hl_ga = gobjects(1, 4);
+for cond = 1:4
+    pow_mat = nan(nSubj, length(freq_common_pow));
+    for s = 1:nSubj
+        if ~isempty(all_powspec_diff{cond, s})
+            pow_mat(s,:) = all_powspec_diff{cond, s};
+        end
+    end
+    mu  = nanmean(pow_mat, 1);
+    sem = nanstd(pow_mat, [], 1) / sqrt(sum(~isnan(pow_mat(:,1))));
+
+    faceC = 0.8*colors(cond,:) + 0.2*[1 1 1];
+    patch([freq_common_pow, fliplr(freq_common_pow)], ...
+          [mu - sem, fliplr(mu + sem)], ...
+          colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
+    hl_ga(cond) = plot(freq_common_pow, mu, '-', 'Color', colors(cond,:), 'LineWidth', 3);
+
+    % Mark grand average freq sliding peak
+    ga_pf = nanmean(all_fs_peakfreq(cond,:));
+    xline(ga_pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.5);
+end
+yline(0, 'k--', 'LineWidth', 1);
+xlabel('Frequency [Hz]'); ylabel('Power (stim - base)');
+title('Baseline-Corrected Power Spectrum (mean +/- SEM)', 'FontSize', 18);
+legend(hl_ga, condLabels, 'Location', 'northeast', 'FontSize', 15);
+set(gca, 'FontSize', 16); xlim([30 90]); grid on; box on;
+
+saveas(fig_pow_ga, fullfile(fig_save_dir, 'GED_powspec_grand_average.png'));
+
 %% Save results
 if ispc
     save_path = 'W:\Students\Arne\GCP\data\features\ged_gamma_peaks.mat';
@@ -640,10 +806,9 @@ save(save_path, ...
     'all_eigspec', 'all_eigspec_dt', 'all_ged_topos', ...
     'all_ged_peakfreq', 'all_ged_peakpow', ...
     'all_fs_hist_freqs', 'all_fs_hist_counts', 'all_fs_peakfreq', 'all_fs_median', ...
+    'all_fs_topos', ...
+    'all_powspec_stim', 'all_powspec_base', 'all_powspec_diff', 'all_powspec_freqs', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
-fprintf('\n========================================\n');
-fprintf('GED Gamma Peak Detection Complete!\n');
-fprintf('Results saved to:\n  %s\n', save_path);
-fprintf('Figures saved to:\n  %s\n', fig_save_dir);
-fprintf('========================================\n');
+clc
+fprintf('Done.\n');
