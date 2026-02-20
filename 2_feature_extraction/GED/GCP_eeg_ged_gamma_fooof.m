@@ -558,6 +558,78 @@ for s = 1:nSubj
 end
 saveas(fig_all, fullfile(fig_save_dir, 'GED_scan_all_subjects.png'));
 
+%% ====================================================================
+%  BOXPLOT FIGURE 1: Scanning GED peak frequencies across conditions
+%  ====================================================================
+fig_box1 = figure('Position', [0 0 1200 982], 'Color', 'w');
+hold on;
+
+% Subject lines
+for s = 1:nSubj
+    pf = all_ged_peakfreq(:, s);
+    if sum(~isnan(pf)) >= 2
+        plot(1:4, pf, '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
+    end
+end
+
+% Reshape for boxplot: [nSubj*4 x 1] with group variable
+y_ged = all_ged_peakfreq(:);
+g_ged = repelem((1:4)', nSubj, 1);
+valid_ged = ~isnan(y_ged);
+boxplot(y_ged(valid_ged), g_ged(valid_ged), 'Colors', 'k', 'Symbol', '');
+
+hold on;
+for c = 1:4
+    pf = all_ged_peakfreq(c, :);
+    pf = pf(~isnan(pf));
+    xJit = c + (rand(size(pf)) - 0.5) * 0.1;
+    scatter(xJit, pf, 250, colors(c,:), 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
+end
+
+xlim([0.5 4.5]); ylim([30 90]);
+set(gca, 'XTick', 1:4, 'XTickLabel', {'25%', '50%', '75%', '100%'}, 'FontSize', 20, 'Box', 'off');
+ylabel('Peak Gamma Frequency [Hz]');
+title('Scanning GED Peak Frequency', 'FontSize', 30, 'FontWeight', 'bold');
+
+saveas(fig_box1, fullfile(fig_save_dir, 'GED_boxplot_peakfreq_GED.png'));
+
+%% ====================================================================
+%  BOXPLOT FIGURE 2: Frequency sliding peak frequencies across conditions
+%  ====================================================================
+fig_box2 = figure('Position', [0 0 1200 982], 'Color', 'w');
+hold on;
+
+% Subject lines
+for s = 1:nSubj
+    pf = all_fs_peakfreq(:, s);
+    if sum(~isnan(pf)) >= 2
+        plot(1:4, pf, '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
+    end
+end
+
+% Reshape for boxplot
+y_fs = all_fs_peakfreq(:);
+g_fs = repelem((1:4)', nSubj, 1);
+valid_fs = ~isnan(y_fs);
+boxplot(y_fs(valid_fs), g_fs(valid_fs), 'Colors', 'k', 'Symbol', '');
+
+hold on;
+for c = 1:4
+    pf = all_fs_peakfreq(c, :);
+    pf = pf(~isnan(pf));
+    xJit = c + (rand(size(pf)) - 0.5) * 0.1;
+    scatter(xJit, pf, 250, colors(c,:), 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
+end
+
+xlim([0.5 4.5]); ylim([30 90]);
+set(gca, 'XTick', 1:4, 'XTickLabel', {'25%', '50%', '75%', '100%'}, 'FontSize', 20, 'Box', 'off');
+ylabel('Peak Gamma Frequency [Hz]');
+title('Frequency Sliding Peak Frequency', 'FontSize', 30, 'FontWeight', 'bold');
+
+saveas(fig_box2, fullfile(fig_save_dir, 'GED_boxplot_peakfreq_FreqSliding.png'));
+
 %% Save results
 if ispc
     save_path = 'W:\Students\Arne\GCP\data\features\ged_gamma_peaks.mat';
