@@ -345,15 +345,17 @@ for subj = 1:nSubj
     end
 
     % --- Row 4: Topographies at GED peak frequency ---
+    cmap_div = flipud(cbrewer('div', 'RdBu', 64));
+
     cfg_topo = [];
-    cfg_topo.layout   = headmodel.layANThead;
-    cfg_topo.comment  = 'no';
-    cfg_topo.marker   = 'off';
-    cfg_topo.style    = 'straight';
+    cfg_topo.layout    = headmodel.layANThead;
+    cfg_topo.comment   = 'no';
+    cfg_topo.marker    = 'off';
+    cfg_topo.style     = 'straight';
     cfg_topo.gridscale = 300;
-    cfg_topo.zlim     = 'maxabs';
-    cfg_topo.colormap = 'parula';
-    cfg_topo.figure   = 'gcf';
+    cfg_topo.zlim      = 'maxabs';
+    cfg_topo.colormap  = cmap_div;
+    cfg_topo.figure    = 'gcf';
 
     for cond = 1:4
         subplot(4, 4, 12 + cond);
@@ -364,6 +366,8 @@ for subj = 1:nSubj
             topo_data.dimord = 'chan';
             try
                 ft_topoplotER(cfg_topo, topo_data);
+                cb = colorbar;
+                cb.FontSize = 9;
             catch
                 imagesc(topo_data.avg); colorbar;
             end
