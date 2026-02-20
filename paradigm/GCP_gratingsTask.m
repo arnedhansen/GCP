@@ -300,7 +300,9 @@ data.correct(1, exp.nTrials)     = NaN; % Binary measure for correct responses
 data.reactionTime(1:exp.nTrials) = NaN; % Reaction time
 data.fixation(1:exp.nTrials)     = NaN; % Fixation check info
 data.trlDuration(1:exp.nTrials)  = NaN; % Trial duration in seconds
+data.isReplacement(1:exp.nTrials) = 0;  % Flag for replacement trials (0 = original, 1 = replacement)
 count5trials                     = NaN; % Initialize accuracy reminder loop variable
+maxExtraTrials                   = round(exp.nTrials * 0.15); % Cap replacement trials at 15% of block
 
 %% Show task instruction text
 DrawFormattedText(ptbWindow, startExperimentText, 'center', 'center', black);
@@ -351,16 +353,22 @@ timing.startTime = datestr(now, 'dd/mm/yy-HH:MM:SS'); % Measure duration
 %% Experiment Loop %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clc;
 disp('GCP GRATING TASK...');
-for trl = 1:exp.nTrials
+trialQueue = gratingSequence;
+nExtraTrials = 0;
+trl = 0;
+while ~isempty(trialQueue)
+    trl = trl + 1;
+    currentGrating = trialQueue(1);
+    trialQueue(1) = [];
     tic;
     % Add trial grating info
-    if gratingSequence(trl) == 1
+    if currentGrating == 1
         gratingForm = ' 25% contrast';
-    elseif gratingSequence(trl) == 2
+    elseif currentGrating == 2
         gratingForm = ' 50% contrast';
-    elseif gratingSequence(trl) == 3
+    elseif currentGrating == 3
         gratingForm = ' 75% contrast';
-    elseif gratingSequence(trl) == 4
+    elseif currentGrating == 4
         gratingForm = '100% contrast';
     end
 
@@ -449,8 +457,19 @@ for trl = 1:exp.nTrials
         WaitSecs(1);
     end
 
+    % Queue replacement trial at end of block if fixation failed
+    if TRAINING == 0 && noFixation && nExtraTrials < maxExtraTrials
+        trialQueue(end+1) = currentGrating;
+        nExtraTrials = nExtraTrials + 1;
+    end
+
+    % Mark replacement trials
+    if trl > exp.nTrials
+        data.isReplacement(trl) = 1;
+    end
+
     %% Define grating depending on sequence number
-    data.grating(trl) = gratingSequence(trl);
+    data.grating(trl) = currentGrating;
     % grating = 1 is 25% contrast concentric dynamic inward
     % grating = 2 is 50% contrast concentric dynamic inward
     % grating = 3 is 75% contrast concentric dynamic inward
@@ -463,21 +482,21 @@ for trl = 1:exp.nTrials
     frameDuration = maxProbeDuration / length(tex);
 
     % Send presentation triggers
-    if gratingSequence(trl) == 1 && data.whiteCross(trl) == 1
+    if currentGrating == 1 && data.whiteCross(trl) == 1
         TRIGGER = PRESENTATION_C25_TASK;
-    elseif gratingSequence(trl) == 2 && data.whiteCross(trl) == 1
+    elseif currentGrating == 2 && data.whiteCross(trl) == 1
         TRIGGER = PRESENTATION_C50_TASK;
-    elseif gratingSequence(trl) == 3 && data.whiteCross(trl) == 1
+    elseif currentGrating == 3 && data.whiteCross(trl) == 1
         TRIGGER = PRESENTATION_C75_TASK;
-    elseif gratingSequence(trl) == 4 && data.whiteCross(trl) == 1
+    elseif currentGrating == 4 && data.whiteCross(trl) == 1
         TRIGGER = PRESENTATION_C100_TASK;
-    elseif gratingSequence(trl) == 1 && data.whiteCross(trl) == 0
+    elseif currentGrating == 1 && data.whiteCross(trl) == 0
         TRIGGER = PRESENTATION_C25_NOTASK;
-    elseif gratingSequence(trl) == 2 && data.whiteCross(trl) == 0
+    elseif currentGrating == 2 && data.whiteCross(trl) == 0
         TRIGGER = PRESENTATION_C50_NOTASK;
-    elseif gratingSequence(trl) == 3 && data.whiteCross(trl) == 0
+    elseif currentGrating == 3 && data.whiteCross(trl) == 0
         TRIGGER = PRESENTATION_C75_NOTASK;
-    elseif gratingSequence(trl) == 4 && data.whiteCross(trl) == 0
+    elseif currentGrating == 4 && data.whiteCross(trl) == 0
         TRIGGER = PRESENTATION_C100_NOTASK;
     end
 
@@ -494,16 +513,16 @@ for trl = 1:exp.nTrials
     whileCount = 1;
     % Draw gratings depending on gratingSequence
     while (GetSecs - probeStartTime) < maxProbeDuration
-        if gratingSequence(trl) == 1 % 25% contrast grating
+        if currentGrating == 1 % 25% contrast grating
             Screen('DrawTexture', ptbWindow, tex_c25(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
-        elseif gratingSequence(trl) == 2 % 50% contrast grating
+        elseif currentGrating == 2 % 50% contrast grating
             Screen('DrawTexture', ptbWindow, tex_c50(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
-        elseif gratingSequence(trl) == 3 % 75% contrast grating
+        elseif currentGrating == 3 % 75% contrast grating
             Screen('DrawTexture', ptbWindow, tex_c75(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
-        elseif gratingSequence(trl) == 4 % 100% contrast grating
+        elseif currentGrating == 4 % 100% contrast grating
             Screen('DrawTexture', ptbWindow, tex_c100(whileCount), [], gratingPosition);
             Screen('Flip', ptbWindow);
         end
@@ -591,21 +610,30 @@ for trl = 1:exp.nTrials
     else
         fixLabel = 'N';
     end
-    if trl < 10
-        disp(['Response to Trial ' num2str(trl) '/' num2str(exp.nTrials) ...
-            ' in Block ' num2str(BLOCK) ' is ' feedbackText '  (White FixCross: ' ...
-            '' num2str(data.whiteCross(trl)) ' | Acc: ' num2str(overall_accuracy) ...
-            '% | RT: ' reactionTime 's | Fix: ' fixLabel ' | ' gratingForm ')']);
+    if trl > exp.nTrials
+        replLabel = ' [R]';
     else
-        disp(['Response to Trial ' num2str(trl) '/' num2str(exp.nTrials) ...
-            ' in Block ' num2str(BLOCK) ' is ' feedbackText ' (White FixCross: ' ...
-            num2str(data.whiteCross(trl)) ' | Acc: ' num2str(overall_accuracy) ...
-            '% | RT: ' reactionTime 's | Fix: ' fixLabel ' | ' gratingForm ')']);
+        replLabel = '';
     end
+    totalTrials = exp.nTrials + nExtraTrials;
+    if TRAINING == 1
+        blockStr = '0/0';
+    else
+        blockStr = sprintf('%d/4', BLOCK);
+    end
+    fprintf('Response to Trial %3d/%d%-4s in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss | Fix: %s | %s)\n', ...
+        trl, totalTrials, replLabel, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, fixLabel, gratingForm);
 
     % Save trial duration in seconds
     data.trlDuration(trl) = toc;
 end
+exp.nTrialsTotal = trl;
+if nExtraTrials > 0
+    disp(['  --> ' num2str(nExtraTrials) ' replacement trials added for fixation failures.']);
+end
+nFixFails = sum(data.fixation(1:trl) == 0);
+disp(['Block summary: ' num2str(trl) ' trials total (' num2str(exp.nTrials) ' original + ' ...
+    num2str(nExtraTrials) ' replacement). Fixation failures: ' num2str(nFixFails) '.']);
 
 %% End task and save data
 
