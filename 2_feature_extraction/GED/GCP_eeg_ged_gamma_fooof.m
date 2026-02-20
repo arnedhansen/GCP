@@ -345,8 +345,6 @@ for subj = 1:nSubj
     end
 
     % --- Row 4: Topographies at GED peak frequency ---
-    cmap_div = flipud(cbrewer('div', 'RdBu', 64));
-
     cfg_topo = [];
     cfg_topo.layout    = headmodel.layANThead;
     cfg_topo.comment   = 'no';
@@ -354,7 +352,7 @@ for subj = 1:nSubj
     cfg_topo.style     = 'straight';
     cfg_topo.gridscale = 300;
     cfg_topo.zlim      = 'maxabs';
-    cfg_topo.colormap  = cmap_div;
+    cfg_topo.colormap  = '*RdBu';
     cfg_topo.figure    = 'gcf';
 
     for cond = 1:4
