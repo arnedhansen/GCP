@@ -15,7 +15,8 @@
 %   1. Single peak — tallest peak in the full detrended spectrum
 %   2. Dual peak   — assuming low + high gamma sub-bands:
 %                     low gamma peak  (30-55 Hz)
-%                     high gamma peak (55-80 Hz)
+%                     high gamma peak (50-75 Hz)
+%                     overlap at 50-55 Hz so mid-range peaks count for both
 
 clear; close all; clc
 
@@ -63,8 +64,8 @@ all_scan_peakfreq = nan(4, nSubj);   % peak freq from detrended spectrum
 all_scan_peakpow  = nan(4, nSubj);   % peak value (detrended)
 
 % Dual-peak model (low + high gamma)
-all_peak_low     = nan(4, nSubj);  % low gamma peak (30-55 Hz)
-all_peak_high    = nan(4, nSubj);  % high gamma peak (55-80 Hz)
+all_peak_low     = nan(4, nSubj);  % low gamma peak  (30-55 Hz)
+all_peak_high    = nan(4, nSubj);  % high gamma peak (50-75 Hz)
 
 % Common filter info (one per subject)
 all_topos          = cell(1, nSubj);
@@ -263,9 +264,9 @@ for subj = 1:nSubj
         nPosPeaks = length(pks_pos);
 
         if nPosPeaks >= 2
-            % 2+ peaks: find tallest in each sub-range
-            in_lo = locs_pos <= 50;
-            in_hi = locs_pos >= 55;
+            % 2+ peaks: find tallest in each sub-range (overlapping middle)
+            in_lo = locs_pos >= 30 & locs_pos <= 55;
+            in_hi = locs_pos >= 50 & locs_pos <= 75;
             if any(in_lo)
                 [~, bi] = max(pks_pos(in_lo));
                 tmp = locs_pos(in_lo);
@@ -389,7 +390,8 @@ for subj = 1:nSubj
             plot(scan_freqs, movmean(all_powratio_dt{cond, subj}, 5), '-', ...
                 'Color', colors(cond,:), 'LineWidth', 2.5);
             yline(0, 'k-', 'LineWidth', 0.5);
-            xline(55, 'k:', 'LineWidth', 1);
+            xline(50, 'k:', 'LineWidth', 0.8, 'Alpha', 0.4);
+            xline(55, 'k:', 'LineWidth', 0.8, 'Alpha', 0.4);
             pf_lo = all_peak_low(cond, subj);
             pf_hi = all_peak_high(cond, subj);
             if ~isnan(pf_lo)
