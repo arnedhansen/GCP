@@ -1,189 +1,496 @@
-%% GCP Microsaccades Time Series
+%% GCP Gaze Microsaccade Suppression — Contrast Conditions
+% Detects microsaccades per trial using detect_microsaccades.m (Engbert &
+% Kliegl, 2003). The velocity threshold is GLOBAL — computed over the full
+% computation window passed to detect_microsaccades.
+%
+% Builds binary spike trains from detected onsets, convolves with a
+% Gaussian kernel to produce smoothed microsaccade rate time courses, and
+% plots per-condition rate curves with SEM shading and raster plots.
+%
+% Edge effects from the Gaussian smoothing kernel are handled by computing
+% over a wider window (t_comp) and cropping to the display window (t_win).
+%
+% Key outputs:
+%   1.  Smoothed MS rate time courses per contrast condition (± SEM)
+%   1b. Percentage-change baseline-corrected rate time courses
+%   2.  Raster plots of microsaccade onsets per condition
+%   3.  Combined figure (rate + raster)
+%   3b. Combined figure with percentage-change rate
 
 %% Setup
 startup
-[subjects, path, colors, headmodel] = setup('GCP');
+[subjects, path, colors, ~] = setup('GCP');
+close all
+clc
 
-% representational modes to plot, in order
-modes = {'raw','bl','pct'};
+datapath = path;
+figpath  = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/microsaccades/';
+mkdir(figpath);
 
-% y-labels
-channels      = {'MSRate'};
-channeltitles = {'Microsaccade rate'};
-ylabs_raw     = {'Microsaccades [Hz]'};
-ylabs_pct     = {'Microsaccades [%]'};
-labels        = {'25% contrast','50% contrast','75% contrast','100% contrast'};
+nSubj = length(subjects);
 
-%% Loop over data modes: raw → baselined → baselined %
-for m = 1:numel(modes)
-    clc
-    data_mode = modes{m};
-    fprintf('\nGCP Microsaccades: plotting %s data\n', data_mode);
+%% Parameters
+fsample   = 500;        % Hz
+screenW   = 800;
+screenH   = 600;
+blink_win = 50;         % blink removal window (samples, ±100 ms)
 
-    %% Load data (per subject, pick correct representation)
-    alltlk25et  = cell(1, numel(subjects));
-    alltlk50et  = cell(1, numel(subjects));
-    alltlk75et  = cell(1, numel(subjects));
-    alltlk100et = cell(1, numel(subjects));
+% Gaussian smoothing kernel for continuous rate estimation
+sigma_ms   = 50;                                     % kernel SD in ms
+sigma_samp = round(sigma_ms / (1000 / fsample));     % SD in samples
+kHalf      = 3 * sigma_samp;
+x_kern     = -kHalf : kHalf;
+gKernel    = exp(-x_kern.^2 / (2 * sigma_samp^2));
+gKernel    = gKernel / sum(gKernel);                 % normalise
 
-    for subj = 1:length(subjects)
-        datapath = strcat(path, subjects{subj}, '/gaze');
-        disp(['Loading Subject ', num2str(subjects{subj})])
-        load([datapath, filesep 'gaze_microsaccade_timeseries'])
+% Computation window (wider than display to avoid convolution edge effects)
+% Kernel half-width = 3*sigma = 150 ms; padding per side must exceed this.
+% Must also cover the baseline period [-1.5, -0.25] for pct-change normalisation.
+t_comp     = [-2.0 2.5];                                % seconds
+n_comp     = round(diff(t_comp) * fsample) + 1;         % samples in computation window
+t_comp_vec = linspace(t_comp(1), t_comp(2), n_comp);    % computation time axis
 
-        % velTS_cXX           = timelocked average Microsaccades (no baseline)
-        % velTS_cXX_bl        = timelocked average with subtractive baseline
-        % velTS_cXX_bl_pct    = timelocked average with relative-change baseline (%)
+% Storage window (includes baseline + display, edge-effect-free)
+t_store = [-1.5 2];                                      % seconds
+[~, store_start] = min(abs(t_comp_vec - t_store(1)));
+[~, store_end]   = min(abs(t_comp_vec - t_store(2)));
+store_idx  = store_start : store_end;
+n_store    = length(store_idx);
+t_store_vec = t_comp_vec(store_idx);
 
-        switch data_mode
-            case 'raw'
-                alltlk25et{subj}  = msTS_c25;
-                alltlk50et{subj}  = msTS_c50;
-                alltlk75et{subj}  = msTS_c75;
-                alltlk100et{subj} = msTS_c100;
+% Display time window (what is shown in figures)
+t_win = [-1 2];                                        % seconds
+disp_idx = t_store_vec >= t_win(1) & t_store_vec <= t_win(2);  % logical into t_store_vec
+n_disp   = sum(disp_idx);
+t_vec    = t_store_vec(disp_idx);                        % display time axis
 
-            case 'bl'
-                alltlk25et{subj}  = msTS_c25_bl;
-                alltlk50et{subj}  = msTS_c50_bl;
-                alltlk75et{subj}  = msTS_c75_bl;
-                alltlk100et{subj} = msTS_c100_bl;
+% Raster crop: indices in t_comp_vec corresponding to display window
+[~, raster_crop_start] = min(abs(t_comp_vec - t_win(1)));
+[~, raster_crop_end]   = min(abs(t_comp_vec - t_win(2)));
+raster_crop_idx = raster_crop_start : raster_crop_end;
 
-            case 'pct'
-                alltlk25et{subj}  = msTS_c25_bl_pct;
-                alltlk50et{subj}  = msTS_c50_bl_pct;
-                alltlk75et{subj}  = msTS_c75_bl_pct;
-                alltlk100et{subj} = msTS_c100_bl_pct;
+% Baseline period for percentage-change normalisation (matches GCP_gaze_fex.m)
+bl_win = [-1 -0.25];                                  % seconds
+bl_idx = t_store_vec >= bl_win(1) & t_store_vec <= bl_win(2);  % logical into t_store_vec
+
+% Plotting
+fontSize = 20;
+
+%% Condition definitions
+condFields = {'dataET_c25', 'dataET_c50', 'dataET_c75', 'dataET_c100'};
+condLabels = {'25% contrast', '50% contrast', '75% contrast', '100% contrast'};
+nConds     = length(condFields);
+
+%% ====================================================================
+%  Process all conditions
+%  ====================================================================
+fprintf('\n=== Processing GCP Contrast Conditions ===\n');
+
+% Preallocate: subjects x timepoints (storage window) x conditions
+subjRates = nan(nSubj, n_store, nConds);
+rasterAll = cell(nConds, 1);
+
+for subj = 1:nSubj
+    fprintf('  Subject %d/%d (%s)\n', subj, nSubj, subjects{subj});
+    spath = fullfile(datapath, subjects{subj}, 'gaze');
+
+    % Load ET data (contains dataET_c25, dataET_c50, dataET_c75, dataET_c100)
+    fpath = fullfile(spath, 'dataET.mat');
+    if ~isfile(fpath)
+        warning('File not found for subject %s', subjects{subj});
+        continue
+    end
+    S = load(fpath);
+
+    for c = 1:nConds
+        cField = condFields{c};
+
+        if ~isfield(S, cField)
+            warning('No %s for subject %s', cField, subjects{subj});
+            continue
         end
+        et = S.(cField);
 
-    end
+        nTrials    = length(et.trial);
+        condSpikes = [];
 
-    %% Grand average
-    cfg = [];
-    cfg.keepindividual = 'yes';
-    ga25et  = ft_timelockgrandaverage(cfg, alltlk25et{:});
-    ga50et  = ft_timelockgrandaverage(cfg, alltlk50et{:});
-    ga75et  = ft_timelockgrandaverage(cfg, alltlk75et{:});
-    ga100et = ft_timelockgrandaverage(cfg, alltlk100et{:});
+        for trl = 1:nTrials
+            raw = et.trial{trl};
+            t   = et.time{trl};
 
-    %% Plot Microsaccades for 25/50/75/100% contrast (mean ± SEM)
-    close all
+            % Keep x, y, pupil; invert Y to screen coordinates
+            raw = raw(1:min(3, size(raw, 1)), :);
+            raw(2, :) = screenH - raw(2, :);
 
-    % choose y-labels depending on representation
-    switch data_mode
-        case {'raw','bl'}
-            ylabs = ylabs_px;
-        case 'pct'
-            ylabs = ylabs_pct;
-    end
+            % Out-of-bounds → NaN
+            oob = raw(1,:) < 0 | raw(1,:) > screenW | ...
+                  raw(2,:) < 0 | raw(2,:) > screenH;
+            raw(:, oob) = NaN;
 
-    % assume equal n_subj across contrasts
-    n_subj = size(ga25et.individual, 1);
+            % Remove blinks
+            raw = remove_blinks(raw, blink_win);
 
-    fig_ga = figure('Color','w');
-    set(fig_ga, "Position", [0 0 1512 982])
+            % Extract COMPUTATION window (wider than display for edge-free smoothing)
+            idx_win = t >= t_comp(1) & t <= t_comp(2);
+            gx = raw(1, idx_win);
+            gy = raw(2, idx_win);
 
-    ax = gobjects(1, numel(channels));  % store axes handles
-
-    for c = 1:numel(channels)
-        ax(c) = subplot(1,1,c);
-        hold(ax(c), 'on');
-
-        cfg = [];
-        cfg.figure      = 'gcf';
-        cfg.channel     = channels{c};
-        cfg.avgoverchan = 'yes';
-        cfg.latency     = [-1 2];
-
-        et25  = ft_selectdata(cfg, ga25et);
-        et50  = ft_selectdata(cfg, ga50et);
-        et75  = ft_selectdata(cfg, ga75et);
-        et100 = ft_selectdata(cfg, ga100et);
-
-        ets = {et25, et50, et75, et100};
-
-        hl = gobjects(1, numel(ets));
-        for k = 1:numel(ets)
-            x  = ets{k}.time(:);
-            yi = squeeze(ets{k}.individual);        % [subj x time]
-            if size(yi,1) ~= n_subj
-                warning('n_subj mismatch for %s', labels{k});
+            if sum(isfinite(gx) & isfinite(gy)) < 50
+                continue
             end
 
-            y   = mean(yi, 1)';                      % mean over subjects
-            e   = std(yi, [], 1)' ./ sqrt(n_subj);   % SEM
-            low = y - e;
-            high = y + e;
+            % Detect microsaccades using detect_microsaccades
+            % Global threshold: computed over the full computation window
+            velData = [gx; gy];
+            [~, msDetails] = detect_microsaccades(fsample, velData, length(gx));
 
-            faceC = 0.8*colors(k,:) + 0.2*[1 1 1];
+            % Build binary spike train from onset indices
+            spikeVec = zeros(1, length(gx));
+            if ~isempty(msDetails.Onset)
+                onsets = msDetails.Onset(msDetails.Onset >= 1 & msDetails.Onset <= length(gx));
+                spikeVec(onsets) = 1;
+            end
 
-            hp = patch([x; x(end:-1:1); x(1)], ...
-                [low; high(end:-1:1); low(1)], ...
-                colors(k,:));
-            set(hp, 'facecolor', faceC, 'edgecolor', 'none', 'facealpha', 0.4);
+            % Pad/trim to fixed computation-window length
+            if length(spikeVec) >= n_comp
+                spikeVec = spikeVec(1:n_comp);
+            else
+                spikeVec(end+1 : n_comp) = 0;
+            end
 
-            hl(k) = plot(x, y, 'LineWidth', 2, 'Color', colors(k,:));
+            condSpikes(end+1, :) = spikeVec;
         end
 
-        set(gca, 'FontSize', 18);
-        xlabel('Time [sec]');
-        ylabel(ylabs{c});
-        if ismember(data_mode, {'bl','pct'})
-            yline(0, '--');
-        end
-        title(strrep(channeltitles{c}, '_', '\_'));
+        % Per-subject: average spike trains → rate → smooth → crop
+        if size(condSpikes, 1) >= 3
+            % Mean spike probability × fsample = rate (Hz)
+            rate = mean(condSpikes, 1) * fsample;
 
-        lgd = legend(hl, labels, 'Location', 'northeast', 'FontSize', 12);
-        set(lgd, 'Color', 'none');
+            % Smooth with Gaussian kernel (over full computation window)
+            smoothed = conv(rate, gKernel, 'same');
+
+            % Crop to storage window (baseline + display, edge-effect-free)
+            subjRates(subj, :, c) = smoothed(store_idx);
+
+            % Accumulate rasters (cropped to display window only)
+            rasterAll{c} = [rasterAll{c}; condSpikes(:, raster_crop_idx)];
+        end
     end
 
-    % Add title and save with appropriate suffix
-    switch data_mode
-        case 'raw'
-            suffix = 'raw';
-            sgtitle('GCP Gaze Microsaccades RAW');
-        case 'bl'
-            suffix = 'bl';
-            sgtitle('GCP Gaze Microsaccades BASELINED');
-        case 'pct'
-            suffix = 'blpct';
-            sgtitle('GCP Gaze Microsaccades PERCENTAGE CHANGE');
-    end
+    clear S et
+end
 
-    outdir_overview = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/microsaccades/';
-    saveName = sprintf('%sGCP_gaze_microsaccades_overview_%s.png', outdir_overview, suffix);
-    saveas(gcf, saveName);
-
-    % Also save individual channel plots for this mode
-    for c = 1:numel(channels)
-        fig_single = figure('Color', 'w');
-        set(fig_single, 'Position', [0 0 1512 982]);
-
-        % copy this subplot's axes into its own figure
-        ax_new = copyobj(ax(c), fig_single);
-        set(ax_new, 'Position', [0.13 0.15 0.8 0.75]);  % nice full-figure layout
-
-        % set legend
-        cond_lines = findobj(ax_new, 'Type', 'line', '-not', 'LineStyle', '--');
-        cond_lines = flipud(cond_lines);
-        legend(ax_new, cond_lines, labels, 'Location', 'northeast', 'FontSize', 15);
-
-        % optional: add a figure-level title indicating mode + channel
-        switch data_mode
-            case 'raw'
-                mode_title = 'RAW';
-            case 'bl'
-                mode_title = 'BASELINED';
-            case 'pct'
-                mode_title = 'PERCENTAGE CHANGE';
-        end
-
-        sgtitle(fig_single, sprintf('GCP Gaze Microsaccades %s — %s', ...
-            mode_title, channeltitles{c}));
-
-        % build single plots filename
-        outdir_single = outdir_overview;
-        saveName_single = sprintf('%sGCP_gaze_microsaccades_%s_%s.png', outdir_single, channels{c}, suffix);
-        saveas(fig_single, saveName_single);
-        close(fig_single);
+%% Percentage-change baseline normalisation (per subject, per condition)
+% Baseline is computed over [-1.5, -0.25] within the storage window,
+% then the display portion [-0.5, 2] is extracted for plotting.
+subjRates_pct = nan(size(subjRates));
+for subj = 1:nSubj
+    for c = 1:nConds
+        rate_ts = subjRates(subj, :, c);
+        if all(isnan(rate_ts)); continue; end
+        bl_mean = nanmean(rate_ts(bl_idx));
+        if bl_mean == 0 || isnan(bl_mean); continue; end
+        subjRates_pct(subj, :, c) = (rate_ts - bl_mean) ./ bl_mean * 100;
     end
 end
+
+%% Grand averages — display portion only (for plotting)
+% Raw Hz
+subjRates_disp = subjRates(:, disp_idx, :);
+grandMean = squeeze(nanmean(subjRates_disp, 1));                        % n_disp x nConds
+nValid    = squeeze(sum(~isnan(subjRates_disp(:, 1, :)), 1));           % nConds x 1
+grandSEM  = squeeze(nanstd(subjRates_disp, 0, 1)) ./ sqrt(nValid');    % n_disp x nConds
+
+% Percentage change
+subjRates_pct_disp = subjRates_pct(:, disp_idx, :);
+grandMean_pct = squeeze(nanmean(subjRates_pct_disp, 1));                          % n_disp x nConds
+nValid_pct    = squeeze(sum(~isnan(subjRates_pct_disp(:, 1, :)), 1));             % nConds x 1
+grandSEM_pct  = squeeze(nanstd(subjRates_pct_disp, 0, 1)) ./ sqrt(nValid_pct');  % n_disp x nConds
+
+%% ================================================================
+%  FIGURE 1: Smoothed MS Rate Time Courses per Condition (raw Hz)
+%  ================================================================
+close all
+figure('Color', 'w', 'Position', [0 0 1512 982]);
+hold on
+
+% Per-condition lines with SEM shading
+h = gobjects(nConds, 1);
+for c = 1:nConds
+    mu  = grandMean(:, c);
+    sem = grandSEM(:, c);
+
+    % SEM ribbon (excluded from legend)
+    fill([t_vec, fliplr(t_vec)], ...
+         [(mu + sem)', fliplr((mu - sem)')], ...
+         colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
+         'HandleVisibility', 'off');
+
+    h(c) = plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
+end
+
+xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+xlim(t_win);
+xlabel('Time [s]');
+ylabel('Microsaccade Rate [Hz]');
+title('GCP — Microsaccade Rate Time Course');
+legend(h, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4);
+set(gca, 'FontSize', fontSize);
+hold off
+
+saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate.png'));
+
+%% ================================================================
+%  FIGURE 1b: Percentage-Change MS Rate Time Courses per Condition
+%  ================================================================
+figure('Color', 'w', 'Position', [0 0 1512 982]);
+hold on
+
+% Per-condition lines with SEM shading
+h_pct = gobjects(nConds, 1);
+for c = 1:nConds
+    mu  = grandMean_pct(:, c);
+    sem = grandSEM_pct(:, c);
+
+    % SEM ribbon
+    fill([t_vec, fliplr(t_vec)], ...
+         [(mu + sem)', fliplr((mu - sem)')], ...
+         colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
+         'HandleVisibility', 'off');
+
+    h_pct(c) = plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
+end
+
+xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
+xlim(t_win);
+xlabel('Time [s]');
+ylabel('Microsaccade Rate [% change]');
+title('GCP — Microsaccade Rate Time Course (Percentage Change)');
+legend(h_pct, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4);
+set(gca, 'FontSize', fontSize);
+hold off
+
+saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate_pct.png'));
+
+%% ================================================================
+%  FIGURE 2: Raster Plots per Condition
+%  ================================================================
+figure('Color', 'w', 'Position', [0 0 1512 982]);
+
+for c = 1:nConds
+    subplot(1, nConds, c);
+    hold on
+
+    raster = rasterAll{c};
+    if isempty(raster)
+        title(condLabels{c}, 'FontSize', fontSize);
+        continue
+    end
+
+    nR = size(raster, 1);
+
+    % Subsample if too many trials for readability
+    maxShow = 300;
+    if nR > maxShow
+        rIdx = sort(randperm(nR, maxShow));
+        raster = raster(rIdx, :);
+        nR = maxShow;
+    end
+
+    % Plot each microsaccade onset as a dot
+    nSampPlot = min(size(raster, 2), n_disp);
+    [trialIdx, sampleIdx] = find(raster(:, 1:nSampPlot));
+    if ~isempty(trialIdx)
+        plot(t_vec(sampleIdx), trialIdx, '.', ...
+            'Color', colors(c, :), 'MarkerSize', 12);
+    end
+
+    xline(0, 'k--', 'LineWidth', 1.5);
+    xlim(t_win);
+    ylim([0 nR + 1]);
+    xlabel('Time [s]');
+    if c == 1; ylabel('Trial'); end
+    title(condLabels{c}, 'FontSize', fontSize);
+    set(gca, 'FontSize', fontSize - 4, 'YDir', 'reverse');
+    hold off
+end
+
+sgtitle('GCP — Microsaccade Raster', 'FontSize', fontSize + 2);
+
+saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_raster.png'));
+
+%% ================================================================
+%  FIGURE 2b: Collapsed Raster (all conditions pooled)
+%  ================================================================
+figure('Color', 'w', 'Position', [0 0 1512 982]);
+hold on
+
+% Pool all conditions
+rasterPooled = [];
+for c = 1:nConds
+    if ~isempty(rasterAll{c})
+        rasterPooled = [rasterPooled; rasterAll{c}];
+    end
+end
+
+if ~isempty(rasterPooled)
+    nR = size(rasterPooled, 1);
+
+    % Subsample if too many trials
+    maxShow = 500;
+    if nR > maxShow
+        rIdx = sort(randperm(nR, maxShow));
+        rasterPooled = rasterPooled(rIdx, :);
+        nR = maxShow;
+    end
+
+    nSampPlot = min(size(rasterPooled, 2), n_disp);
+    [trialIdx, sampleIdx] = find(rasterPooled(:, 1:nSampPlot));
+    if ~isempty(trialIdx)
+        plot(t_vec(sampleIdx), trialIdx, '.', ...
+            'Color', [0.3 0.3 0.3], 'MarkerSize', 12);
+    end
+end
+
+xline(0, 'k--', 'LineWidth', 1.5);
+xlim(t_win);
+ylim([0 nR + 1]);
+xlabel('Time [s]');
+ylabel('Trial');
+title('GCP — Microsaccade Raster (All Conditions)');
+set(gca, 'FontSize', fontSize, 'YDir', 'reverse');
+hold off
+
+saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_raster_collapsed.png'));
+
+%% ================================================================
+%  FIGURE 3: Combined (Rate on top + Raster on bottom)
+%  ================================================================
+figure('Color', 'w', 'Position', [0 0 1512 982]);
+
+% --- Top panel: Smoothed rate ---
+ax1 = subplot(2, 1, 1);
+hold on
+for c = 1:nConds
+    mu  = grandMean(:, c);
+    sem = grandSEM(:, c);
+    fill([t_vec, fliplr(t_vec)], ...
+         [(mu + sem)', fliplr((mu - sem)')], ...
+         colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
+         'HandleVisibility', 'off');
+    plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
+end
+xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+xlim(t_win);
+ylabel('MS Rate [Hz]');
+title('GCP — Microsaccade Dynamics');
+legend(condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4);
+set(gca, 'FontSize', fontSize, 'XTickLabel', []);
+hold off
+
+% --- Bottom panel: Raster grouped by condition ---
+ax2 = subplot(2, 1, 2);
+hold on
+yOff      = 0;
+yTicks    = [];
+yTickLbls = {};
+
+for c = 1:nConds
+    raster = rasterAll{c};
+    if isempty(raster); continue; end
+
+    nR = min(size(raster, 1), 100);
+    raster = raster(1:nR, :);
+
+    nSampPlot = min(size(raster, 2), n_disp);
+    [trialIdx, sampleIdx] = find(raster(:, 1:nSampPlot));
+    if ~isempty(trialIdx)
+        plot(t_vec(sampleIdx), trialIdx + yOff, '.', ...
+            'Color', colors(c, :), 'MarkerSize', 12);
+    end
+
+    yTicks(end+1)    = yOff + nR / 2;
+    yTickLbls{end+1} = condLabels{c};
+    yOff = yOff + nR + 5;  % gap between conditions
+end
+
+xline(0, 'k--', 'LineWidth', 1.5);
+xlim(t_win);
+ylim([0 yOff]);
+xlabel('Time [s]');
+ylabel('Trials');
+set(gca, 'FontSize', fontSize, 'YDir', 'reverse', ...
+    'YTick', yTicks, 'YTickLabel', yTickLbls);
+hold off
+
+linkaxes([ax1, ax2], 'x');
+
+saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_combined.png'));
+
+%% ================================================================
+%  FIGURE 3b: Combined Percentage-Change (Rate on top + Raster on bottom)
+%  ================================================================
+figure('Color', 'w', 'Position', [0 0 1512 982]);
+
+% --- Top panel: Percentage-change rate ---
+ax1p = subplot(2, 1, 1);
+hold on
+for c = 1:nConds
+    mu  = grandMean_pct(:, c);
+    sem = grandSEM_pct(:, c);
+    fill([t_vec, fliplr(t_vec)], ...
+         [(mu + sem)', fliplr((mu - sem)')], ...
+         colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
+         'HandleVisibility', 'off');
+    plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
+end
+xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
+xlim(t_win);
+ylabel('MS Rate [% change]');
+title('GCP — Microsaccade Dynamics (Percentage Change)');
+legend(condLabels, 'Location', 'southeast', 'FontSize', fontSize - 4);
+set(gca, 'FontSize', fontSize, 'XTickLabel', []);
+hold off
+
+% --- Bottom panel: Raster grouped by condition ---
+ax2p = subplot(2, 1, 2);
+hold on
+yOff      = 0;
+yTicks    = [];
+yTickLbls = {};
+
+for c = 1:nConds
+    raster = rasterAll{c};
+    if isempty(raster); continue; end
+
+    nR = min(size(raster, 1), 100);
+    raster = raster(1:nR, :);
+
+    nSampPlot = min(size(raster, 2), n_disp);
+    [trialIdx, sampleIdx] = find(raster(:, 1:nSampPlot));
+    if ~isempty(trialIdx)
+        plot(t_vec(sampleIdx), trialIdx + yOff, '.', ...
+            'Color', colors(c, :), 'MarkerSize', 12);
+    end
+
+    yTicks(end+1)    = yOff + nR / 2;
+    yTickLbls{end+1} = condLabels{c};
+    yOff = yOff + nR + 5;
+end
+
+xline(0, 'k--', 'LineWidth', 1.5);
+xlim(t_win);
+ylim([0 yOff]);
+xlabel('Time [s]');
+ylabel('Trials');
+set(gca, 'FontSize', fontSize, 'YDir', 'reverse', ...
+    'YTick', yTicks, 'YTickLabel', yTickLbls);
+hold off
+
+linkaxes([ax1p, ax2p], 'x');
+
+saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_combined_pct.png'));
+
+fprintf('\n=== All figures saved to %s ===\n', figpath);

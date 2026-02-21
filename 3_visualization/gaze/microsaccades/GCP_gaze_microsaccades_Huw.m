@@ -47,22 +47,34 @@ gKernel    = exp(-x_kern.^2 / (2 * sigma_samp^2));
 gKernel    = gKernel / sum(gKernel);                 % normalise
 
 % Computation window (wider than display to avoid convolution edge effects)
-% Kernel half-width = 3*sigma = 150 ms; 500 ms padding per side is safe.
-t_comp     = [-1.0 2.5];                                % seconds
+% Kernel half-width = 3*sigma = 150 ms; padding per side must exceed this.
+% Must also cover the baseline period [-1.5, -0.25] for pct-change normalisation.
+t_comp     = [-2.0 2.5];                                % seconds
 n_comp     = round(diff(t_comp) * fsample) + 1;         % samples in computation window
 t_comp_vec = linspace(t_comp(1), t_comp(2), n_comp);    % computation time axis
 
+% Storage window (includes baseline + display, edge-effect-free)
+t_store = [-1.5 2];                                      % seconds
+[~, store_start] = min(abs(t_comp_vec - t_store(1)));
+[~, store_end]   = min(abs(t_comp_vec - t_store(2)));
+store_idx  = store_start : store_end;
+n_store    = length(store_idx);
+t_store_vec = t_comp_vec(store_idx);
+
 % Display time window (what is shown in figures)
 t_win = [-0.5 2];                                        % seconds
-[~, crop_start] = min(abs(t_comp_vec - t_win(1)));
-[~, crop_end]   = min(abs(t_comp_vec - t_win(2)));
-crop_idx = crop_start : crop_end;
-n_samp   = length(crop_idx);
-t_vec    = t_comp_vec(crop_idx);                         % display time axis
+disp_idx = t_store_vec >= t_win(1) & t_store_vec <= t_win(2);  % logical into t_store_vec
+n_disp   = sum(disp_idx);
+t_vec    = t_store_vec(disp_idx);                        % display time axis
 
-% Baseline period for percentage-change normalisation
-bl_win = [-0.5 0];                                       % seconds (pre-stimulus)
-bl_idx = t_vec >= bl_win(1) & t_vec <= bl_win(2);       % logical index into t_vec
+% Raster crop: indices in t_comp_vec corresponding to display window
+[~, raster_crop_start] = min(abs(t_comp_vec - t_win(1)));
+[~, raster_crop_end]   = min(abs(t_comp_vec - t_win(2)));
+raster_crop_idx = raster_crop_start : raster_crop_end;
+
+% Baseline period for percentage-change normalisation (matches GCP_gaze_fex.m)
+bl_win = [-1.5 -0.25];                                  % seconds
+bl_idx = t_store_vec >= bl_win(1) & t_store_vec <= bl_win(2);  % logical into t_store_vec
 
 % Plotting
 fontSize = 20;
@@ -77,8 +89,8 @@ nConds     = length(condFields);
 %  ====================================================================
 fprintf('\n=== Processing GCP Contrast Conditions ===\n');
 
-% Preallocate: subjects x timepoints x conditions
-subjRates = nan(nSubj, n_samp, nConds);
+% Preallocate: subjects x timepoints (storage window) x conditions
+subjRates = nan(nSubj, n_store, nConds);
 rasterAll = cell(nConds, 1);
 
 for subj = 1:nSubj
@@ -151,24 +163,20 @@ for subj = 1:nSubj
             % Smooth with Gaussian kernel (over full computation window)
             smoothed = conv(rate, gKernel, 'same');
 
-            % Crop to display window (edge-effect-free)
-            subjRates(subj, :, c) = smoothed(crop_idx);
+            % Crop to storage window (baseline + display, edge-effect-free)
+            subjRates(subj, :, c) = smoothed(store_idx);
 
-            % Accumulate rasters (cropped to display window)
-            rasterAll{c} = [rasterAll{c}; condSpikes(:, crop_idx)];
+            % Accumulate rasters (cropped to display window only)
+            rasterAll{c} = [rasterAll{c}; condSpikes(:, raster_crop_idx)];
         end
     end
 
     clear S et
 end
 
-%% Grand averages across subjects (raw Hz)
-grandMean = squeeze(nanmean(subjRates, 1));                        % n_samp x nConds
-nValid    = squeeze(sum(~isnan(subjRates(:, 1, :)), 1));           % nConds x 1
-grandSEM  = squeeze(nanstd(subjRates, 0, 1)) ./ sqrt(nValid');    % n_samp x nConds
-grandAll  = nanmean(grandMean, 2);                                 % grand avg across conditions
-
 %% Percentage-change baseline normalisation (per subject, per condition)
+% Baseline is computed over [-1.5, -0.25] within the storage window,
+% then the display portion [-0.5, 2] is extracted for plotting.
 subjRates_pct = nan(size(subjRates));
 for subj = 1:nSubj
     for c = 1:nConds
@@ -180,15 +188,23 @@ for subj = 1:nSubj
     end
 end
 
-% Grand averages (percentage change)
-grandMean_pct = squeeze(nanmean(subjRates_pct, 1));                          % n_samp x nConds
-nValid_pct    = squeeze(sum(~isnan(subjRates_pct(:, 1, :)), 1));             % nConds x 1
-grandSEM_pct  = squeeze(nanstd(subjRates_pct, 0, 1)) ./ sqrt(nValid_pct');  % n_samp x nConds
-grandAll_pct  = nanmean(grandMean_pct, 2);                                   % grand avg across conditions
+%% Grand averages — display portion only (for plotting)
+% Raw Hz
+subjRates_disp = subjRates(:, disp_idx, :);
+grandMean = squeeze(nanmean(subjRates_disp, 1));                        % n_disp x nConds
+nValid    = squeeze(sum(~isnan(subjRates_disp(:, 1, :)), 1));           % nConds x 1
+grandSEM  = squeeze(nanstd(subjRates_disp, 0, 1)) ./ sqrt(nValid');    % n_disp x nConds
+
+% Percentage change
+subjRates_pct_disp = subjRates_pct(:, disp_idx, :);
+grandMean_pct = squeeze(nanmean(subjRates_pct_disp, 1));                          % n_disp x nConds
+nValid_pct    = squeeze(sum(~isnan(subjRates_pct_disp(:, 1, :)), 1));             % nConds x 1
+grandSEM_pct  = squeeze(nanstd(subjRates_pct_disp, 0, 1)) ./ sqrt(nValid_pct');  % n_disp x nConds
 
 %% ================================================================
 %  FIGURE 1: Smoothed MS Rate Time Courses per Condition (raw Hz)
 %  ================================================================
+close all
 figure('Color', 'w', 'Position', [0 0 1512 982]);
 hold on
 
@@ -277,7 +293,7 @@ for c = 1:nConds
     end
 
     % Plot each microsaccade onset as a dot
-    nSampPlot = min(size(raster, 2), n_samp);
+    nSampPlot = min(size(raster, 2), n_disp);
     [trialIdx, sampleIdx] = find(raster(:, 1:nSampPlot));
     if ~isempty(trialIdx)
         plot(t_vec(sampleIdx), trialIdx, '.', ...
@@ -323,7 +339,7 @@ if ~isempty(rasterPooled)
         nR = maxShow;
     end
 
-    nSampPlot = min(size(rasterPooled, 2), n_samp);
+    nSampPlot = min(size(rasterPooled, 2), n_disp);
     [trialIdx, sampleIdx] = find(rasterPooled(:, 1:nSampPlot));
     if ~isempty(trialIdx)
         plot(t_vec(sampleIdx), trialIdx, '.', ...
@@ -381,7 +397,7 @@ for c = 1:nConds
     nR = min(size(raster, 1), 100);
     raster = raster(1:nR, :);
 
-    nSampPlot = min(size(raster, 2), n_samp);
+    nSampPlot = min(size(raster, 2), n_disp);
     [trialIdx, sampleIdx] = find(raster(:, 1:nSampPlot));
     if ~isempty(trialIdx)
         plot(t_vec(sampleIdx), trialIdx + yOff, '.', ...
@@ -446,7 +462,7 @@ for c = 1:nConds
     nR = min(size(raster, 1), 100);
     raster = raster(1:nR, :);
 
-    nSampPlot = min(size(raster, 2), n_samp);
+    nSampPlot = min(size(raster, 2), n_disp);
     [trialIdx, sampleIdx] = find(raster(:, 1:nSampPlot));
     if ~isempty(trialIdx)
         plot(t_vec(sampleIdx), trialIdx + yOff, '.', ...
