@@ -267,16 +267,45 @@ for subj = 1:nSubj
             % 2+ peaks: find tallest in each sub-range (overlapping middle)
             in_lo = locs_pos >= 30 & locs_pos <= 55;
             in_hi = locs_pos >= 50 & locs_pos <= 85;
+            lo_freq = NaN; hi_freq = NaN;
             if any(in_lo)
                 [~, bi] = max(pks_pos(in_lo));
                 tmp = locs_pos(in_lo);
-                all_peak_low(cond, subj) = tmp(bi);
+                lo_freq = tmp(bi);
             end
             if any(in_hi)
                 [~, bi] = max(pks_pos(in_hi));
                 tmp = locs_pos(in_hi);
-                all_peak_high(cond, subj) = tmp(bi);
+                hi_freq = tmp(bi);
             end
+            % If both picked the same overlap-zone peak, try to spread out
+            if ~isnan(lo_freq) && ~isnan(hi_freq) && lo_freq == hi_freq
+                lo_pks = pks_pos(in_lo);
+                lo_lcs = locs_pos(in_lo);
+                hi_pks = pks_pos(in_hi);
+                hi_lcs = locs_pos(in_hi);
+                alt_lo_mask = lo_lcs ~= lo_freq;
+                alt_hi_mask = hi_lcs ~= hi_freq;
+                has_alt_lo = any(alt_lo_mask);
+                has_alt_hi = any(alt_hi_mask);
+                if has_alt_lo && has_alt_hi
+                    % Alternatives on both sides: keep shared for high,
+                    % use best alternative for low
+                    [~, ai] = max(lo_pks(alt_lo_mask));
+                    tmp2 = lo_lcs(alt_lo_mask);
+                    lo_freq = tmp2(ai);
+                elseif has_alt_lo
+                    [~, ai] = max(lo_pks(alt_lo_mask));
+                    tmp2 = lo_lcs(alt_lo_mask);
+                    lo_freq = tmp2(ai);
+                elseif has_alt_hi
+                    [~, ai] = max(hi_pks(alt_hi_mask));
+                    tmp2 = hi_lcs(alt_hi_mask);
+                    hi_freq = tmp2(ai);
+                end
+            end
+            all_peak_low(cond, subj)  = lo_freq;
+            all_peak_high(cond, subj) = hi_freq;
         elseif nPosPeaks == 1
             % Single peak: assign based on middle margin (45-65 Hz)
             the_peak = locs_pos(1);
@@ -443,10 +472,19 @@ for subj = 1:nSubj
         if ~isempty(all_powratio_dt{cond, subj})
             plot(scan_freqs, movmean(all_powratio_dt{cond, subj}, 5), '-', ...
                 'Color', colors(cond,:), 'LineWidth', 2.5);
-            xline(all_scan_peakfreq(cond, subj), '--', 'Color', colors(cond,:), 'LineWidth', 1.5);
+            pf_lo = all_peak_low(cond, subj);
+            pf_hi = all_peak_high(cond, subj);
+            if ~isnan(pf_lo)
+                xline(pf_lo, '--', 'Color', [0 0 0.7], 'LineWidth', 1.2);
+            end
+            if ~isnan(pf_hi)
+                xline(pf_hi, '--', 'Color', [0.7 0 0], 'LineWidth', 1.2);
+            end
         end
     end
     yline(0, 'k-', 'LineWidth', 0.5);
+    xline(50, 'k:', 'LineWidth', 0.8, 'Alpha', 0.4);
+    xline(55, 'k:', 'LineWidth', 0.8, 'Alpha', 0.4);
     xlabel('Freq [Hz]'); ylabel('\Delta PR (detrended)');
     title('All Conditions (Same Spatial Filter)', 'FontSize', 14);
     legend(condLabels, 'FontSize', 11, 'Location', 'best');
