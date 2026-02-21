@@ -15,7 +15,7 @@
 %   1. Single peak — tallest peak in the full detrended spectrum
 %   2. Dual peak   — assuming low + high gamma sub-bands:
 %                     low gamma peak  (30-55 Hz)
-%                     high gamma peak (50-75 Hz)
+%                     high gamma peak (50-85 Hz)
 %                     overlap at 50-55 Hz so mid-range peaks count for both
 
 clear; close all; clc
@@ -65,7 +65,7 @@ all_scan_peakpow  = nan(4, nSubj);   % peak value (detrended)
 
 % Dual-peak model (low + high gamma)
 all_peak_low     = nan(4, nSubj);  % low gamma peak  (30-55 Hz)
-all_peak_high    = nan(4, nSubj);  % high gamma peak (50-75 Hz)
+all_peak_high    = nan(4, nSubj);  % high gamma peak (50-85 Hz)
 
 % Common filter info (one per subject)
 all_topos          = cell(1, nSubj);
@@ -266,7 +266,7 @@ for subj = 1:nSubj
         if nPosPeaks >= 2
             % 2+ peaks: find tallest in each sub-range (overlapping middle)
             in_lo = locs_pos >= 30 & locs_pos <= 55;
-            in_hi = locs_pos >= 50 & locs_pos <= 75;
+            in_hi = locs_pos >= 50 & locs_pos <= 85;
             if any(in_lo)
                 [~, bi] = max(pks_pos(in_lo));
                 tmp = locs_pos(in_lo);
