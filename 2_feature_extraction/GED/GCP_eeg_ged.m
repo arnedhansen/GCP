@@ -10,15 +10,12 @@
 %     bandpass filter, project through common filter, compute stimulus vs.
 %     baseline power ratio
 %   - Detrend the power-ratio spectrum (2nd-order polynomial)
-%   - Peak of detrended spectrum = individual gamma peak frequency
 %
-% Multiple peak detection strategies are compared:
-%   1. Original   — tallest peak in full 30-90 Hz range
-%   2. Prominence — most prominent peak (broadest bump)
-%   3. Consistency — cross-condition median constraint (re-pick outliers)
-%   4. Adaptive   — restrict search to center-of-mass ± 15 Hz
-%   5. Hard range — restrict search to 45-75 Hz
-%   6. Combo      — prominence + consistency
+% Two peak detection approaches:
+%   1. Single peak — tallest peak in the full detrended spectrum
+%   2. Dual peak   — assuming low + high gamma sub-bands:
+%                     low gamma peak  (30-55 Hz)
+%                     high gamma peak (55-80 Hz)
 
 clear; close all; clc
 
@@ -65,12 +62,9 @@ all_powratio_dt   = cell(4, nSubj);  % detrended power-ratio spectrum
 all_scan_peakfreq = nan(4, nSubj);   % peak freq from detrended spectrum
 all_scan_peakpow  = nan(4, nSubj);   % peak value (detrended)
 
-% Alternative peak detection methods
-all_peak_prom    = nan(4, nSubj);  % most prominent peak
-all_peak_consist = nan(4, nSubj);  % cross-condition consistency
-all_peak_adapt   = nan(4, nSubj);  % adaptive range (center-of-mass ± 15 Hz)
-all_peak_hard    = nan(4, nSubj);  % hard range 45-75 Hz
-all_peak_combo   = nan(4, nSubj);  % prominence + consistency
+% Dual-peak model (low + high gamma)
+all_peak_low     = nan(4, nSubj);  % low gamma peak (30-55 Hz)
+all_peak_high    = nan(4, nSubj);  % high gamma peak (55-80 Hz)
 
 % Common filter info (one per subject)
 all_topos          = cell(1, nSubj);
@@ -259,51 +253,30 @@ for subj = 1:nSubj
         all_scan_peakfreq(cond, subj) = scan_peak_freq;
         all_scan_peakpow(cond, subj)  = scan_peak_pow;
 
-        %% --- Prominence-based peak ---
-        [pks_p, locs_p, ~, proms_p] = findpeaks(powratio_dt_smooth, scan_freqs, ...
-            'MinPeakDistance', 5);
-        if ~isempty(pks_p)
-            [~, best_prom] = max(proms_p);
-            all_peak_prom(cond, subj) = locs_p(best_prom);
-        else
-            [~, mi] = max(powratio_dt_smooth);
-            all_peak_prom(cond, subj) = scan_freqs(mi);
+        %% --- Dual-peak model: low gamma (30-55 Hz) + high gamma (55-80 Hz) ---
+        % Only assign a peak if there is a genuine positive bump in that range
+        lo_mask = scan_freqs >= 30 & scan_freqs <= 55;
+        [pks_lo, locs_lo] = findpeaks(powratio_dt_smooth(lo_mask), ...
+            scan_freqs(lo_mask), 'MinPeakDistance', 5);
+        if ~isempty(pks_lo)
+            pos_lo = pks_lo > 0;
+            if any(pos_lo)
+                [~, best_lo] = max(pks_lo(pos_lo));
+                locs_pos = locs_lo(pos_lo);
+                all_peak_low(cond, subj) = locs_pos(best_lo);
+            end
         end
 
-        %% --- Adaptive range peak (center-of-mass ± 15 Hz) ---
-        dt_pos = max(powratio_dt_smooth, 0);
-        if sum(dt_pos) > 0
-            com = sum(scan_freqs .* dt_pos) / sum(dt_pos);
-        else
-            com = 60;
-        end
-        adapt_lo = max(com - 15, scan_freqs(1));
-        adapt_hi = min(com + 15, scan_freqs(end));
-        adapt_mask = scan_freqs >= adapt_lo & scan_freqs <= adapt_hi;
-        [pks_a, locs_a] = findpeaks(powratio_dt_smooth(adapt_mask), ...
-            scan_freqs(adapt_mask), 'MinPeakDistance', 5);
-        if ~isempty(pks_a)
-            [~, best_a] = max(pks_a);
-            all_peak_adapt(cond, subj) = locs_a(best_a);
-        else
-            sub_smooth = powratio_dt_smooth(adapt_mask);
-            sub_freqs  = scan_freqs(adapt_mask);
-            [~, mi] = max(sub_smooth);
-            all_peak_adapt(cond, subj) = sub_freqs(mi);
-        end
-
-        %% --- Hard range peak (45-75 Hz) ---
-        hard_mask = scan_freqs >= 45 & scan_freqs <= 75;
-        [pks_h, locs_h] = findpeaks(powratio_dt_smooth(hard_mask), ...
-            scan_freqs(hard_mask), 'MinPeakDistance', 5);
-        if ~isempty(pks_h)
-            [~, best_h] = max(pks_h);
-            all_peak_hard(cond, subj) = locs_h(best_h);
-        else
-            sub_smooth = powratio_dt_smooth(hard_mask);
-            sub_freqs  = scan_freqs(hard_mask);
-            [~, mi] = max(sub_smooth);
-            all_peak_hard(cond, subj) = sub_freqs(mi);
+        hi_mask = scan_freqs >= 55 & scan_freqs <= 80;
+        [pks_hi, locs_hi] = findpeaks(powratio_dt_smooth(hi_mask), ...
+            scan_freqs(hi_mask), 'MinPeakDistance', 5);
+        if ~isempty(pks_hi)
+            pos_hi = pks_hi > 0;
+            if any(pos_hi)
+                [~, best_hi] = max(pks_hi(pos_hi));
+                locs_pos = locs_hi(pos_hi);
+                all_peak_high(cond, subj) = locs_pos(best_hi);
+            end
         end
 
         %% ============================================================
@@ -353,56 +326,12 @@ for subj = 1:nSubj
     end % condition loop
 
     %% ================================================================
-    %  Cross-condition consistency peaks (require all 4 conditions)
-    %  ================================================================
-    % --- Consistency (based on original peaks) ---
-    orig_peaks = all_scan_peakfreq(:, subj);
-    med_orig = nanmedian(orig_peaks);
-    all_peak_consist(:, subj) = orig_peaks;
-    for cond = 1:4
-        if isnan(orig_peaks(cond)), continue; end
-        if abs(orig_peaks(cond) - med_orig) > 10
-            dt_s = movmean(all_powratio_dt{cond, subj}, 5);
-            [pks_c, locs_c] = findpeaks(dt_s, scan_freqs, 'MinPeakDistance', 5);
-            if ~isempty(pks_c)
-                [~, closest] = min(abs(locs_c - med_orig));
-                all_peak_consist(cond, subj) = locs_c(closest);
-            end
-        end
-    end
-
-    % --- Combo (prominence + consistency) ---
-    prom_peaks = all_peak_prom(:, subj);
-    med_prom = nanmedian(prom_peaks);
-    all_peak_combo(:, subj) = prom_peaks;
-    for cond = 1:4
-        if isnan(prom_peaks(cond)), continue; end
-        if abs(prom_peaks(cond) - med_prom) > 10
-            dt_s = movmean(all_powratio_dt{cond, subj}, 5);
-            [~, locs_cb, ~, proms_cb] = findpeaks(dt_s, scan_freqs, 'MinPeakDistance', 5);
-            if ~isempty(locs_cb)
-                [~, closest] = min(abs(locs_cb - med_prom));
-                all_peak_combo(cond, subj) = locs_cb(closest);
-            end
-        end
-    end
-
-    %% ================================================================
     %  PER-SUBJECT FIGURE (3 rows × 4 columns)
     %  ================================================================
     close all
     fig = figure('Position', [0 0 1512 982], 'Color', 'w');
     sgtitle(sprintf('GED Gamma (Common Filter): Subject %s', subjects{subj}), ...
         'FontSize', 20, 'FontWeight', 'bold');
-
-    % Method names, peak matrices, and line styles for overlay
-    method_names  = {'Original', 'Prominence', 'Consistency', 'Adaptive', 'Hard 45-75', 'Combo'};
-    method_peaks  = [all_scan_peakfreq(:,subj), all_peak_prom(:,subj), ...
-                     all_peak_consist(:,subj), all_peak_adapt(:,subj), ...
-                     all_peak_hard(:,subj), all_peak_combo(:,subj)];
-    method_styles = {'-', '--', ':', '-.', '-', '--'};
-    method_widths = [2.0, 1.8, 1.8, 1.8, 1.5, 2.0];
-    method_colors = [0 0 0; 0.8 0 0; 0 0 0.8; 0 0.6 0; 0.6 0.3 0; 0.5 0 0.5];
 
     % --- Row 1: Raw power-ratio spectra ---
     for cond = 1:4
@@ -420,53 +349,55 @@ for subj = 1:nSubj
         set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
     end
 
-    % --- Row 2: Detrended spectra with all 6 peak markers ---
+    % --- Row 2: Detrended with single peak ---
     for cond = 1:4
         subplot(3, 4, 4 + cond); hold on;
         if ~isempty(all_powratio_dt{cond, subj})
+            plot(scan_freqs, all_powratio_dt{cond, subj}, '-', ...
+                'Color', [0.7 0.7 0.7], 'LineWidth', 1);
             plot(scan_freqs, movmean(all_powratio_dt{cond, subj}, 5), '-', ...
                 'Color', colors(cond,:), 'LineWidth', 2.5);
             yline(0, 'k-', 'LineWidth', 0.5);
-            yl = ylim;
-            for m = 1:6
-                pf = method_peaks(cond, m);
-                if ~isnan(pf)
-                    xline(pf, method_styles{m}, 'LineWidth', method_widths(m), ...
-                        'Color', method_colors(m,:));
-                end
-            end
-            ylim(yl);
+            xline(all_scan_peakfreq(cond, subj), '--', 'LineWidth', 2, ...
+                'Color', colors(cond,:));
+            text(all_scan_peakfreq(cond, subj) + 1, ...
+                max(all_powratio_dt{cond, subj}) * 0.9, ...
+                sprintf('%.0f Hz', all_scan_peakfreq(cond, subj)), ...
+                'FontSize', 12, 'Color', colors(cond,:), 'FontWeight', 'bold');
         end
         xlabel('Freq [Hz]'); ylabel('\Delta PR');
-        title(sprintf('%s Detrended', condLabels{cond}), 'FontSize', 12);
-        set(gca, 'FontSize', 10); xlim([30 90]); grid on; box on;
-        if cond == 4
-            hl = gobjects(1, 6);
-            for m = 1:6
-                hl(m) = plot(NaN, NaN, method_styles{m}, 'Color', method_colors(m,:), ...
-                    'LineWidth', method_widths(m));
-            end
-            legend(hl, method_names, 'FontSize', 7, 'Location', 'best');
-        end
+        title(sprintf('%s Single Peak', condLabels{cond}), 'FontSize', 12);
+        set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
     end
 
-    % --- Row 3: All conditions overlaid, one subplot per method ---
-    for m = 1:6
-        subplot(3, 6, 12 + m); hold on;
-        for cond = 1:4
-            if ~isempty(all_powratio_dt{cond, subj})
-                plot(scan_freqs, movmean(all_powratio_dt{cond, subj}, 5), '-', ...
-                    'Color', colors(cond,:), 'LineWidth', 2);
-                pf = method_peaks(cond, m);
-                if ~isnan(pf)
-                    xline(pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.2);
-                end
+    % --- Row 3: Detrended with low + high gamma peaks ---
+    for cond = 1:4
+        subplot(3, 4, 8 + cond); hold on;
+        if ~isempty(all_powratio_dt{cond, subj})
+            plot(scan_freqs, all_powratio_dt{cond, subj}, '-', ...
+                'Color', [0.7 0.7 0.7], 'LineWidth', 1);
+            plot(scan_freqs, movmean(all_powratio_dt{cond, subj}, 5), '-', ...
+                'Color', colors(cond,:), 'LineWidth', 2.5);
+            yline(0, 'k-', 'LineWidth', 0.5);
+            xline(55, 'k:', 'LineWidth', 1);
+            pf_lo = all_peak_low(cond, subj);
+            pf_hi = all_peak_high(cond, subj);
+            if ~isnan(pf_lo)
+                xline(pf_lo, '--', 'LineWidth', 2, 'Color', [0 0 0.7]);
+                text(pf_lo + 1, max(all_powratio_dt{cond, subj}) * 0.85, ...
+                    sprintf('L:%.0f', pf_lo), 'FontSize', 10, ...
+                    'Color', [0 0 0.7], 'FontWeight', 'bold');
+            end
+            if ~isnan(pf_hi)
+                xline(pf_hi, '--', 'LineWidth', 2, 'Color', [0.7 0 0]);
+                text(pf_hi + 1, max(all_powratio_dt{cond, subj}) * 0.7, ...
+                    sprintf('H:%.0f', pf_hi), 'FontSize', 10, ...
+                    'Color', [0.7 0 0], 'FontWeight', 'bold');
             end
         end
-        yline(0, 'k-', 'LineWidth', 0.5);
-        xlabel('Hz'); ylabel('\Delta PR');
-        title(method_names{m}, 'FontSize', 10);
-        set(gca, 'FontSize', 9); xlim([30 90]); grid on; box on;
+        xlabel('Freq [Hz]'); ylabel('\Delta PR');
+        title(sprintf('%s Dual Peak', condLabels{cond}), 'FontSize', 12);
+        set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
     end
 
     saveas(fig, fullfile(fig_save_dir, sprintf('GED_scan_subj%s.png', subjects{subj})));
@@ -581,14 +512,13 @@ end
 saveas(fig_all, fullfile(fig_save_dir, 'GED_scan_all_subjects.png'));
 
 %% ====================================================================
-%  BOXPLOT FIGURES: One per peak detection method
+%  BOXPLOT FIGURES: Single peak, Low gamma, High gamma
 %  ====================================================================
-box_method_names = {'Original', 'Prominence', 'Consistency', 'Adaptive', 'HardRange', 'Combo'};
-box_method_data  = {all_scan_peakfreq, all_peak_prom, all_peak_consist, ...
-                    all_peak_adapt, all_peak_hard, all_peak_combo};
-box_file_tags    = {'Original', 'Prominence', 'Consistency', 'Adaptive', 'HardRange', 'Combo'};
+box_method_names = {'Single Peak', 'Low Gamma (30-55 Hz)', 'High Gamma (55-80 Hz)'};
+box_method_data  = {all_scan_peakfreq, all_peak_low, all_peak_high};
+box_file_tags    = {'SinglePeak', 'LowGamma', 'HighGamma'};
 
-for mi = 1:6
+for mi = 1:3
     fig_box = figure('Position', [0 0 1200 982], 'Color', 'w');
     hold on;
 
@@ -700,7 +630,7 @@ end
 save(save_path, ...
     'all_powratio', 'all_powratio_dt', 'all_topos', 'all_eigenvalues', ...
     'all_scan_peakfreq', 'all_scan_peakpow', ...
-    'all_peak_prom', 'all_peak_consist', 'all_peak_adapt', 'all_peak_hard', 'all_peak_combo', ...
+    'all_peak_low', 'all_peak_high', ...
     'all_powspec_stim', 'all_powspec_base', 'all_powspec_diff', 'all_powspec_freqs', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
