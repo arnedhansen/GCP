@@ -65,8 +65,10 @@ all_scan_peakpow  = nan(4, nSubj);   % peak value (detrended)
 % Method 2: Frequency sliding (through common filter)
 all_fs_hist_freqs  = cell(4, nSubj);
 all_fs_hist_counts = cell(4, nSubj);
-all_fs_peakfreq    = nan(4, nSubj);
+all_fs_peakfreq    = nan(4, nSubj);   % mode of unweighted IF
 all_fs_median      = nan(4, nSubj);
+all_fs_wt_mean     = nan(4, nSubj);   % amplitude-weighted mean IF
+all_fs_wt_peak     = nan(4, nSubj);   % mode of amplitude-weighted IF histogram
 
 % Common filter info (one per subject)
 all_topos          = cell(1, nSubj);
@@ -258,11 +260,13 @@ for subj = 1:nSubj
         %% ============================================================
         %  METHOD 2: Frequency Sliding through common filter
         %  ============================================================
+        % Narrower bandpass (35-75 Hz) to reduce bias toward band center
+        fs_range = [40, 80];
         cfg_broad = [];
         cfg_broad.bpfilter   = 'yes';
-        cfg_broad.bpfreq     = gamma_range;
+        cfg_broad.bpfreq     = fs_range;
         cfg_broad.bpfilttype = 'fir';
-        cfg_broad.bpfiltord  = round(3 * fsample / gamma_range(1));
+        cfg_broad.bpfiltord  = round(3 * fsample / fs_range(1));
         dat_broad = ft_preprocessing(cfg_broad, dat);
 
         cfg_t = [];
@@ -270,28 +274,47 @@ for subj = 1:nSubj
         dat_stim_broad = ft_selectdata(cfg_t, dat_broad);
 
         all_inst_freq = [];
+        all_inst_amp  = [];
         for trl = 1:length(dat_stim_broad.trial)
             comp_ts = topComp' * double(dat_stim_broad.trial{trl});
             analytic = hilbert(comp_ts);
             phase_angles = angle(analytic);
+            inst_amp  = abs(analytic);
             dphi = diff(unwrap(phase_angles));
             inst_freq = dphi * fsample / (2 * pi);
             inst_freq = medfilt1(inst_freq, 10);
-            valid = inst_freq >= gamma_range(1) & inst_freq <= gamma_range(2);
+            inst_amp  = inst_amp(1:end-1);
+            valid = inst_freq >= fs_range(1) & inst_freq <= fs_range(2);
             all_inst_freq = [all_inst_freq, inst_freq(valid)];
+            all_inst_amp  = [all_inst_amp,  inst_amp(valid)];
         end
 
-        bin_edges   = gamma_range(1):1:gamma_range(2);
+        bin_edges   = fs_range(1):1:fs_range(2);
         bin_centers = bin_edges(1:end-1) + 0.5;
         counts = histcounts(all_inst_freq, bin_edges);
         counts = counts / sum(counts);
 
+        % Amplitude-weighted histogram
+        counts_wt = zeros(size(bin_centers));
+        for bi = 1:length(bin_centers)
+            in_bin = all_inst_freq >= bin_edges(bi) & all_inst_freq < bin_edges(bi+1);
+            counts_wt(bi) = sum(all_inst_amp(in_bin));
+        end
+        if sum(counts_wt) > 0
+            counts_wt = counts_wt / sum(counts_wt);
+        end
+
         all_fs_hist_freqs{cond, subj}  = bin_centers;
-        all_fs_hist_counts{cond, subj} = counts;
+        all_fs_hist_counts{cond, subj} = counts_wt;
 
         [~, mode_idx] = max(counts);
         all_fs_peakfreq(cond, subj) = bin_centers(mode_idx);
         all_fs_median(cond, subj)   = median(all_inst_freq);
+
+        % Amplitude-weighted mean and peak
+        all_fs_wt_mean(cond, subj) = sum(all_inst_freq .* all_inst_amp) / sum(all_inst_amp);
+        [~, wt_mode_idx] = max(counts_wt);
+        all_fs_wt_peak(cond, subj) = bin_centers(wt_mode_idx);
 
         %% ============================================================
         %  GED Component Power Spectrum (through common filter)
@@ -384,20 +407,20 @@ for subj = 1:nSubj
         set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
     end
 
-    % --- Row 3: Frequency sliding distributions (Method 2) ---
+    % --- Row 3: Amplitude-weighted frequency sliding distributions (Method 2) ---
     for cond = 1:4
         subplot(4, 4, 8 + cond); hold on;
         if ~isempty(all_fs_hist_counts{cond, subj})
             bar(all_fs_hist_freqs{cond, subj}, all_fs_hist_counts{cond, subj}, 1, ...
                 'FaceColor', colors(cond,:), 'FaceAlpha', 0.6, 'EdgeColor', 'none');
-            xline(all_fs_peakfreq(cond, subj), '--', 'LineWidth', 2, ...
+            xline(all_fs_wt_peak(cond, subj), '--', 'LineWidth', 2, ...
                 'Color', colors(cond,:));
-            text(all_fs_peakfreq(cond, subj) + 1, ...
+            text(all_fs_wt_peak(cond, subj) + 1, ...
                 max(all_fs_hist_counts{cond, subj}) * 0.9, ...
-                sprintf('%.0f Hz', all_fs_peakfreq(cond, subj)), ...
+                sprintf('%.0f Hz', all_fs_wt_peak(cond, subj)), ...
                 'FontSize', 12, 'Color', colors(cond,:), 'FontWeight', 'bold');
         end
-        xlabel('Freq [Hz]'); ylabel('P(f)');
+        xlabel('Freq [Hz]'); ylabel('P(f) [amp-wt]');
         title(sprintf('%s Freq Sliding', condLabels{cond}), 'FontSize', 12);
         set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
     end
@@ -523,22 +546,22 @@ ylabel('Peak Gamma Frequency [Hz]');
 title('Individual Peak Frequencies (Power Scanning)', 'FontSize', 14);
 ylim([30 90]); grid on; box on;
 
-% --- Bottom right: Peak frequency scatter (Freq Sliding) ---
+% --- Bottom right: Peak frequency scatter (Freq Sliding, amp-weighted) ---
 subplot(2, 2, 4); hold on;
 for cond = 1:4
-    pf = all_fs_peakfreq(cond, :);
+    pf = all_fs_wt_peak(cond, :);
     pf = pf(~isnan(pf));
     scatter(ones(size(pf)) * cond + 0.15*(rand(size(pf))-0.5), pf, ...
         60, colors(cond,:), 'filled', 'MarkerFaceAlpha', 0.6);
-    mu_pf  = nanmean(all_fs_peakfreq(cond,:));
-    sem_pf = nanstd(all_fs_peakfreq(cond,:)) / sqrt(sum(~isnan(all_fs_peakfreq(cond,:))));
+    mu_pf  = nanmean(all_fs_wt_peak(cond,:));
+    sem_pf = nanstd(all_fs_wt_peak(cond,:)) / sqrt(sum(~isnan(all_fs_wt_peak(cond,:))));
     errorbar(cond, mu_pf, sem_pf, 'k', 'LineWidth', 2, 'CapSize', 10);
     plot(cond, mu_pf, 'kd', 'MarkerSize', 12, ...
         'MarkerFaceColor', colors(cond,:), 'LineWidth', 1.5);
 end
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13);
 ylabel('Peak Gamma Frequency [Hz]');
-title('Individual Peak Frequencies (Freq Sliding)', 'FontSize', 14);
+title('Individual Peak Frequencies (Freq Sliding, Amp-Wt)', 'FontSize', 14);
 ylim([30 90]); grid on; box on;
 
 saveas(fig_ga1, fullfile(fig_save_dir, 'GED_scan_grand_average.png'));
@@ -553,10 +576,10 @@ sgtitle(sprintf('Method Comparison: Power Scanning vs Frequency Sliding (N=%d)',
 % --- Left: Correlation between methods ---
 subplot(1, 2, 1); hold on;
 all_scan_flat = all_scan_peakfreq(:);
-all_fs_flat   = all_fs_peakfreq(:);
+all_fs_flat   = all_fs_wt_peak(:);
 valid = ~isnan(all_scan_flat) & ~isnan(all_fs_flat);
 for cond = 1:4
-    scatter(all_scan_peakfreq(cond,:), all_fs_peakfreq(cond,:), ...
+    scatter(all_scan_peakfreq(cond,:), all_fs_wt_peak(cond,:), ...
         80, colors(cond,:), 'filled', 'MarkerFaceAlpha', 0.7);
 end
 plot([30 90], [30 90], 'k--', 'LineWidth', 1.5);
@@ -564,15 +587,15 @@ if sum(valid) > 2
     [r, p_val] = corr(all_scan_flat(valid), all_fs_flat(valid), 'type', 'Spearman');
     text(32, 85, sprintf('r_s = %.2f, p = %.3f', r, p_val), 'FontSize', 14);
 end
-xlabel('Power Scanning Peak [Hz]'); ylabel('Freq Sliding Peak [Hz]');
+xlabel('Power Scanning Peak [Hz]'); ylabel('Freq Sliding Peak [Hz] (Amp-Wt)');
 title('Agreement Between Methods', 'FontSize', 15);
 set(gca, 'FontSize', 14); xlim([30 90]); ylim([30 90]);
 axis square; grid on; box on;
 legend(condLabels, 'Location', 'southeast', 'FontSize', 12);
 
-% --- Right: Frequency sliding grand average distributions ---
+% --- Right: Frequency sliding grand average distributions (amp-weighted) ---
 subplot(1, 2, 2); hold on;
-bin_centers_common = gamma_range(1)+0.5 : 1 : gamma_range(2)-0.5;
+bin_centers_common = 40.5 : 1 : 79.5;
 for cond = 1:4
     counts_mat = nan(nSubj, length(bin_centers_common));
     for s = 1:nSubj
@@ -667,20 +690,20 @@ fig_box2 = figure('Position', [0 0 1200 982], 'Color', 'w');
 hold on;
 
 for s = 1:nSubj
-    pf = all_fs_peakfreq(:, s);
+    pf = all_fs_wt_peak(:, s);
     if sum(~isnan(pf)) >= 2
         plot(1:4, pf, '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
     end
 end
 
-y_fs = all_fs_peakfreq(:);
+y_fs = all_fs_wt_peak(:);
 g_fs = repelem((1:4)', nSubj, 1);
 valid_fs = ~isnan(y_fs);
 boxplot(y_fs(valid_fs), g_fs(valid_fs), 'Colors', 'k', 'Symbol', '');
 
 hold on;
 for c = 1:4
-    pf = all_fs_peakfreq(c, :);
+    pf = all_fs_wt_peak(c, :);
     pf = pf(~isnan(pf));
     xJit = c + (rand(size(pf)) - 0.5) * 0.1;
     scatter(xJit, pf, 250, colors(c,:), 'filled', ...
@@ -690,7 +713,7 @@ end
 xlim([0.5 4.5]); ylim([30 90]);
 set(gca, 'XTick', 1:4, 'XTickLabel', {'25%', '50%', '75%', '100%'}, 'FontSize', 20, 'Box', 'off');
 ylabel('Peak Gamma Frequency [Hz]');
-title('Frequency Sliding Peak Frequency', 'FontSize', 30, 'FontWeight', 'bold');
+title('Frequency Sliding Peak Frequency (Amp-Weighted)', 'FontSize', 30, 'FontWeight', 'bold');
 
 saveas(fig_box2, fullfile(fig_save_dir, 'GED_boxplot_peakfreq_FreqSliding.png'));
 
@@ -709,7 +732,7 @@ for s = 1:nSubj
         if ~isempty(all_powspec_diff{cond, s})
             plot(freq_common_pow, all_powspec_diff{cond, s}, '-', ...
                 'Color', colors(cond,:), 'LineWidth', 2);
-            xline(all_fs_peakfreq(cond, s), '--', 'Color', colors(cond,:), ...
+            xline(all_fs_wt_peak(cond, s), '--', 'Color', colors(cond,:), ...
                 'LineWidth', 1.2);
         end
     end
@@ -748,7 +771,7 @@ for cond = 1:4
           colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
     hl_ga(cond) = plot(freq_common_pow, mu, '-', 'Color', colors(cond,:), 'LineWidth', 3);
 
-    ga_pf = nanmean(all_fs_peakfreq(cond,:));
+    ga_pf = nanmean(all_fs_wt_peak(cond,:));
     xline(ga_pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.5);
 end
 yline(0, 'k--', 'LineWidth', 1);
@@ -768,7 +791,8 @@ end
 save(save_path, ...
     'all_powratio', 'all_powratio_dt', 'all_topos', 'all_eigenvalues', ...
     'all_scan_peakfreq', 'all_scan_peakpow', ...
-    'all_fs_hist_freqs', 'all_fs_hist_counts', 'all_fs_peakfreq', 'all_fs_median', ...
+    'all_fs_hist_freqs', 'all_fs_hist_counts', ...
+    'all_fs_peakfreq', 'all_fs_median', 'all_fs_wt_mean', 'all_fs_wt_peak', ...
     'all_powspec_stim', 'all_powspec_base', 'all_powspec_diff', 'all_powspec_freqs', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
