@@ -253,29 +253,39 @@ for subj = 1:nSubj
         all_scan_peakfreq(cond, subj) = scan_peak_freq;
         all_scan_peakpow(cond, subj)  = scan_peak_pow;
 
-        %% --- Dual-peak model: low gamma (30-55 Hz) + high gamma (55-80 Hz) ---
-        % Only assign a peak if there is a genuine positive bump in that range
-        lo_mask = scan_freqs >= 30 & scan_freqs <= 55;
-        [pks_lo, locs_lo] = findpeaks(powratio_dt_smooth(lo_mask), ...
-            scan_freqs(lo_mask), 'MinPeakDistance', 5);
-        if ~isempty(pks_lo)
-            pos_lo = pks_lo > 0;
-            if any(pos_lo)
-                [~, best_lo] = max(pks_lo(pos_lo));
-                locs_pos = locs_lo(pos_lo);
-                all_peak_low(cond, subj) = locs_pos(best_lo);
-            end
-        end
+        %% --- Dual-peak model: low gamma + high gamma ---
+        % Find all positive peaks in the full detrended spectrum
+        [pks_all, locs_all] = findpeaks(powratio_dt_smooth, scan_freqs, ...
+            'MinPeakDistance', 5);
+        pos_mask = pks_all > 0;
+        pks_pos  = pks_all(pos_mask);
+        locs_pos = locs_all(pos_mask);
+        nPosPeaks = length(pks_pos);
 
-        hi_mask = scan_freqs >= 55 & scan_freqs <= 80;
-        [pks_hi, locs_hi] = findpeaks(powratio_dt_smooth(hi_mask), ...
-            scan_freqs(hi_mask), 'MinPeakDistance', 5);
-        if ~isempty(pks_hi)
-            pos_hi = pks_hi > 0;
-            if any(pos_hi)
-                [~, best_hi] = max(pks_hi(pos_hi));
-                locs_pos = locs_hi(pos_hi);
-                all_peak_high(cond, subj) = locs_pos(best_hi);
+        if nPosPeaks >= 2
+            % 2+ peaks: find tallest in each sub-range
+            in_lo = locs_pos <= 50;
+            in_hi = locs_pos >= 55;
+            if any(in_lo)
+                [~, bi] = max(pks_pos(in_lo));
+                tmp = locs_pos(in_lo);
+                all_peak_low(cond, subj) = tmp(bi);
+            end
+            if any(in_hi)
+                [~, bi] = max(pks_pos(in_hi));
+                tmp = locs_pos(in_hi);
+                all_peak_high(cond, subj) = tmp(bi);
+            end
+        elseif nPosPeaks == 1
+            % Single peak: assign based on middle margin (45-65 Hz)
+            the_peak = locs_pos(1);
+            if the_peak >= 45 && the_peak <= 65
+                all_peak_low(cond, subj)  = the_peak;
+                all_peak_high(cond, subj) = the_peak;
+            elseif the_peak < 45
+                all_peak_low(cond, subj) = the_peak;
+            else
+                all_peak_high(cond, subj) = the_peak;
             end
         end
 
@@ -335,7 +345,7 @@ for subj = 1:nSubj
 
     % --- Row 1: Raw power-ratio spectra ---
     for cond = 1:4
-        subplot(3, 4, cond); hold on;
+        subplot(4, 4, cond); hold on;
         if ~isempty(all_powratio{cond, subj})
             plot(scan_freqs, all_powratio{cond, subj}, '-', ...
                 'Color', [0.7 0.7 0.7], 'LineWidth', 1);
@@ -351,7 +361,7 @@ for subj = 1:nSubj
 
     % --- Row 2: Detrended with single peak ---
     for cond = 1:4
-        subplot(3, 4, 4 + cond); hold on;
+        subplot(4, 4, 4 + cond); hold on;
         if ~isempty(all_powratio_dt{cond, subj})
             plot(scan_freqs, all_powratio_dt{cond, subj}, '-', ...
                 'Color', [0.7 0.7 0.7], 'LineWidth', 1);
@@ -372,7 +382,7 @@ for subj = 1:nSubj
 
     % --- Row 3: Detrended with low + high gamma peaks ---
     for cond = 1:4
-        subplot(3, 4, 8 + cond); hold on;
+        subplot(4, 4, 8 + cond); hold on;
         if ~isempty(all_powratio_dt{cond, subj})
             plot(scan_freqs, all_powratio_dt{cond, subj}, '-', ...
                 'Color', [0.7 0.7 0.7], 'LineWidth', 1);
@@ -399,6 +409,46 @@ for subj = 1:nSubj
         title(sprintf('%s Dual Peak', condLabels{cond}), 'FontSize', 12);
         set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
     end
+
+    % --- Row 4: Topoplot + all conditions overlay ---
+    cfg_topo = [];
+    cfg_topo.layout    = headmodel.layANThead;
+    cfg_topo.comment   = 'no';
+    cfg_topo.marker    = 'off';
+    cfg_topo.style     = 'straight';
+    cfg_topo.gridscale = 300;
+    cfg_topo.zlim      = 'maxabs';
+    cfg_topo.colormap  = '*RdBu';
+    cfg_topo.figure    = 'gcf';
+
+    subplot(4, 4, 13);
+    if ~isempty(all_topos{subj})
+        topo_data = [];
+        topo_data.label  = chanlocs_all;
+        topo_data.avg    = all_topos{subj};
+        topo_data.dimord = 'chan';
+        try
+            ft_topoplotER(cfg_topo, topo_data);
+            cb = colorbar; cb.FontSize = 9;
+        catch
+            imagesc(topo_data.avg); colorbar;
+        end
+        title(sprintf('Common Filter (\\lambda=%.1f)', all_eigenvalues(subj)), 'FontSize', 12);
+    end
+
+    subplot(4, 4, [14 15 16]); hold on;
+    for cond = 1:4
+        if ~isempty(all_powratio_dt{cond, subj})
+            plot(scan_freqs, movmean(all_powratio_dt{cond, subj}, 5), '-', ...
+                'Color', colors(cond,:), 'LineWidth', 2.5);
+            xline(all_scan_peakfreq(cond, subj), '--', 'Color', colors(cond,:), 'LineWidth', 1.5);
+        end
+    end
+    yline(0, 'k-', 'LineWidth', 0.5);
+    xlabel('Freq [Hz]'); ylabel('\Delta PR (detrended)');
+    title('All Conditions (Same Spatial Filter)', 'FontSize', 14);
+    legend(condLabels, 'FontSize', 11, 'Location', 'best');
+    set(gca, 'FontSize', 12); xlim([30 90]); grid on; box on;
 
     saveas(fig, fullfile(fig_save_dir, sprintf('GED_scan_subj%s.png', subjects{subj})));
 
@@ -512,17 +562,53 @@ end
 saveas(fig_all, fullfile(fig_save_dir, 'GED_scan_all_subjects.png'));
 
 %% ====================================================================
-%  BOXPLOT FIGURES: Single peak, Low gamma, High gamma
+%  BOXPLOT FIGURE 1: Single peak
 %  ====================================================================
-box_method_names = {'Single Peak', 'Low Gamma (30-55 Hz)', 'High Gamma (55-80 Hz)'};
-box_method_data  = {all_scan_peakfreq, all_peak_low, all_peak_high};
-box_file_tags    = {'SinglePeak', 'LowGamma', 'HighGamma'};
+fig_box1 = figure('Position', [0 0 1200 982], 'Color', 'w');
+hold on;
 
-for mi = 1:3
-    fig_box = figure('Position', [0 0 1200 982], 'Color', 'w');
-    hold on;
+for s = 1:nSubj
+    pf = all_scan_peakfreq(:, s);
+    if sum(~isnan(pf)) >= 2
+        plot(1:4, pf, '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
+    end
+end
 
-    peak_data = box_method_data{mi};
+y_box = all_scan_peakfreq(:);
+g_box = repelem((1:4)', nSubj, 1);
+valid_box = ~isnan(y_box);
+boxplot(y_box(valid_box), g_box(valid_box), 'Colors', 'k', 'Symbol', '');
+
+hold on;
+for c = 1:4
+    pf = all_scan_peakfreq(c, :);
+    pf = pf(~isnan(pf));
+    xJit = c + (rand(size(pf)) - 0.5) * 0.1;
+    scatter(xJit, pf, 250, colors(c,:), 'filled', ...
+        'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
+end
+
+xlim([0.5 4.5]); ylim([30 90]);
+set(gca, 'XTick', 1:4, 'XTickLabel', {'25%', '50%', '75%', '100%'}, ...
+    'FontSize', 20, 'Box', 'off');
+ylabel('Peak Gamma Frequency [Hz]');
+title('Peak Frequency: Single Peak', 'FontSize', 30, 'FontWeight', 'bold');
+
+saveas(fig_box1, fullfile(fig_save_dir, 'GED_boxplot_peakfreq_SinglePeak.png'));
+
+%% ====================================================================
+%  BOXPLOT FIGURE 2: Low + High gamma side by side
+%  ====================================================================
+fig_box2 = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle('Dual-Peak Gamma Frequency', 'FontSize', 30, 'FontWeight', 'bold');
+
+dual_data   = {all_peak_low, all_peak_high};
+dual_titles = {'Low Gamma', 'High Gamma'};
+dual_ylims  = {[30 65], [40 90]};
+
+for di = 1:2
+    subplot(1, 2, di); hold on;
+    peak_data = dual_data{di};
 
     for s = 1:nSubj
         pf = peak_data(:, s);
@@ -534,7 +620,9 @@ for mi = 1:3
     y_box = peak_data(:);
     g_box = repelem((1:4)', nSubj, 1);
     valid_box = ~isnan(y_box);
-    boxplot(y_box(valid_box), g_box(valid_box), 'Colors', 'k', 'Symbol', '');
+    if any(valid_box)
+        boxplot(y_box(valid_box), g_box(valid_box), 'Colors', 'k', 'Symbol', '');
+    end
 
     hold on;
     for c = 1:4
@@ -545,16 +633,14 @@ for mi = 1:3
             'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
     end
 
-    xlim([0.5 4.5]); ylim([30 90]);
+    xlim([0.5 4.5]); ylim(dual_ylims{di});
     set(gca, 'XTick', 1:4, 'XTickLabel', {'25%', '50%', '75%', '100%'}, ...
-        'FontSize', 20, 'Box', 'off');
+        'FontSize', 18, 'Box', 'off');
     ylabel('Peak Gamma Frequency [Hz]');
-    title(sprintf('Peak Frequency: %s', box_method_names{mi}), ...
-        'FontSize', 30, 'FontWeight', 'bold');
-
-    saveas(fig_box, fullfile(fig_save_dir, ...
-        sprintf('GED_boxplot_peakfreq_%s.png', box_file_tags{mi})));
+    title(dual_titles{di}, 'FontSize', 24, 'FontWeight', 'bold');
 end
+
+saveas(fig_box2, fullfile(fig_save_dir, 'GED_boxplot_peakfreq_DualGamma.png'));
 
 %% ====================================================================
 %  POWER SPECTRUM FIGURE 1: All subjects subplot
