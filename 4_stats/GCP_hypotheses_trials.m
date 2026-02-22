@@ -639,3 +639,21 @@ function plot_scatter_by_cond(x_data, y_data, colors, condLabels, nSubj)
     legend(h, condLabels, 'Location', 'best', 'FontSize', 9);
     grid on; box on;
 end
+
+function [data_out, n_removed] = reject_outliers_by_cond(data, cond_vec)
+    data_out  = data;
+    n_removed = 0;
+    for c = 1:4
+        idx = cond_vec == c;
+        vals = data(idx);
+        valid = ~isnan(vals);
+        if sum(valid) < 5, continue; end
+        med_val = median(vals(valid));
+        mad_val = mad(vals(valid), 1);
+        if mad_val == 0, continue; end
+        outlier = valid & (abs(vals - med_val) > 3 * mad_val);
+        n_removed = n_removed + sum(outlier);
+        vals(outlier) = NaN;
+        data_out(idx) = vals;
+    end
+end
