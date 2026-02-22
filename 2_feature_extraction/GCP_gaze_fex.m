@@ -313,7 +313,7 @@ ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
             pupFT.time{trl}  = t_full;
 
             % Microsaccade rate time series in full window [-1.5, 2]
-            t_full = tVec(full_idx);
+            t_full_ms = tVec(full_idx);
 
             x_full = raw(1, full_idx);
             y_full = raw(2, full_idx);
@@ -324,21 +324,20 @@ ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
             % Validity mask (match your position pipeline)
             valid_full = x_full>=0 & x_full<=800 & y_full>=0 & y_full<=600;
 
-            x_full = x_full(valid_full);
-            y_full = y_full(valid_full);
-            t_full = t_full(valid_full);
+            x_val = x_full(valid_full);
+            y_val = y_full(valid_full);
 
             % Blink removal (same function you already rely on)
-            full_dat = [x_full; y_full; nan(1, numel(x_full))];
+            full_dat = [x_val; y_val; nan(1, numel(x_val))];
             full_dat = remove_blinks(full_dat, win_size);
-            x_full = full_dat(1,:);
-            y_full = full_dat(2,:);
+            x_val = full_dat(1,:);
+            y_val = full_dat(2,:);
 
             % Detect microsaccades (returns onset indices in this cleaned trace)
-            [~, ms_det] = detect_microsaccades(fsample, [x_full; y_full], numel(x_full));
+            [~, ms_det] = detect_microsaccades(fsample, [x_val; y_val], numel(x_val));
 
-            % Impulse train (1 at microsaccade onset sample)
-            ms_imp = zeros(1, numel(x_full));
+            % Impulse train on valid samples
+            ms_imp = zeros(1, numel(x_val));
             if ~isempty(ms_det.Onset)
                 onsets = ms_det.Onset(:)';
                 onsets = onsets(onsets >= 1 & onsets <= numel(ms_imp));
@@ -346,11 +345,15 @@ ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
             end
 
             % Smooth impulses -> event density per sample; convert to rate in Hz
-            ms_rate = conv(ms_imp, ms_kernel, 'same') * fsample;
+            ms_rate_val = conv(ms_imp, ms_kernel, 'same') * fsample;
 
-            % Store in FieldTrip struct (1 x time)
-            msFT.trial{trl} = ms_rate;
-            msFT.time{trl}  = t_full;
+            % Map back to full continuous time axis (NaN for invalid samples)
+            ms_rate_full = nan(1, numel(t_full_ms));
+            ms_rate_full(valid_full) = ms_rate_val;
+
+            % Store in FieldTrip struct with the original regular time axis
+            msFT.trial{trl} = ms_rate_full;
+            msFT.time{trl}  = t_full_ms;
 
             % append to trial‐wise arrays
             subject_id(end+1)       = str2double(subjects{subj});
