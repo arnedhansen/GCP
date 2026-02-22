@@ -292,6 +292,25 @@ for subj = 1:nSubj
     end
 
     % --- Row 2: Mean spectrum + individual trial spectra (faint) ---
+    % Compute robust shared y-limits across conditions from smoothed trial data
+    all_smooth_vals = [];
+    for cond = 1:4
+        if ~isempty(pr_dt_mats{cond})
+            nTrl_tmp = size(pr_dt_mats{cond}, 1);
+            for trl = 1:nTrl_tmp
+                all_smooth_vals = [all_smooth_vals, movmean(pr_dt_mats{cond}(trl,:), 5)];
+            end
+        end
+    end
+    if ~isempty(all_smooth_vals)
+        yl_lo = prctile(all_smooth_vals(~isnan(all_smooth_vals)), 1);
+        yl_hi = prctile(all_smooth_vals(~isnan(all_smooth_vals)), 99);
+        yl_pad = (yl_hi - yl_lo) * 0.15;
+        spec_ylim = [yl_lo - yl_pad, yl_hi + yl_pad];
+    else
+        spec_ylim = [-1 1];
+    end
+
     for cond = 1:4
         subplot(4, 4, 4 + cond); hold on;
         if ~isempty(pr_dt_mats{cond})
@@ -307,7 +326,7 @@ for subj = 1:nSubj
         end
         xlabel('Freq [Hz]'); ylabel('\Delta PR');
         title(sprintf('%s Spectra', condLabels{cond}), 'FontSize', 11);
-        set(gca, 'FontSize', 10); xlim([30 90]); grid on; box on;
+        set(gca, 'FontSize', 10); xlim([30 90]); ylim(spec_ylim); grid on; box on;
     end
 
     % --- Row 3: Peak-frequency histograms per condition ---
@@ -332,7 +351,7 @@ for subj = 1:nSubj
         set(gca, 'FontSize', 10); xlim([30 90]); box on;
     end
 
-    % --- Row 4: Peak-count distribution + combined histogram ---
+    % --- Row 4: Peak-count distribution (stacked) + combined histogram ---
     subplot(4, 4, 13); hold on;
     max_pk = 0;
     for cond = 1:4
@@ -340,12 +359,17 @@ for subj = 1:nSubj
         if ~isempty(pc), max_pk = max(max_pk, max(pc)); end
     end
     pk_edges = -0.5:1:(max_pk + 1.5);
+    pk_centers = 0:max_pk+1;
+    pk_count_mat = zeros(4, length(pk_centers));
     for cond = 1:4
         pc = all_peak_counts{cond, subj};
         if ~isempty(pc)
-            histogram(pc, pk_edges, 'FaceColor', colors(cond,:), ...
-                'FaceAlpha', 0.5, 'EdgeColor', 'w');
+            pk_count_mat(cond,:) = histcounts(pc, pk_edges);
         end
+    end
+    bh_pk = bar(pk_centers, pk_count_mat', 'stacked', 'EdgeColor', 'w', 'BarWidth', 0.85);
+    for cond = 1:4
+        bh_pk(cond).FaceColor = colors(cond,:);
     end
     xlabel('# Peaks per Trial'); ylabel('Trial Count');
     title('Peak Count Distribution', 'FontSize', 11);
