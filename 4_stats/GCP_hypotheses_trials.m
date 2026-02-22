@@ -30,16 +30,9 @@ clear; close all; clc
 startup
 [subjects, path, colors, ~] = setup('GCP');
 
-% Exclude outlier subject(s)
-exclude_numeric = [607];
-subj_numeric    = cellfun(@str2double, subjects);
-excl_mask       = ismember(subj_numeric, exclude_numeric);
-if any(excl_mask)
-    fprintf('Excluding subjects: %s\n', strjoin(subjects(excl_mask), ', '));
-    subjects(excl_mask) = [];
-end
 nSubj = length(subjects);
-fprintf('Remaining subjects (N=%d): %s\n', nSubj, strjoin(subjects, ', '));
+fprintf('Subjects (N=%d): %s\n', nSubj, strjoin(subjects, ', '));
+fprintf('No manual exclusions — outlier trials are rejected data-driven (median +/- 3 MAD).\n');
 
 condLabels    = {'25%', '50%', '75%', '100%'};
 contrast_vals = [25, 50, 75, 100];
