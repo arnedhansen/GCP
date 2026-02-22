@@ -79,6 +79,7 @@ trl_auc        = cell(4, nSubj);
 trl_fwhm       = cell(4, nSubj);
 trl_prominence = cell(4, nSubj);
 trl_centroid   = cell(4, nSubj);
+trl_peak_freq  = cell(4, nSubj);
 
 lo_mask = scan_freqs <= 49;
 hi_mask = scan_freqs >= 50;
@@ -90,14 +91,15 @@ for subj = 1:nSubj
 
         nTrl = size(pr_mat, 1);
 
-        t_peak_amp = nan(nTrl, 1);
-        t_bb_pow   = nan(nTrl, 1);
-        t_lo_pow   = nan(nTrl, 1);
-        t_hi_pow   = nan(nTrl, 1);
-        t_auc      = nan(nTrl, 1);
-        t_fwhm     = nan(nTrl, 1);
-        t_prom     = nan(nTrl, 1);
-        t_centroid = nan(nTrl, 1);
+        t_peak_amp  = nan(nTrl, 1);
+        t_peak_freq = nan(nTrl, 1);
+        t_bb_pow    = nan(nTrl, 1);
+        t_lo_pow    = nan(nTrl, 1);
+        t_hi_pow    = nan(nTrl, 1);
+        t_auc       = nan(nTrl, 1);
+        t_fwhm      = nan(nTrl, 1);
+        t_prom      = nan(nTrl, 1);
+        t_centroid  = nan(nTrl, 1);
 
         for trl = 1:nTrl
             pr = pr_mat(trl, :);
@@ -125,8 +127,9 @@ for subj = 1:nSubj
                 [max_pk, bi] = max(pks_p);
                 peak_freq = locs_p(bi);
 
-                t_peak_amp(trl) = max_pk;
-                t_prom(trl)     = proms_p(bi);
+                t_peak_amp(trl)  = max_pk;
+                t_peak_freq(trl) = peak_freq;
+                t_prom(trl)      = proms_p(bi);
 
                 % FWHM via linear interpolation
                 [~, peak_fi] = min(abs(scan_freqs - peak_freq));
@@ -165,6 +168,7 @@ for subj = 1:nSubj
 
         % Store trial-level
         trl_peak_amp{cond, subj}   = t_peak_amp;
+        trl_peak_freq{cond, subj}  = t_peak_freq;
         trl_bb_power{cond, subj}   = t_bb_pow;
         trl_lo_power{cond, subj}   = t_lo_pow;
         trl_hi_power{cond, subj}   = t_hi_pow;
@@ -662,10 +666,11 @@ saveas(fig7, fullfile(fig_save_dir, 'GCP_ged_metrics_summary.png'));
 %  ====================================================================
 fprintf('Building trial-level long-format table...\n');
 
-trl_metric_names = {'PeakAmplitude', 'BroadbandPower', 'LowGammaPower', ...
-                    'HighGammaPower', 'AUC', 'FWHM', 'Prominence', 'SpectralCentroid'};
-trl_metric_cells = {trl_peak_amp, trl_bb_power, trl_lo_power, trl_hi_power, ...
-                    trl_auc, trl_fwhm, trl_prominence, trl_centroid};
+trl_metric_names = {'PeakFrequency', 'PeakAmplitude', 'BroadbandPower', ...
+                    'LowGammaPower', 'HighGammaPower', 'AUC', 'FWHM', ...
+                    'Prominence', 'SpectralCentroid'};
+trl_metric_cells = {trl_peak_freq, trl_peak_amp, trl_bb_power, trl_lo_power, ...
+                    trl_hi_power, trl_auc, trl_fwhm, trl_prominence, trl_centroid};
 
 row_Subject   = [];
 row_Condition = [];
@@ -764,8 +769,8 @@ save(save_path, ...
     'metric_peak_amp', 'metric_bb_power', 'metric_lo_power', 'metric_hi_power', ...
     'metric_auc', 'metric_fwhm', 'metric_prominence', 'metric_centroid', ...
     'metric_det_rate', 'metric_peak_count', 'metric_lohi_ratio', ...
-    'trl_peak_amp', 'trl_bb_power', 'trl_lo_power', 'trl_hi_power', ...
-    'trl_auc', 'trl_fwhm', 'trl_prominence', 'trl_centroid', ...
+    'trl_peak_freq', 'trl_peak_amp', 'trl_bb_power', 'trl_lo_power', ...
+    'trl_hi_power', 'trl_auc', 'trl_fwhm', 'trl_prominence', 'trl_centroid', ...
     'coh_occ_par', 'wpli_occ_par', 'coh_interhemi', 'wpli_interhemi', ...
     'coh_spectra_occ_par', 'coh_spectra_interhemi', ...
     'wpli_spectra_occ_par', 'wpli_spectra_interhemi', ...
