@@ -442,6 +442,9 @@ for subj = 1:nSubj
     end
 
     % --- Row 4: Topoplot + all conditions overlay ---
+    occ_highlight = dataEEG_c25.label(cellfun(@(l) ...
+        ~isempty(regexp(l, '[OI]', 'once')), dataEEG_c25.label));
+
     cfg_topo = [];
     cfg_topo.layout    = headmodel.layANThead;
     cfg_topo.comment   = 'no';
@@ -451,6 +454,11 @@ for subj = 1:nSubj
     cfg_topo.zlim      = 'maxabs';
     cfg_topo.colormap  = '*RdBu';
     cfg_topo.figure    = 'gcf';
+    cfg_topo.highlight          = {'on'};
+    cfg_topo.highlightchannel   = {occ_highlight};
+    cfg_topo.highlightsymbol    = {'.'};
+    cfg_topo.highlightsize      = {12};
+    cfg_topo.highlightcolor     = {[0 0 0]};
 
     subplot(4, 4, 13);
     if ~isempty(all_topos{subj})
@@ -490,7 +498,7 @@ for subj = 1:nSubj
     legend(condLabels, 'FontSize', 11, 'Location', 'best');
     set(gca, 'FontSize', 12); xlim([30 90]); grid on; box on;
 
-    saveas(fig, fullfile(fig_save_dir, sprintf('GED_scan_subj%s.png', subjects{subj})));
+    saveas(fig, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_subjects_subj%s.png', subjects{subj})));
 
 end % subject loop
 
@@ -571,7 +579,7 @@ ylabel('Peak Gamma Frequency [Hz]');
 title('Individual Peak Frequencies (Original)', 'FontSize', 14);
 ylim([30 90]); grid on; box on;
 
-saveas(fig_ga1, fullfile(fig_save_dir, 'GED_scan_grand_average.png'));
+saveas(fig_ga1, fullfile(fig_save_dir, 'GCP_eeg_GED_subjects_grand_average.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE FIGURE 2: All subjects subplot
@@ -599,7 +607,7 @@ for s = 1:nSubj
         legend(condLabels, 'FontSize', 8, 'Location', 'best');
     end
 end
-saveas(fig_all, fullfile(fig_save_dir, 'GED_scan_all_subjects.png'));
+saveas(fig_all, fullfile(fig_save_dir, 'GCP_eeg_GED_subjects_all_subjects.png'));
 
 %% ====================================================================
 %  BOXPLOT FIGURE 1: Single peak
@@ -614,33 +622,47 @@ for s = 1:nSubj
     end
 end
 
+for c = 1:4
+    pf = all_scan_peakfreq(c, :);
+    pf = pf(~isnan(pf));
+    if length(pf) >= 2
+        [f_dens, xi] = ksdensity(pf);
+        f_dens = f_dens / max(f_dens) * 0.3;
+        patch(c - f_dens - 0.05, xi, colors(c,:), ...
+            'FaceAlpha', 0.3, 'EdgeColor', colors(c,:), 'LineWidth', 1);
+    end
+end
+
 y_box = all_scan_peakfreq(:);
 g_box = repelem((1:4)', nSubj, 1);
 valid_box = ~isnan(y_box);
-boxplot(y_box(valid_box), g_box(valid_box), 'Colors', 'k', 'Symbol', '');
+if any(valid_box)
+    boxplot(y_box(valid_box), g_box(valid_box), 'Colors', 'k', ...
+        'Symbol', '', 'Widths', 0.15);
+end
 
 hold on;
 for c = 1:4
     pf = all_scan_peakfreq(c, :);
     pf = pf(~isnan(pf));
-    xJit = c + (rand(size(pf)) - 0.5) * 0.1;
-    scatter(xJit, pf, 250, colors(c,:), 'filled', ...
+    xJit = c + 0.15 + (rand(size(pf)) - 0.5) * 0.1;
+    scatter(xJit, pf, 200, colors(c,:), 'filled', ...
         'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
 end
 
-xlim([0.5 4.5]); ylim([30 90]);
+xlim([0.3 4.7]); ylim([30 90]);
 set(gca, 'XTick', 1:4, 'XTickLabel', {'25%', '50%', '75%', '100%'}, ...
-    'FontSize', 20, 'Box', 'off');
+    'FontSize', 18, 'Box', 'off');
 ylabel('Peak Gamma Frequency [Hz]');
-title('Peak Frequency: Single Peak', 'FontSize', 30, 'FontWeight', 'bold');
+title('Peak Frequency: Single Peak', 'FontSize', 20, 'FontWeight', 'bold');
 
-saveas(fig_box1, fullfile(fig_save_dir, 'GED_boxplot_peakfreq_SinglePeak.png'));
+saveas(fig_box1, fullfile(fig_save_dir, 'GCP_eeg_GED_subjects_boxplot_SinglePeak.png'));
 
 %% ====================================================================
 %  BOXPLOT FIGURE 2: Low + High gamma side by side
 %  ====================================================================
 fig_box2 = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('Dual-Peak Gamma Frequency', 'FontSize', 30, 'FontWeight', 'bold');
+sgtitle('Dual-Peak Gamma Frequency', 'FontSize', 20, 'FontWeight', 'bold');
 
 dual_data   = {all_peak_low, all_peak_high};
 dual_titles = {'Low Gamma', 'High Gamma'};
@@ -657,30 +679,42 @@ for di = 1:2
         end
     end
 
+    for c = 1:4
+        pf = peak_data(c, :);
+        pf = pf(~isnan(pf));
+        if length(pf) >= 2
+            [f_dens, xi] = ksdensity(pf);
+            f_dens = f_dens / max(f_dens) * 0.3;
+            patch(c - f_dens - 0.05, xi, colors(c,:), ...
+                'FaceAlpha', 0.3, 'EdgeColor', colors(c,:), 'LineWidth', 1);
+        end
+    end
+
     y_box = peak_data(:);
     g_box = repelem((1:4)', nSubj, 1);
     valid_box = ~isnan(y_box);
     if any(valid_box)
-        boxplot(y_box(valid_box), g_box(valid_box), 'Colors', 'k', 'Symbol', '');
+        boxplot(y_box(valid_box), g_box(valid_box), 'Colors', 'k', ...
+            'Symbol', '', 'Widths', 0.15);
     end
 
     hold on;
     for c = 1:4
         pf = peak_data(c, :);
         pf = pf(~isnan(pf));
-        xJit = c + (rand(size(pf)) - 0.5) * 0.1;
-        scatter(xJit, pf, 250, colors(c,:), 'filled', ...
+        xJit = c + 0.15 + (rand(size(pf)) - 0.5) * 0.1;
+        scatter(xJit, pf, 200, colors(c,:), 'filled', ...
             'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
     end
 
-    xlim([0.5 4.5]); ylim(dual_ylims{di});
+    xlim([0.3 4.7]); ylim(dual_ylims{di});
     set(gca, 'XTick', 1:4, 'XTickLabel', {'25%', '50%', '75%', '100%'}, ...
-        'FontSize', 18, 'Box', 'off');
+        'FontSize', 16, 'Box', 'off');
     ylabel('Peak Gamma Frequency [Hz]');
-    title(dual_titles{di}, 'FontSize', 24, 'FontWeight', 'bold');
+    title(dual_titles{di}, 'FontSize', 18, 'FontWeight', 'bold');
 end
 
-saveas(fig_box2, fullfile(fig_save_dir, 'GED_boxplot_peakfreq_DualGamma.png'));
+saveas(fig_box2, fullfile(fig_save_dir, 'GCP_eeg_GED_subjects_boxplot_DualGamma.png'));
 
 %% ====================================================================
 %  POWER SPECTRUM FIGURE 1: All subjects subplot
@@ -709,7 +743,7 @@ for s = 1:nSubj
         legend(condLabels, 'FontSize', 8, 'Location', 'best');
     end
 end
-saveas(fig_pow_all, fullfile(fig_save_dir, 'GED_powspec_all_subjects.png'));
+saveas(fig_pow_all, fullfile(fig_save_dir, 'GCP_eeg_GED_subjects_powspec_all.png'));
 
 %% ====================================================================
 %  POWER SPECTRUM FIGURE 2: Grand average
@@ -745,13 +779,13 @@ title('Baseline-Corrected Power Spectrum (mean +/- SEM)', 'FontSize', 18);
 legend(hl_ga, condLabels, 'Location', 'northeast', 'FontSize', 15);
 set(gca, 'FontSize', 16); xlim([30 90]); grid on; box on;
 
-saveas(fig_pow_ga, fullfile(fig_save_dir, 'GED_powspec_grand_average.png'));
+saveas(fig_pow_ga, fullfile(fig_save_dir, 'GCP_eeg_GED_subjects_powspec_grand_average.png'));
 
 %% Save results
 if ispc
-    save_path = 'W:\Students\Arne\GCP\data\features\ged_gamma_peaks.mat';
+    save_path = 'W:\Students\Arne\GCP\data\features\GCP_eeg_GED_subjects.mat';
 else
-    save_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/ged_gamma_peaks.mat';
+    save_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_eeg_GED_subjects.mat';
 end
 save(save_path, ...
     'all_powratio', 'all_powratio_dt', 'all_topos', 'all_eigenvalues', ...
