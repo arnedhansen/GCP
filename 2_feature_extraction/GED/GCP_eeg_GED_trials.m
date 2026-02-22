@@ -107,16 +107,20 @@ for subj = 1:nSubj
 
     nChans = length(dataEEG_c25.label);
 
+    occ_mask = cellfun(@(l) ~isempty(regexp(l, '[OI]', 'once')), dataEEG_c25.label);
+    occ_idx  = find(occ_mask);
+    nOcc     = length(occ_idx);
+
     %% ================================================================
     %  PHASE 1: Build POOLED covariance across all conditions -> one GED
     %  ================================================================
     clc
-    fprintf('Subject %s (%d/%d) — Phase 1: Pooled GED (%d ch)\n', ...
-        subjects{subj}, subj, nSubj, nChans);
+    fprintf('Subject %s (%d/%d) — Phase 1: Occipital GED (%d occ / %d ch)\n', ...
+        subjects{subj}, subj, nSubj, nOcc, nChans);
 
-    covStim_pooled = zeros(nChans);
-    covBase_pooled = zeros(nChans);
-    nTrials_total  = 0;
+    covStim_full = zeros(nChans);
+    covBase_full = zeros(nChans);
+    nTrials_total = 0;
 
     dat_per_cond = cell(1, 4);
 
@@ -148,36 +152,44 @@ for subj = 1:nSubj
         for trl = 1:nTrl
             d = double(dat_stim.trial{trl});
             d = bsxfun(@minus, d, mean(d, 2));
-            covStim_pooled = covStim_pooled + (d * d') / size(d, 2);
+            covStim_full = covStim_full + (d * d') / size(d, 2);
 
             d = double(dat_base.trial{trl});
             d = bsxfun(@minus, d, mean(d, 2));
-            covBase_pooled = covBase_pooled + (d * d') / size(d, 2);
+            covBase_full = covBase_full + (d * d') / size(d, 2);
         end
         nTrials_total = nTrials_total + nTrl;
     end
 
-    covStim_pooled = covStim_pooled / nTrials_total;
-    covBase_pooled = covBase_pooled / nTrials_total;
+    covStim_full = covStim_full / nTrials_total;
+    covBase_full = covBase_full / nTrials_total;
 
-    % Shrinkage regularization
-    covStim_pooled = (1-lambda)*covStim_pooled + lambda*mean(diag(covStim_pooled))*eye(nChans);
-    covBase_pooled = (1-lambda)*covBase_pooled + lambda*mean(diag(covBase_pooled))*eye(nChans);
+    % Extract occipital submatrices for GED
+    covStim_occ = covStim_full(occ_idx, occ_idx);
+    covBase_occ = covBase_full(occ_idx, occ_idx);
 
-    % GED on pooled covariance
-    [W, D] = eig(covStim_pooled, covBase_pooled);
-    [evals_sorted, sortIdx] = sort(real(diag(D)), 'descend');
-    W = W(:, sortIdx);
+    % Shrinkage regularization (occipital)
+    covStim_occ = (1-lambda)*covStim_occ + lambda*mean(diag(covStim_occ))*eye(nOcc);
+    covBase_occ = (1-lambda)*covBase_occ + lambda*mean(diag(covBase_occ))*eye(nOcc);
 
-    topComp = W(:, 1);
+    % GED on occipital covariance
+    [W_occ, D_occ] = eig(covStim_occ, covBase_occ);
+    [evals_sorted, sortIdx] = sort(real(diag(D_occ)), 'descend');
+    W_occ = W_occ(:, sortIdx);
+    w_occ = W_occ(:, 1);
     all_eigenvalues(subj) = evals_sorted(1);
 
-    % Sign correction
-    topo_temp = covStim_pooled * topComp;
+    % Zero-pad to full channel space
+    topComp = zeros(nChans, 1);
+    topComp(occ_idx) = w_occ;
+
+    % Full-head forward model for topoplot
+    covStim_full_reg = (1-lambda)*covStim_full + lambda*mean(diag(covStim_full))*eye(nChans);
+    topo_temp = covStim_full_reg * topComp;
     [~, mxI] = max(abs(topo_temp));
     if topo_temp(mxI) < 0, topComp = -topComp; end
 
-    all_topos{subj}       = covStim_pooled * topComp;
+    all_topos{subj}       = covStim_full_reg * topComp;
     all_topo_labels{subj} = dataEEG_c25.label;
 
     %% ================================================================
