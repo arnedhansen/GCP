@@ -501,7 +501,8 @@ sgtitle('Peak Frequency Density per Subject (all conditions pooled)', ...
     'FontSize', 16, 'FontWeight', 'bold');
 
 freq_bins = 30:1:90;
-density_mat = nan(nSubj, length(freq_bins)-1);
+freq_centers = freq_bins(1:end-1) + 0.5;
+density_mat = zeros(nSubj, length(freq_bins)-1);
 for s = 1:nSubj
     pf_subj = [];
     for cond = 1:4
@@ -515,13 +516,28 @@ for s = 1:nSubj
     end
 end
 
+% Smooth each subject's density for cleaner appearance
+for s = 1:nSubj
+    density_mat(s,:) = movmean(density_mat(s,:), 3);
+end
+
+% Per-subject row normalization to highlight individual spectral structure
+density_norm = zeros(size(density_mat));
+for s = 1:nSubj
+    row_max = max(density_mat(s,:));
+    if row_max > 0
+        density_norm(s,:) = density_mat(s,:) / row_max;
+    end
+end
+
 subplot(1, 1, 1);
-imagesc(freq_bins(1:end-1) + 0.5, 1:nSubj, density_mat);
-colormap(parula);
-cb = colorbar; cb.Label.String = 'P(peak at freq)'; cb.FontSize = 12;
+imagesc(freq_centers, 1:nSubj, density_norm);
+colormap(hot);
+cb = colorbar; cb.Label.String = 'Normalized density (per subject)'; cb.FontSize = 12;
+caxis([0 1]);
 xlabel('Frequency [Hz]'); ylabel('Subject');
 set(gca, 'YTick', 1:nSubj, 'YTickLabel', subjects, 'FontSize', 11);
-title('Normalized Peak Density', 'FontSize', 14);
+title('Peak Density (row-normalized per subject)', 'FontSize', 14);
 set(gca, 'YDir', 'normal'); box on;
 
 saveas(fig2, fullfile(fig_save_dir, 'GCP_peak_explorer_density_heatmap.png'));
@@ -609,6 +625,208 @@ for cond = 1:4
 end
 
 saveas(fig4, fullfile(fig_save_dir, 'GCP_peak_explorer_violin_by_cond.png'));
+
+%% --- Figure 5: Raincloud plot — all conditions in one plot (vertical) ---
+close all
+fig5 = figure('Position', [0 0 1512 982], 'Color', 'w');
+hold on;
+
+rc_spacing = 1;          % horizontal spacing between conditions
+jit_width = 0.15;        % max scatter jitter width
+dens_width = 0.35;       % max violin (density) width
+bx_half = 0.08;          % boxplot half-width
+kde_pts = linspace(29, 91, 200);
+
+for cond = 1:4
+    pf_cond = [];
+    for s = 1:nSubj
+        tpf = all_peak_freqs{cond, s};
+        if ~isempty(tpf)
+            pf_cond = [pf_cond, [tpf{:}]];
+        end
+    end
+    if isempty(pf_cond), continue; end
+
+    x_base = cond * rc_spacing;
+
+    % --- Violin (right side) ---
+    [f_dens, yi] = ksdensity(pf_cond, kde_pts, 'Bandwidth', 2);
+    f_dens = f_dens / max(f_dens) * dens_width;
+    patch([x_base + f_dens, repmat(x_base, size(yi))], ...
+        [yi, fliplr(yi)], ...
+        colors(cond,:), 'FaceAlpha', 0.45, 'EdgeColor', colors(cond,:), ...
+        'LineWidth', 1.2);
+
+    % --- Boxplot (left side) ---
+    q25 = prctile(pf_cond, 25);
+    q50 = median(pf_cond);
+    q75 = prctile(pf_cond, 75);
+    mu  = mean(pf_cond);
+    iqr_val = q75 - q25;
+    whi_lo = max(min(pf_cond), q25 - 1.5*iqr_val);
+    whi_hi = min(max(pf_cond), q75 + 1.5*iqr_val);
+
+    bx_x = x_base - bx_half;
+    patch([bx_x - bx_half, bx_x - bx_half, bx_x + bx_half, bx_x + bx_half], ...
+        [q25 q75 q75 q25], ...
+        colors(cond,:), 'FaceAlpha', 0.7, 'EdgeColor', 'k', 'LineWidth', 1.2);
+    plot([bx_x - bx_half, bx_x + bx_half], [q50 q50], 'k-', 'LineWidth', 2.5);
+    plot(bx_x, mu, 'kd', 'MarkerSize', 7, 'MarkerFaceColor', 'w', 'LineWidth', 1.5);
+    plot([bx_x bx_x], [whi_lo q25], 'k-', 'LineWidth', 1.2);
+    plot([bx_x bx_x], [q75 whi_hi], 'k-', 'LineWidth', 1.2);
+
+    % --- Scatter (further left) ---
+    scatter_x = x_base - bx_half*2 - bx_half - jit_width * rand(size(pf_cond));
+    scatter(scatter_x, pf_cond, 8, colors(cond,:), 'filled', ...
+        'MarkerFaceAlpha', 0.15, 'MarkerEdgeColor', 'none');
+
+    % --- Mean / Median text annotations ---
+    text(x_base - dens_width*1.5 + 0.08, q50-0.5, sprintf('Mdn = %.1f', q50), ...
+        'FontSize', 10, 'FontWeight', 'bold', 'VerticalAlignment', 'bottom');
+    text(x_base - dens_width*1.5 + 0.08, mu+0.5, sprintf('M = %.1f', mu), ...
+        'FontSize', 10, 'Color', [0.3 0.3 0.3], 'VerticalAlignment', 'top');
+end
+
+set(gca, 'XTick', (1:4)*rc_spacing, ...
+    'XTickLabel', condLabels, 'FontSize', 13);
+ylabel('Peak Frequency [Hz]', 'FontSize', 14);
+ylim([28 92]);
+xlim([0.2, 4*rc_spacing + 0.8]);
+title('Trial-Level Peak Frequencies', ...
+    'FontSize', 16, 'FontWeight', 'bold');
+grid on; box on;
+
+% Legend entries
+h_leg = gobjects(1, 4);
+for cond = 1:4
+    h_leg(cond) = patch(nan, nan, colors(cond,:), 'FaceAlpha', 0.6, 'EdgeColor', 'none');
+end
+h_med = plot(nan, nan, 'k-', 'LineWidth', 2.5);
+h_mu  = plot(nan, nan, 'kd', 'MarkerSize', 7, 'MarkerFaceColor', 'w', 'LineWidth', 1.5);
+legend([h_leg, h_med, h_mu], [condLabels, {'Median', 'Mean'}], ...
+    'FontSize', 11, 'Location', 'best');
+
+saveas(fig5, fullfile(fig_save_dir, 'GCP_peak_explorer_raincloud.png'));
+
+%% --- Figure 6: Raincloud split by low / high gamma (50 Hz cutoff) ---
+close all
+fig6 = figure('Position', [0 0 1512 982], 'Color', 'w');
+hold on;
+
+gamma_split = 50;
+band_labels = {'Low \gamma', 'High \gamma'};
+rc_spacing = 1;
+jit_width  = 0.12;
+dens_width = 0.28;
+bx_half    = 0.06;
+sub_offset = 0.18;       % offset from centre for each sub-band
+kde_pts_lo = linspace(29, 51, 150);
+kde_pts_hi = linspace(49, 91, 150);
+
+for cond = 1:4
+    pf_cond = [];
+    for s = 1:nSubj
+        tpf = all_peak_freqs{cond, s};
+        if ~isempty(tpf)
+            pf_cond = [pf_cond, [tpf{:}]];
+        end
+    end
+    if isempty(pf_cond), continue; end
+
+    x_centre = cond * rc_spacing;
+
+    pf_lo = pf_cond(pf_cond <= gamma_split);
+    pf_hi = pf_cond(pf_cond >  gamma_split);
+    pf_bands   = {pf_lo, pf_hi};
+    kde_grids  = {kde_pts_lo, kde_pts_hi};
+    x_sides    = [x_centre - sub_offset, x_centre + sub_offset];
+    band_shade = {colors(cond,:) * 0.7 + 0.3, colors(cond,:)};  % lighter for low
+
+    % Scatter all points (centred)
+    scatter_x = x_centre - jit_width/2 + jit_width * rand(size(pf_cond));
+    scatter(scatter_x, pf_cond, 6, colors(cond,:), 'filled', ...
+        'MarkerFaceAlpha', 0.10, 'MarkerEdgeColor', 'none');
+
+    % Horizontal reference line at split
+    plot([x_centre - 0.4, x_centre + 0.4], [gamma_split gamma_split], ...
+        ':', 'Color', [0.5 0.5 0.5], 'LineWidth', 1);
+
+    for bi = 1:2
+        pf_b = pf_bands{bi};
+        if length(pf_b) < 5, continue; end
+
+        x_b = x_sides(bi);
+        col_b = band_shade{bi};
+
+        % Violin (outward from centre)
+        [f_dens, yi] = ksdensity(pf_b, kde_grids{bi}, 'Bandwidth', 2);
+        f_dens = f_dens / max(f_dens) * dens_width;
+        if bi == 1  % low gamma: violin extends left
+            patch([x_b - f_dens, repmat(x_b, size(yi))], ...
+                [yi, fliplr(yi)], ...
+                col_b, 'FaceAlpha', 0.45, 'EdgeColor', col_b, 'LineWidth', 1);
+        else        % high gamma: violin extends right
+            patch([x_b + f_dens, repmat(x_b, size(yi))], ...
+                [yi, fliplr(yi)], ...
+                col_b, 'FaceAlpha', 0.45, 'EdgeColor', col_b, 'LineWidth', 1);
+        end
+
+        % Boxplot
+        q25 = prctile(pf_b, 25);
+        q50 = median(pf_b);
+        q75 = prctile(pf_b, 75);
+        mu  = mean(pf_b);
+        iqr_val = q75 - q25;
+        whi_lo_v = max(min(pf_b), q25 - 1.5*iqr_val);
+        whi_hi_v = min(max(pf_b), q75 + 1.5*iqr_val);
+
+        patch([x_b - bx_half, x_b - bx_half, x_b + bx_half, x_b + bx_half], ...
+            [q25 q75 q75 q25], ...
+            col_b, 'FaceAlpha', 0.7, 'EdgeColor', 'k', 'LineWidth', 1.2);
+        plot([x_b - bx_half, x_b + bx_half], [q50 q50], 'k-', 'LineWidth', 2.5);
+        plot(x_b, mu, 'kd', 'MarkerSize', 6, 'MarkerFaceColor', 'w', 'LineWidth', 1.5);
+        plot([x_b x_b], [whi_lo_v q25], 'k-', 'LineWidth', 1.2);
+        plot([x_b x_b], [q75 whi_hi_v], 'k-', 'LineWidth', 1.2);
+
+        % Text annotations (outside violin)
+        if bi == 1
+            tx = x_b - dens_width - 0.06;
+            ha = 'right';
+        else
+            tx = x_b + dens_width + 0.06;
+            ha = 'left';
+        end
+        text(tx, q50 - 0.75, sprintf('Mdn=%.1f', q50), ...
+            'FontSize', 8, 'FontWeight', 'bold', 'HorizontalAlignment', ha, ...
+            'VerticalAlignment', 'bottom');
+        text(tx, mu + 2, sprintf('M=%.1f', mu), ...
+            'FontSize', 8, 'Color', [0.3 0.3 0.3], 'HorizontalAlignment', ha, ...
+            'VerticalAlignment', 'top');
+    end
+end
+
+set(gca, 'XTick', (1:4)*rc_spacing, 'XTickLabel', condLabels, 'FontSize', 13);
+ylabel('Peak Frequency [Hz]', 'FontSize', 14);
+ylim([28 92]); xlim([0.2, 4*rc_spacing + 0.8]);
+title(sprintf('Trial-Level Peak Frequencies — Low vs High \\gamma  (split at %d Hz)', gamma_split), ...
+    'FontSize', 16, 'FontWeight', 'bold');
+yline(gamma_split, '--', sprintf('%d Hz', gamma_split), ...
+    'FontSize', 11, 'LabelHorizontalAlignment', 'right', ...
+    'Color', [0.4 0.4 0.4], 'LineWidth', 1.5);
+grid on; box on;
+
+% Legend
+h_lo = patch(nan, nan, [0.6 0.6 0.6], 'FaceAlpha', 0.5, 'EdgeColor', 'none');
+h_hi = patch(nan, nan, [0.3 0.3 0.3], 'FaceAlpha', 0.5, 'EdgeColor', 'none');
+h_med = plot(nan, nan, 'k-', 'LineWidth', 2.5);
+h_mu  = plot(nan, nan, 'kd', 'MarkerSize', 6, 'MarkerFaceColor', 'w', 'LineWidth', 1.5);
+legend([h_lo, h_hi, h_med, h_mu], ...
+    {['Low \gamma  (\leq' num2str(gamma_split) ' Hz)'], ...
+     ['High \gamma  (>' num2str(gamma_split) ' Hz)'], ...
+     'Median', 'Mean'}, ...
+    'FontSize', 11, 'Location', 'best');
+
+saveas(fig6, fullfile(fig_save_dir, 'GCP_peak_explorer_raincloud_split.png'));
 
 %% Save data
 if ispc
