@@ -168,6 +168,32 @@ end
 fprintf('  GED: %d total trials loaded.\n', numel(ged_Subject));
 
 %% ====================================================================
+%  OUTLIER REJECTION (median ± 3 MAD per condition)
+%  ====================================================================
+fprintf('Removing outlier trials (median +/- 3 MAD per condition)...\n');
+
+% Gaze metrics
+[gaze_PctMSRate, n1] = reject_outliers_by_cond(gaze_PctMSRate, gaze_Condition);
+[gaze_PctVel2D,  n2] = reject_outliers_by_cond(gaze_PctVel2D,  gaze_Condition);
+[gaze_PctPupil,  n3] = reject_outliers_by_cond(gaze_PctPupil,  gaze_Condition);
+[gaze_PctBCEA,   n4] = reject_outliers_by_cond(gaze_PctBCEA,   gaze_Condition);
+[gaze_MSRate,    n5] = reject_outliers_by_cond(gaze_MSRate,    gaze_Condition);
+[gaze_Vel2D,     n6] = reject_outliers_by_cond(gaze_Vel2D,     gaze_Condition);
+[gaze_PupilSize, n7] = reject_outliers_by_cond(gaze_PupilSize, gaze_Condition);
+[gaze_BCEA,      n8] = reject_outliers_by_cond(gaze_BCEA,      gaze_Condition);
+fprintf('  Gaze outliers removed: PctMS=%d, PctVel=%d, PctPup=%d, PctBCEA=%d, MS=%d, Vel=%d, Pup=%d, BCEA=%d\n', ...
+    n1, n2, n3, n4, n5, n6, n7, n8);
+
+% GED metrics
+[ged_PeakFreq, n1] = reject_outliers_by_cond(ged_PeakFreq, ged_Condition);
+[ged_PeakAmp,  n2] = reject_outliers_by_cond(ged_PeakAmp,  ged_Condition);
+[ged_BBPower,  n3] = reject_outliers_by_cond(ged_BBPower,  ged_Condition);
+[ged_Centroid, n4] = reject_outliers_by_cond(ged_Centroid, ged_Condition);
+[ged_AUC,      n5] = reject_outliers_by_cond(ged_AUC,      ged_Condition);
+fprintf('  GED outliers removed: PeakFreq=%d, PeakAmp=%d, BBPow=%d, Centroid=%d, AUC=%d\n', ...
+    n1, n2, n3, n4, n5);
+
+%% ====================================================================
 %  COMPUTE SUBJECT-LEVEL MEANS (for H7 cross-modal analysis)
 %  ====================================================================
 
