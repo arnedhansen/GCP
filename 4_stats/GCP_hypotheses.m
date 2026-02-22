@@ -31,14 +31,16 @@ clear; close all; clc
 startup
 [subjects, path, colors, headmodel] = setup('GCP');
 
-% Exclude outlier subject(s)
-exclude_ids = {'607'};
-excl_mask   = ismember(subjects, exclude_ids);
+% Exclude outlier subject(s) — numeric comparison to handle any folder naming
+exclude_numeric = [607];
+subj_numeric    = cellfun(@str2double, subjects);
+excl_mask       = ismember(subj_numeric, exclude_numeric);
 if any(excl_mask)
     fprintf('Excluding subjects: %s\n', strjoin(subjects(excl_mask), ', '));
     subjects(excl_mask) = [];
 end
 nSubj = length(subjects);
+fprintf('Remaining subjects (N=%d): %s\n', nSubj, strjoin(subjects, ', '));
 
 condLabels    = {'25%', '50%', '75%', '100%'};
 contrast_vals = [25, 50, 75, 100];
@@ -69,14 +71,14 @@ ged = load(fullfile(data_dir, 'GCP_eeg_GED_gamma_metrics.mat'));
 msRate_subj    = nan(4, nSubj);
 vel2D_subj     = nan(4, nSubj);
 pupilSize_subj = nan(4, nSubj);
-gazeDev_subj   = nan(4, nSubj);
+bcea_subj      = nan(4, nSubj);
 gazeStdX_subj  = nan(4, nSubj);
 gazeStdY_subj  = nan(4, nSubj);
 % Baseline-corrected (% change) measures
 pctMSRate_subj  = nan(4, nSubj);
 pctVel2D_subj   = nan(4, nSubj);
 pctPupil_subj   = nan(4, nSubj);
-pctGazeDev_subj = nan(4, nSubj);
+pctBCEA_subj    = nan(4, nSubj);
 
 for row = 1:numel(gaze_data)
     sid  = gaze_data(row).ID;
@@ -87,7 +89,7 @@ for row = 1:numel(gaze_data)
     msRate_subj(cond, si)    = gaze_data(row).MSRate;
     vel2D_subj(cond, si)     = gaze_data(row).Vel2D;
     pupilSize_subj(cond, si) = gaze_data(row).PupilSize;
-    gazeDev_subj(cond, si)   = gaze_data(row).GazeDeviation;
+    bcea_subj(cond, si)      = gaze_data(row).BCEA;
     gazeStdX_subj(cond, si)  = gaze_data(row).GazeStdX;
     gazeStdY_subj(cond, si)  = gaze_data(row).GazeStdY;
 
@@ -100,8 +102,8 @@ for row = 1:numel(gaze_data)
     if isfield(gaze_data, 'PctPupilSize')
         pctPupil_subj(cond, si) = gaze_data(row).PctPupilSize;
     end
-    if isfield(gaze_data, 'PctGazeDeviation')
-        pctGazeDev_subj(cond, si) = gaze_data(row).PctGazeDeviation;
+    if isfield(gaze_data, 'PctBCEA')
+        pctBCEA_subj(cond, si) = gaze_data(row).PctBCEA;
     end
 end
 
@@ -395,20 +397,20 @@ fig4 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('[H4] Gaze Dispersion Increases with Stimulus Contrast', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-% --- Panel a: Baselined gaze deviation (% change) ---
+% --- Panel a: Baselined BCEA (% change) ---
 subplot(1, 2, 1); hold on;
-plot_crf(pctGazeDev_subj, contrast_vals, colors, nSubj);
-xlabel('Contrast [%]'); ylabel('Gaze Deviation [% change]');
-title('Gaze Deviation (baselined)'); set(gca, 'FontSize', fontSize - 2);
+plot_crf(pctBCEA_subj, contrast_vals, colors, nSubj);
+xlabel('Contrast [%]'); ylabel('BCEA [% change]');
+title('BCEA (baselined)'); set(gca, 'FontSize', fontSize - 2);
 
-% --- Panel b: Raw gaze deviation ---
+% --- Panel b: Raw BCEA ---
 subplot(1, 2, 2); hold on;
-plot_crf(gazeDev_subj, contrast_vals, colors, nSubj);
-xlabel('Contrast [%]'); ylabel('Gaze Deviation [px]');
-title('Gaze Deviation (raw)'); set(gca, 'FontSize', fontSize - 2);
+plot_crf(bcea_subj, contrast_vals, colors, nSubj);
+xlabel('Contrast [%]'); ylabel('BCEA [px^2]');
+title('BCEA (raw)'); set(gca, 'FontSize', fontSize - 2);
 
-report_trend('H4 Gaze Deviation (% change)', pctGazeDev_subj, contrast_vals, nSubj);
-report_trend('H4 Gaze Deviation (raw)', gazeDev_subj, contrast_vals, nSubj);
+report_trend('H4 BCEA (% change)', pctBCEA_subj, contrast_vals, nSubj);
+report_trend('H4 BCEA (raw)', bcea_subj, contrast_vals, nSubj);
 
 saveas(fig4, fullfile(fig_dir, 'GCP_H4_gaze_dispersion.png'));
 
@@ -502,11 +504,11 @@ plot_scatter_by_cond(ged_peakFreq, pctVel2D_subj, colors, condLabels, nSubj);
 xlabel('GED Peak Frequency [Hz]'); ylabel('Eye Velocity [% change]');
 title('\gamma Freq vs Eye Velocity'); set(gca, 'FontSize', fontSize - 3);
 
-% --- Panel (1,3): Gamma freq vs Gaze deviation (baselined) ---
+% --- Panel (1,3): Gamma freq vs BCEA (baselined) ---
 subplot(2, 3, 3); hold on;
-plot_scatter_by_cond(ged_peakFreq, pctGazeDev_subj, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('Gaze Deviation [% change]');
-title('\gamma Freq vs Gaze Dispersion'); set(gca, 'FontSize', fontSize - 3);
+plot_scatter_by_cond(ged_peakFreq, pctBCEA_subj, colors, condLabels, nSubj);
+xlabel('GED Peak Frequency [Hz]'); ylabel('BCEA [% change]');
+title('\gamma Freq vs BCEA'); set(gca, 'FontSize', fontSize - 3);
 
 % --- Panel (2,1): Early window MS rate ---
 subplot(2, 3, 4); hold on;
@@ -547,7 +549,7 @@ legend({'\gamma Peak Freq', 'MS Rate'}, 'Location', 'best', 'FontSize', 10);
 
 % Report correlations for H7
 fprintf('H7 Correlations (across all subject-condition pairs):\n');
-gf = ged_peakFreq(:); ms = pctMSRate_subj(:); vl = pctVel2D_subj(:); gd = pctGazeDev_subj(:);
+gf = ged_peakFreq(:); ms = pctMSRate_subj(:); vl = pctVel2D_subj(:); bc = pctBCEA_subj(:);
 valid = ~isnan(gf) & ~isnan(ms);
 if sum(valid) > 5
     [r, p] = corr(gf(valid), ms(valid));
@@ -558,10 +560,10 @@ if sum(valid) > 5
     [r, p] = corr(gf(valid), vl(valid));
     fprintf('  Gamma freq vs Velocity:    r = %.3f, p = %.4f\n', r, p);
 end
-valid = ~isnan(gf) & ~isnan(gd);
+valid = ~isnan(gf) & ~isnan(bc);
 if sum(valid) > 5
-    [r, p] = corr(gf(valid), gd(valid));
-    fprintf('  Gamma freq vs Gaze Dev:    r = %.3f, p = %.4f\n', r, p);
+    [r, p] = corr(gf(valid), bc(valid));
+    fprintf('  Gamma freq vs BCEA:        r = %.3f, p = %.4f\n', r, p);
 end
 fprintf('\n');
 
@@ -576,9 +578,9 @@ sgtitle('Hypothesis Summary — All Measures', ...
     'FontSize', 16, 'FontWeight', 'bold');
 
 summary_data = {pctMSRate_subj, pctVel2D_subj, constriction, ...
-                pctGazeDev_subj, ged_peakFreq, ged_peakAmp};
+                pctBCEA_subj, ged_peakFreq, ged_peakAmp};
 summary_names = {'[H1] MS Rate [%\Delta]', '[H2] Velocity [%\Delta]', '[H3] Constriction', ...
-                 '[H4] Gaze Dev [%\Delta]', '[H5] \gamma Peak Freq', '[H6] \gamma Peak Amp'};
+                 '[H4] BCEA [%\Delta]', '[H5] \gamma Peak Freq', '[H6] \gamma Peak Amp'};
 summary_expect = {'decrease', 'decrease', 'decrease', ...
                   'increase', 'increase', 'inverted-U'};
 
