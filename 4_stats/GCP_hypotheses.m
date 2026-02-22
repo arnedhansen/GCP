@@ -57,13 +57,17 @@ load(fullfile(data_dir, 'eeg_matrix.mat'));     % → eeg_data
 ged = load(fullfile(data_dir, 'GCP_eeg_GED_gamma_metrics.mat'));
 
 % Organise scalar measures into [4 x nSubj] matrices
+% Raw measures
 msRate_subj    = nan(4, nSubj);
 vel2D_subj     = nan(4, nSubj);
 pupilSize_subj = nan(4, nSubj);
 gazeDev_subj   = nan(4, nSubj);
 gazeStdX_subj  = nan(4, nSubj);
 gazeStdY_subj  = nan(4, nSubj);
-pctPupil_subj  = nan(4, nSubj);
+% Baseline-corrected (% change) measures
+pctMSRate_subj  = nan(4, nSubj);
+pctVel2D_subj   = nan(4, nSubj);
+pctPupil_subj   = nan(4, nSubj);
 pctGazeDev_subj = nan(4, nSubj);
 
 for row = 1:numel(gaze_data)
@@ -79,6 +83,12 @@ for row = 1:numel(gaze_data)
     gazeStdX_subj(cond, si)  = gaze_data(row).GazeStdX;
     gazeStdY_subj(cond, si)  = gaze_data(row).GazeStdY;
 
+    if isfield(gaze_data, 'PctMSRate')
+        pctMSRate_subj(cond, si) = gaze_data(row).PctMSRate;
+    end
+    if isfield(gaze_data, 'PctVel2D')
+        pctVel2D_subj(cond, si) = gaze_data(row).PctVel2D;
+    end
     if isfield(gaze_data, 'PctPupilSize')
         pctPupil_subj(cond, si) = gaze_data(row).PctPupilSize;
     end
@@ -87,14 +97,16 @@ for row = 1:numel(gaze_data)
     end
 end
 
-% EEG peak frequency (FOOOF pipeline)
-peakFreq_eeg = nan(4, nSubj);
+% EEG peak frequency + power (FOOOF pipeline: baselined, smoothed)
+peakFreq_fooof = nan(4, nSubj);
+peakPow_fooof  = nan(4, nSubj);
 for row = 1:numel(eeg_data)
     sid  = eeg_data(row).ID;
     cond = eeg_data(row).Condition;
     si   = find(strcmp(subjects, num2str(sid)));
     if isempty(si), continue; end
-    peakFreq_eeg(cond, si) = eeg_data(row).Frequency;
+    peakFreq_fooof(cond, si) = eeg_data(row).Frequency;
+    peakPow_fooof(cond, si)  = eeg_data(row).Power;
 end
 
 % GED-based metrics [4 x nSubj]
@@ -127,11 +139,13 @@ pup_mat = [];
 for subj = 1:nSubj
     gazepath = fullfile(path, subjects{subj}, 'gaze');
 
-    % Microsaccade rate (raw Hz)
+    % Microsaccade rate (baseline-corrected, % change)
     msfile = fullfile(gazepath, 'gaze_microsaccade_timeseries.mat');
     if exist(msfile, 'file')
-        S = load(msfile, 'msTS_c25', 'msTS_c50', 'msTS_c75', 'msTS_c100');
-        ms_structs = {S.msTS_c25, S.msTS_c50, S.msTS_c75, S.msTS_c100};
+        S = load(msfile, 'msTS_c25_bl_pct', 'msTS_c50_bl_pct', ...
+            'msTS_c75_bl_pct', 'msTS_c100_bl_pct');
+        ms_structs = {S.msTS_c25_bl_pct, S.msTS_c50_bl_pct, ...
+            S.msTS_c75_bl_pct, S.msTS_c100_bl_pct};
         if isempty(t_ms)
             t_ms   = ms_structs{1}.time;
             ms_mat = nan(nSubj, length(t_ms), 4);
@@ -144,16 +158,19 @@ for subj = 1:nSubj
         end
     end
 
-    % Velocity (raw px/s)
+    % Velocity (baseline-corrected, % change)
     velfile = fullfile(gazepath, 'gaze_velocity_timeseries.mat');
     if exist(velfile, 'file')
-        S = load(velfile, 'velTS_c25', 'velTS_c50', 'velTS_c75', 'velTS_c100');
-        vel_structs = {S.velTS_c25, S.velTS_c50, S.velTS_c75, S.velTS_c100};
+        S = load(velfile, 'velTS_c25_bl_pct', 'velTS_c50_bl_pct', ...
+            'velTS_c75_bl_pct', 'velTS_c100_bl_pct');
+        vel_structs = {S.velTS_c25_bl_pct, S.velTS_c50_bl_pct, ...
+            S.velTS_c75_bl_pct, S.velTS_c100_bl_pct};
         if isempty(t_vel)
             t_vel   = vel_structs{1}.time;
             vel_mat = nan(nSubj, length(t_vel), 4);
         end
         ch = find(strcmp(vel_structs{1}.label, 'Vel2D'));
+        if isempty(ch), ch = find(strcmp(vel_structs{1}.label, 'PctVel2D')); end
         for cond = 1:4
             vel_mat(subj, :, cond) = vel_structs{cond}.avg(ch, :);
         end
@@ -233,18 +250,19 @@ if ~isempty(t_ms)
         h(c) = plot(t_ms(t_idx), mu, '-', 'Color', colors(c,:), 'LineWidth', 2.5);
     end
     xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+    yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
     legend(h, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4);
 end
-xlabel('Time [s]'); ylabel('Microsaccade Rate [Hz]');
+xlabel('Time [s]'); ylabel('Microsaccade Rate [% change]');
 title('Time Course'); set(gca, 'FontSize', fontSize - 2); xlim(t_plot);
 
 % --- Panel b: Contrast response function ---
 subplot(1, 2, 2); hold on;
-plot_crf(msRate_subj, contrast_vals, colors, nSubj);
-xlabel('Contrast [%]'); ylabel('Microsaccade Rate [Hz]');
+plot_crf(pctMSRate_subj, contrast_vals, colors, nSubj);
+xlabel('Contrast [%]'); ylabel('Microsaccade Rate [% change]');
 title('Contrast Response'); set(gca, 'FontSize', fontSize - 2);
 
-r_trend = report_trend('H1 MS Rate', msRate_subj, contrast_vals, nSubj);
+r_trend = report_trend('H1 MS Rate (% change)', pctMSRate_subj, contrast_vals, nSubj);
 
 saveas(fig1, fullfile(fig_dir, 'GCP_H1_microsaccade_rate.png'));
 
@@ -274,18 +292,19 @@ if ~isempty(t_vel)
         h(c) = plot(t_vel(t_idx), mu, '-', 'Color', colors(c,:), 'LineWidth', 2.5);
     end
     xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
+    yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
     legend(h, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4);
 end
-xlabel('Time [s]'); ylabel('Combined Eye Velocity [px/s]');
+xlabel('Time [s]'); ylabel('Combined Eye Velocity [% change]');
 title('Time Course'); set(gca, 'FontSize', fontSize - 2); xlim(t_plot);
 
 % --- Panel b: CRF of mean velocity ---
 subplot(1, 2, 2); hold on;
-plot_crf(vel2D_subj, contrast_vals, colors, nSubj);
-xlabel('Contrast [%]'); ylabel('Combined Eye Velocity [px/s]');
+plot_crf(pctVel2D_subj, contrast_vals, colors, nSubj);
+xlabel('Contrast [%]'); ylabel('Combined Eye Velocity [% change]');
 title('Contrast Response'); set(gca, 'FontSize', fontSize - 2);
 
-report_trend('H2 Eye Velocity', vel2D_subj, contrast_vals, nSubj);
+report_trend('H2 Eye Velocity (% change)', pctVel2D_subj, contrast_vals, nSubj);
 
 saveas(fig2, fullfile(fig_dir, 'GCP_H2_eye_velocity.png'));
 
@@ -373,35 +392,72 @@ report_trend('H4 Gaze Std', gazeStd_subj, contrast_vals, nSubj);
 saveas(fig4, fullfile(fig_dir, 'GCP_H4_gaze_dispersion.png'));
 
 %% ====================================================================
-%  FIGURE 5: H5 + H6 — Gamma Peak Frequency & Peak Amplitude
+%  FIGURE 5: H5 + H6 — Gamma Peak Frequency & Power (GED + FOOOF)
 %  ====================================================================
 
 fig5 = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('[H5] Gamma Peak Frequency & [H6] Peak Amplitude vs Contrast', ...
+sgtitle('[H5] Gamma Peak Frequency & [H6] Peak Power vs Contrast', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-% --- Panel a: H5 — Peak frequency increases with contrast ---
-subplot(1, 2, 1); hold on;
+% --- Row 1: H5 — Peak Frequency ---
+subplot(2, 3, 1); hold on;
 plot_crf(ged_peakFreq, contrast_vals, colors, nSubj);
-xlabel('Contrast [%]'); ylabel('GED Peak Frequency [Hz]');
-title('[H5] Peak Frequency (linear increase)');
-set(gca, 'FontSize', fontSize - 2);
+xlabel('Contrast [%]'); ylabel('Peak Frequency [Hz]');
+title('[H5] GED Peak Frequency');
+set(gca, 'FontSize', fontSize - 3);
 
-% --- Panel b: H6 — Peak amplitude peaks at 75% (inverted U) ---
-subplot(1, 2, 2); hold on;
+subplot(2, 3, 2); hold on;
+plot_crf(peakFreq_fooof, contrast_vals, colors, nSubj);
+xlabel('Contrast [%]'); ylabel('Peak Frequency [Hz]');
+title('[H5] FOOOF Peak Frequency');
+set(gca, 'FontSize', fontSize - 3);
+
+subplot(2, 3, 3); hold on;
+plot_crf(ged_centroid, contrast_vals, colors, nSubj);
+xlabel('Contrast [%]'); ylabel('Spectral Centroid [Hz]');
+title('[H5] GED Spectral Centroid');
+set(gca, 'FontSize', fontSize - 3);
+
+% --- Row 2: H6 — Peak Power / Amplitude ---
+subplot(2, 3, 4); hold on;
 plot_crf(ged_peakAmp, contrast_vals, colors, nSubj);
-xlabel('Contrast [%]'); ylabel('GED Peak Amplitude [\Delta PR]');
-title('[H6] Peak Amplitude (max at 75%)');
-set(gca, 'FontSize', fontSize - 2);
+xlabel('Contrast [%]'); ylabel('Peak Amplitude [\Delta PR]');
+title('[H6] GED Peak Amplitude');
+set(gca, 'FontSize', fontSize - 3);
 
-report_trend('H5 Gamma Peak Freq', ged_peakFreq, contrast_vals, nSubj);
-report_trend('H6 Gamma Peak Amp', ged_peakAmp, contrast_vals, nSubj);
+subplot(2, 3, 5); hold on;
+plot_crf(peakPow_fooof, contrast_vals, colors, nSubj);
+xlabel('Contrast [%]'); ylabel('Peak Power [dB]');
+title('[H6] FOOOF Baselined Power');
+set(gca, 'FontSize', fontSize - 3);
 
-% H6: also test quadratic (inverted U) — check if 75% > mean(25%,50%,100%)
-amp75  = ged_peakAmp(3, :);
-ampOth = nanmean(ged_peakAmp([1 2 4], :), 1);
-[~, p_quad] = ttest(amp75 - ampOth);
-fprintf('  H6 inverted-U test: 75%% vs mean(25%%,50%%,100%%): p = %.4f\n\n', p_quad);
+subplot(2, 3, 6); hold on;
+plot_crf(ged_bbPower, contrast_vals, colors, nSubj);
+xlabel('Contrast [%]'); ylabel('Broadband Power [ratio]');
+title('[H6] GED Broadband Power');
+set(gca, 'FontSize', fontSize - 3);
+
+% Report trends
+report_trend('H5 GED Peak Freq', ged_peakFreq, contrast_vals, nSubj);
+report_trend('H5 FOOOF Peak Freq', peakFreq_fooof, contrast_vals, nSubj);
+report_trend('H5 GED Centroid', ged_centroid, contrast_vals, nSubj);
+report_trend('H6 GED Peak Amp', ged_peakAmp, contrast_vals, nSubj);
+report_trend('H6 FOOOF Peak Power', peakPow_fooof, contrast_vals, nSubj);
+report_trend('H6 GED Broadband Power', ged_bbPower, contrast_vals, nSubj);
+
+% H6: test inverted U — 75% > mean(25%,50%,100%) for each power measure
+for pp = 1:3
+    switch pp
+        case 1, pdat = ged_peakAmp;   plbl = 'GED Peak Amp';
+        case 2, pdat = peakPow_fooof; plbl = 'FOOOF Power';
+        case 3, pdat = ged_bbPower;   plbl = 'GED BB Power';
+    end
+    val75  = pdat(3, :);
+    valOth = nanmean(pdat([1 2 4], :), 1);
+    [~, p_quad] = ttest(val75 - valOth);
+    fprintf('  H6 inverted-U (%s): 75%% vs mean(others): p = %.4f\n', plbl, p_quad);
+end
+fprintf('\n');
 
 saveas(fig5, fullfile(fig_dir, 'GCP_H5H6_gamma_freq_amp.png'));
 
@@ -415,14 +471,14 @@ sgtitle('[H7] Gamma Frequency Relates to Oculomotor Dynamics', ...
 
 % --- Panel (1,1): Gamma freq vs MS rate ---
 subplot(2, 3, 1); hold on;
-plot_scatter_by_cond(ged_peakFreq, msRate_subj, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('MS Rate [Hz]');
+plot_scatter_by_cond(ged_peakFreq, pctMSRate_subj, colors, condLabels, nSubj);
+xlabel('GED Peak Frequency [Hz]'); ylabel('MS Rate [% change]');
 title('\gamma Freq vs MS Rate'); set(gca, 'FontSize', fontSize - 3);
 
 % --- Panel (1,2): Gamma freq vs Velocity ---
 subplot(2, 3, 2); hold on;
-plot_scatter_by_cond(ged_peakFreq, vel2D_subj, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('Eye Velocity [px/s]');
+plot_scatter_by_cond(ged_peakFreq, pctVel2D_subj, colors, condLabels, nSubj);
+xlabel('GED Peak Frequency [Hz]'); ylabel('Eye Velocity [% change]');
 title('\gamma Freq vs Eye Velocity'); set(gca, 'FontSize', fontSize - 3);
 
 % --- Panel (1,3): Gamma freq vs Gaze deviation ---
@@ -434,21 +490,21 @@ title('\gamma Freq vs Gaze Dispersion'); set(gca, 'FontSize', fontSize - 3);
 % --- Panel (2,1): Early window MS rate ---
 subplot(2, 3, 4); hold on;
 plot_early_late_bars(ms_early, ms_late, colors, condLabels, nSubj);
-ylabel('MS Rate [Hz]'); title('MS Rate: Early vs Late');
+ylabel('MS Rate [% change]'); title('MS Rate: Early vs Late');
 set(gca, 'FontSize', fontSize - 3);
 
 % --- Panel (2,2): Early window velocity ---
 subplot(2, 3, 5); hold on;
 plot_early_late_bars(vel_early, vel_late, colors, condLabels, nSubj);
-ylabel('Eye Velocity [px/s]'); title('Velocity: Early vs Late');
+ylabel('Eye Velocity [% change]'); title('Velocity: Early vs Late');
 set(gca, 'FontSize', fontSize - 3);
 
 % --- Panel (2,3): CRF summary (gamma freq + MS rate normalised overlay) ---
 subplot(2, 3, 6); hold on;
 mu_freq = nanmean(ged_peakFreq, 2);
-mu_ms   = nanmean(msRate_subj, 2);
+mu_ms   = nanmean(pctMSRate_subj, 2);
 sem_freq = nanstd(ged_peakFreq, [], 2) / sqrt(nSubj);
-sem_ms   = nanstd(msRate_subj, [], 2) / sqrt(nSubj);
+sem_ms   = nanstd(pctMSRate_subj, [], 2) / sqrt(nSubj);
 
 yyaxis left
 errorbar(contrast_vals, mu_freq, sem_freq, 'b-o', 'LineWidth', 2.5, ...
@@ -459,7 +515,7 @@ set(gca, 'YColor', 'b');
 yyaxis right
 errorbar(contrast_vals, mu_ms, sem_ms, 'r-s', 'LineWidth', 2.5, ...
     'MarkerSize', 8, 'MarkerFaceColor', 'r', 'CapSize', 8);
-ylabel('MS Rate [Hz]');
+ylabel('MS Rate [% change]');
 set(gca, 'YColor', 'r');
 
 xlabel('Contrast [%]');
@@ -470,7 +526,7 @@ legend({'\gamma Peak Freq', 'MS Rate'}, 'Location', 'best', 'FontSize', 10);
 
 % Report correlations for H7
 fprintf('H7 Correlations (across all subject-condition pairs):\n');
-gf = ged_peakFreq(:); ms = msRate_subj(:); vl = vel2D_subj(:); gd = gazeDev_subj(:);
+gf = ged_peakFreq(:); ms = pctMSRate_subj(:); vl = pctVel2D_subj(:); gd = gazeDev_subj(:);
 valid = ~isnan(gf) & ~isnan(ms);
 if sum(valid) > 5
     [r, p] = corr(gf(valid), ms(valid));
@@ -498,9 +554,9 @@ fig7 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Hypothesis Summary — All Measures', ...
     'FontSize', 16, 'FontWeight', 'bold');
 
-summary_data = {msRate_subj, vel2D_subj, constriction, ...
+summary_data = {pctMSRate_subj, pctVel2D_subj, constriction, ...
                 gazeDev_subj, ged_peakFreq, ged_peakAmp};
-summary_names = {'[H1] MS Rate', '[H2] Eye Velocity', '[H3] Constriction', ...
+summary_names = {'[H1] MS Rate [%\Delta]', '[H2] Velocity [%\Delta]', '[H3] Constriction', ...
                  '[H4] Gaze Dev', '[H5] \gamma Peak Freq', '[H6] \gamma Peak Amp'};
 summary_expect = {'decrease', 'decrease', 'decrease', ...
                   'increase', 'increase', 'inverted-U'};
