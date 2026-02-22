@@ -30,6 +30,14 @@ clear; close all; clc
 %% Setup
 startup
 [subjects, path, colors, headmodel] = setup('GCP');
+
+% Exclude outlier subject(s)
+exclude_ids = {'607'};
+excl_mask   = ismember(subjects, exclude_ids);
+if any(excl_mask)
+    fprintf('Excluding subjects: %s\n', strjoin(subjects(excl_mask), ', '));
+    subjects(excl_mask) = [];
+end
 nSubj = length(subjects);
 
 condLabels    = {'25%', '50%', '75%', '100%'};
@@ -109,16 +117,30 @@ for row = 1:numel(eeg_data)
     peakPow_fooof(cond, si)  = eeg_data(row).Power;
 end
 
-% GED-based metrics [4 x nSubj]
-ged_peakAmp  = ged.metric_peak_amp;
-ged_bbPower  = ged.metric_bb_power;
-ged_centroid = ged.metric_centroid;
-ged_auc      = ged.metric_auc;
+% GED-based metrics — remap from saved subject order to current (filtered) list
+ged_subj_order = ged.subjects;  % original subject list used when saving
+keep_idx = nan(1, nSubj);
+for s = 1:nSubj
+    idx = find(strcmp(ged_subj_order, subjects{s}));
+    if ~isempty(idx), keep_idx(s) = idx; end
+end
+valid_ged = ~isnan(keep_idx);
 
+ged_peakAmp  = nan(4, nSubj);
+ged_bbPower  = nan(4, nSubj);
+ged_centroid = nan(4, nSubj);
+ged_auc      = nan(4, nSubj);
 ged_peakFreq = nan(4, nSubj);
+
+ged_peakAmp(:, valid_ged)  = ged.metric_peak_amp(:, keep_idx(valid_ged));
+ged_bbPower(:, valid_ged)  = ged.metric_bb_power(:, keep_idx(valid_ged));
+ged_centroid(:, valid_ged) = ged.metric_centroid(:, keep_idx(valid_ged));
+ged_auc(:, valid_ged)      = ged.metric_auc(:, keep_idx(valid_ged));
+
 for cond = 1:4
     for s = 1:nSubj
-        pf = ged.trl_peak_freq{cond, s};
+        if ~valid_ged(s), continue; end
+        pf = ged.trl_peak_freq{cond, keep_idx(s)};
         if ~isempty(pf)
             ged_peakFreq(cond, s) = nanmean(pf);
         end
@@ -373,21 +395,20 @@ fig4 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('[H4] Gaze Dispersion Increases with Stimulus Contrast', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-% --- Panel a: Gaze deviation CRF ---
+% --- Panel a: Baselined gaze deviation (% change) ---
 subplot(1, 2, 1); hold on;
+plot_crf(pctGazeDev_subj, contrast_vals, colors, nSubj);
+xlabel('Contrast [%]'); ylabel('Gaze Deviation [% change]');
+title('Gaze Deviation (baselined)'); set(gca, 'FontSize', fontSize - 2);
+
+% --- Panel b: Raw gaze deviation ---
+subplot(1, 2, 2); hold on;
 plot_crf(gazeDev_subj, contrast_vals, colors, nSubj);
 xlabel('Contrast [%]'); ylabel('Gaze Deviation [px]');
-title('Gaze Deviation'); set(gca, 'FontSize', fontSize - 2);
+title('Gaze Deviation (raw)'); set(gca, 'FontSize', fontSize - 2);
 
-% --- Panel b: Gaze Std (X + Y combined) ---
-subplot(1, 2, 2); hold on;
-gazeStd_subj = sqrt(gazeStdX_subj.^2 + gazeStdY_subj.^2);
-plot_crf(gazeStd_subj, contrast_vals, colors, nSubj);
-xlabel('Contrast [%]'); ylabel('Gaze Std [px]');
-title('Gaze Spatial Spread'); set(gca, 'FontSize', fontSize - 2);
-
-report_trend('H4 Gaze Deviation', gazeDev_subj, contrast_vals, nSubj);
-report_trend('H4 Gaze Std', gazeStd_subj, contrast_vals, nSubj);
+report_trend('H4 Gaze Deviation (% change)', pctGazeDev_subj, contrast_vals, nSubj);
+report_trend('H4 Gaze Deviation (raw)', gazeDev_subj, contrast_vals, nSubj);
 
 saveas(fig4, fullfile(fig_dir, 'GCP_H4_gaze_dispersion.png'));
 
@@ -481,10 +502,10 @@ plot_scatter_by_cond(ged_peakFreq, pctVel2D_subj, colors, condLabels, nSubj);
 xlabel('GED Peak Frequency [Hz]'); ylabel('Eye Velocity [% change]');
 title('\gamma Freq vs Eye Velocity'); set(gca, 'FontSize', fontSize - 3);
 
-% --- Panel (1,3): Gamma freq vs Gaze deviation ---
+% --- Panel (1,3): Gamma freq vs Gaze deviation (baselined) ---
 subplot(2, 3, 3); hold on;
-plot_scatter_by_cond(ged_peakFreq, gazeDev_subj, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('Gaze Deviation [px]');
+plot_scatter_by_cond(ged_peakFreq, pctGazeDev_subj, colors, condLabels, nSubj);
+xlabel('GED Peak Frequency [Hz]'); ylabel('Gaze Deviation [% change]');
 title('\gamma Freq vs Gaze Dispersion'); set(gca, 'FontSize', fontSize - 3);
 
 % --- Panel (2,1): Early window MS rate ---
@@ -526,7 +547,7 @@ legend({'\gamma Peak Freq', 'MS Rate'}, 'Location', 'best', 'FontSize', 10);
 
 % Report correlations for H7
 fprintf('H7 Correlations (across all subject-condition pairs):\n');
-gf = ged_peakFreq(:); ms = pctMSRate_subj(:); vl = pctVel2D_subj(:); gd = gazeDev_subj(:);
+gf = ged_peakFreq(:); ms = pctMSRate_subj(:); vl = pctVel2D_subj(:); gd = pctGazeDev_subj(:);
 valid = ~isnan(gf) & ~isnan(ms);
 if sum(valid) > 5
     [r, p] = corr(gf(valid), ms(valid));
@@ -555,9 +576,9 @@ sgtitle('Hypothesis Summary — All Measures', ...
     'FontSize', 16, 'FontWeight', 'bold');
 
 summary_data = {pctMSRate_subj, pctVel2D_subj, constriction, ...
-                gazeDev_subj, ged_peakFreq, ged_peakAmp};
+                pctGazeDev_subj, ged_peakFreq, ged_peakAmp};
 summary_names = {'[H1] MS Rate [%\Delta]', '[H2] Velocity [%\Delta]', '[H3] Constriction', ...
-                 '[H4] Gaze Dev', '[H5] \gamma Peak Freq', '[H6] \gamma Peak Amp'};
+                 '[H4] Gaze Dev [%\Delta]', '[H5] \gamma Peak Freq', '[H6] \gamma Peak Amp'};
 summary_expect = {'decrease', 'decrease', 'decrease', ...
                   'increase', 'increase', 'inverted-U'};
 
