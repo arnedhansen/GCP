@@ -87,7 +87,7 @@ chanlocs_all = {};
 
 %% Process each subject
 for subj = 1:nSubj
-
+    tic
     datapath = strcat(path, subjects{subj}, filesep, 'eeg');
     cd(datapath)
     load dataEEG
@@ -476,7 +476,7 @@ for subj = 1:nSubj
     set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
 
     saveas(fig, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_subj%s.png', subjects{subj})));
-
+    toc
 end % subject loop
 
 %% ====================================================================
