@@ -28,7 +28,7 @@ clear; close all; clc
 
 %% Setup
 startup
-[subjects, path, colors, ~] = setup('GCP');
+[subjects, path, colors, ~] = setup('GCP', 0);
 
 nSubj = length(subjects);
 fprintf('Subjects (N=%d): %s\n', nSubj, strjoin(subjects, ', '));
@@ -198,22 +198,21 @@ subj_gedFreq   = nan(4, nSubj);
 for s = 1:nSubj
     sid = str2double(subjects{s});
     for c = 1:4
-        idx = gaze_Subject == sid & gaze_Condition == c;
-        if any(idx)
-            subj_pctMSRate(c, s) = nanmean(gaze_PctMSRate(idx));
-            subj_pctVel2D(c, s)  = nanmean(gaze_PctVel2D(idx));
-            subj_pctBCEA(c, s)   = nanmean(gaze_PctBCEA(idx));
+        idx_g = gaze_Subject == sid & gaze_Condition == c;
+        if any(idx_g)
+            subj_pctMSRate(c, s) = nanmean(gaze_PctMSRate(idx_g));
+            subj_pctVel2D(c, s)  = nanmean(gaze_PctVel2D(idx_g));
+            subj_pctBCEA(c, s)   = nanmean(gaze_PctBCEA(idx_g));
         end
 
-        gi = find(strcmp(ged_subj_order, subjects{s}));
-        if ~isempty(gi)
-            pf = ged.trl_peak_freq{c, gi};
-            if ~isempty(pf)
-                subj_gedFreq(c, s) = nanmean(pf);
-            end
+        idx_e = ged_Subject == sid & ged_Condition == c;
+        if any(idx_e)
+            subj_gedFreq(c, s) = nanmean(ged_PeakFreq(idx_e));
         end
     end
 end
+
+% No second-pass outlier rejection on subject means — trial-level MAD is sufficient
 
 %% ====================================================================
 %  FIGURE 1: H1 — Microsaccade Rate (trial-level)
@@ -385,12 +384,16 @@ plot_scatter_by_cond(subj_gedFreq, subj_pctBCEA, colors, condLabels, nSubj);
 xlabel('GED Peak Frequency [Hz]'); ylabel('BCEA [% change]');
 title('\gamma Freq vs BCEA'); set(gca, 'FontSize', fontSize - 3);
 
-% Dual CRF overlay
+% Dual CRF overlay (from trial-level data, consistent with rainclouds)
 subplot(2, 3, 4); hold on;
-mu_freq = nanmean(subj_gedFreq, 2);
-mu_ms   = nanmean(subj_pctMSRate, 2);
-sem_freq = nanstd(subj_gedFreq, [], 2) / sqrt(nSubj);
-sem_ms   = nanstd(subj_pctMSRate, [], 2) / sqrt(nSubj);
+mu_freq  = nan(4,1); sem_freq = nan(4,1);
+mu_ms    = nan(4,1); sem_ms   = nan(4,1);
+for c = 1:4
+    vf = ged_PeakFreq(ged_Condition == c);  vf = vf(~isnan(vf));
+    mu_freq(c)  = mean(vf);  sem_freq(c) = std(vf)/sqrt(numel(vf));
+    vm = gaze_PctMSRate(gaze_Condition == c); vm = vm(~isnan(vm));
+    mu_ms(c)    = mean(vm);  sem_ms(c)   = std(vm)/sqrt(numel(vm));
+end
 
 yyaxis left
 errorbar(contrast_vals, mu_freq, sem_freq, 'b-o', 'LineWidth', 2.5, ...
@@ -407,7 +410,7 @@ set(gca, 'YColor', 'r');
 xlabel('Contrast [%]');
 title('Dual CRF: \gamma Freq & MS Rate');
 set(gca, 'XTick', contrast_vals, 'FontSize', fontSize - 3);
-xlim([15 110]); grid on; box on;
+xlim([15 110]);  box on;
 legend({'\gamma Peak Freq', 'MS Rate'}, 'Location', 'best', 'FontSize', 10);
 
 % Trial counts per condition
@@ -422,7 +425,7 @@ for c = 1:4
 end
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 12);
 ylabel('N trials'); title('Trial Counts'); legend({'Gaze', 'GED'}, 'FontSize', 10);
-grid on; box on;
+ box on;
 
 % Correlation summary text
 subplot(2, 3, 6); hold on; axis off;
@@ -494,7 +497,7 @@ for mi = 1:6
     xlabel('Contrast [%]');
     title(sprintf('%s (%s)', summary_names{mi}, summary_expect{mi}), ...
         'FontSize', 11, 'FontWeight', 'bold');
-    box on; grid on;
+    box on; 
 end
 
 saveas(fig7, fullfile(fig_dir, 'GCP_hypotheses_summary_trials.png'));
@@ -559,7 +562,7 @@ function plot_raincloud_trial(data, cond_vec, colors, condLabels, y_label)
 
     set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13);
     ylabel(y_label);
-    grid on; box on;
+     box on;
 end
 
 function report_trend_trial(label, data, cond_vec, subj_vec, contrast_vals)
@@ -630,7 +633,7 @@ function plot_scatter_by_cond(x_data, y_data, colors, condLabels, nSubj)
     end
 
     legend(h, condLabels, 'Location', 'best', 'FontSize', 9);
-    grid on; box on;
+     box on;
 end
 
 function [data_out, n_removed] = reject_outliers_by_cond(data, cond_vec)
@@ -648,5 +651,21 @@ function [data_out, n_removed] = reject_outliers_by_cond(data, cond_vec)
         n_removed = n_removed + sum(outlier);
         vals(outlier) = NaN;
         data_out(idx) = vals;
+    end
+end
+
+function [data_out, n_removed] = reject_outliers_by_cond_mat(data_mat)
+    data_out  = data_mat;
+    n_removed = 0;
+    for c = 1:size(data_mat, 1)
+        vals  = data_mat(c, :);
+        valid = ~isnan(vals);
+        if sum(valid) < 3, continue; end
+        med_val = median(vals(valid));
+        mad_val = mad(vals(valid), 1);
+        if mad_val == 0, continue; end
+        outlier = valid & (abs(vals - med_val) > 3 * mad_val);
+        n_removed = n_removed + sum(outlier);
+        data_out(c, outlier) = NaN;
     end
 end
