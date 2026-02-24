@@ -35,13 +35,14 @@ scan_width = 4;
 
 % GED parameters
 lambda = 0.01;
-ged_search_n = 30;          % search first N GED components
-topo_display_n = 30;        % number of component topos to visualize
-min_template_corr = 0.25;   % hard minimum corr(abs(topo), abs(template))
-min_post_front_ratio = 1.20; % hard minimum posterior/frontal strength ratio
+ged_search_n = 10;          % search first N GED components
+topo_display_n = 10;        % number of component topos to visualize
+template_front_weight = 0.7; % anti-template weight for frontal channels
+template_sigma_occ = 0.20;   % spatial smoothness for occipital template
+template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
 score_w_corr = 1.00;        % composite-score weight for template correlation
-score_w_ratio = 1.00;       % composite-score weight for post/front ratio
-score_w_front = 1.00;       % composite-score penalty for frontal strength
+score_w_gamma = 1.00;       % composite-score weight for pooled gamma evidence
+score_w_frontleak = 1.00;   % composite-score penalty for frontal leakage
 
 % Detrending parameters for power-ratio spectrum
 poly_order = 2;
@@ -61,8 +62,8 @@ if ~exist(fig_save_dir, 'dir'), mkdir(fig_save_dir); end
 
 method_base = fullfile(fig_save_dir, 'method_comparison');
 method_dirs = {fullfile(method_base, 'hard_50Hz'), ...
-               fullfile(method_base, 'spectral_trough'), ...
-               fullfile(method_base, 'gmm')};
+    fullfile(method_base, 'spectral_trough'), ...
+    fullfile(method_base, 'gmm')};
 for mi = 1:3
     if ~exist(method_dirs{mi}, 'dir'), mkdir(method_dirs{mi}); end
 end
@@ -119,14 +120,13 @@ for subj = 1:nSubj
 
     nChans = length(dataEEG_c25.label);
 
-    post_mask = cellfun(@(l) ~isempty(regexp(l, '^(P|PO|O|I)', 'once')), dataEEG_c25.label);
-    post_idx  = find(post_mask);
-    nPost     = length(post_idx);
-    if nPost == 0
-        warning('No posterior channels matched for subject %s. Falling back to occipital labels [OI].', subjects{subj});
-        post_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I)', 'once')), dataEEG_c25.label);
-        post_idx  = find(post_mask);
-        nPost     = length(post_idx);
+    occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I)', 'once')), dataEEG_c25.label);
+    occ_idx  = find(occ_mask);
+    nOcc     = length(occ_idx);
+    if nOcc == 0
+        warning('No occipital channels matched for subject %s. Using all channels as template fallback.', subjects{subj});
+        occ_idx = 1:nChans;
+        nOcc = nChans;
     end
     front_mask = cellfun(@(l) ~isempty(regexp(l, '^(Fp|AF|F)', 'once')), dataEEG_c25.label);
     front_idx  = find(front_mask);
@@ -138,8 +138,8 @@ for subj = 1:nSubj
     %  PHASE 1: Build POOLED covariance across all conditions -> one GED
     %  ================================================================
     clc
-    fprintf('Subject %s (%d/%d) — Phase 1: Full-head GED + posterior template (%d post / %d ch)\n', ...
-        subjects{subj}, subj, nSubj, nPost, nChans);
+    fprintf('Subject %s (%d/%d) — Phase 1: Full-head GED + occipital template (%d occ / %d ch)\n', ...
+        subjects{subj}, subj, nSubj, nOcc, nChans);
 
     covStim_full = zeros(nChans);
     covBase_full = zeros(nChans);
@@ -201,15 +201,39 @@ for subj = 1:nSubj
     searchTopos = nan(nChans, nSearch);
     searchCorrs = nan(nSearch, 1);
     searchScores = nan(nSearch, 1);
-    searchPostStrength = nan(nSearch, 1);
+    searchOccStrength = nan(nSearch, 1);
     searchFrontStrength = nan(nSearch, 1);
-    searchPostFrontRatio = nan(nSearch, 1);
+    searchOccFrontRatio = nan(nSearch, 1);
+    searchGammaEvidence = nan(nSearch, 1);
+    searchFrontLeak = nan(nSearch, 1);
 
-    % Simulated posterior gamma template (posterior channels only)
+    % Simulated signed occipital template with frontal anti-template.
+    % Spatial smoothing uses layout coordinates when available.
     sim_template = zeros(nChans, 1);
-    sim_template(post_idx) = 1;
-    if ~any(sim_template)
-        sim_template(:) = 1;
+    lay_labels = headmodel.layANThead.label;
+    lay_pos = headmodel.layANThead.pos;
+    chan_pos = nan(nChans, 2);
+    for ch = 1:nChans
+        li = find(strcmp(lay_labels, dataEEG_c25.label{ch}), 1, 'first');
+        if ~isempty(li)
+            chan_pos(ch, :) = lay_pos(li, :);
+        end
+    end
+    has_pos = ~any(isnan(chan_pos), 2);
+    occ_pos_idx = intersect(occ_idx, find(has_pos));
+    front_pos_idx = intersect(front_idx, find(has_pos));
+    if ~isempty(occ_pos_idx) && ~isempty(front_pos_idx)
+        occ_ctr = mean(chan_pos(occ_pos_idx, :), 1);
+        front_ctr = mean(chan_pos(front_pos_idx, :), 1);
+        occ_d2 = sum((chan_pos - occ_ctr).^2, 2);
+        front_d2 = sum((chan_pos - front_ctr).^2, 2);
+        w_occ = exp(-occ_d2 / (2 * template_sigma_occ^2));
+        w_front = exp(-front_d2 / (2 * template_sigma_front^2));
+        sim_template = w_occ - template_front_weight * w_front;
+        sim_template(~has_pos) = 0;
+    else
+        sim_template(occ_idx) = 1;
+        sim_template(front_idx) = -template_front_weight;
     end
     if std(sim_template) > 0
         sim_template = (sim_template - mean(sim_template)) / std(sim_template);
@@ -220,61 +244,80 @@ for subj = 1:nSubj
     for ci = 1:nSearch
         w_ci = W_full(:, ci);
         topo_ci = covStim_full_reg * w_ci;
-        r_ci = corr(abs(topo_ci), abs(sim_template), 'rows', 'complete');
+        r_ci = corr(topo_ci, sim_template, 'rows', 'complete');
         if ~isnan(r_ci) && r_ci < 0
             w_ci = -w_ci;
             topo_ci = -topo_ci;
             r_ci = -r_ci;
         end
-        post_strength = mean(abs(topo_ci(post_idx)));
+        occ_strength = mean(abs(topo_ci(occ_idx)));
         if ~isempty(front_idx)
             front_strength = mean(abs(topo_ci(front_idx)));
-            ratio_ci = post_strength / max(front_strength, eps);
+            ratio_ci = occ_strength / max(front_strength, eps);
+            front_leak_ci = front_strength / max(occ_strength, eps);
         else
             front_strength = 0;
             ratio_ci = Inf;
+            front_leak_ci = 0;
         end
-        score_ci = NaN;
+        % Pooled gamma evidence (all conditions combined).
+        gamma_ev_ci = log( max((w_ci' * covStim_reg * w_ci), eps) / ...
+                           max((w_ci' * covBase_reg * w_ci), eps) );
+
         searchFilters(:, ci) = w_ci;
         searchTopos(:, ci) = topo_ci;
         searchCorrs(ci) = r_ci;
-        searchPostStrength(ci) = post_strength;
+        searchOccStrength(ci) = occ_strength;
         searchFrontStrength(ci) = front_strength;
-        searchPostFrontRatio(ci) = ratio_ci;
-        searchScores(ci) = score_ci;
+        searchOccFrontRatio(ci) = ratio_ci;
+        searchGammaEvidence(ci) = gamma_ev_ci;
+        searchFrontLeak(ci) = front_leak_ci;
     end
 
-    % Composite score with hard constraints:
-    % pass if corr >= min_template_corr and post/front >= min_post_front_ratio.
-    % Among passers, maximize z(corr) + z(ratio) - z(front).
+    % Pareto-filter candidates on three objectives (maximize corr, gamma evidence, ratio),
+    % then select by composite score z(corr) + z(gamma) - z(frontLeak).
     corr_vec = searchCorrs;
-    ratio_vec = searchPostFrontRatio;
-    front_vec = searchFrontStrength;
+    ratio_vec = searchOccFrontRatio;
+    gamma_vec = searchGammaEvidence;
+    leak_vec = searchFrontLeak;
+
+    pareto_mask = true(nSearch, 1);
+    for i = 1:nSearch
+        for j = 1:nSearch
+            if i == j, continue; end
+            better_or_equal = (corr_vec(j) >= corr_vec(i)) && ...
+                              (gamma_vec(j) >= gamma_vec(i)) && ...
+                              (ratio_vec(j) >= ratio_vec(i));
+            strictly_better = (corr_vec(j) > corr_vec(i)) || ...
+                              (gamma_vec(j) > gamma_vec(i)) || ...
+                              (ratio_vec(j) > ratio_vec(i));
+            if better_or_equal && strictly_better
+                pareto_mask(i) = false;
+                break;
+            end
+        end
+    end
 
     valid_corr = isfinite(corr_vec);
-    valid_ratio = isfinite(ratio_vec);
-    valid_front = isfinite(front_vec);
+    valid_gamma = isfinite(gamma_vec);
+    valid_leak = isfinite(leak_vec);
 
     if any(valid_corr), corr_mu = mean(corr_vec(valid_corr)); corr_sd = std(corr_vec(valid_corr));
     else, corr_mu = 0; corr_sd = 1; end
-    if any(valid_ratio), ratio_mu = mean(ratio_vec(valid_ratio)); ratio_sd = std(ratio_vec(valid_ratio));
-    else, ratio_mu = 0; ratio_sd = 1; end
-    if any(valid_front), front_mu = mean(front_vec(valid_front)); front_sd = std(front_vec(valid_front));
-    else, front_mu = 0; front_sd = 1; end
+    if any(valid_gamma), gamma_mu = mean(gamma_vec(valid_gamma)); gamma_sd = std(gamma_vec(valid_gamma));
+    else, gamma_mu = 0; gamma_sd = 1; end
+    if any(valid_leak), leak_mu = mean(leak_vec(valid_leak)); leak_sd = std(leak_vec(valid_leak));
+    else, leak_mu = 0; leak_sd = 1; end
 
     z_corr = (corr_vec - corr_mu) / max(corr_sd, eps);
-    z_ratio = (ratio_vec - ratio_mu) / max(ratio_sd, eps);
-    z_front = (front_vec - front_mu) / max(front_sd, eps);
+    z_gamma = (gamma_vec - gamma_mu) / max(gamma_sd, eps);
+    z_leak = (leak_vec - leak_mu) / max(leak_sd, eps);
 
-    comp_score = score_w_corr * z_corr + score_w_ratio * z_ratio - score_w_front * z_front;
-
-    pass_mask = corr_vec >= min_template_corr & ratio_vec >= min_post_front_ratio;
-    if any(pass_mask)
-        comp_score(~pass_mask) = -Inf;
-    else
-        warning(['No component passed hard criteria for subject %s (corr>=%.2f, ratio>=%.2f). ', ...
-            'Falling back to unconstrained composite score.'], ...
-            subjects{subj}, min_template_corr, min_post_front_ratio);
+    comp_score = score_w_corr * z_corr + score_w_gamma * z_gamma - score_w_frontleak * z_leak;
+    comp_score(~pareto_mask) = -Inf;
+    if ~any(isfinite(comp_score))
+        warning('Pareto filter removed all candidates for subject %s; falling back to unconstrained score.', subjects{subj});
+        comp_score = score_w_corr * z_corr + score_w_gamma * z_gamma - score_w_frontleak * z_leak;
     end
 
     searchScores = comp_score;
@@ -284,9 +327,11 @@ for subj = 1:nSubj
         bestScore = NaN;
     end
     bestCorr = searchCorrs(bestIdx);
-    bestPost = searchPostStrength(bestIdx);
+    bestOcc = searchOccStrength(bestIdx);
     bestFront = searchFrontStrength(bestIdx);
-    bestRatio = searchPostFrontRatio(bestIdx);
+    bestRatio = searchOccFrontRatio(bestIdx);
+    bestGamma = searchGammaEvidence(bestIdx);
+    bestLeak = searchFrontLeak(bestIdx);
 
     topComp = searchFilters(:, bestIdx);
     topo_temp = covStim_full_reg * topComp;
@@ -327,9 +372,9 @@ for subj = 1:nSubj
     cfg_topo.figure    = 'gcf';
 
     fig_sel = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf(['Subject %s: GED Candidate Top-%d (searched 1:%d, selected C%d, ', ...
-        'score=%.3f, r=%.3f, post=%.3f, front=%.3f, ratio=%.3f)'], ...
-        subjects{subj}, nDispTopo, nSearch, bestIdx, bestScore, bestCorr, bestPost, bestFront, bestRatio), ...
+    sgtitle(sprintf(['Subject %s: GED Top %d (selected C%d, ', ...
+        'score=%.3f, r=%.3f, occ=%.3f, front=%.3f, occ/front=%.3f, gamma=%.3f, leak=%.3f)'], ...
+        subjects{subj}, nDispTopo, bestIdx, bestScore, bestCorr, bestOcc, bestFront, bestRatio, bestGamma, bestLeak), ...
         'FontSize', 14, 'FontWeight', 'bold');
     nColsTopo = 5;
     nRowsTopo = ceil(nDispTopo / nColsTopo);
@@ -346,16 +391,10 @@ for subj = 1:nSubj
             imagesc(topoDispTopos(:, ci)); colorbar;
         end
         comp_rank = dispTopoIdx(ci);
-        is_selected = comp_rank == bestIdx;
-        if is_selected
-            title(sprintf('C%d (selected), score=%.3f, r=%.3f, ratio=%.2f', ...
-                comp_rank, topoDispScores(ci), topoDispCorrs(ci), searchPostFrontRatio(comp_rank)), ...
-                'FontSize', 10, 'FontWeight', 'bold');
-        else
-            title(sprintf('C%d, score=%.3f, r=%.3f, ratio=%.2f', ...
-                comp_rank, topoDispScores(ci), topoDispCorrs(ci), searchPostFrontRatio(comp_rank)), ...
-                'FontSize', 10);
-        end
+        title(sprintf('C%d: score=%.2f, r=%.2f, ratio=%.2f, g=%.2f', ...
+            comp_rank, topoDispScores(ci), topoDispCorrs(ci), ...
+            searchOccFrontRatio(comp_rank), searchGammaEvidence(comp_rank)), ...
+            'FontSize', 7);
     end
     saveas(fig_sel, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_top5_selection_subj%s.png', subjects{subj})));
 
@@ -526,8 +565,8 @@ for subj = 1:nSubj
             sem_dt = nanstd(pr_dt_mats{cond}, [], 1) / sqrt(nTrl);
             faceC = 0.8*colors(cond,:) + 0.2*[1 1 1];
             patch([scan_freqs, fliplr(scan_freqs)], ...
-                  [mu_dt - sem_dt, fliplr(mu_dt + sem_dt)], ...
-                  colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
+                [mu_dt - sem_dt, fliplr(mu_dt + sem_dt)], ...
+                colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
             plot(scan_freqs, mu_dt, '-', 'Color', colors(cond,:), 'LineWidth', 2.5);
             yline(0, 'k-', 'LineWidth', 0.5);
             mn_pf = all_trial_mean_single(cond, subj);
@@ -560,8 +599,8 @@ for subj = 1:nSubj
             sem_dt = nanstd(pr_dt_mats{cond}, [], 1) / sqrt(nTrl);
             faceC = 0.8*colors(cond,:) + 0.2*[1 1 1];
             patch([scan_freqs, fliplr(scan_freqs)], ...
-                  [mu_dt - sem_dt, fliplr(mu_dt + sem_dt)], ...
-                  colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
+                [mu_dt - sem_dt, fliplr(mu_dt + sem_dt)], ...
+                colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
             plot(scan_freqs, mu_dt, '-', 'Color', colors(cond,:), 'LineWidth', 2.5);
             yline(0, 'k-', 'LineWidth', 0.5);
             xline(50, 'k:', 'LineWidth', 1, 'Alpha', 0.5);
