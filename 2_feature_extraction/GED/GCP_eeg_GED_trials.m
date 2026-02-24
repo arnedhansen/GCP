@@ -19,6 +19,7 @@
 startup
 [subjects, path, colors, headmodel] = setup('GCP');
 
+%%
 nSubj = length(subjects);
 
 % Time windows
@@ -41,9 +42,33 @@ template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.20;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
 score_w_corr = 2;           % composite-score weight for template correlation
-score_w_gamma = 1.5;       % composite-score weight for pooled gamma evidence
-score_w_eval = 1.5;        % composite-score weight for GED eigenvalue evidence
-score_w_frontleak = 1.25;   % composite-score penalty for frontal leakage
+score_w_gamma = 1.75;       % composite-score weight for pooled gamma evidence
+score_w_eval = 1.5;         % composite-score weight for GED eigenvalue evidence
+score_w_frontleak = 1;      % composite-score penalty for frontal leakage
+score_pareto_soft_penalty = 1.00; % soft penalty for Pareto-dominated components
+viz_suppress_nonocc_outliers = false;  % visualization-only suppression/interpolation
+viz_interp_k = 6;                   % nearest neighbors for channel interpolation
+viz_nonocc_outlier_mult = 1.00;     % non-occipital outlier threshold multiplier (vs posterior pctl)
+viz_topo_prctile = 99;              % robust percentile for color scaling
+min_topcomp_ratio = 0.75;           % hard eligibility threshold for top-component ranking
+
+% Multi-component selection (perm + CV) and weighted projection
+comp_select_mode = 'perm_cv';
+projection_mode = 'weighted_power';  % fixed in this implementation
+max_components = 6;                  % upper bound on selected components
+n_perm = 500;                        % strict mode: permutation count
+perm_alpha = 0.05;                   % family-wise alpha for max-eigen threshold
+cv_folds = 10;                       % strict mode: K folds
+cv_repeats = 2;                      % strict mode: repeated K-fold
+random_seed = 13;                    % reproducible randomization
+
+% Three-way benchmark config
+benchmark_methods = {'raw', 'ged_top_eig', 'ged_permcv_weighted'};
+nBenchmarkMethods = numel(benchmark_methods);
+raw_reference_definition = 'posterior_roi';  % locked reference for raw benchmark branch
+compute_detectability = true;
+compute_separation = true;
+compute_reliability = true;
 
 % Detrending parameters for power-ratio spectrum
 poly_order = 2;
@@ -102,17 +127,40 @@ all_top5_corrs         = nan(5, nSubj);
 all_top5_evals         = nan(5, nSubj);
 all_top5_topos         = cell(1, nSubj);
 all_simulated_templates = cell(1, nSubj);
+all_selected_comp_indices_multi = cell(1, nSubj);
+all_selected_comp_weights = cell(1, nSubj);
+all_component_selection_stats = cell(1, nSubj);
+all_cv_curves = cell(1, nSubj);
+all_perm_thresholds = nan(1, nSubj);
+all_selected_filters = cell(1, nSubj);
+all_phase1_data = cell(nSubj, 4);
+all_phase1_ntrials = nan(nSubj, 4);
+all_fsample = nan(1, nSubj);
+all_top_eig_filter = cell(1, nSubj);
+all_post_idx = cell(1, nSubj);
+all_raw_weights = cell(1, nSubj);
+
+all_trial_powratio_bench = cell(nBenchmarkMethods, 4, nSubj);
+all_trial_powratio_dt_bench = cell(nBenchmarkMethods, 4, nSubj);
+benchmark_metric_detectability = nan(nBenchmarkMethods, 4, nSubj);
+benchmark_metric_prominence = nan(nBenchmarkMethods, 4, nSubj);
+benchmark_metric_separation_slope = nan(nBenchmarkMethods, nSubj);
+benchmark_metric_separation_delta = nan(nBenchmarkMethods, nSubj);
+benchmark_metric_reliability_trialcv = nan(nBenchmarkMethods, 4, nSubj);
+benchmark_metric_reliability_subjspread = nan(nBenchmarkMethods, 4);
 
 chanlocs_all = {};
 
 %% Process each subject
 for subj = 1:nSubj
+    close all
     tic
     datapath = strcat(path, subjects{subj}, filesep, 'eeg');
     cd(datapath)
     load dataEEG
 
     fsample = dataEEG_c25.fsample;
+    all_fsample(subj) = fsample;
 
     trialIndices = { ...
         find(dataEEG_c25.trialinfo  == 61), ...
@@ -127,7 +175,7 @@ for subj = 1:nSubj
 
     nChans = length(dataEEG_c25.label);
 
-    occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I)', 'once')), dataEEG_c25.label);
+    occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO)', 'once')), dataEEG_c25.label);
     occ_idx  = find(occ_mask);
     nOcc     = length(occ_idx);
     if nOcc == 0
@@ -140,6 +188,26 @@ for subj = 1:nSubj
     if isempty(front_idx)
         warning('No frontal channels matched for subject %s. Frontal penalty disabled for this subject.', subjects{subj});
     end
+    post_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|P)', 'once')), dataEEG_c25.label);
+    post_idx  = find(post_mask);
+    if isempty(post_idx)
+        post_idx = occ_idx;
+    end
+    all_post_idx{subj} = post_idx;
+    switch lower(raw_reference_definition)
+        case 'posterior_roi'
+            raw_w = zeros(nChans, 1);
+            raw_w(post_idx) = 1;
+            if sum(raw_w) > 0
+                raw_w = raw_w / sum(raw_w);
+            else
+                raw_w = ones(nChans, 1) / nChans;
+            end
+        otherwise
+            error('Unsupported raw_reference_definition: %s', raw_reference_definition);
+    end
+    all_raw_weights{subj} = raw_w;
+    nonocc_idx = setdiff(1:nChans, occ_idx);
 
     %% ================================================================
     %  PHASE 1: Build POOLED covariance across all conditions -> one GED
@@ -147,10 +215,13 @@ for subj = 1:nSubj
     clc
     fprintf('Subject %s (%d/%d) — Phase 1: Full-head GED + occipital template (%d occ / %d ch)\n', ...
         subjects{subj}, subj, nSubj, nOcc, nChans);
+    rng(random_seed + subj, 'twister');
 
     covStim_full = zeros(nChans);
     covBase_full = zeros(nChans);
     nTrials_total = 0;
+    stim_cov_trials = {};
+    base_cov_trials = {};
 
     dat_per_cond = cell(1, 4);
 
@@ -163,6 +234,8 @@ for subj = 1:nSubj
         cfg.trials = trlIdx;
         dat = ft_selectdata(cfg, dat);
         dat_per_cond{cond} = dat;
+        all_phase1_data{subj, cond} = dat;
+        all_phase1_ntrials(subj, cond) = numel(dat.trial);
 
         cfg_filt = [];
         cfg_filt.bpfilter   = 'yes';
@@ -182,11 +255,15 @@ for subj = 1:nSubj
         for trl = 1:nTrl
             d = double(dat_stim.trial{trl});
             d = bsxfun(@minus, d, mean(d, 2));
-            covStim_full = covStim_full + (d * d') / size(d, 2);
+            cov_stim_trl = (d * d') / size(d, 2);
+            covStim_full = covStim_full + cov_stim_trl;
+            stim_cov_trials{end + 1} = cov_stim_trl; %#ok<AGROW>
 
             d = double(dat_base.trial{trl});
             d = bsxfun(@minus, d, mean(d, 2));
-            covBase_full = covBase_full + (d * d') / size(d, 2);
+            cov_base_trl = (d * d') / size(d, 2);
+            covBase_full = covBase_full + cov_base_trl;
+            base_cov_trials{end + 1} = cov_base_trl; %#ok<AGROW>
         end
         nTrials_total = nTrials_total + nTrl;
     end
@@ -280,6 +357,7 @@ for subj = 1:nSubj
         searchGammaEvidence(ci) = gamma_ev_ci;
         searchFrontLeak(ci) = front_leak_ci;
     end
+    all_top_eig_filter{subj} = searchFilters(:, 1);
 
     % Pareto-filter candidates on four objectives (maximize corr, gamma evidence, ratio, eval),
     % then select by weighted composite score.
@@ -327,25 +405,229 @@ for subj = 1:nSubj
     z_eval = (eval_vec - eval_mu) / max(eval_sd, eps);
     z_leak = (leak_vec - leak_mu) / max(leak_sd, eps);
 
-    comp_score = score_w_corr * z_corr + ...
-                 score_w_gamma * z_gamma + ...
-                 score_w_eval * z_eval - ...
-                 score_w_frontleak * z_leak;
-    comp_score(~pareto_mask) = -Inf;
-    if ~any(isfinite(comp_score))
-        warning('Pareto filter removed all candidates for subject %s; falling back to unconstrained score.', subjects{subj});
-        comp_score = score_w_corr * z_corr + ...
+    comp_score_raw = score_w_corr * z_corr + ...
                      score_w_gamma * z_gamma + ...
                      score_w_eval * z_eval - ...
                      score_w_frontleak * z_leak;
+    comp_score = comp_score_raw;
+    comp_score(~pareto_mask) = comp_score(~pareto_mask) - score_pareto_soft_penalty;
+    if ~any(isfinite(comp_score))
+        warning('Pareto filter removed all candidates for subject %s; falling back to unconstrained score.', subjects{subj});
+        comp_score = comp_score_raw;
+    end
+
+    ratio_eligible = isfinite(ratio_vec) & (ratio_vec >= min_topcomp_ratio);
+    if ~any(ratio_eligible)
+        warning(['No component reached occ/front ratio >= %.2f for subject %s. ', ...
+                 'Falling back to highest-ratio component for continuity.'], ...
+                min_topcomp_ratio, subjects{subj});
+        [~, ratio_best_idx] = max(ratio_vec);
+        ratio_eligible(ratio_best_idx) = true;
     end
 
     searchScores = comp_score;
+    searchScores(~ratio_eligible) = -Inf;
     [bestScore, bestIdx] = max(searchScores);
     if isempty(bestIdx) || isnan(bestScore)
         bestIdx = 1;
         bestScore = NaN;
     end
+
+    candidate_table = struct();
+    candidate_table.comp_idx = (1:nSearch)';
+    candidate_table.eigenvalue = evals_sorted(1:nSearch);
+    candidate_table.log_eigenvalue = eval_vec;
+    candidate_table.corr = corr_vec;
+    candidate_table.gamma = gamma_vec;
+    candidate_table.ratio = ratio_vec;
+    candidate_table.front_leak = leak_vec;
+    candidate_table.score = searchScores;
+    candidate_table.pareto = pareto_mask;
+    candidate_table.ratio_eligible = ratio_eligible;
+
+    perm_threshold = NaN;
+    perm_null_max = nan(n_perm, 1);
+    perm_sig_mask = true(nSearch, 1);
+    if strcmpi(comp_select_mode, 'perm_cv')
+        nStimTrials = numel(stim_cov_trials);
+        nBaseTrials = numel(base_cov_trials);
+        nPool = nStimTrials + nBaseTrials;
+        if nStimTrials > 0 && nBaseTrials > 0
+            all_cov_trials = [stim_cov_trials, base_cov_trials];
+            for pi = 1:n_perm
+                pidx = randperm(nPool);
+                stim_idx_perm = pidx(1:nStimTrials);
+                base_idx_perm = pidx(nStimTrials+1:end);
+                covStim_perm = zeros(nChans);
+                covBase_perm = zeros(nChans);
+                for ti = 1:numel(stim_idx_perm)
+                    covStim_perm = covStim_perm + all_cov_trials{stim_idx_perm(ti)};
+                end
+                for ti = 1:numel(base_idx_perm)
+                    covBase_perm = covBase_perm + all_cov_trials{base_idx_perm(ti)};
+                end
+                covStim_perm = covStim_perm / numel(stim_idx_perm);
+                covBase_perm = covBase_perm / numel(base_idx_perm);
+                covStim_perm_reg = (1-lambda)*covStim_perm + lambda*mean(diag(covStim_perm))*eye(nChans);
+                covBase_perm_reg = (1-lambda)*covBase_perm + lambda*mean(diag(covBase_perm))*eye(nChans);
+                [~, D_perm] = eig(covStim_perm_reg, covBase_perm_reg);
+                eval_perm = sort(real(diag(D_perm)), 'descend');
+                perm_null_max(pi) = max(eval_perm(1:min(nSearch, numel(eval_perm))));
+            end
+            perm_threshold = prctile(perm_null_max, 100*(1-perm_alpha));
+            perm_sig_mask = evals_sorted(1:nSearch) > perm_threshold;
+        else
+            warning('Permutation testing skipped for subject %s due to insufficient trials.', subjects{subj});
+            perm_sig_mask = false(nSearch, 1);
+        end
+    end
+    all_perm_thresholds(subj) = perm_threshold;
+    candidate_table.perm_sig = perm_sig_mask;
+
+    candidate_pool_mask = ratio_eligible & isfinite(searchScores);
+    if strcmpi(comp_select_mode, 'perm_cv')
+        candidate_pool_mask = candidate_pool_mask & perm_sig_mask;
+    end
+    candidate_pool_idx = find(candidate_pool_mask);
+    if isempty(candidate_pool_idx)
+        warning(['No components survived perm+ratio gating for subject %s. ', ...
+                 'Falling back to single best ranked component.'], subjects{subj});
+        candidate_pool_idx = bestIdx;
+    else
+        [~, pool_ord] = sort(evals_sorted(candidate_pool_idx), 'descend');
+        candidate_pool_idx = candidate_pool_idx(pool_ord);
+    end
+
+    k_max = min(max_components, numel(candidate_pool_idx));
+    if k_max < 1
+        k_max = 1;
+        candidate_pool_idx = bestIdx;
+    end
+    candidate_pool_idx = candidate_pool_idx(1:k_max);
+
+    cv_curve_mean = nan(1, k_max);
+    cv_comp_utility = nan(1, k_max);
+    cv_fold_scores = nan(cv_repeats * cv_folds, k_max);
+    cv_fold_sep = nan(cv_repeats * cv_folds, k_max);
+    nCvRows = 0;
+    if strcmpi(comp_select_mode, 'perm_cv') && nTrials_total >= cv_folds && k_max >= 1
+        for rep = 1:cv_repeats
+            trl_perm = randperm(nTrials_total);
+            fold_id = zeros(1, nTrials_total);
+            fold_edges = round(linspace(0, nTrials_total, cv_folds+1));
+            for fi_cv = 1:cv_folds
+                fold_range = (fold_edges(fi_cv)+1):fold_edges(fi_cv+1);
+                if isempty(fold_range), continue; end
+                fold_id(trl_perm(fold_range)) = fi_cv;
+            end
+
+            for fi_cv = 1:cv_folds
+                test_mask = (fold_id == fi_cv);
+                train_mask = ~test_mask;
+                if sum(test_mask) < 1 || sum(train_mask) < 2
+                    continue;
+                end
+
+                covStim_train = zeros(nChans);
+                covBase_train = zeros(nChans);
+                covStim_test = zeros(nChans);
+                covBase_test = zeros(nChans);
+                train_idx = find(train_mask);
+                test_idx = find(test_mask);
+                for ti = train_idx
+                    covStim_train = covStim_train + stim_cov_trials{ti};
+                    covBase_train = covBase_train + base_cov_trials{ti};
+                end
+                for ti = test_idx
+                    covStim_test = covStim_test + stim_cov_trials{ti};
+                    covBase_test = covBase_test + base_cov_trials{ti};
+                end
+                covStim_train = covStim_train / numel(train_idx);
+                covBase_train = covBase_train / numel(train_idx);
+                covStim_test = covStim_test / numel(test_idx);
+                covBase_test = covBase_test / numel(test_idx);
+
+                covStim_train_reg = (1-lambda)*covStim_train + lambda*mean(diag(covStim_train))*eye(nChans);
+                covBase_train_reg = (1-lambda)*covBase_train + lambda*mean(diag(covBase_train))*eye(nChans);
+                covStim_test_reg = (1-lambda)*covStim_test + lambda*mean(diag(covStim_test))*eye(nChans);
+                covBase_test_reg = (1-lambda)*covBase_test + lambda*mean(diag(covBase_test))*eye(nChans);
+
+                [W_cv, D_cv] = eig(covStim_train_reg, covBase_train_reg);
+                [~, cv_sort] = sort(real(diag(D_cv)), 'descend');
+                W_cv = W_cv(:, cv_sort);
+                nCvComp = min(nSearch, size(W_cv, 2));
+                if nCvComp < 1
+                    continue;
+                end
+
+                nCvRows = nCvRows + 1;
+                for ki = 1:k_max
+                    target_idx = candidate_pool_idx(ki);
+                    target_topo = searchTopos(:, target_idx);
+                    best_map_abs = -Inf;
+                    best_map_idx = 1;
+                    best_map_sign = 1;
+                    for ci_cv = 1:nCvComp
+                        topo_cv = covStim_train_reg * W_cv(:, ci_cv);
+                        r_map = corr(topo_cv, target_topo, 'rows', 'complete');
+                        if isfinite(r_map) && abs(r_map) > best_map_abs
+                            best_map_abs = abs(r_map);
+                            best_map_idx = ci_cv;
+                            best_map_sign = sign(r_map);
+                        end
+                    end
+                    w_cv = W_cv(:, best_map_idx);
+                    if best_map_sign < 0
+                        w_cv = -w_cv;
+                    end
+                    sep_cv = log(max(w_cv' * covStim_test_reg * w_cv, eps) / ...
+                                 max(w_cv' * covBase_test_reg * w_cv, eps));
+                    cv_fold_sep(nCvRows, ki) = sep_cv;
+                    if ki == 1
+                        cv_fold_scores(nCvRows, ki) = sep_cv;
+                    else
+                        cv_fold_scores(nCvRows, ki) = cv_fold_scores(nCvRows, ki-1) + sep_cv;
+                    end
+                end
+            end
+        end
+    end
+
+    if nCvRows > 0
+        cv_curve_mean = nanmean(cv_fold_scores(1:nCvRows, :), 1);
+        [~, cv_k_opt] = max(cv_curve_mean);
+        cv_k_opt = max(1, cv_k_opt);
+        cv_comp_utility = nanmean(cv_fold_sep(1:nCvRows, 1:cv_k_opt), 1);
+    else
+        cv_k_opt = 1;
+        cv_curve_mean = nan(1, k_max);
+    end
+
+    selected_idx = candidate_pool_idx(1:min(cv_k_opt, numel(candidate_pool_idx)));
+    if isempty(selected_idx)
+        selected_idx = bestIdx;
+    end
+
+    selected_weights = [];
+    if strcmpi(projection_mode, 'weighted_power')
+        if ~isempty(cv_comp_utility) && numel(cv_comp_utility) >= numel(selected_idx)
+            selected_weights = cv_comp_utility(1:numel(selected_idx));
+        else
+            selected_weights = evals_sorted(selected_idx)';
+        end
+        selected_weights(~isfinite(selected_weights) | selected_weights < 0) = 0;
+        if sum(selected_weights) <= 0
+            selected_weights = evals_sorted(selected_idx)';
+            selected_weights(~isfinite(selected_weights) | selected_weights < 0) = 0;
+        end
+        if sum(selected_weights) <= 0
+            selected_weights = ones(1, numel(selected_idx));
+        end
+        selected_weights = selected_weights / sum(selected_weights);
+    end
+
+    bestIdx = selected_idx(1);
+    bestScore = searchScores(bestIdx);
     bestCorr = searchCorrs(bestIdx);
     bestOcc = searchOccStrength(bestIdx);
     bestFront = searchFrontStrength(bestIdx);
@@ -354,10 +636,23 @@ for subj = 1:nSubj
     bestLeak = searchFrontLeak(bestIdx);
 
     topComp = searchFilters(:, bestIdx);
-    topo_temp = covStim_full_reg * topComp;
+    if numel(selected_idx) > 1
+        topo_temp = searchTopos(:, selected_idx) * selected_weights(:);
+    else
+        topo_temp = covStim_full_reg * topComp;
+    end
 
-    [~, topDispOrder] = sort(searchScores, 'descend');
-    nDispTopo = min(topo_display_n, nSearch);
+    finite_scores = find(isfinite(searchScores));
+    if isempty(finite_scores)
+        warning('No finite eligible component scores for subject %s; using unconstrained ordering for display.', subjects{subj});
+        [~, topDispOrder] = sort(comp_score, 'descend');
+    else
+        [~, topDispOrder] = sort(searchScores, 'descend');
+    end
+    nDispTopo = min(topo_display_n, sum(isfinite(searchScores)));
+    if nDispTopo < 1
+        nDispTopo = 1;
+    end
     dispTopoIdx = topDispOrder(1:nDispTopo);
     topoDispTopos = searchTopos(:, dispTopoIdx);
     topoDispCorrs = searchCorrs(dispTopoIdx);
@@ -371,7 +666,7 @@ for subj = 1:nSubj
 
     all_topos{subj}       = topo_temp;
     all_topo_labels{subj} = dataEEG_c25.label;
-    all_eigenvalues(subj) = evals_sorted(1);
+    all_eigenvalues(subj) = evals_sorted(bestIdx);
     all_selected_comp_idx(subj)  = bestIdx;
     all_selected_comp_corr(subj) = bestCorr;
     all_selected_comp_eval(subj) = evals_sorted(bestIdx);
@@ -379,6 +674,35 @@ for subj = 1:nSubj
     all_top5_evals(1:nStore, subj) = storeEvals;
     all_top5_topos{subj} = storeTopos;
     all_simulated_templates{subj} = sim_template;
+    all_selected_comp_indices_multi{subj} = selected_idx;
+    all_selected_comp_weights{subj} = selected_weights(:)';
+    all_selected_filters{subj} = searchFilters(:, selected_idx);
+    all_cv_curves{subj} = struct( ...
+        'mean_curve', cv_curve_mean, ...
+        'fold_scores', cv_fold_scores(1:max(nCvRows, 1), :), ...
+        'fold_sep', cv_fold_sep(1:max(nCvRows, 1), :), ...
+        'k_opt', cv_k_opt);
+    all_component_selection_stats{subj} = struct( ...
+        'mode', comp_select_mode, ...
+        'projection_mode', projection_mode, ...
+        'perm_threshold', perm_threshold, ...
+        'perm_alpha', perm_alpha, ...
+        'n_perm', n_perm, ...
+        'n_cv_rows', nCvRows, ...
+        'cv_folds', cv_folds, ...
+        'cv_repeats', cv_repeats, ...
+        'selected_idx', selected_idx, ...
+        'selected_weights', selected_weights, ...
+        'candidate_pool_idx', candidate_pool_idx, ...
+        'candidate_table', candidate_table, ...
+        'best_idx', bestIdx, ...
+        'best_score', bestScore, ...
+        'best_corr', bestCorr, ...
+        'best_ratio', bestRatio, ...
+        'best_gamma', bestGamma, ...
+        'best_front', bestFront, ...
+        'best_occ', bestOcc, ...
+        'best_leak', bestLeak);
 
     %% Phase 1b: Component/template sanity figures
     cfg_topo = [];
@@ -392,7 +716,7 @@ for subj = 1:nSubj
     cfg_topo.figure    = 'gcf';
 
     fig_sel = figure('Position', [0 0 1512 982], 'Color', 'w');
-    title_str = sprintf(['Subject %s: GED Top %d (selected C%d, ', ...
+    title_str = sprintf(['Subject %s: RAW GED Top %d (best C%d, ', ...
         'score=%.3f, r=%.3f, occ/front=%.3f, gamma=%.3f, leak=%.3f)'], ...
         subjects{subj}, nDispTopo, bestIdx, bestScore, bestCorr, bestRatio, bestGamma, bestLeak);
     annotation(fig_sel, 'textbox', [0.01 0.965 0.98 0.03], ...
@@ -404,13 +728,69 @@ for subj = 1:nSubj
         subplot(nRowsTopo, nColsTopo, ci);
         topo_data = [];
         topo_data.label  = all_topo_labels{subj};
-        topo_data.avg    = topoDispTopos(:, ci);
+        topo_plot_ci = topoDispTopos(:, ci);
+        if viz_suppress_nonocc_outliers && ~isempty(nonocc_idx)
+            post_abs = abs(topo_plot_ci(post_idx));
+            post_abs = post_abs(isfinite(post_abs));
+            if isempty(post_abs)
+                post_abs = abs(topo_plot_ci(isfinite(topo_plot_ci)));
+            end
+            if isempty(post_abs)
+                amp_thr_ci = 1;
+            else
+                amp_thr_ci = prctile(post_abs, viz_topo_prctile);
+                if ~isfinite(amp_thr_ci) || amp_thr_ci <= 0
+                    amp_thr_ci = max(post_abs);
+                end
+                if ~isfinite(amp_thr_ci) || amp_thr_ci <= 0
+                    amp_thr_ci = 1;
+                end
+            end
+            nonocc_out = false(nChans, 1);
+            nonocc_out(nonocc_idx) = abs(topo_plot_ci(nonocc_idx)) > (viz_nonocc_outlier_mult * amp_thr_ci);
+            if any(nonocc_out)
+                valid_interp = find(~nonocc_out & isfinite(topo_plot_ci) & has_pos);
+                out_idx = find(nonocc_out);
+                for oi = out_idx(:)'
+                    if has_pos(oi) && numel(valid_interp) >= 3
+                        d = sqrt(sum((chan_pos(valid_interp, :) - chan_pos(oi, :)).^2, 2));
+                        [d_sorted, d_ord] = sort(d, 'ascend');
+                        k_use = min(viz_interp_k, numel(d_sorted));
+                        nbr_idx = valid_interp(d_ord(1:k_use));
+                        w = 1 ./ max(d_sorted(1:k_use), 1e-6);
+                        topo_plot_ci(oi) = sum(w .* topo_plot_ci(nbr_idx)) / sum(w);
+                    else
+                        topo_plot_ci(oi) = sign(topo_plot_ci(oi)) * amp_thr_ci;
+                    end
+                end
+            end
+        end
+        topo_data.avg    = topo_plot_ci;
         topo_data.dimord = 'chan';
+        topo_abs_ci = abs(topo_data.avg(post_idx));
+        topo_abs_ci = topo_abs_ci(isfinite(topo_abs_ci));
+        if isempty(topo_abs_ci)
+            topo_abs_ci = abs(topo_data.avg(:));
+            topo_abs_ci = topo_abs_ci(isfinite(topo_abs_ci));
+        end
+        if isempty(topo_abs_ci)
+            topo_clim_ci = 1;
+        else
+            topo_clim_ci = prctile(topo_abs_ci, viz_topo_prctile);
+            if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
+                topo_clim_ci = max(topo_abs_ci);
+            end
+            if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
+                topo_clim_ci = 1;
+            end
+        end
+        cfg_topo_ci = cfg_topo;
+        cfg_topo_ci.zlim = [-topo_clim_ci topo_clim_ci];
         try
-            ft_topoplotER(cfg_topo, topo_data);
+            ft_topoplotER(cfg_topo_ci, topo_data);
             colorbar;
         catch
-            imagesc(topoDispTopos(:, ci)); colorbar;
+            imagesc(topo_plot_ci); caxis([-topo_clim_ci topo_clim_ci]); colorbar;
         end
         comp_rank = dispTopoIdx(ci);
         title(sprintf('C%d: \\lambda=%.2f, score=%.2f, r=%.2f, ratio=%.2f, g=%.2f', ...
@@ -418,18 +798,116 @@ for subj = 1:nSubj
             searchOccFrontRatio(comp_rank), searchGammaEvidence(comp_rank)), ...
             'FontSize', 7);
     end
-    saveas(fig_sel, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_top5_selection_subj%s.png', subjects{subj})));
+    saveas(fig_sel, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_component_selection_raw_subj%s.png', subjects{subj})));
+
+    % Post-selection topoplots: components surviving permutation + CV cap.
+    selTopoIdx = selected_idx(:)';
+    nSelTopo = numel(selTopoIdx);
+    nColsSel = 5;
+    nRowsSel = ceil(max(nSelTopo, 1) / nColsSel);
+    fig_post = figure('Position', [0 0 1512 982], 'Color', 'w');
+    title_post = sprintf(['Subject %s: POST perm+CV (n=%d, k*=%d, perm thr=%.3f, ', ...
+        'proj=%s)'], subjects{subj}, nSelTopo, cv_k_opt, perm_threshold, projection_mode);
+    annotation(fig_post, 'textbox', [0.01 0.965 0.98 0.03], ...
+        'String', title_post, 'EdgeColor', 'none', 'HorizontalAlignment', 'center', ...
+        'VerticalAlignment', 'middle', 'FontSize', 14, 'FontWeight', 'bold');
+    if nSelTopo == 0
+        subplot(1, 1, 1);
+        axis off;
+        text(0.5, 0.5, 'No selected components', 'HorizontalAlignment', 'center');
+    else
+        for si = 1:nSelTopo
+            subplot(nRowsSel, nColsSel, si);
+            comp_rank = selTopoIdx(si);
+            topo_data = [];
+            topo_data.label = all_topo_labels{subj};
+            topo_data.avg = searchTopos(:, comp_rank);
+            topo_data.dimord = 'chan';
+            topo_abs_ci = abs(topo_data.avg(post_idx));
+            topo_abs_ci = topo_abs_ci(isfinite(topo_abs_ci));
+            if isempty(topo_abs_ci)
+                topo_abs_ci = abs(topo_data.avg(:));
+                topo_abs_ci = topo_abs_ci(isfinite(topo_abs_ci));
+            end
+            if isempty(topo_abs_ci)
+                topo_clim_ci = 1;
+            else
+                topo_clim_ci = prctile(topo_abs_ci, viz_topo_prctile);
+                if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
+                    topo_clim_ci = max(topo_abs_ci);
+                end
+                if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
+                    topo_clim_ci = 1;
+                end
+            end
+            cfg_topo_ci = cfg_topo;
+            cfg_topo_ci.zlim = [-topo_clim_ci topo_clim_ci];
+            try
+                ft_topoplotER(cfg_topo_ci, topo_data);
+                colorbar;
+            catch
+                imagesc(topo_data.avg); caxis([-topo_clim_ci topo_clim_ci]); colorbar;
+            end
+            w_show = NaN;
+            if ~isempty(selected_weights) && numel(selected_weights) >= si
+                w_show = selected_weights(si);
+            end
+            title(sprintf('C%d: \\lambda=%.2f, w=%.3f, r=%.2f, ratio=%.2f', ...
+                comp_rank, evals_sorted(comp_rank), w_show, searchCorrs(comp_rank), ...
+                searchOccFrontRatio(comp_rank)), 'FontSize', 8);
+        end
+    end
+    saveas(fig_post, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_component_selection_post_subj%s.png', subjects{subj})));
+
+end
+
+%%%%
+%%%%
+%%%%
+
+
+
+
+
+
+
+for subj = 1:nSubj
+
+
+
 
     %% ================================================================
     %  PHASE 2: Per condition — trial-level narrowband scanning
     %  ================================================================
+    fsample = all_fsample(subj);
+    W_sel = all_selected_filters{subj};
+    w_sel = all_selected_comp_weights{subj};
+    W_top = all_top_eig_filter{subj};
+    raw_w = all_raw_weights{subj};
+    if isempty(W_sel)
+        warning('No selected filters for subject %s. Falling back to best single component.', subjects{subj});
+        W_sel = zeros(0, 0);
+    end
+    if isempty(W_top)
+        W_top = zeros(0, 1);
+    end
+    if isempty(w_sel) && ~isempty(W_sel)
+        w_sel = ones(1, size(W_sel, 2)) / size(W_sel, 2);
+    end
+    if sum(w_sel) <= 0 && ~isempty(W_sel)
+        w_sel = ones(1, size(W_sel, 2)) / size(W_sel, 2);
+    end
+    if ~isempty(W_sel)
+        w_sel = w_sel(:)' / sum(w_sel);
+    end
+
     for cond = 1:4
 
-        dat = dat_per_cond{cond};
+        dat = all_phase1_data{subj, cond};
         if isempty(dat), continue; end
 
         nTrl = length(dat.trial);
-        powratio_trials = nan(nTrl, nFreqs);
+        powratio_methods = nan(nBenchmarkMethods, nTrl, nFreqs);
 
         for fi = 1:nFreqs
             clc
@@ -453,16 +931,65 @@ for subj = 1:nSubj
             dat_stim_nb = ft_selectdata(cfg_t, dat_nb);
 
             for trl = 1:nTrl
-                comp_stim = topComp' * double(dat_stim_nb.trial{trl});
-                comp_base = topComp' * double(dat_base_nb.trial{trl});
-                pow_stim = mean(comp_stim.^2);
-                pow_base = mean(comp_base.^2);
-                if pow_base > 0
-                    powratio_trials(trl, fi) = pow_stim / pow_base;
+                x_stim = double(dat_stim_nb.trial{trl});
+                x_base = double(dat_base_nb.trial{trl});
+
+                % Method 1: raw channel-space weighted power ratio.
+                pow_stim_chan = mean(x_stim.^2, 2);
+                pow_base_chan = mean(x_base.^2, 2);
+                raw_pow_stim = sum(raw_w(:) .* pow_stim_chan(:));
+                raw_pow_base = sum(raw_w(:) .* pow_base_chan(:));
+                if isfinite(raw_pow_stim) && isfinite(raw_pow_base) && raw_pow_base > 0
+                    powratio_methods(1, trl, fi) = raw_pow_stim / raw_pow_base;
+                end
+
+                % Method 2: top GED component by eigenvalue.
+                if ~isempty(W_top)
+                    comp_stim_top = W_top' * x_stim;
+                    comp_base_top = W_top' * x_base;
+                    pow_stim_top = mean(comp_stim_top.^2);
+                    pow_base_top = mean(comp_base_top.^2);
+                    if isfinite(pow_stim_top) && isfinite(pow_base_top) && pow_base_top > 0
+                        powratio_methods(2, trl, fi) = pow_stim_top / pow_base_top;
+                    end
+                end
+
+                % Method 3: permutation+CV weighted GED combination.
+                if ~isempty(W_sel)
+                    comp_stim = W_sel' * x_stim;
+                    comp_base = W_sel' * x_base;
+                    pow_stim_vec = mean(comp_stim.^2, 2);
+                    pow_base_vec = mean(comp_base.^2, 2);
+                    valid_comp = isfinite(pow_stim_vec) & isfinite(pow_base_vec) & (pow_base_vec > 0);
+                    if any(valid_comp)
+                        ratio_vec = pow_stim_vec(valid_comp) ./ pow_base_vec(valid_comp);
+                        w_use = w_sel(valid_comp);
+                        if sum(w_use) <= 0
+                            w_use = ones(1, numel(ratio_vec)) / numel(ratio_vec);
+                        else
+                            w_use = w_use / sum(w_use);
+                        end
+                        powratio_methods(3, trl, fi) = sum(ratio_vec(:)' .* w_use);
+                    end
                 end
             end
         end
 
+        for mi = 1:nBenchmarkMethods
+            pr_m = squeeze(powratio_methods(mi, :, :));
+            all_trial_powratio_bench{mi, cond, subj} = pr_m;
+            if ~isempty(pr_m)
+                dt_m = nan(size(pr_m));
+                for trl = 1:size(pr_m, 1)
+                    p = polyfit(scan_freqs, pr_m(trl,:), poly_order);
+                    dt_m(trl,:) = pr_m(trl,:) - polyval(p, scan_freqs);
+                end
+                all_trial_powratio_dt_bench{mi, cond, subj} = dt_m;
+            end
+        end
+
+        % Keep legacy pipeline outputs based on perm+CV weighted GED.
+        powratio_trials = squeeze(powratio_methods(3, :, :));
         all_trial_powratio{cond, subj} = powratio_trials;
 
         %% Per-trial peak detection
@@ -678,8 +1205,8 @@ for subj = 1:nSubj
     end
 
     % --- Row 4: Topoplot + histogram ---
-    occ_highlight = dataEEG_c25.label(cellfun(@(l) ...
-        ~isempty(regexp(l, '[OI]', 'once')), dataEEG_c25.label));
+    % Use the same occipital-channel definition as component selection.
+    occ_highlight = dataEEG_c25.label(occ_idx);
 
     cfg_topo = [];
     cfg_topo.layout    = headmodel.layANThead;
@@ -700,15 +1227,71 @@ for subj = 1:nSubj
     if ~isempty(all_topos{subj})
         topo_data = [];
         topo_data.label  = all_topo_labels{subj};
-        topo_data.avg    = all_topos{subj};
+        topo_plot_common = all_topos{subj};
+        if viz_suppress_nonocc_outliers && ~isempty(nonocc_idx)
+            post_abs = abs(topo_plot_common(post_idx));
+            post_abs = post_abs(isfinite(post_abs));
+            if isempty(post_abs)
+                post_abs = abs(topo_plot_common(isfinite(topo_plot_common)));
+            end
+            if isempty(post_abs)
+                amp_thr_common = 1;
+            else
+                amp_thr_common = prctile(post_abs, viz_topo_prctile);
+                if ~isfinite(amp_thr_common) || amp_thr_common <= 0
+                    amp_thr_common = max(post_abs);
+                end
+                if ~isfinite(amp_thr_common) || amp_thr_common <= 0
+                    amp_thr_common = 1;
+                end
+            end
+            nonocc_out = false(nChans, 1);
+            nonocc_out(nonocc_idx) = abs(topo_plot_common(nonocc_idx)) > (viz_nonocc_outlier_mult * amp_thr_common);
+            if any(nonocc_out)
+                valid_interp = find(~nonocc_out & isfinite(topo_plot_common) & has_pos);
+                out_idx = find(nonocc_out);
+                for oi = out_idx(:)'
+                    if has_pos(oi) && numel(valid_interp) >= 3
+                        d = sqrt(sum((chan_pos(valid_interp, :) - chan_pos(oi, :)).^2, 2));
+                        [d_sorted, d_ord] = sort(d, 'ascend');
+                        k_use = min(viz_interp_k, numel(d_sorted));
+                        nbr_idx = valid_interp(d_ord(1:k_use));
+                        w = 1 ./ max(d_sorted(1:k_use), 1e-6);
+                        topo_plot_common(oi) = sum(w .* topo_plot_common(nbr_idx)) / sum(w);
+                    else
+                        topo_plot_common(oi) = sign(topo_plot_common(oi)) * amp_thr_common;
+                    end
+                end
+            end
+        end
+        topo_data.avg    = topo_plot_common;
         topo_data.dimord = 'chan';
+        topo_abs_common = abs(topo_plot_common(post_idx));
+        topo_abs_common = topo_abs_common(isfinite(topo_abs_common));
+        if isempty(topo_abs_common)
+            topo_abs_common = abs(topo_plot_common(isfinite(topo_plot_common)));
+        end
+        if isempty(topo_abs_common)
+            topo_clim_common = 1;
+        else
+            topo_clim_common = prctile(topo_abs_common, viz_topo_prctile);
+            if ~isfinite(topo_clim_common) || topo_clim_common <= 0
+                topo_clim_common = max(topo_abs_common);
+            end
+            if ~isfinite(topo_clim_common) || topo_clim_common <= 0
+                topo_clim_common = 1;
+            end
+        end
+        cfg_topo_common = cfg_topo;
+        cfg_topo_common.zlim = [-topo_clim_common topo_clim_common];
         try
-            ft_topoplotER(cfg_topo, topo_data);
+            ft_topoplotER(cfg_topo_common, topo_data);
             cb = colorbar; cb.FontSize = 9;
         catch
-            imagesc(topo_data.avg); colorbar;
+            imagesc(topo_data.avg); caxis([-topo_clim_common topo_clim_common]); colorbar;
         end
-        title(sprintf('Common Filter (\\lambda=%.1f)', all_eigenvalues(subj)), 'FontSize', 11);
+        n_sel_show = numel(all_selected_comp_indices_multi{subj});
+        title(sprintf('Weighted GED (%d comps, \\lambda=%.2f)', n_sel_show, all_eigenvalues(subj)), 'FontSize', 11);
     end
 
     subplot(4, 4, [14 15 16]); hold on;
@@ -734,6 +1317,149 @@ for subj = 1:nSubj
     saveas(fig, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_subj%s.png', subjects{subj})));
     toc
 end % subject loop
+
+%% ====================================================================
+%  THREE-WAY BENCHMARK METRICS (raw vs top-eig GED vs perm+CV GED)
+%  ====================================================================
+for mi = 1:nBenchmarkMethods
+    for subj = 1:nSubj
+        cond_medians = nan(4, 1);
+        for cond = 1:4
+            pr_dt = all_trial_powratio_dt_bench{mi, cond, subj};
+            if isempty(pr_dt)
+                continue;
+            end
+            nTrl = size(pr_dt, 1);
+            peak_freq = nan(nTrl, 1);
+            peak_prom = nan(nTrl, 1);
+            for trl = 1:nTrl
+                y = movmean(pr_dt(trl, :), 5);
+                if all(isnan(y))
+                    continue;
+                end
+                [pks, locs, ~, p] = findpeaks(y, scan_freqs, ...
+                    'MinPeakDistance', 5, 'MinPeakProminence', max(y) * 0.15);
+                if ~isempty(pks)
+                    [~, bi] = max(pks);
+                    peak_freq(trl) = locs(bi);
+                    peak_prom(trl) = p(bi);
+                end
+            end
+
+            if compute_detectability
+                benchmark_metric_detectability(mi, cond, subj) = mean(~isnan(peak_freq));
+                benchmark_metric_prominence(mi, cond, subj) = mean(peak_prom(~isnan(peak_prom)));
+            end
+            if compute_reliability
+                vf = peak_freq(~isnan(peak_freq));
+                if numel(vf) >= 2 && mean(vf) ~= 0
+                    benchmark_metric_reliability_trialcv(mi, cond, subj) = std(vf) / abs(mean(vf));
+                end
+            end
+            cond_medians(cond) = median(peak_freq(~isnan(peak_freq)));
+        end
+
+        if compute_separation
+            vx = ~isnan(cond_medians);
+            if sum(vx) >= 2
+                p = polyfit(find(vx), cond_medians(vx)', 1);
+                benchmark_metric_separation_slope(mi, subj) = p(1);
+            end
+            if ~isnan(cond_medians(1)) && ~isnan(cond_medians(4))
+                benchmark_metric_separation_delta(mi, subj) = cond_medians(4) - cond_medians(1);
+            end
+        end
+    end
+end
+
+for mi = 1:nBenchmarkMethods
+    for cond = 1:4
+        v = squeeze(benchmark_metric_reliability_trialcv(mi, cond, :));
+        benchmark_metric_reliability_subjspread(mi, cond) = std(v(~isnan(v)));
+    end
+end
+
+%% Subject-level benchmark figures
+bench_method_labels = {'Raw', 'Top-Eig GED', 'Perm+CV GED'};
+bench_method_colors = [0.2 0.2 0.2; 0.1 0.35 0.75; 0.75 0.2 0.1];
+for subj = 1:nSubj
+    fig_bench_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
+    sgtitle(sprintf('Three-Way Spectrum Benchmark: Subject %s', subjects{subj}), ...
+        'FontSize', 18, 'FontWeight', 'bold');
+
+    for mi = 1:nBenchmarkMethods
+        subplot(2, 3, mi); hold on;
+        for cond = 1:4
+            pr_dt = all_trial_powratio_dt_bench{mi, cond, subj};
+            if isempty(pr_dt), continue; end
+            mu = nanmean(pr_dt, 1);
+            se = nanstd(pr_dt, [], 1) / sqrt(max(1, size(pr_dt, 1)));
+            faceC = 0.8 * colors(cond,:) + 0.2 * [1 1 1];
+            patch([scan_freqs, fliplr(scan_freqs)], ...
+                [mu - se, fliplr(mu + se)], ...
+                colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.25);
+            plot(scan_freqs, movmean(mu, 5), '-', 'Color', colors(cond,:), 'LineWidth', 2.0);
+        end
+        yline(0, 'k-', 'LineWidth', 0.5);
+        title(bench_method_labels{mi}, 'FontSize', 12, 'Color', bench_method_colors(mi,:));
+        xlabel('Frequency [Hz]'); ylabel('\Delta Power Ratio');
+        xlim([30 90]); grid on; box on; set(gca, 'FontSize', 10);
+        if mi == 1
+            legend(condLabels, 'Location', 'best', 'FontSize', 9);
+        end
+    end
+
+    subplot(2, 3, 4); hold on;
+    det_mat = squeeze(benchmark_metric_detectability(:, :, subj))';
+    if any(isfinite(det_mat(:)))
+        bh = bar(det_mat * 100, 'grouped');
+        for mi = 1:nBenchmarkMethods
+            bh(mi).FaceColor = bench_method_colors(mi, :);
+        end
+    end
+    set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 10);
+    ylabel('Detection rate [%]');
+    title('Detectability by condition');
+    ylim([0 105]); grid on; box on;
+
+    subplot(2, 3, 5); hold on;
+    prom_vec = nan(nBenchmarkMethods, 1);
+    rel_vec = nan(nBenchmarkMethods, 1);
+    for mi = 1:nBenchmarkMethods
+        prom_vec(mi) = nanmean(squeeze(benchmark_metric_prominence(mi, :, subj)));
+        rel_vec(mi) = nanmean(squeeze(benchmark_metric_reliability_trialcv(mi, :, subj)));
+    end
+    yyaxis left
+    b1 = bar(1:nBenchmarkMethods, prom_vec, 0.38, 'FaceColor', 'flat');
+    for mi = 1:nBenchmarkMethods
+        b1.CData(mi, :) = bench_method_colors(mi, :);
+    end
+    ylabel('Peak prominence');
+    yyaxis right
+    plot(1:nBenchmarkMethods, rel_vec, 'ko-', 'LineWidth', 2, 'MarkerFaceColor', [0.2 0.2 0.2]);
+    ylabel('Trial CV (lower better)');
+    set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
+    title('Prominence + Reliability');
+    grid on; box on;
+
+    subplot(2, 3, 6); hold on;
+    slope_vec = squeeze(benchmark_metric_separation_slope(:, subj));
+    delta_vec = squeeze(benchmark_metric_separation_delta(:, subj));
+    yyaxis left
+    b2 = bar(1:nBenchmarkMethods, slope_vec, 0.38, 'FaceColor', 'flat');
+    for mi = 1:nBenchmarkMethods
+        b2.CData(mi, :) = bench_method_colors(mi, :);
+    end
+    ylabel('Condition slope [Hz/cond]');
+    yyaxis right
+    plot(1:nBenchmarkMethods, delta_vec, 'ks--', 'LineWidth', 2, 'MarkerFaceColor', [0.2 0.2 0.2]);
+    ylabel('\Delta median (100%-25%) [Hz]');
+    set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
+    title('Condition separation');
+    grid on; box on;
+
+    saveas(fig_bench_subj, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_benchmark_subj%s.png', subjects{subj})));
+end
 
 %% ====================================================================
 %  CENTROID METRIC: Subject/group summaries and concordance
@@ -1240,6 +1966,90 @@ for mi = 1:3
 end
 
 %% ====================================================================
+%  GRAND-AVERAGE THREE-WAY BENCHMARK
+%  ====================================================================
+fig_bench_group = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle('Three-Way Spectrum Benchmark: Grand Average', 'FontSize', 18, 'FontWeight', 'bold');
+
+for mi = 1:nBenchmarkMethods
+    subplot(2, 3, mi); hold on;
+    for cond = 1:4
+        subj_curves = nan(nSubj, nFreqs);
+        for s = 1:nSubj
+            pr_dt = all_trial_powratio_dt_bench{mi, cond, s};
+            if ~isempty(pr_dt)
+                subj_curves(s, :) = nanmean(pr_dt, 1);
+            end
+        end
+        mu = nanmean(subj_curves, 1);
+        se = nanstd(subj_curves, [], 1) ./ sqrt(sum(~isnan(subj_curves(:,1))));
+        faceC = 0.8 * colors(cond,:) + 0.2 * [1 1 1];
+        patch([scan_freqs, fliplr(scan_freqs)], ...
+            [mu - se, fliplr(mu + se)], ...
+            colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.25);
+        plot(scan_freqs, movmean(mu, 5), '-', 'Color', colors(cond,:), 'LineWidth', 2.2);
+    end
+    yline(0, 'k-', 'LineWidth', 0.5);
+    title(bench_method_labels{mi}, 'FontSize', 12, 'Color', bench_method_colors(mi,:));
+    xlabel('Frequency [Hz]'); ylabel('\Delta Power Ratio');
+    xlim([30 90]); grid on; box on; set(gca, 'FontSize', 10);
+    if mi == 1
+        legend(condLabels, 'Location', 'best', 'FontSize', 9);
+    end
+end
+
+subplot(2, 3, 4); hold on;
+det_mu = squeeze(nanmean(benchmark_metric_detectability, 3))' * 100;
+det_se = squeeze(nanstd(benchmark_metric_detectability, [], 3))' / sqrt(nSubj) * 100;
+bh = bar(det_mu, 'grouped');
+for mi = 1:nBenchmarkMethods
+    bh(mi).FaceColor = bench_method_colors(mi, :);
+end
+for mi = 1:nBenchmarkMethods
+    x = bh(mi).XEndPoints;
+    errorbar(x, det_mu(:, mi), det_se(:, mi), 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 6);
+end
+set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 10);
+ylabel('Detection rate [%]'); title('Detectability by condition');
+ylim([0 105]); grid on; box on;
+
+subplot(2, 3, 5); hold on;
+prom_group = squeeze(nanmean(benchmark_metric_prominence, 2));
+prom_mu = nanmean(prom_group, 2);
+prom_se = nanstd(prom_group, [], 2) ./ sqrt(sum(~isnan(prom_group), 2));
+rel_group = squeeze(nanmean(benchmark_metric_reliability_trialcv, 2));
+rel_mu = nanmean(rel_group, 2);
+rel_se = nanstd(rel_group, [], 2) ./ sqrt(sum(~isnan(rel_group), 2));
+yyaxis left
+bar(1:nBenchmarkMethods, prom_mu, 0.38, 'FaceColor', [0.75 0.75 0.75], 'EdgeColor', 'none');
+errorbar(1:nBenchmarkMethods, prom_mu, prom_se, 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 6);
+ylabel('Peak prominence');
+yyaxis right
+errorbar(1:nBenchmarkMethods, rel_mu, rel_se, 'ko-', 'LineWidth', 1.8, 'MarkerFaceColor', [0.2 0.2 0.2]);
+ylabel('Trial CV (lower better)');
+set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
+title('Prominence + Reliability');
+grid on; box on;
+
+subplot(2, 3, 6); hold on;
+slope_mu = nanmean(benchmark_metric_separation_slope, 2);
+slope_se = nanstd(benchmark_metric_separation_slope, [], 2) ./ sqrt(sum(~isnan(benchmark_metric_separation_slope), 2));
+delta_mu = nanmean(benchmark_metric_separation_delta, 2);
+delta_se = nanstd(benchmark_metric_separation_delta, [], 2) ./ sqrt(sum(~isnan(benchmark_metric_separation_delta), 2));
+yyaxis left
+bar(1:nBenchmarkMethods, slope_mu, 0.38, 'FaceColor', [0.75 0.75 0.75], 'EdgeColor', 'none');
+errorbar(1:nBenchmarkMethods, slope_mu, slope_se, 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 6);
+ylabel('Condition slope [Hz/cond]');
+yyaxis right
+errorbar(1:nBenchmarkMethods, delta_mu, delta_se, 'ks--', 'LineWidth', 1.8, 'MarkerFaceColor', [0.2 0.2 0.2]);
+ylabel('\Delta median (100%-25%) [Hz]');
+set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
+title('Condition separation');
+grid on; box on;
+
+saveas(fig_bench_group, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_benchmark_grandaverage.png'));
+
+%% ====================================================================
 %  GRAND AVERAGE: Single Peak boxplots (mean & median) — raincloud
 %  ====================================================================
 fprintf('\nCreating grand average figures...\n');
@@ -1442,6 +2252,13 @@ save(save_path, ...
     'all_trial_detrate_centroid', ...
     'all_topos', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
+    'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
+    'all_component_selection_stats', 'all_cv_curves', 'all_perm_thresholds', ...
+    'all_trial_powratio_bench', 'all_trial_powratio_dt_bench', ...
+    'benchmark_methods', 'raw_reference_definition', ...
+    'benchmark_metric_detectability', 'benchmark_metric_prominence', ...
+    'benchmark_metric_separation_slope', 'benchmark_metric_separation_delta', ...
+    'benchmark_metric_reliability_trialcv', 'benchmark_metric_reliability_subjspread', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'm_peaks_low', 'm_peaks_high', 'm_median_low', 'm_median_high', ...
     'm_detrate_low', 'm_detrate_high', ...
