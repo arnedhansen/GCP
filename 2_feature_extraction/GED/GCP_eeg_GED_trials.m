@@ -859,23 +859,6 @@ for subj = 1:nSubj
     end
     saveas(fig_post, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_component_selection_post_subj%s.png', subjects{subj})));
 
-end
-
-%%%%
-%%%%
-%%%%
-
-
-
-
-
-
-
-for subj = 1:nSubj
-
-
-
-
     %% ================================================================
     %  PHASE 2: Per condition — trial-level narrowband scanning
     %  ================================================================
