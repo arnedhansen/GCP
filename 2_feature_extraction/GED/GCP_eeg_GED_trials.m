@@ -36,8 +36,12 @@ scan_width = 4;
 % GED parameters
 lambda = 0.01;
 ged_search_n = 30;          % search first N GED components
-frontal_penalty_alpha = 0.35; % penalize frontal loading in component score
 topo_display_n = 30;        % number of component topos to visualize
+min_template_corr = 0.25;   % hard minimum corr(abs(topo), abs(template))
+min_post_front_ratio = 1.20; % hard minimum posterior/frontal strength ratio
+score_w_corr = 1.00;        % composite-score weight for template correlation
+score_w_ratio = 1.00;       % composite-score weight for post/front ratio
+score_w_front = 1.00;       % composite-score penalty for frontal strength
 
 % Detrending parameters for power-ratio spectrum
 poly_order = 2;
@@ -199,6 +203,7 @@ for subj = 1:nSubj
     searchScores = nan(nSearch, 1);
     searchPostStrength = nan(nSearch, 1);
     searchFrontStrength = nan(nSearch, 1);
+    searchPostFrontRatio = nan(nSearch, 1);
 
     % Simulated posterior gamma template (posterior channels only)
     sim_template = zeros(nChans, 1);
@@ -224,18 +229,55 @@ for subj = 1:nSubj
         post_strength = mean(abs(topo_ci(post_idx)));
         if ~isempty(front_idx)
             front_strength = mean(abs(topo_ci(front_idx)));
+            ratio_ci = post_strength / max(front_strength, eps);
         else
             front_strength = 0;
+            ratio_ci = Inf;
         end
-        score_ci = post_strength - frontal_penalty_alpha * front_strength;
+        score_ci = NaN;
         searchFilters(:, ci) = w_ci;
         searchTopos(:, ci) = topo_ci;
         searchCorrs(ci) = r_ci;
         searchPostStrength(ci) = post_strength;
         searchFrontStrength(ci) = front_strength;
+        searchPostFrontRatio(ci) = ratio_ci;
         searchScores(ci) = score_ci;
     end
 
+    % Composite score with hard constraints:
+    % pass if corr >= min_template_corr and post/front >= min_post_front_ratio.
+    % Among passers, maximize z(corr) + z(ratio) - z(front).
+    corr_vec = searchCorrs;
+    ratio_vec = searchPostFrontRatio;
+    front_vec = searchFrontStrength;
+
+    valid_corr = isfinite(corr_vec);
+    valid_ratio = isfinite(ratio_vec);
+    valid_front = isfinite(front_vec);
+
+    if any(valid_corr), corr_mu = mean(corr_vec(valid_corr)); corr_sd = std(corr_vec(valid_corr));
+    else, corr_mu = 0; corr_sd = 1; end
+    if any(valid_ratio), ratio_mu = mean(ratio_vec(valid_ratio)); ratio_sd = std(ratio_vec(valid_ratio));
+    else, ratio_mu = 0; ratio_sd = 1; end
+    if any(valid_front), front_mu = mean(front_vec(valid_front)); front_sd = std(front_vec(valid_front));
+    else, front_mu = 0; front_sd = 1; end
+
+    z_corr = (corr_vec - corr_mu) / max(corr_sd, eps);
+    z_ratio = (ratio_vec - ratio_mu) / max(ratio_sd, eps);
+    z_front = (front_vec - front_mu) / max(front_sd, eps);
+
+    comp_score = score_w_corr * z_corr + score_w_ratio * z_ratio - score_w_front * z_front;
+
+    pass_mask = corr_vec >= min_template_corr & ratio_vec >= min_post_front_ratio;
+    if any(pass_mask)
+        comp_score(~pass_mask) = -Inf;
+    else
+        warning(['No component passed hard criteria for subject %s (corr>=%.2f, ratio>=%.2f). ', ...
+            'Falling back to unconstrained composite score.'], ...
+            subjects{subj}, min_template_corr, min_post_front_ratio);
+    end
+
+    searchScores = comp_score;
     [bestScore, bestIdx] = max(searchScores);
     if isempty(bestIdx) || isnan(bestScore)
         bestIdx = 1;
@@ -244,6 +286,7 @@ for subj = 1:nSubj
     bestCorr = searchCorrs(bestIdx);
     bestPost = searchPostStrength(bestIdx);
     bestFront = searchFrontStrength(bestIdx);
+    bestRatio = searchPostFrontRatio(bestIdx);
 
     topComp = searchFilters(:, bestIdx);
     topo_temp = covStim_full_reg * topComp;
@@ -285,8 +328,8 @@ for subj = 1:nSubj
 
     fig_sel = figure('Position', [0 0 1512 982], 'Color', 'w');
     sgtitle(sprintf(['Subject %s: GED Candidate Top-%d (searched 1:%d, selected C%d, ', ...
-        'score=%.3f, r=%.3f, post=%.3f, front=%.3f)'], ...
-        subjects{subj}, nDispTopo, nSearch, bestIdx, bestScore, bestCorr, bestPost, bestFront), ...
+        'score=%.3f, r=%.3f, post=%.3f, front=%.3f, ratio=%.3f)'], ...
+        subjects{subj}, nDispTopo, nSearch, bestIdx, bestScore, bestCorr, bestPost, bestFront, bestRatio), ...
         'FontSize', 14, 'FontWeight', 'bold');
     nColsTopo = 5;
     nRowsTopo = ceil(nDispTopo / nColsTopo);
@@ -305,10 +348,12 @@ for subj = 1:nSubj
         comp_rank = dispTopoIdx(ci);
         is_selected = comp_rank == bestIdx;
         if is_selected
-            title(sprintf('C%d (selected), score=%.3f, r=%.3f', comp_rank, topoDispScores(ci), topoDispCorrs(ci)), ...
+            title(sprintf('C%d (selected), score=%.3f, r=%.3f, ratio=%.2f', ...
+                comp_rank, topoDispScores(ci), topoDispCorrs(ci), searchPostFrontRatio(comp_rank)), ...
                 'FontSize', 10, 'FontWeight', 'bold');
         else
-            title(sprintf('C%d, score=%.3f, r=%.3f', comp_rank, topoDispScores(ci), topoDispCorrs(ci)), ...
+            title(sprintf('C%d, score=%.3f, r=%.3f, ratio=%.2f', ...
+                comp_rank, topoDispScores(ci), topoDispCorrs(ci), searchPostFrontRatio(comp_rank)), ...
                 'FontSize', 10);
         end
     end
