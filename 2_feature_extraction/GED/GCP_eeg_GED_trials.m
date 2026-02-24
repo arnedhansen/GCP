@@ -14,8 +14,6 @@
 %             2. Per-subject spectral-trough boundary
 %             3. Gaussian Mixture Model on single-peak frequencies
 %   Aggregation — mean & median peak frequency per condition per subject
- 
-clear; close all; clc
 
 %% Setup
 startup
@@ -37,6 +35,9 @@ scan_width = 4;
 
 % GED parameters
 lambda = 0.01;
+ged_search_n = 30;          % search first N GED components
+frontal_penalty_alpha = 0.35; % penalize frontal loading in component score
+topo_display_n = 30;        % number of component topos to visualize
 
 % Detrending parameters for power-ratio spectrum
 poly_order = 2;
@@ -123,6 +124,11 @@ for subj = 1:nSubj
         post_idx  = find(post_mask);
         nPost     = length(post_idx);
     end
+    front_mask = cellfun(@(l) ~isempty(regexp(l, '^(Fp|AF|F)', 'once')), dataEEG_c25.label);
+    front_idx  = find(front_mask);
+    if isempty(front_idx)
+        warning('No frontal channels matched for subject %s. Frontal penalty disabled for this subject.', subjects{subj});
+    end
 
     %% ================================================================
     %  PHASE 1: Build POOLED covariance across all conditions -> one GED
@@ -186,10 +192,13 @@ for subj = 1:nSubj
     [evals_sorted, sortIdx] = sort(real(diag(D_full)), 'descend');
     W_full = W_full(:, sortIdx);
 
-    nCand = min(5, size(W_full, 2));
-    candFilters = nan(nChans, nCand);
-    candTopos = nan(nChans, nCand);
-    candCorrs = nan(nCand, 1);
+    nSearch = min(ged_search_n, size(W_full, 2));
+    searchFilters = nan(nChans, nSearch);
+    searchTopos = nan(nChans, nSearch);
+    searchCorrs = nan(nSearch, 1);
+    searchScores = nan(nSearch, 1);
+    searchPostStrength = nan(nSearch, 1);
+    searchFrontStrength = nan(nSearch, 1);
 
     % Simulated posterior gamma template (posterior channels only)
     sim_template = zeros(nChans, 1);
@@ -203,28 +212,54 @@ for subj = 1:nSubj
 
     % Full-head forward model for topoplot and component scoring
     covStim_full_reg = (1-lambda)*covStim_full + lambda*mean(diag(covStim_full))*eye(nChans);
-    for ci = 1:nCand
+    for ci = 1:nSearch
         w_ci = W_full(:, ci);
         topo_ci = covStim_full_reg * w_ci;
-        r_ci = corr(topo_ci, sim_template, 'rows', 'complete');
+        r_ci = corr(abs(topo_ci), abs(sim_template), 'rows', 'complete');
         if ~isnan(r_ci) && r_ci < 0
             w_ci = -w_ci;
             topo_ci = -topo_ci;
             r_ci = -r_ci;
         end
-        candFilters(:, ci) = w_ci;
-        candTopos(:, ci) = topo_ci;
-        candCorrs(ci) = r_ci;
+        post_strength = mean(abs(topo_ci(post_idx)));
+        if ~isempty(front_idx)
+            front_strength = mean(abs(topo_ci(front_idx)));
+        else
+            front_strength = 0;
+        end
+        score_ci = post_strength - frontal_penalty_alpha * front_strength;
+        searchFilters(:, ci) = w_ci;
+        searchTopos(:, ci) = topo_ci;
+        searchCorrs(ci) = r_ci;
+        searchPostStrength(ci) = post_strength;
+        searchFrontStrength(ci) = front_strength;
+        searchScores(ci) = score_ci;
     end
 
-    [bestCorr, bestIdx] = max(candCorrs);
-    if isempty(bestIdx) || isnan(bestCorr)
+    [bestScore, bestIdx] = max(searchScores);
+    if isempty(bestIdx) || isnan(bestScore)
         bestIdx = 1;
-        bestCorr = NaN;
+        bestScore = NaN;
     end
+    bestCorr = searchCorrs(bestIdx);
+    bestPost = searchPostStrength(bestIdx);
+    bestFront = searchFrontStrength(bestIdx);
 
-    topComp = candFilters(:, bestIdx);
+    topComp = searchFilters(:, bestIdx);
     topo_temp = covStim_full_reg * topComp;
+
+    [~, topDispOrder] = sort(searchScores, 'descend');
+    nDispTopo = min(topo_display_n, nSearch);
+    dispTopoIdx = topDispOrder(1:nDispTopo);
+    topoDispTopos = searchTopos(:, dispTopoIdx);
+    topoDispCorrs = searchCorrs(dispTopoIdx);
+    topoDispScores = searchScores(dispTopoIdx);
+
+    nStore = min(5, nSearch);
+    storeCompIdx = topDispOrder(1:nStore);
+    storeCorrs = searchCorrs(storeCompIdx);
+    storeEvals = evals_sorted(storeCompIdx);
+    storeTopos = searchTopos(:, storeCompIdx);
 
     all_topos{subj}       = topo_temp;
     all_topo_labels{subj} = dataEEG_c25.label;
@@ -232,9 +267,9 @@ for subj = 1:nSubj
     all_selected_comp_idx(subj)  = bestIdx;
     all_selected_comp_corr(subj) = bestCorr;
     all_selected_comp_eval(subj) = evals_sorted(bestIdx);
-    all_top5_corrs(1:nCand, subj) = candCorrs;
-    all_top5_evals(1:nCand, subj) = evals_sorted(1:nCand);
-    all_top5_topos{subj} = candTopos;
+    all_top5_corrs(1:nStore, subj) = storeCorrs;
+    all_top5_evals(1:nStore, subj) = storeEvals;
+    all_top5_topos{subj} = storeTopos;
     all_simulated_templates{subj} = sim_template;
 
     %% Phase 1b: Component/template sanity figures
@@ -249,62 +284,35 @@ for subj = 1:nSubj
     cfg_topo.figure    = 'gcf';
 
     fig_sel = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf('Subject %s: GED Top-5 vs Posterior Template (selected C%d, r=%.3f)', ...
-        subjects{subj}, bestIdx, bestCorr), 'FontSize', 16, 'FontWeight', 'bold');
-    for ci = 1:nCand
-        subplot(2, 3, ci);
+    sgtitle(sprintf(['Subject %s: GED Candidate Top-%d (searched 1:%d, selected C%d, ', ...
+        'score=%.3f, r=%.3f, post=%.3f, front=%.3f)'], ...
+        subjects{subj}, nDispTopo, nSearch, bestIdx, bestScore, bestCorr, bestPost, bestFront), ...
+        'FontSize', 14, 'FontWeight', 'bold');
+    nColsTopo = 5;
+    nRowsTopo = ceil(nDispTopo / nColsTopo);
+    for ci = 1:nDispTopo
+        subplot(nRowsTopo, nColsTopo, ci);
         topo_data = [];
         topo_data.label  = all_topo_labels{subj};
-        topo_data.avg    = candTopos(:, ci);
+        topo_data.avg    = topoDispTopos(:, ci);
         topo_data.dimord = 'chan';
         try
             ft_topoplotER(cfg_topo, topo_data);
             colorbar;
         catch
-            imagesc(candTopos(:, ci)); colorbar;
+            imagesc(topoDispTopos(:, ci)); colorbar;
         end
-        if ci == bestIdx
-            title(sprintf('C%d (selected), r=%.3f', ci, candCorrs(ci)), 'FontSize', 11, 'FontWeight', 'bold');
+        comp_rank = dispTopoIdx(ci);
+        is_selected = comp_rank == bestIdx;
+        if is_selected
+            title(sprintf('C%d (selected), score=%.3f, r=%.3f', comp_rank, topoDispScores(ci), topoDispCorrs(ci)), ...
+                'FontSize', 10, 'FontWeight', 'bold');
         else
-            title(sprintf('C%d, r=%.3f', ci, candCorrs(ci)), 'FontSize', 11);
+            title(sprintf('C%d, score=%.3f, r=%.3f', comp_rank, topoDispScores(ci), topoDispCorrs(ci)), ...
+                'FontSize', 10);
         end
     end
-    subplot(2, 3, 6);
-    topo_data = [];
-    topo_data.label  = all_topo_labels{subj};
-    topo_data.avg    = sim_template;
-    topo_data.dimord = 'chan';
-    try
-        ft_topoplotER(cfg_topo, topo_data);
-        colorbar;
-    catch
-        imagesc(sim_template); colorbar;
-    end
-    title('Simulated Posterior Gamma Template', 'FontSize', 11, 'FontWeight', 'bold');
     saveas(fig_sel, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_top5_selection_subj%s.png', subjects{subj})));
-
-    % RSA sanity-check matrices
-    rsa_comp_comp = corr(candTopos, candTopos, 'rows', 'pairwise');
-    rsa_comp_template = candCorrs;
-    rsa_cmap = interp1([0 0.5 1], ...
-        [0.17 0.27 0.53; 0.97 0.97 0.97; 0.70 0.09 0.17], linspace(0,1,256));
-    fig_rsa = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf('Subject %s: RSA Sanity Checks', subjects{subj}), ...
-        'FontSize', 16, 'FontWeight', 'bold');
-    subplot(1, 2, 1);
-    imagesc(rsa_comp_comp, [-1 1]); axis square;
-    colormap(gca, rsa_cmap); colorbar;
-    xticks(1:nCand); yticks(1:nCand);
-    xlabel('Component'); ylabel('Component');
-    title('Top-5 Component x Component');
-    subplot(1, 2, 2);
-    imagesc(rsa_comp_template, [-1 1]); axis tight;
-    colormap(gca, rsa_cmap); colorbar;
-    xticks(1); yticks(1:nCand);
-    xticklabels({'Template'}); yticklabels(arrayfun(@(x) sprintf('C%d', x), 1:nCand, 'UniformOutput', false));
-    xlabel('Simulated Posterior Template'); ylabel('Component');
-    title('Top-5 Component x Template');
-    saveas(fig_rsa, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_RSA_subj%s.png', subjects{subj})));
 
     %% ================================================================
     %  PHASE 2: Per condition — trial-level narrowband scanning
