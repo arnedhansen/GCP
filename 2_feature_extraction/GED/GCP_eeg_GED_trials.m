@@ -14,7 +14,7 @@
 %             2. Per-subject spectral-trough boundary
 %             3. Gaussian Mixture Model on single-peak frequencies
 %   Aggregation — mean & median peak frequency per condition per subject
-
+ 
 clear; close all; clc
 
 %% Setup
@@ -82,6 +82,13 @@ all_trial_detrate_high   = nan(4, nSubj);
 all_topos       = cell(1, nSubj);
 all_topo_labels = cell(1, nSubj);
 all_eigenvalues = nan(1, nSubj);
+all_selected_comp_idx  = nan(1, nSubj);
+all_selected_comp_corr = nan(1, nSubj);
+all_selected_comp_eval = nan(1, nSubj);
+all_top5_corrs         = nan(5, nSubj);
+all_top5_evals         = nan(5, nSubj);
+all_top5_topos         = cell(1, nSubj);
+all_simulated_templates = cell(1, nSubj);
 
 chanlocs_all = {};
 
@@ -107,16 +114,22 @@ for subj = 1:nSubj
 
     nChans = length(dataEEG_c25.label);
 
-    occ_mask = cellfun(@(l) ~isempty(regexp(l, '[OI]', 'once')), dataEEG_c25.label);
-    occ_idx  = find(occ_mask);
-    nOcc     = length(occ_idx);
+    post_mask = cellfun(@(l) ~isempty(regexp(l, '^(P|PO|O|I)', 'once')), dataEEG_c25.label);
+    post_idx  = find(post_mask);
+    nPost     = length(post_idx);
+    if nPost == 0
+        warning('No posterior channels matched for subject %s. Falling back to occipital labels [OI].', subjects{subj});
+        post_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I)', 'once')), dataEEG_c25.label);
+        post_idx  = find(post_mask);
+        nPost     = length(post_idx);
+    end
 
     %% ================================================================
     %  PHASE 1: Build POOLED covariance across all conditions -> one GED
     %  ================================================================
     clc
-    fprintf('Subject %s (%d/%d) — Phase 1: Occipital GED (%d occ / %d ch)\n', ...
-        subjects{subj}, subj, nSubj, nOcc, nChans);
+    fprintf('Subject %s (%d/%d) — Phase 1: Full-head GED + posterior template (%d post / %d ch)\n', ...
+        subjects{subj}, subj, nSubj, nPost, nChans);
 
     covStim_full = zeros(nChans);
     covBase_full = zeros(nChans);
@@ -164,33 +177,134 @@ for subj = 1:nSubj
     covStim_full = covStim_full / nTrials_total;
     covBase_full = covBase_full / nTrials_total;
 
-    % Extract occipital submatrices for GED
-    covStim_occ = covStim_full(occ_idx, occ_idx);
-    covBase_occ = covBase_full(occ_idx, occ_idx);
+    % Shrinkage regularization (full-head GED)
+    covStim_reg = (1-lambda)*covStim_full + lambda*mean(diag(covStim_full))*eye(nChans);
+    covBase_reg = (1-lambda)*covBase_full + lambda*mean(diag(covBase_full))*eye(nChans);
 
-    % Shrinkage regularization (occipital)
-    covStim_occ = (1-lambda)*covStim_occ + lambda*mean(diag(covStim_occ))*eye(nOcc);
-    covBase_occ = (1-lambda)*covBase_occ + lambda*mean(diag(covBase_occ))*eye(nOcc);
+    % GED on full-head covariance
+    [W_full, D_full] = eig(covStim_reg, covBase_reg);
+    [evals_sorted, sortIdx] = sort(real(diag(D_full)), 'descend');
+    W_full = W_full(:, sortIdx);
 
-    % GED on occipital covariance
-    [W_occ, D_occ] = eig(covStim_occ, covBase_occ);
-    [evals_sorted, sortIdx] = sort(real(diag(D_occ)), 'descend');
-    W_occ = W_occ(:, sortIdx);
-    w_occ = W_occ(:, 1);
-    all_eigenvalues(subj) = evals_sorted(1);
+    nCand = min(5, size(W_full, 2));
+    candFilters = nan(nChans, nCand);
+    candTopos = nan(nChans, nCand);
+    candCorrs = nan(nCand, 1);
 
-    % Zero-pad to full channel space
-    topComp = zeros(nChans, 1);
-    topComp(occ_idx) = w_occ;
+    % Simulated posterior gamma template (posterior channels only)
+    sim_template = zeros(nChans, 1);
+    sim_template(post_idx) = 1;
+    if ~any(sim_template)
+        sim_template(:) = 1;
+    end
+    if std(sim_template) > 0
+        sim_template = (sim_template - mean(sim_template)) / std(sim_template);
+    end
 
-    % Full-head forward model for topoplot
+    % Full-head forward model for topoplot and component scoring
     covStim_full_reg = (1-lambda)*covStim_full + lambda*mean(diag(covStim_full))*eye(nChans);
-    topo_temp = covStim_full_reg * topComp;
-    [~, mxI] = max(abs(topo_temp));
-    if topo_temp(mxI) < 0, topComp = -topComp; end
+    for ci = 1:nCand
+        w_ci = W_full(:, ci);
+        topo_ci = covStim_full_reg * w_ci;
+        r_ci = corr(topo_ci, sim_template, 'rows', 'complete');
+        if ~isnan(r_ci) && r_ci < 0
+            w_ci = -w_ci;
+            topo_ci = -topo_ci;
+            r_ci = -r_ci;
+        end
+        candFilters(:, ci) = w_ci;
+        candTopos(:, ci) = topo_ci;
+        candCorrs(ci) = r_ci;
+    end
 
-    all_topos{subj}       = covStim_full_reg * topComp;
+    [bestCorr, bestIdx] = max(candCorrs);
+    if isempty(bestIdx) || isnan(bestCorr)
+        bestIdx = 1;
+        bestCorr = NaN;
+    end
+
+    topComp = candFilters(:, bestIdx);
+    topo_temp = covStim_full_reg * topComp;
+
+    all_topos{subj}       = topo_temp;
     all_topo_labels{subj} = dataEEG_c25.label;
+    all_eigenvalues(subj) = evals_sorted(1);
+    all_selected_comp_idx(subj)  = bestIdx;
+    all_selected_comp_corr(subj) = bestCorr;
+    all_selected_comp_eval(subj) = evals_sorted(bestIdx);
+    all_top5_corrs(1:nCand, subj) = candCorrs;
+    all_top5_evals(1:nCand, subj) = evals_sorted(1:nCand);
+    all_top5_topos{subj} = candTopos;
+    all_simulated_templates{subj} = sim_template;
+
+    %% Phase 1b: Component/template sanity figures
+    cfg_topo = [];
+    cfg_topo.layout    = headmodel.layANThead;
+    cfg_topo.comment   = 'no';
+    cfg_topo.marker    = 'off';
+    cfg_topo.style     = 'straight';
+    cfg_topo.gridscale = 300;
+    cfg_topo.zlim      = 'maxabs';
+    cfg_topo.colormap  = '*RdBu';
+    cfg_topo.figure    = 'gcf';
+
+    fig_sel = figure('Position', [0 0 1512 982], 'Color', 'w');
+    sgtitle(sprintf('Subject %s: GED Top-5 vs Posterior Template (selected C%d, r=%.3f)', ...
+        subjects{subj}, bestIdx, bestCorr), 'FontSize', 16, 'FontWeight', 'bold');
+    for ci = 1:nCand
+        subplot(2, 3, ci);
+        topo_data = [];
+        topo_data.label  = all_topo_labels{subj};
+        topo_data.avg    = candTopos(:, ci);
+        topo_data.dimord = 'chan';
+        try
+            ft_topoplotER(cfg_topo, topo_data);
+            colorbar;
+        catch
+            imagesc(candTopos(:, ci)); colorbar;
+        end
+        if ci == bestIdx
+            title(sprintf('C%d (selected), r=%.3f', ci, candCorrs(ci)), 'FontSize', 11, 'FontWeight', 'bold');
+        else
+            title(sprintf('C%d, r=%.3f', ci, candCorrs(ci)), 'FontSize', 11);
+        end
+    end
+    subplot(2, 3, 6);
+    topo_data = [];
+    topo_data.label  = all_topo_labels{subj};
+    topo_data.avg    = sim_template;
+    topo_data.dimord = 'chan';
+    try
+        ft_topoplotER(cfg_topo, topo_data);
+        colorbar;
+    catch
+        imagesc(sim_template); colorbar;
+    end
+    title('Simulated Posterior Gamma Template', 'FontSize', 11, 'FontWeight', 'bold');
+    saveas(fig_sel, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_top5_selection_subj%s.png', subjects{subj})));
+
+    % RSA sanity-check matrices
+    rsa_comp_comp = corr(candTopos, candTopos, 'rows', 'pairwise');
+    rsa_comp_template = candCorrs;
+    rsa_cmap = interp1([0 0.5 1], ...
+        [0.17 0.27 0.53; 0.97 0.97 0.97; 0.70 0.09 0.17], linspace(0,1,256));
+    fig_rsa = figure('Position', [0 0 1512 982], 'Color', 'w');
+    sgtitle(sprintf('Subject %s: RSA Sanity Checks', subjects{subj}), ...
+        'FontSize', 16, 'FontWeight', 'bold');
+    subplot(1, 2, 1);
+    imagesc(rsa_comp_comp, [-1 1]); axis square;
+    colormap(gca, rsa_cmap); colorbar;
+    xticks(1:nCand); yticks(1:nCand);
+    xlabel('Component'); ylabel('Component');
+    title('Top-5 Component x Component');
+    subplot(1, 2, 2);
+    imagesc(rsa_comp_template, [-1 1]); axis tight;
+    colormap(gca, rsa_cmap); colorbar;
+    xticks(1); yticks(1:nCand);
+    xticklabels({'Template'}); yticklabels(arrayfun(@(x) sprintf('C%d', x), 1:nCand, 'UniformOutput', false));
+    xlabel('Simulated Posterior Template'); ylabel('Component');
+    title('Top-5 Component x Template');
+    saveas(fig_rsa, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_RSA_subj%s.png', subjects{subj})));
 
     %% ================================================================
     %  PHASE 2: Per condition — trial-level narrowband scanning
@@ -1023,6 +1137,8 @@ save(save_path, ...
     'all_trial_mean_high', 'all_trial_median_high', ...
     'all_trial_detrate_single', 'all_trial_detrate_low', 'all_trial_detrate_high', ...
     'all_topos', 'all_topo_labels', 'all_eigenvalues', ...
+    'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
+    'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'm_peaks_low', 'm_peaks_high', 'm_median_low', 'm_median_high', ...
     'm_detrate_low', 'm_detrate_high', ...
     'trough_freqs', 'gmm_means', 'gmm_boundary', ...
