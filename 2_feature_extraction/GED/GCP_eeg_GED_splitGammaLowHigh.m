@@ -603,6 +603,63 @@ sgtitle('SplitGammaLowHigh — Main Outcomes', 'FontSize', 18, 'FontWeight', 'bo
 saveas(fig3, fullfile(fig_dir, 'splitGammaLowHigh_mainOutcomes.png'));
 close(fig3);
 
+%% Grand figure 4: boxplots of low/high peak frequencies by condition
+fig4 = figure('Position', [0 0 1512 982], 'Color', 'w');
+tiledlayout(1,2, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+% Build grouped vectors for boxplots (trial-level pooled)
+g_low = [];
+y_low = [];
+g_high = [];
+y_high = [];
+for cond = 1:nCond
+    v_lo = T_trials.LowPeakFreq(T_trials.Condition == cond);
+    v_lo = v_lo(~isnan(v_lo));
+    g_low = [g_low; repmat(cond, numel(v_lo), 1)]; %#ok<AGROW>
+    y_low = [y_low; v_lo]; %#ok<AGROW>
+
+    v_hi = T_trials.HighPeakFreq(T_trials.Condition == cond);
+    v_hi = v_hi(~isnan(v_hi));
+    g_high = [g_high; repmat(cond, numel(v_hi), 1)]; %#ok<AGROW>
+    y_high = [y_high; v_hi]; %#ok<AGROW>
+end
+
+nexttile; hold on;
+if ~isempty(y_low)
+    boxplot(y_low, g_low, 'Labels', condLabels, 'Symbol', '');
+    for cond = 1:nCond
+        vals = y_low(g_low == cond);
+        if isempty(vals), continue; end
+        xj = cond + (rand(size(vals)) - 0.5) * 0.18;
+        scatter(xj, vals, 10, colors(cond,:), 'filled', 'MarkerFaceAlpha', 0.20);
+    end
+end
+xlabel('Contrast condition');
+ylabel('Low gamma peak frequency [Hz]');
+title('Low gamma peak frequencies across conditions');
+ylim([scan_freqs(1), max(params.fallback_split_hz + 5, 55)]);
+grid on; box on;
+
+nexttile; hold on;
+if ~isempty(y_high)
+    boxplot(y_high, g_high, 'Labels', condLabels, 'Symbol', '');
+    for cond = 1:nCond
+        vals = y_high(g_high == cond);
+        if isempty(vals), continue; end
+        xj = cond + (rand(size(vals)) - 0.5) * 0.18;
+        scatter(xj, vals, 10, colors(cond,:), 'filled', 'MarkerFaceAlpha', 0.20);
+    end
+end
+xlabel('Contrast condition');
+ylabel('High gamma peak frequency [Hz]');
+title('High gamma peak frequencies across conditions');
+ylim([max(params.fallback_split_hz - 5, 45), scan_freqs(end)]);
+grid on; box on;
+
+sgtitle('SplitGammaLowHigh — Peak Frequency Boxplots', 'FontSize', 18, 'FontWeight', 'bold');
+saveas(fig4, fullfile(fig_dir, 'splitGammaLowHigh_peakFrequency_boxplots.png'));
+close(fig4);
+
 %% Save one consolidated MAT bundle
 all_out = fullfile(data_dir, 'GCP_eeg_GED_splitGammaLowHigh_all.mat');
 save(all_out, ...
