@@ -23,7 +23,7 @@ nSubj = length(subjects);
 
 % Time windows
 baseline_window = [-1.5, -0.25];
-stimulus_window = [0.3, 2.0];
+stimulus_window = [0, 2.0];
 
 % Gamma frequency range
 gamma_range = [30, 90];
@@ -40,12 +40,15 @@ topo_display_n = 10;        % number of component topos to visualize
 template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.20;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
-score_w_corr = 1.00;        % composite-score weight for template correlation
-score_w_gamma = 1.00;       % composite-score weight for pooled gamma evidence
-score_w_frontleak = 1.00;   % composite-score penalty for frontal leakage
+score_w_corr = 2;           % composite-score weight for template correlation
+score_w_gamma = 1.5;       % composite-score weight for pooled gamma evidence
+score_w_eval = 1.5;        % composite-score weight for GED eigenvalue evidence
+score_w_frontleak = 1.25;   % composite-score penalty for frontal leakage
 
 % Detrending parameters for power-ratio spectrum
 poly_order = 2;
+centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
+centroid_min_peak = 0.02;    % minimum positive peak in detrended spectrum
 
 % Condition info
 condNames  = {'c25', 'c50', 'c75', 'c100'};
@@ -73,6 +76,7 @@ all_trial_powratio     = cell(4, nSubj);
 all_trial_peaks_single = cell(4, nSubj);
 all_trial_peaks_low    = cell(4, nSubj);
 all_trial_peaks_high   = cell(4, nSubj);
+all_trial_centroid     = cell(4, nSubj);
 
 all_trial_mean_single   = nan(4, nSubj);
 all_trial_median_single = nan(4, nSubj);
@@ -80,10 +84,13 @@ all_trial_mean_low      = nan(4, nSubj);
 all_trial_median_low    = nan(4, nSubj);
 all_trial_mean_high     = nan(4, nSubj);
 all_trial_median_high   = nan(4, nSubj);
+all_trial_mean_centroid   = nan(4, nSubj);
+all_trial_median_centroid = nan(4, nSubj);
 
 all_trial_detrate_single = nan(4, nSubj);
 all_trial_detrate_low    = nan(4, nSubj);
 all_trial_detrate_high   = nan(4, nSubj);
+all_trial_detrate_centroid = nan(4, nSubj);
 
 all_topos       = cell(1, nSubj);
 all_topo_labels = cell(1, nSubj);
@@ -274,11 +281,12 @@ for subj = 1:nSubj
         searchFrontLeak(ci) = front_leak_ci;
     end
 
-    % Pareto-filter candidates on three objectives (maximize corr, gamma evidence, ratio),
-    % then select by composite score z(corr) + z(gamma) - z(frontLeak).
+    % Pareto-filter candidates on four objectives (maximize corr, gamma evidence, ratio, eval),
+    % then select by weighted composite score.
     corr_vec = searchCorrs;
     ratio_vec = searchOccFrontRatio;
     gamma_vec = searchGammaEvidence;
+    eval_vec = log(max(evals_sorted(1:nSearch), eps));
     leak_vec = searchFrontLeak;
 
     pareto_mask = true(nSearch, 1);
@@ -287,10 +295,12 @@ for subj = 1:nSubj
             if i == j, continue; end
             better_or_equal = (corr_vec(j) >= corr_vec(i)) && ...
                               (gamma_vec(j) >= gamma_vec(i)) && ...
-                              (ratio_vec(j) >= ratio_vec(i));
+                              (ratio_vec(j) >= ratio_vec(i)) && ...
+                              (eval_vec(j) >= eval_vec(i));
             strictly_better = (corr_vec(j) > corr_vec(i)) || ...
                               (gamma_vec(j) > gamma_vec(i)) || ...
-                              (ratio_vec(j) > ratio_vec(i));
+                              (ratio_vec(j) > ratio_vec(i)) || ...
+                              (eval_vec(j) > eval_vec(i));
             if better_or_equal && strictly_better
                 pareto_mask(i) = false;
                 break;
@@ -300,24 +310,34 @@ for subj = 1:nSubj
 
     valid_corr = isfinite(corr_vec);
     valid_gamma = isfinite(gamma_vec);
+    valid_eval = isfinite(eval_vec);
     valid_leak = isfinite(leak_vec);
 
     if any(valid_corr), corr_mu = mean(corr_vec(valid_corr)); corr_sd = std(corr_vec(valid_corr));
     else, corr_mu = 0; corr_sd = 1; end
     if any(valid_gamma), gamma_mu = mean(gamma_vec(valid_gamma)); gamma_sd = std(gamma_vec(valid_gamma));
     else, gamma_mu = 0; gamma_sd = 1; end
+    if any(valid_eval), eval_mu = mean(eval_vec(valid_eval)); eval_sd = std(eval_vec(valid_eval));
+    else, eval_mu = 0; eval_sd = 1; end
     if any(valid_leak), leak_mu = mean(leak_vec(valid_leak)); leak_sd = std(leak_vec(valid_leak));
     else, leak_mu = 0; leak_sd = 1; end
 
     z_corr = (corr_vec - corr_mu) / max(corr_sd, eps);
     z_gamma = (gamma_vec - gamma_mu) / max(gamma_sd, eps);
+    z_eval = (eval_vec - eval_mu) / max(eval_sd, eps);
     z_leak = (leak_vec - leak_mu) / max(leak_sd, eps);
 
-    comp_score = score_w_corr * z_corr + score_w_gamma * z_gamma - score_w_frontleak * z_leak;
+    comp_score = score_w_corr * z_corr + ...
+                 score_w_gamma * z_gamma + ...
+                 score_w_eval * z_eval - ...
+                 score_w_frontleak * z_leak;
     comp_score(~pareto_mask) = -Inf;
     if ~any(isfinite(comp_score))
         warning('Pareto filter removed all candidates for subject %s; falling back to unconstrained score.', subjects{subj});
-        comp_score = score_w_corr * z_corr + score_w_gamma * z_gamma - score_w_frontleak * z_leak;
+        comp_score = score_w_corr * z_corr + ...
+                     score_w_gamma * z_gamma + ...
+                     score_w_eval * z_eval - ...
+                     score_w_frontleak * z_leak;
     end
 
     searchScores = comp_score;
@@ -372,10 +392,12 @@ for subj = 1:nSubj
     cfg_topo.figure    = 'gcf';
 
     fig_sel = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf(['Subject %s: GED Top %d (selected C%d, ', ...
-        'score=%.3f, r=%.3f, occ=%.3f, front=%.3f, occ/front=%.3f, gamma=%.3f, leak=%.3f)'], ...
-        subjects{subj}, nDispTopo, bestIdx, bestScore, bestCorr, bestOcc, bestFront, bestRatio, bestGamma, bestLeak), ...
-        'FontSize', 14, 'FontWeight', 'bold');
+    title_str = sprintf(['Subject %s: GED Top %d (selected C%d, ', ...
+        'score=%.3f, r=%.3f, occ/front=%.3f, gamma=%.3f, leak=%.3f)'], ...
+        subjects{subj}, nDispTopo, bestIdx, bestScore, bestCorr, bestRatio, bestGamma, bestLeak);
+    annotation(fig_sel, 'textbox', [0.01 0.965 0.98 0.03], ...
+        'String', title_str, 'EdgeColor', 'none', 'HorizontalAlignment', 'center', ...
+        'VerticalAlignment', 'middle', 'FontSize', 14, 'FontWeight', 'bold');
     nColsTopo = 5;
     nRowsTopo = ceil(nDispTopo / nColsTopo);
     for ci = 1:nDispTopo
@@ -391,8 +413,8 @@ for subj = 1:nSubj
             imagesc(topoDispTopos(:, ci)); colorbar;
         end
         comp_rank = dispTopoIdx(ci);
-        title(sprintf('C%d: score=%.2f, r=%.2f, ratio=%.2f, g=%.2f', ...
-            comp_rank, topoDispScores(ci), topoDispCorrs(ci), ...
+        title(sprintf('C%d: \\lambda=%.2f, score=%.2f, r=%.2f, ratio=%.2f, g=%.2f', ...
+            comp_rank, evals_sorted(comp_rank), topoDispScores(ci), topoDispCorrs(ci), ...
             searchOccFrontRatio(comp_rank), searchGammaEvidence(comp_rank)), ...
             'FontSize', 7);
     end
@@ -447,6 +469,7 @@ for subj = 1:nSubj
         trl_peaks_single = nan(nTrl, 1);
         trl_peaks_low    = nan(nTrl, 1);
         trl_peaks_high   = nan(nTrl, 1);
+        trl_centroid     = nan(nTrl, 1);
 
         for trl = 1:nTrl
             pr = powratio_trials(trl, :);
@@ -455,6 +478,15 @@ for subj = 1:nSubj
             p = polyfit(scan_freqs, pr, poly_order);
             pr_dt = pr - polyval(p, scan_freqs);
             pr_dt_smooth = movmean(pr_dt, 5);
+
+            % Stripe-center metric: spectral centroid of positive detrended mass.
+            w_pos = max(pr_dt_smooth, 0);
+            pos_mass = sum(w_pos);
+            total_abs_mass = sum(abs(pr_dt_smooth));
+            if pos_mass > 0 && max(pr_dt_smooth) >= centroid_min_peak && ...
+                    (pos_mass / max(total_abs_mass, eps)) >= centroid_posfrac_min
+                trl_centroid(trl) = sum(scan_freqs .* w_pos) / pos_mass;
+            end
 
             % Single-peak: tallest prominent peak
             [pks, locs] = findpeaks(pr_dt_smooth, scan_freqs, ...
@@ -490,6 +522,7 @@ for subj = 1:nSubj
         all_trial_peaks_single{cond, subj} = trl_peaks_single;
         all_trial_peaks_low{cond, subj}    = trl_peaks_low;
         all_trial_peaks_high{cond, subj}   = trl_peaks_high;
+        all_trial_centroid{cond, subj}     = trl_centroid;
 
         valid_s = ~isnan(trl_peaks_single);
         all_trial_mean_single(cond, subj)   = mean(trl_peaks_single(valid_s));
@@ -505,6 +538,11 @@ for subj = 1:nSubj
         all_trial_mean_high(cond, subj)   = mean(trl_peaks_high(valid_hi));
         all_trial_median_high(cond, subj) = median(trl_peaks_high(valid_hi));
         all_trial_detrate_high(cond, subj) = sum(valid_hi) / nTrl;
+
+        valid_c = ~isnan(trl_centroid);
+        all_trial_mean_centroid(cond, subj)   = mean(trl_centroid(valid_c));
+        all_trial_median_centroid(cond, subj) = median(trl_centroid(valid_c));
+        all_trial_detrate_centroid(cond, subj) = sum(valid_c) / nTrl;
 
     end % condition loop
 
@@ -545,10 +583,22 @@ for subj = 1:nSubj
     for cond = 1:4
         subplot(4, 4, cond);
         if ~isempty(pr_dt_mats{cond})
+            hold on;
             imagesc(scan_freqs, 1:size(pr_dt_mats{cond},1), pr_dt_mats{cond});
             colormap(gca, cmap_div);
             caxis([-cl_shared cl_shared]);
             cb = colorbar; cb.FontSize = 8;
+            ctd = all_trial_centroid{cond, subj};
+            if ~isempty(ctd)
+                valid_ctd = ~isnan(ctd);
+                tr_idx = find(valid_ctd);
+                if ~isempty(tr_idx)
+                    plot(ctd(valid_ctd), tr_idx, '.', 'Color', [0 0 0], 'MarkerSize', 7);
+                end
+                if numel(tr_idx) >= 2
+                    plot(ctd(valid_ctd), tr_idx, '-', 'Color', [0 0 0], 'LineWidth', 0.6);
+                end
+            end
             xlabel('Freq [Hz]'); ylabel('Trial');
             set(gca, 'YDir', 'normal');
         end
@@ -684,6 +734,165 @@ for subj = 1:nSubj
     saveas(fig, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_subj%s.png', subjects{subj})));
     toc
 end % subject loop
+
+%% ====================================================================
+%  CENTROID METRIC: Subject/group summaries and concordance
+%  ====================================================================
+fig_cent = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle('Trial-Level Gamma Centroid (Stripe-Center Metric)', ...
+    'FontSize', 18, 'FontWeight', 'bold');
+
+subplot(1, 2, 1); hold on;
+for s = 1:nSubj
+    yc = all_trial_median_centroid(:, s);
+    if sum(~isnan(yc)) >= 2
+        plot(1:4, yc, '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
+    end
+end
+for c = 1:4
+    vals = all_trial_median_centroid(c, :);
+    vals = vals(~isnan(vals));
+    if ~isempty(vals)
+        xj = c + (rand(size(vals)) - 0.5) * 0.12;
+        scatter(xj, vals, 110, colors(c,:), 'filled', ...
+            'MarkerEdgeColor', 'k', 'LineWidth', 0.4);
+    end
+end
+mu_c = nanmean(all_trial_median_centroid, 2);
+sem_c = nanstd(all_trial_median_centroid, [], 2) ./ sqrt(sum(~isnan(all_trial_median_centroid), 2));
+errorbar(1:4, mu_c, sem_c, 'k', 'LineWidth', 2, 'CapSize', 10);
+plot(1:4, mu_c, 'k-', 'LineWidth', 2.5);
+set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13, 'Box', 'off');
+xlim([0.3 4.7]); ylim([30 90]); grid on;
+ylabel('Centroid Frequency [Hz]');
+title('Subject medians by condition', 'FontSize', 14, 'FontWeight', 'bold');
+
+subplot(1, 2, 2); hold on;
+y_all_c = [];
+g_all_c = [];
+for c = 1:4
+    for s = 1:nSubj
+        tc = all_trial_centroid{c, s};
+        if ~isempty(tc)
+            tc = tc(~isnan(tc));
+            y_all_c = [y_all_c; tc(:)];
+            g_all_c = [g_all_c; c * ones(length(tc), 1)];
+        end
+    end
+end
+if ~isempty(y_all_c)
+    boxplot(y_all_c, g_all_c, 'Colors', 'k', 'Symbol', '', 'Widths', 0.15);
+    for c = 1:4
+        vals = y_all_c(g_all_c == c);
+        xj = c + 0.15 + (rand(size(vals)) - 0.5) * 0.22;
+        scatter(xj, vals, 10, colors(c,:), 'filled', 'MarkerFaceAlpha', 0.2);
+    end
+end
+set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13, 'Box', 'off');
+xlim([0.3 4.7]); ylim([30 90]); grid on;
+ylabel('Centroid Frequency [Hz]');
+title('All trials pooled', 'FontSize', 14, 'FontWeight', 'bold');
+saveas(fig_cent, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_centroid_summary.png'));
+
+% Trend slopes and metric concordance across conditions
+trend_x = (1:4)';
+slope_single = nan(1, nSubj);
+slope_high = nan(1, nSubj);
+slope_centroid = nan(1, nSubj);
+corr_centroid_single = nan(1, nSubj);
+corr_centroid_high = nan(1, nSubj);
+
+for subj = 1:nSubj
+    ys = all_trial_median_single(:, subj);
+    yh = all_trial_median_high(:, subj);
+    yc = all_trial_median_centroid(:, subj);
+
+    vs = ~isnan(ys);
+    if sum(vs) >= 2
+        p = polyfit(trend_x(vs), ys(vs), 1);
+        slope_single(subj) = p(1);
+    end
+    vh = ~isnan(yh);
+    if sum(vh) >= 2
+        p = polyfit(trend_x(vh), yh(vh), 1);
+        slope_high(subj) = p(1);
+    end
+    vc = ~isnan(yc);
+    if sum(vc) >= 2
+        p = polyfit(trend_x(vc), yc(vc), 1);
+        slope_centroid(subj) = p(1);
+    end
+
+    vsc = ~isnan(ys) & ~isnan(yc);
+    if sum(vsc) >= 3 && std(ys(vsc)) > 0 && std(yc(vsc)) > 0
+        corr_centroid_single(subj) = corr(ys(vsc), yc(vsc));
+    end
+    vhc = ~isnan(yh) & ~isnan(yc);
+    if sum(vhc) >= 3 && std(yh(vhc)) > 0 && std(yc(vhc)) > 0
+        corr_centroid_high(subj) = corr(yh(vhc), yc(vhc));
+    end
+end
+
+metric_names = {'single', 'high', 'centroid'};
+metric_vals = {slope_single, slope_high, slope_centroid};
+trend_stats = struct();
+for mi = 1:numel(metric_names)
+    v = metric_vals{mi};
+    v = v(~isnan(v));
+    st = struct('n', numel(v), 'mean', NaN, 'ci95', [NaN NaN], ...
+        'p', NaN, 'cohens_d', NaN);
+    if numel(v) >= 2
+        st.mean = mean(v);
+        if numel(v) >= 3
+            [~, p, ci, stat_obj] = ttest(v);
+            st.p = p;
+            st.ci95 = ci;
+            st.cohens_d = st.mean / max(stat_obj.sd, eps);
+        end
+    end
+    trend_stats.(metric_names{mi}) = st;
+end
+
+concordance = struct();
+vcs = corr_centroid_single(~isnan(corr_centroid_single));
+vch = corr_centroid_high(~isnan(corr_centroid_high));
+concordance.n_centroid_single = numel(vcs);
+concordance.n_centroid_high = numel(vch);
+concordance.mean_r_centroid_single = mean(vcs);
+concordance.mean_r_centroid_high = mean(vch);
+
+fig_conc = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle('Centroid Concordance with Peak-Based Metrics', ...
+    'FontSize', 18, 'FontWeight', 'bold');
+
+subplot(1, 3, 1); hold on;
+valid_sc = ~isnan(slope_single) & ~isnan(slope_centroid);
+scatter(slope_single(valid_sc), slope_centroid(valid_sc), 120, [0.2 0.2 0.2], ...
+    'filled', 'MarkerFaceAlpha', 0.7);
+xlabel('Single-peak slope [Hz/cond]');
+ylabel('Centroid slope [Hz/cond]');
+title('Slope agreement: single vs centroid');
+grid on; box on;
+
+subplot(1, 3, 2); hold on;
+valid_hc = ~isnan(slope_high) & ~isnan(slope_centroid);
+scatter(slope_high(valid_hc), slope_centroid(valid_hc), 120, [0.2 0.2 0.2], ...
+    'filled', 'MarkerFaceAlpha', 0.7);
+xlabel('High-gamma slope [Hz/cond]');
+ylabel('Centroid slope [Hz/cond]');
+title('Slope agreement: high vs centroid');
+grid on; box on;
+
+subplot(1, 3, 3); hold on;
+bar_vals = [mean(vcs), mean(vch)];
+bar(1:2, bar_vals, 0.6, 'FaceColor', [0.4 0.4 0.4]);
+scatter(ones(size(vcs)), vcs, 35, colors(2,:), 'filled', 'MarkerFaceAlpha', 0.6);
+scatter(2 * ones(size(vch)), vch, 35, colors(4,:), 'filled', 'MarkerFaceAlpha', 0.6);
+set(gca, 'XTick', 1:2, 'XTickLabel', {'Centroid~Single', 'Centroid~High'}, 'FontSize', 12);
+ylabel('Across-condition r (within subject)');
+ylim([-1 1]); grid on; box on;
+title('Concordance');
+saveas(fig_conc, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_centroid_concordance.png'));
 
 %% ====================================================================
 %  METHOD COMPARISON: Three dual-peak assignment methods
@@ -1224,15 +1433,21 @@ end
 save(save_path, ...
     'all_trial_powratio', ...
     'all_trial_peaks_single', 'all_trial_peaks_low', 'all_trial_peaks_high', ...
+    'all_trial_centroid', ...
     'all_trial_mean_single', 'all_trial_median_single', ...
     'all_trial_mean_low', 'all_trial_median_low', ...
     'all_trial_mean_high', 'all_trial_median_high', ...
+    'all_trial_mean_centroid', 'all_trial_median_centroid', ...
     'all_trial_detrate_single', 'all_trial_detrate_low', 'all_trial_detrate_high', ...
+    'all_trial_detrate_centroid', ...
     'all_topos', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'm_peaks_low', 'm_peaks_high', 'm_median_low', 'm_median_high', ...
     'm_detrate_low', 'm_detrate_high', ...
+    'slope_single', 'slope_high', 'slope_centroid', ...
+    'corr_centroid_single', 'corr_centroid_high', ...
+    'trend_stats', 'concordance', ...
     'trough_freqs', 'gmm_means', 'gmm_boundary', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
