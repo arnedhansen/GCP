@@ -1,4 +1,4 @@
-%% GCP Trial-Level Narrowband Scanning GED (Common Spatial Filter)
+%% GCP Trial-Level GED
 %
 % Identical spatial filter approach as GCP_eeg_GED_subjects.m, but:
 %   - Peak detection is done on INDIVIDUAL TRIALS rather than
@@ -9,7 +9,12 @@
 %   Phase 2 — For each condition & trial, narrowband scan (30-90 Hz),
 %             compute per-trial power ratio, detrend, detect peaks.
 %             Single-peak and dual-peak (hard 50 Hz) models per trial.
-%   Method comparison — Three dual-peak assignment methods:
+%   Method comparison A — Four benchmark branches:
+%             1. Raw channel-space reference
+%             2. Top GED component (highest eigenvalue)
+%             3. Combined GED components before permutation/CV
+%             4. Combined GED components after permutation+CV
+%   Method comparison B — Three dual-peak assignment methods:
 %             1. Hard 50 Hz boundary
 %             2. Per-subject spectral-trough boundary
 %             3. Gaussian Mixture Model on single-peak frequencies
@@ -32,7 +37,7 @@ gamma_range = [30, 90];
 % Narrowband scanning parameters
 scan_freqs = 30:1:90;
 nFreqs     = length(scan_freqs);
-scan_width = 4;
+scan_width = 3;
 
 % GED parameters
 lambda = 0.01;
@@ -50,9 +55,9 @@ viz_interp_k = 6;                   % nearest neighbors for channel interpolatio
 viz_nonocc_outlier_mult = 1.00;     % non-occipital outlier threshold multiplier (vs posterior pctl)
 viz_topo_prctile = 99;              % robust percentile for color scaling
 min_occfront_ratio = 0.50;          % hard eligibility threshold (occ/front ratio)
-min_eigval_hard = 1.10;             % hard minimum GED eigenvalue
-min_corr_hard = 0.15;               % hard minimum template correlation
-min_gamma_hard = 0.10;              % hard minimum gamma evidence (log ratio)
+min_eigval_hard = 1.05;             % hard minimum GED eigenvalue
+min_corr_hard = 0.1;               % hard minimum template correlation
+min_gamma_hard = 0.05;              % hard minimum gamma evidence (log ratio)
 cv_gain_min = 0.01;                 % minimum positive held-out gain to add component
 
 % Multi-component selection (perm + CV) and weighted projection
@@ -66,8 +71,9 @@ random_seed = 13;                    % reproducible randomization
 cv_min_train_trials = 10;            % minimum train trials per CV fold
 cv_min_test_trials = 3;              % minimum test trials per CV fold
 
-% Three-way benchmark config
-benchmark_methods = {'raw', 'ged_top_eig', 'ged_permcv_weighted'};
+% Four-way benchmark config (ordered for plotting/metrics):
+% raw -> top component -> pre-Perm+CV combined -> post-Perm+CV combined
+benchmark_methods = {'raw', 'ged_top_eig', 'ged_preperm_hard_weighted', 'ged_permcv_weighted'};
 nBenchmarkMethods = numel(benchmark_methods);
 raw_reference_definition = 'posterior_roi';  % locked reference for raw benchmark branch
 compute_detectability = true;
@@ -76,6 +82,8 @@ compute_reliability = true;
 
 % Detrending parameters for power-ratio spectrum
 poly_order = 2;
+centroid_freq_range = [40 80];
+centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
 centroid_min_peak = 0.02;    % minimum positive peak in detrended spectrum
 
@@ -115,6 +123,7 @@ all_trial_mean_low      = nan(4, nSubj);
 all_trial_median_low    = nan(4, nSubj);
 all_trial_mean_high     = nan(4, nSubj);
 all_trial_median_high   = nan(4, nSubj);
+all_trial_median_gap    = nan(4, nSubj);
 all_trial_mean_centroid   = nan(4, nSubj);
 all_trial_median_centroid = nan(4, nSubj);
 
@@ -135,6 +144,8 @@ all_top5_topos         = cell(1, nSubj);
 all_simulated_templates = cell(1, nSubj);
 all_selected_comp_indices_multi = cell(1, nSubj);
 all_selected_comp_weights = cell(1, nSubj);
+all_preperm_comp_indices_multi = cell(1, nSubj);
+all_preperm_comp_weights = cell(1, nSubj);
 all_component_selection_stats = cell(1, nSubj);
 all_cv_curves = cell(1, nSubj);
 all_perm_thresholds = nan(1, nSubj);
@@ -652,6 +663,26 @@ for subj = 1:nSubj
         selected_weights = selected_weights / sum(selected_weights);
     end
 
+    preperm_idx = find(hard_eligible & isfinite(searchScores));
+    if isempty(preperm_idx)
+        warning(['No hard-eligible pre-Perm+CV components for subject %s. ', ...
+                 'Falling back to best single component for pre-Perm+CV combined benchmark.'], subjects{subj});
+        preperm_idx = bestIdx;
+    else
+        [~, pre_ord] = sort(evals_sorted(preperm_idx), 'descend');
+        preperm_idx = preperm_idx(pre_ord);
+    end
+    preperm_weights = searchScores(preperm_idx)';
+    preperm_weights(~isfinite(preperm_weights) | preperm_weights < 0) = 0;
+    if sum(preperm_weights) <= 0
+        preperm_weights = evals_sorted(preperm_idx)';
+        preperm_weights(~isfinite(preperm_weights) | preperm_weights < 0) = 0;
+    end
+    if sum(preperm_weights) <= 0
+        preperm_weights = ones(1, numel(preperm_idx));
+    end
+    preperm_weights = preperm_weights / sum(preperm_weights);
+
     bestIdx = selected_idx(1);
     bestScore = searchScores(bestIdx);
     bestCorr = searchCorrs(bestIdx);
@@ -702,6 +733,8 @@ for subj = 1:nSubj
     all_simulated_templates{subj} = sim_template;
     all_selected_comp_indices_multi{subj} = selected_idx;
     all_selected_comp_weights{subj} = selected_weights(:)';
+    all_preperm_comp_indices_multi{subj} = preperm_idx;
+    all_preperm_comp_weights{subj} = preperm_weights(:)';
     all_cv_curves{subj} = struct( ...
         'mean_curve', cv_curve_mean, ...
         'fold_scores', cv_fold_scores(1:max(nCvRows, 1), :), ...
@@ -716,6 +749,8 @@ for subj = 1:nSubj
         'n_cv_rows', nCvRows, ...
         'cv_folds', cv_folds, ...
         'cv_repeats', cv_repeats, ...
+        'preperm_idx', preperm_idx, ...
+        'preperm_weights', preperm_weights, ...
         'selected_idx', selected_idx, ...
         'selected_weights', selected_weights, ...
         'candidate_pool_idx', candidate_pool_idx, ...
@@ -823,7 +858,7 @@ for subj = 1:nSubj
             searchOccFrontRatio(comp_rank), searchGammaEvidence(comp_rank)), ...
             'FontSize', 7);
     end
-    saveas(fig_sel, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_trials_component_selection_raw_subj%s.png', subjects{subj})));
+    saveas(fig_sel, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_trials_component_selection_subj%s_prePermCV.png', subjects{subj})));
 
     % Post-selection topoplots: components surviving permutation + CV cap.
     selTopoIdx = selected_idx(:)';
@@ -882,16 +917,22 @@ for subj = 1:nSubj
                 searchOccFrontRatio(comp_rank)), 'FontSize', 8);
         end
     end
-    saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_trials_component_selection_post_subj%s.png', subjects{subj})));
+    saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_trials_component_selection_subj%s_postPermCV.png', subjects{subj})));
 
     %% ================================================================
     %  PHASE 2: Per condition — trial-level narrowband scanning
     %  ================================================================
     W_sel = searchFilters(:, selected_idx);
     w_sel = all_selected_comp_weights{subj};
+    W_pre = searchFilters(:, preperm_idx);
+    w_pre = all_preperm_comp_weights{subj};
     if isempty(W_sel)
         warning('No selected filters for subject %s. Falling back to best single component.', subjects{subj});
         W_sel = zeros(0, 0);
+    end
+    if isempty(W_pre)
+        warning('No pre-Perm+CV filters for subject %s. Falling back to best single component.', subjects{subj});
+        W_pre = searchFilters(:, bestIdx);
     end
     if isempty(W_top)
         W_top = zeros(0, 1);
@@ -904,6 +945,15 @@ for subj = 1:nSubj
     end
     if ~isempty(W_sel)
         w_sel = w_sel(:)' / sum(w_sel);
+    end
+    if isempty(w_pre) && ~isempty(W_pre)
+        w_pre = ones(1, size(W_pre, 2)) / size(W_pre, 2);
+    end
+    if sum(w_pre) <= 0 && ~isempty(W_pre)
+        w_pre = ones(1, size(W_pre, 2)) / size(W_pre, 2);
+    end
+    if ~isempty(W_pre)
+        w_pre = w_pre(:)' / sum(w_pre);
     end
 
     for cond = 1:4
@@ -959,7 +1009,26 @@ for subj = 1:nSubj
                     end
                 end
 
-                % Method 3: permutation+CV weighted GED combination.
+                % Method 3: pre-Perm+CV weighted GED combination.
+                if ~isempty(W_pre)
+                    comp_stim = W_pre' * x_stim;
+                    comp_base = W_pre' * x_base;
+                    pow_stim_vec = mean(comp_stim.^2, 2);
+                    pow_base_vec = mean(comp_base.^2, 2);
+                    valid_comp = isfinite(pow_stim_vec) & isfinite(pow_base_vec) & (pow_base_vec > 0);
+                    if any(valid_comp)
+                        ratio_vec = pow_stim_vec(valid_comp) ./ pow_base_vec(valid_comp);
+                        w_use = w_pre(valid_comp);
+                        if sum(w_use) <= 0
+                            w_use = ones(1, numel(ratio_vec)) / numel(ratio_vec);
+                        else
+                            w_use = w_use / sum(w_use);
+                        end
+                        powratio_methods(3, trl, fi) = sum(ratio_vec(:)' .* w_use);
+                    end
+                end
+
+                % Method 4: post-Perm+CV weighted GED combination.
                 if ~isempty(W_sel)
                     comp_stim = W_sel' * x_stim;
                     comp_base = W_sel' * x_base;
@@ -974,7 +1043,7 @@ for subj = 1:nSubj
                         else
                             w_use = w_use / sum(w_use);
                         end
-                        powratio_methods(3, trl, fi) = sum(ratio_vec(:)' .* w_use);
+                        powratio_methods(4, trl, fi) = sum(ratio_vec(:)' .* w_use);
                     end
                 end
             end
@@ -993,8 +1062,8 @@ for subj = 1:nSubj
             end
         end
 
-        % Keep legacy pipeline outputs based on perm+CV weighted GED.
-        powratio_trials = squeeze(powratio_methods(3, :, :));
+        % Keep legacy pipeline outputs based on post-Perm+CV weighted GED.
+        powratio_trials = squeeze(powratio_methods(4, :, :));
         all_trial_powratio{cond, subj} = powratio_trials;
 
         %% Per-trial peak detection
@@ -1011,13 +1080,15 @@ for subj = 1:nSubj
             pr_dt = pr - polyval(p, scan_freqs);
             pr_dt_smooth = movmean(pr_dt, 5);
 
-            % Stripe-center metric: spectral centroid of positive detrended mass.
-            w_pos = max(pr_dt_smooth, 0);
+            % Stripe-center metric: spectral centroid of positive detrended mass in 40-80 Hz.
+            pr_dt_band = pr_dt_smooth(centroid_band_mask);
+            freq_band = scan_freqs(centroid_band_mask);
+            w_pos = max(pr_dt_band, 0);
             pos_mass = sum(w_pos);
-            total_abs_mass = sum(abs(pr_dt_smooth));
-            if pos_mass > 0 && max(pr_dt_smooth) >= centroid_min_peak && ...
+            total_abs_mass = sum(abs(pr_dt_band));
+            if pos_mass > 0 && max(pr_dt_band) >= centroid_min_peak && ...
                     (pos_mass / max(total_abs_mass, eps)) >= centroid_posfrac_min
-                trl_centroid(trl) = sum(scan_freqs .* w_pos) / pos_mass;
+                trl_centroid(trl) = sum(freq_band .* w_pos) / pos_mass;
             end
 
             % Single-peak: tallest prominent peak
@@ -1070,6 +1141,10 @@ for subj = 1:nSubj
         all_trial_mean_high(cond, subj)   = mean(trl_peaks_high(valid_hi));
         all_trial_median_high(cond, subj) = median(trl_peaks_high(valid_hi));
         all_trial_detrate_high(cond, subj) = sum(valid_hi) / nTrl;
+        valid_gap = valid_lo & valid_hi;
+        if any(valid_gap)
+            all_trial_median_gap(cond, subj) = median(trl_peaks_high(valid_gap) - trl_peaks_low(valid_gap));
+        end
 
         valid_c = ~isnan(trl_centroid);
         all_trial_mean_centroid(cond, subj)   = mean(trl_centroid(valid_c));
@@ -1103,12 +1178,21 @@ for subj = 1:nSubj
             pr_dt_mats{cond} = dt;
         end
     end
-    all_vals = cell2mat(cellfun(@(x) x(:), pr_dt_mats(~cellfun(@isempty, pr_dt_mats)), ...
-        'UniformOutput', false)');
-    if ~isempty(all_vals)
-        cl_shared = prctile(abs(all_vals(~isnan(all_vals))), 98);
-    else
-        cl_shared = 1;
+    row1_clim = ones(1, 4);
+    for cond = 1:4
+        if ~isempty(pr_dt_mats{cond})
+            cond_vals = abs(pr_dt_mats{cond}(:));
+            cond_vals = cond_vals(isfinite(cond_vals));
+            if ~isempty(cond_vals)
+                row1_clim(cond) = prctile(cond_vals, 95);
+                if ~isfinite(row1_clim(cond)) || row1_clim(cond) <= 0
+                    row1_clim(cond) = max(cond_vals);
+                end
+            end
+        end
+        if ~isfinite(row1_clim(cond)) || row1_clim(cond) <= 0
+            row1_clim(cond) = 1;
+        end
     end
 
     % --- Row 1: Heatmap of trial-level detrended power-ratio spectra ---
@@ -1118,7 +1202,7 @@ for subj = 1:nSubj
             hold on;
             imagesc(scan_freqs, 1:size(pr_dt_mats{cond},1), pr_dt_mats{cond});
             colormap(gca, cmap_div);
-            caxis([-cl_shared cl_shared]);
+            caxis([-row1_clim(cond) row1_clim(cond)]);
             cb = colorbar; cb.FontSize = 8;
             ctd = all_trial_centroid{cond, subj};
             if ~isempty(ctd)
@@ -1145,6 +1229,10 @@ for subj = 1:nSubj
             mu_dt = nanmean(pr_dt_mats{cond}, 1);
             nTrl = size(pr_dt_mats{cond}, 1);
             sem_dt = nanstd(pr_dt_mats{cond}, [], 1) / sqrt(nTrl);
+            row2_abs = max(abs([mu_dt - sem_dt, mu_dt + sem_dt]), [], 'omitnan');
+            if ~isfinite(row2_abs) || row2_abs <= 0
+                row2_abs = 1;
+            end
             faceC = 0.8*colors(cond,:) + 0.2*[1 1 1];
             patch([scan_freqs, fliplr(scan_freqs)], ...
                 [mu_dt - sem_dt, fliplr(mu_dt + sem_dt)], ...
@@ -1165,11 +1253,12 @@ for subj = 1:nSubj
                     sprintf('md:%.0f', md_pf), 'FontSize', 9, ...
                     'Color', colors(cond,:));
             end
+            ylim([-row2_abs row2_abs]);
         end
         xlabel('Freq [Hz]'); ylabel('\Delta PR');
         det = all_trial_detrate_single(cond, subj);
         title(sprintf('%s Single (det=%.0f%%)', condLabels{cond}, det*100), 'FontSize', 10);
-        set(gca, 'FontSize', 10); xlim([30 90]); grid on; box on;
+        set(gca, 'FontSize', 10); xlim([30 90]);  box on;
     end
 
     % --- Row 3: Mean trial-level spectrum with dual-peak markers (50 Hz) ---
@@ -1179,6 +1268,10 @@ for subj = 1:nSubj
             mu_dt = nanmean(pr_dt_mats{cond}, 1);
             nTrl = size(pr_dt_mats{cond}, 1);
             sem_dt = nanstd(pr_dt_mats{cond}, [], 1) / sqrt(nTrl);
+            row3_abs = max(abs([mu_dt - sem_dt, mu_dt + sem_dt]), [], 'omitnan');
+            if ~isfinite(row3_abs) || row3_abs <= 0
+                row3_abs = 1;
+            end
             faceC = 0.8*colors(cond,:) + 0.2*[1 1 1];
             patch([scan_freqs, fliplr(scan_freqs)], ...
                 [mu_dt - sem_dt, fliplr(mu_dt + sem_dt)], ...
@@ -1200,13 +1293,14 @@ for subj = 1:nSubj
                     sprintf('H:%.0f', pf_hi), 'FontSize', 9, ...
                     'Color', [0.7 0 0], 'FontWeight', 'bold');
             end
+            ylim([-row3_abs row3_abs]);
         end
         xlabel('Freq [Hz]'); ylabel('\Delta PR');
         det_lo = all_trial_detrate_low(cond, subj);
         det_hi = all_trial_detrate_high(cond, subj);
         title(sprintf('%s Dual (L:%.0f%% H:%.0f%%)', condLabels{cond}, det_lo*100, det_hi*100), ...
             'FontSize', 10);
-        set(gca, 'FontSize', 10); xlim([30 90]); grid on; box on;
+        set(gca, 'FontSize', 10); xlim([30 90]);  box on;
     end
 
     % --- Row 4: Topoplot + histogram ---
@@ -1316,15 +1410,15 @@ for subj = 1:nSubj
     end
     xlabel('Peak Frequency [Hz]'); ylabel('Trial Count');
     title('Trial-Level Single Peak Distribution', 'FontSize', 12);
-    legend(condLabels, 'FontSize', 10, 'Location', 'best');
-    set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
+    legend(bh, condLabels, 'FontSize', 10, 'Location', 'best');
+    set(gca, 'FontSize', 11); xlim([30 90]);  box on;
 
     saveas(fig, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_subj%s.png', subjects{subj})));
     toc
 end % subject loop
 
 %% ====================================================================
-%  THREE-WAY BENCHMARK METRICS (raw vs top-eig GED vs perm+CV GED)
+%  FOUR-WAY BENCHMARK METRICS (raw vs top-eig GED vs pre/post combined GED)
 %  ====================================================================
 for mi = 1:nBenchmarkMethods
     for subj = 1:nSubj
@@ -1384,16 +1478,71 @@ for mi = 1:nBenchmarkMethods
     end
 end
 
+% Shared y-limits for benchmark lower-row panels (consistent across subjects).
+single_vals = all_trial_median_single(isfinite(all_trial_median_single));
+if isempty(single_vals)
+    bench_single_ylim = [30 90];
+else
+    single_q = prctile(single_vals, [2 98]);
+    bench_single_ylim = [max(30, single_q(1) - 1), min(90, single_q(2) + 1)];
+end
+
+gap_vals = all_trial_median_gap(isfinite(all_trial_median_gap));
+if isempty(gap_vals)
+    bench_gap_ylim = [-10 10];
+else
+    gap_q = prctile(gap_vals, [2 98]);
+    gap_pad = max(1, 0.1 * (gap_q(2) - gap_q(1)));
+    bench_gap_ylim = [gap_q(1) - gap_pad, gap_q(2) + gap_pad];
+end
+
+prom_vals = benchmark_metric_prominence(isfinite(benchmark_metric_prominence));
+if isempty(prom_vals)
+    bench_prom_ylim = [0 1];
+else
+    bench_prom_ylim = [0, max(prom_vals) * 1.15];
+end
+
+rel_vals = benchmark_metric_reliability_trialcv(isfinite(benchmark_metric_reliability_trialcv));
+if isempty(rel_vals)
+    bench_rel_ylim = [0 1];
+else
+    bench_rel_ylim = [0, max(rel_vals) * 1.15];
+end
+
+slope_vals = benchmark_metric_separation_slope(isfinite(benchmark_metric_separation_slope));
+if isempty(slope_vals)
+    bench_slope_absmax = 1;
+else
+    bench_slope_absmax = prctile(abs(slope_vals), 98);
+    if ~isfinite(bench_slope_absmax) || bench_slope_absmax <= 0
+        bench_slope_absmax = max(abs(slope_vals));
+    end
+    bench_slope_absmax = max(bench_slope_absmax * 1.1, 0.1);
+end
+
+delta_vals = benchmark_metric_separation_delta(isfinite(benchmark_metric_separation_delta));
+if isempty(delta_vals)
+    bench_delta_absmax = 1;
+else
+    bench_delta_absmax = prctile(abs(delta_vals), 98);
+    if ~isfinite(bench_delta_absmax) || bench_delta_absmax <= 0
+        bench_delta_absmax = max(abs(delta_vals));
+    end
+    bench_delta_absmax = max(bench_delta_absmax * 1.1, 0.1);
+end
+
 %% Subject-level benchmark figures
-bench_method_labels = {'Raw', 'Top-Eig GED', 'Perm+CV GED'};
-bench_method_colors = [0.2 0.2 0.2; 0.1 0.35 0.75; 0.75 0.2 0.1];
+bench_method_labels = {'Raw', 'Top-Eig GED', 'Combined GED (pre-Perm+CV)', 'Combined GED (post-Perm+CV)'};
+bench_method_colors = [0.2 0.2 0.2; 0.1 0.35 0.75; 0.85 0.55 0.10; 0.75 0.2 0.1];
 for subj = 1:nSubj
     fig_bench_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf('Three-Way Spectrum Benchmark: Subject %s', subjects{subj}), ...
+    sgtitle(sprintf('Four-Way Spectrum Benchmark: Subject %s', subjects{subj}), ...
         'FontSize', 18, 'FontWeight', 'bold');
 
     for mi = 1:nBenchmarkMethods
-        subplot(2, 3, mi); hold on;
+        subplot(2, 4, mi); hold on;
+        cond_line_handles = gobjects(1, 4);
         for cond = 1:4
             pr_dt = all_trial_powratio_dt_bench{mi, cond, subj};
             if isempty(pr_dt), continue; end
@@ -1403,31 +1552,69 @@ for subj = 1:nSubj
             patch([scan_freqs, fliplr(scan_freqs)], ...
                 [mu - se, fliplr(mu + se)], ...
                 colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.25);
-            plot(scan_freqs, movmean(mu, 5), '-', 'Color', colors(cond,:), 'LineWidth', 2.0);
+            cond_line_handles(cond) = plot(scan_freqs, movmean(mu, 5), '-', ...
+                'Color', colors(cond,:), 'LineWidth', 2.0);
         end
         yline(0, 'k-', 'LineWidth', 0.5);
         title(bench_method_labels{mi}, 'FontSize', 12, 'Color', bench_method_colors(mi,:));
         xlabel('Frequency [Hz]'); ylabel('\Delta Power Ratio');
-        xlim([30 90]); grid on; box on; set(gca, 'FontSize', 10);
+        xlim([30 90]);  box on; set(gca, 'FontSize', 10);
         if mi == 1
-            legend(condLabels, 'Location', 'best', 'FontSize', 9);
+            valid_handles = isgraphics(cond_line_handles);
+            if any(valid_handles)
+                legend(cond_line_handles(valid_handles), condLabels(valid_handles), ...
+                    'Location', 'best', 'FontSize', 9);
+            end
         end
     end
 
-    subplot(2, 3, 4); hold on;
-    det_mat = squeeze(benchmark_metric_detectability(:, :, subj))';
-    if any(isfinite(det_mat(:)))
-        bh = bar(det_mat * 100, 'grouped');
-        for mi = 1:nBenchmarkMethods
-            bh(mi).FaceColor = bench_method_colors(mi, :);
+    subplot(2, 4, 5); hold on;
+    single_med = nan(1, 4);
+    single_lo = nan(1, 4);
+    single_hi = nan(1, 4);
+    gap_med = nan(1, 4);
+    gap_lo = nan(1, 4);
+    gap_hi = nan(1, 4);
+    for cond = 1:4
+        sp = all_trial_peaks_single{cond, subj};
+        sp = sp(~isnan(sp));
+        if ~isempty(sp)
+            single_med(cond) = median(sp);
+            sq = prctile(sp, [25 75]);
+            single_lo(cond) = single_med(cond) - sq(1);
+            single_hi(cond) = sq(2) - single_med(cond);
+        end
+
+        lp = all_trial_peaks_low{cond, subj};
+        hp = all_trial_peaks_high{cond, subj};
+        vgap = ~isnan(lp) & ~isnan(hp);
+        if any(vgap)
+            g = hp(vgap) - lp(vgap);
+            gap_med(cond) = median(g);
+            gq = prctile(g, [25 75]);
+            gap_lo(cond) = gap_med(cond) - gq(1);
+            gap_hi(cond) = gq(2) - gap_med(cond);
         end
     end
+    yyaxis left
+    b4 = bar(1:4, single_med, 0.58, 'FaceColor', 'flat', 'EdgeColor', 'none');
+    b4.CData = colors;
+    errorbar(1:4, single_med, single_lo, single_hi, 'k', 'LineStyle', 'none', 'LineWidth', 1.1, 'CapSize', 5);
+    ylabel('Single-peak median [Hz]');
+    ylim(bench_single_ylim);
+    yyaxis right
+    errorbar(1:4, gap_med, gap_lo, gap_hi, 'ko-', 'LineWidth', 1.4, 'MarkerFaceColor', [0.2 0.2 0.2], 'CapSize', 5);
+    ylabel('H-L separation [Hz]');
+    ylim(bench_gap_ylim);
     set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 10);
-    ylabel('Detection rate [%]');
-    title('Detectability by condition');
-    ylim([0 105]); grid on; box on;
+    d_single = single_med(4) - single_med(1);
+    d_gap = gap_med(4) - gap_med(1);
+    text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\\n\\DeltaGap_{100-25}=%.2f Hz', d_single, d_gap), ...
+        'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
+    title('Single median + H-L gap (post-Perm+CV)');
+    box on;
 
-    subplot(2, 3, 5); hold on;
+    subplot(2, 4, 6); hold on;
     prom_vec = nan(nBenchmarkMethods, 1);
     rel_vec = nan(nBenchmarkMethods, 1);
     for mi = 1:nBenchmarkMethods
@@ -1440,14 +1627,19 @@ for subj = 1:nSubj
         b1.CData(mi, :) = bench_method_colors(mi, :);
     end
     ylabel('Peak prominence');
+    ylim(bench_prom_ylim);
     yyaxis right
     plot(1:nBenchmarkMethods, rel_vec, 'ko-', 'LineWidth', 2, 'MarkerFaceColor', [0.2 0.2 0.2]);
     ylabel('Trial CV (lower better)');
+    ylim(bench_rel_ylim);
     set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
+    text(0.02, 0.96, sprintf('\\DeltaProm_{Post-R}=%.2f\\n\\DeltaCV_{Post-R}=%.3f', ...
+        prom_vec(4)-prom_vec(1), rel_vec(4)-rel_vec(1)), ...
+        'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
     title('Prominence + Reliability');
-    grid on; box on;
+     box on;
 
-    subplot(2, 3, 6); hold on;
+    subplot(2, 4, 7); hold on;
     slope_vec = squeeze(benchmark_metric_separation_slope(:, subj));
     delta_vec = squeeze(benchmark_metric_separation_delta(:, subj));
     yyaxis left
@@ -1456,12 +1648,22 @@ for subj = 1:nSubj
         b2.CData(mi, :) = bench_method_colors(mi, :);
     end
     ylabel('Condition slope [Hz/cond]');
+    ylim([-bench_slope_absmax bench_slope_absmax]);
     yyaxis right
     plot(1:nBenchmarkMethods, delta_vec, 'ks--', 'LineWidth', 2, 'MarkerFaceColor', [0.2 0.2 0.2]);
     ylabel('\Delta median (100%-25%) [Hz]');
+    ylim([-bench_delta_absmax bench_delta_absmax]);
     set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
+    text(0.02, 0.96, sprintf('Post-Perm+CV slope=%.2f\\nPost-Perm+CV \\Delta=%.2f Hz', ...
+        slope_vec(4), delta_vec(4)), ...
+        'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
     title('Condition separation');
-    grid on; box on;
+     box on;
+
+    subplot(2, 4, 8); axis off;
+    text(0.05, 0.9, sprintf(['Method order:\\n1) %s\\n2) %s\\n3) %s\\n4) %s'], ...
+        bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
+        'FontSize', 10, 'VerticalAlignment', 'top');
 
     saveas(fig_bench_subj, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_benchmark_subj%s.png', subjects{subj})));
 end
@@ -1470,7 +1672,7 @@ end
 %  CENTROID METRIC: Subject/group summaries and concordance
 %  ====================================================================
 fig_cent = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('Trial-Level Gamma Centroid (Stripe-Center Metric)', ...
+sgtitle('Trial-Level Gamma Centroid (Stripe-Center Metric, 40-80 Hz)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
 subplot(1, 2, 1); hold on;
@@ -1494,7 +1696,7 @@ sem_c = nanstd(all_trial_median_centroid, [], 2) ./ sqrt(sum(~isnan(all_trial_me
 errorbar(1:4, mu_c, sem_c, 'k', 'LineWidth', 2, 'CapSize', 10);
 plot(1:4, mu_c, 'k-', 'LineWidth', 2.5);
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13, 'Box', 'off');
-xlim([0.3 4.7]); ylim([30 90]); grid on;
+xlim([0.3 4.7]); ylim(centroid_freq_range); 
 ylabel('Centroid Frequency [Hz]');
 title('Subject medians by condition', 'FontSize', 14, 'FontWeight', 'bold');
 
@@ -1520,7 +1722,7 @@ if ~isempty(y_all_c)
     end
 end
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13, 'Box', 'off');
-xlim([0.3 4.7]); ylim([30 90]); grid on;
+xlim([0.3 4.7]); ylim(centroid_freq_range); 
 ylabel('Centroid Frequency [Hz]');
 title('All trials pooled', 'FontSize', 14, 'FontWeight', 'bold');
 saveas(fig_cent, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_centroid_summary.png'));
@@ -1603,7 +1805,7 @@ scatter(slope_single(valid_sc), slope_centroid(valid_sc), 120, [0.2 0.2 0.2], ..
 xlabel('Single-peak slope [Hz/cond]');
 ylabel('Centroid slope [Hz/cond]');
 title('Slope agreement: single vs centroid');
-grid on; box on;
+ box on;
 
 subplot(1, 3, 2); hold on;
 valid_hc = ~isnan(slope_high) & ~isnan(slope_centroid);
@@ -1612,7 +1814,7 @@ scatter(slope_high(valid_hc), slope_centroid(valid_hc), 120, [0.2 0.2 0.2], ...
 xlabel('High-gamma slope [Hz/cond]');
 ylabel('Centroid slope [Hz/cond]');
 title('Slope agreement: high vs centroid');
-grid on; box on;
+ box on;
 
 subplot(1, 3, 3); hold on;
 bar_vals = [mean(vcs), mean(vch)];
@@ -1621,7 +1823,7 @@ scatter(ones(size(vcs)), vcs, 35, colors(2,:), 'filled', 'MarkerFaceAlpha', 0.6)
 scatter(2 * ones(size(vch)), vch, 35, colors(4,:), 'filled', 'MarkerFaceAlpha', 0.6);
 set(gca, 'XTick', 1:2, 'XTickLabel', {'Centroid~Single', 'Centroid~High'}, 'FontSize', 12);
 ylabel('Across-condition r (within subject)');
-ylim([-1 1]); grid on; box on;
+ylim([-1 1]);  box on;
 title('Concordance');
 saveas(fig_conc, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_centroid_concordance.png'));
 
@@ -1963,7 +2165,7 @@ for mi = 1:3
         set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 14, 'Box', 'off');
         ylabel('Detection Rate [%]');
         title(det_labels_m{di}, 'FontSize', 16, 'FontWeight', 'bold');
-        grid on;
+        
     end
 
     saveas(fig_det_m, fullfile(save_dir, 'detection_rate.png'));
@@ -1971,72 +2173,103 @@ for mi = 1:3
 end
 
 %% ====================================================================
-%  GRAND-AVERAGE THREE-WAY BENCHMARK
+%  GRAND-AVERAGE FOUR-WAY BENCHMARK
 %  ====================================================================
 fig_bench_group = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('Three-Way Spectrum Benchmark: Grand Average', 'FontSize', 18, 'FontWeight', 'bold');
+sgtitle('Four-Way Spectrum Benchmark: Grand Average', 'FontSize', 18, 'FontWeight', 'bold');
 
 for mi = 1:nBenchmarkMethods
-    subplot(2, 3, mi); hold on;
+    subplot(2, 4, mi); hold on;
+    cond_line_handles = gobjects(1, 4);
+    panel_maxabs = 0;
     for cond = 1:4
         subj_curves = nan(nSubj, nFreqs);
         for s = 1:nSubj
             pr_dt = all_trial_powratio_dt_bench{mi, cond, s};
             if ~isempty(pr_dt)
-                subj_curves(s, :) = nanmean(pr_dt, 1);
+                subj_mu = nanmean(pr_dt, 1);
+                subj_curves(s, :) = normalize_maxabs_curve(subj_mu);
             end
         end
         mu = nanmean(subj_curves, 1);
         se = nanstd(subj_curves, [], 1) ./ sqrt(sum(~isnan(subj_curves(:,1))));
+        panel_maxabs = max(panel_maxabs, max(abs([mu - se, mu + se]), [], 'omitnan'));
         faceC = 0.8 * colors(cond,:) + 0.2 * [1 1 1];
         patch([scan_freqs, fliplr(scan_freqs)], ...
             [mu - se, fliplr(mu + se)], ...
             colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.25);
-        plot(scan_freqs, movmean(mu, 5), '-', 'Color', colors(cond,:), 'LineWidth', 2.2);
+        cond_line_handles(cond) = plot(scan_freqs, movmean(mu, 5), '-', ...
+            'Color', colors(cond,:), 'LineWidth', 2.2);
     end
     yline(0, 'k-', 'LineWidth', 0.5);
     title(bench_method_labels{mi}, 'FontSize', 12, 'Color', bench_method_colors(mi,:));
     xlabel('Frequency [Hz]'); ylabel('\Delta Power Ratio');
-    xlim([30 90]); grid on; box on; set(gca, 'FontSize', 10);
+    panel_maxabs = max(panel_maxabs, eps);
+    ylim([-panel_maxabs panel_maxabs]);
+    xlim([30 90]);  box on; set(gca, 'FontSize', 10);
     if mi == 1
-        legend(condLabels, 'Location', 'best', 'FontSize', 9);
+        valid_handles = isgraphics(cond_line_handles);
+        if any(valid_handles)
+            legend(cond_line_handles(valid_handles), condLabels(valid_handles), ...
+                'Location', 'best', 'FontSize', 9);
+        end
     end
 end
 
-subplot(2, 3, 4); hold on;
-det_mu = squeeze(nanmean(benchmark_metric_detectability, 3))' * 100;
-det_se = squeeze(nanstd(benchmark_metric_detectability, [], 3))' / sqrt(nSubj) * 100;
-bh = bar(det_mu, 'grouped');
-for mi = 1:nBenchmarkMethods
-    bh(mi).FaceColor = bench_method_colors(mi, :);
-end
-for mi = 1:nBenchmarkMethods
-    x = bh(mi).XEndPoints;
-    errorbar(x, det_mu(:, mi), det_se(:, mi), 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 6);
-end
+subplot(2, 4, 5); hold on;
+single_mu = nanmean(all_trial_median_single, 2);
+single_se = nanstd(all_trial_median_single, [], 2) ./ sqrt(sum(~isnan(all_trial_median_single), 2));
+single_med = nanmedian(all_trial_median_single, 2);
+gap_mu = nanmean(all_trial_median_gap, 2);
+gap_se = nanstd(all_trial_median_gap, [], 2) ./ sqrt(sum(~isnan(all_trial_median_gap), 2));
+gap_med = nanmedian(all_trial_median_gap, 2);
+yyaxis left
+b4g = bar(1:4, single_mu, 0.58, 'FaceColor', 'flat', 'EdgeColor', 'none');
+b4g.CData = colors;
+errorbar(1:4, single_mu, single_se, 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 6);
+scatter(1:4, single_med, 35, 'kd', 'filled');
+ylabel('Single-peak mean [Hz]');
+ylim(bench_single_ylim);
+yyaxis right
+errorbar(1:4, gap_mu, gap_se, 'ko-', 'LineWidth', 1.6, 'MarkerFaceColor', [0.2 0.2 0.2], 'CapSize', 6);
+scatter(1:4, gap_med, 30, 'ks', 'filled');
+ylabel('H-L separation mean [Hz]');
+ylim(bench_gap_ylim);
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 10);
-ylabel('Detection rate [%]'); title('Detectability by condition');
-ylim([0 105]); grid on; box on;
+text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\\n\\DeltaGap_{100-25}=%.2f Hz', ...
+    single_mu(4)-single_mu(1), gap_mu(4)-gap_mu(1)), ...
+    'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
+title('Single mean + H-L gap (post-Perm+CV)');
+box on;
 
-subplot(2, 3, 5); hold on;
+subplot(2, 4, 6); hold on;
 prom_group = squeeze(nanmean(benchmark_metric_prominence, 2));
 prom_mu = nanmean(prom_group, 2);
 prom_se = nanstd(prom_group, [], 2) ./ sqrt(sum(~isnan(prom_group), 2));
+prom_med = nanmedian(prom_group, 2);
 rel_group = squeeze(nanmean(benchmark_metric_reliability_trialcv, 2));
 rel_mu = nanmean(rel_group, 2);
 rel_se = nanstd(rel_group, [], 2) ./ sqrt(sum(~isnan(rel_group), 2));
+rel_med = nanmedian(rel_group, 2);
 yyaxis left
 bar(1:nBenchmarkMethods, prom_mu, 0.38, 'FaceColor', [0.75 0.75 0.75], 'EdgeColor', 'none');
 errorbar(1:nBenchmarkMethods, prom_mu, prom_se, 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 6);
+scatter(1:nBenchmarkMethods, prom_med, 25, 'kd', 'filled');
 ylabel('Peak prominence');
+ylim(bench_prom_ylim);
 yyaxis right
 errorbar(1:nBenchmarkMethods, rel_mu, rel_se, 'ko-', 'LineWidth', 1.8, 'MarkerFaceColor', [0.2 0.2 0.2]);
+scatter(1:nBenchmarkMethods, rel_med, 25, 'ks', 'filled');
 ylabel('Trial CV (lower better)');
+ylim(bench_rel_ylim);
 set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
+text(0.02, 0.96, sprintf('\\DeltaProm_{Post-R}=%.2f\\n\\DeltaCV_{Post-R}=%.3f', ...
+    prom_mu(4)-prom_mu(1), rel_mu(4)-rel_mu(1)), ...
+    'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
 title('Prominence + Reliability');
-grid on; box on;
+ box on;
 
-subplot(2, 3, 6); hold on;
+subplot(2, 4, 7); hold on;
 slope_mu = nanmean(benchmark_metric_separation_slope, 2);
 slope_se = nanstd(benchmark_metric_separation_slope, [], 2) ./ sqrt(sum(~isnan(benchmark_metric_separation_slope), 2));
 delta_mu = nanmean(benchmark_metric_separation_delta, 2);
@@ -2045,14 +2278,69 @@ yyaxis left
 bar(1:nBenchmarkMethods, slope_mu, 0.38, 'FaceColor', [0.75 0.75 0.75], 'EdgeColor', 'none');
 errorbar(1:nBenchmarkMethods, slope_mu, slope_se, 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 6);
 ylabel('Condition slope [Hz/cond]');
+ylim([-bench_slope_absmax bench_slope_absmax]);
 yyaxis right
 errorbar(1:nBenchmarkMethods, delta_mu, delta_se, 'ks--', 'LineWidth', 1.8, 'MarkerFaceColor', [0.2 0.2 0.2]);
 ylabel('\Delta median (100%-25%) [Hz]');
+ylim([-bench_delta_absmax bench_delta_absmax]);
 set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
+text(0.02, 0.96, sprintf('Post-Perm+CV slope=%.2f\\nPost-Perm+CV \\Delta=%.2f Hz', ...
+    slope_mu(4), delta_mu(4)), ...
+    'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
 title('Condition separation');
-grid on; box on;
+ box on;
+
+subplot(2, 4, 8); axis off;
+text(0.05, 0.9, sprintf(['Method order:\\n1) %s\\n2) %s\\n3) %s\\n4) %s'], ...
+    bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
+    'FontSize', 10, 'VerticalAlignment', 'top');
 
 saveas(fig_bench_group, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_benchmark_grandaverage.png'));
+
+%% ====================================================================
+%  SUMMARY DASHBOARD (backprojected combined-component data)
+%  ====================================================================
+fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle('GED Trials Summary Dashboard (Perm+CV backprojected)', ...
+    'FontSize', 16, 'FontWeight', 'bold');
+
+summary_metrics = { ...
+    all_trial_median_single, ...
+    all_trial_median_low, ...
+    all_trial_median_high, ...
+    all_trial_median_gap, ...
+    squeeze(benchmark_metric_prominence(4, :, :)), ...
+    squeeze(benchmark_metric_reliability_trialcv(4, :, :)), ...
+    all_trial_median_centroid, ...
+    all_trial_detrate_centroid * 100};
+summary_names = {'Single median [Hz]', 'Low median [Hz]', 'High median [Hz]', ...
+    'H-L separation [Hz]', 'Prominence', 'Trial CV', ...
+    'Centroid median [Hz]', 'Centroid detectability [%]'};
+
+for mi = 1:numel(summary_metrics)
+    subplot(2, 4, mi); hold on;
+    dat = summary_metrics{mi};
+    mu = nanmean(dat, 2);
+    sem = nanstd(dat, [], 2) ./ sqrt(sum(~isnan(dat), 2));
+    med = nanmedian(dat, 2);
+    for c = 1:4
+        bar(c, mu(c), 0.6, 'FaceColor', colors(c,:), 'EdgeColor', 'k', 'FaceAlpha', 0.7);
+    end
+    errorbar(1:4, mu, sem, 'k', 'LineStyle', 'none', 'LineWidth', 1.1, 'CapSize', 5);
+    scatter(1:4, med, 28, 'kd', 'filled');
+    for s = 1:nSubj
+        for c = 1:4
+            if ~isnan(dat(c, s))
+                scatter(c + (rand - 0.5) * 0.18, dat(c, s), 15, [0.35 0.35 0.35], ...
+                    'filled', 'MarkerFaceAlpha', 0.45);
+            end
+        end
+    end
+    set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 9);
+    title(summary_names{mi}, 'FontSize', 10, 'FontWeight', 'bold');
+    box on;
+end
+saveas(fig_summary, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_metrics_summary.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak boxplots (mean & median) — raincloud
@@ -2166,9 +2454,11 @@ nRows = ceil(nSubj / 5);
 fig_all = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle(sprintf('Trial-Level Mean Detrended Spectra: All Subjects (N=%d)', nSubj), ...
     'FontSize', 16, 'FontWeight', 'bold');
+fig_all_legend_handles = gobjects(1, 4);
 
 for s = 1:nSubj
     subplot(nRows, 5, s); hold on;
+    subj_panel_maxabs = 0;
     for cond = 1:4
         pr_mat = all_trial_powratio{cond, s};
         if ~isempty(pr_mat)
@@ -2179,8 +2469,13 @@ for s = 1:nSubj
                 pr_dt_mat(trl,:) = pr_mat(trl,:) - polyval(p, scan_freqs);
             end
             mu_dt = nanmean(pr_dt_mat, 1);
-            plot(scan_freqs, movmean(mu_dt, 5), '-', ...
+            mu_dt = normalize_maxabs_curve(mu_dt);
+            subj_panel_maxabs = max(subj_panel_maxabs, max(abs(mu_dt), [], 'omitnan'));
+            h_cond = plot(scan_freqs, movmean(mu_dt, 5), '-', ...
                 'Color', colors(cond,:), 'LineWidth', 2);
+            if s == 1
+                fig_all_legend_handles(cond) = h_cond;
+            end
             md_pf = all_trial_median_single(cond, s);
             if ~isnan(md_pf)
                 xline(md_pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.2);
@@ -2188,11 +2483,16 @@ for s = 1:nSubj
         end
     end
     yline(0, 'k-', 'LineWidth', 0.5);
+    subj_panel_maxabs = max(subj_panel_maxabs, eps);
     xlabel('Freq [Hz]'); ylabel('\Delta PR');
     title(sprintf('Subj %s', subjects{s}), 'FontSize', 11);
-    set(gca, 'FontSize', 10); xlim([30 90]); grid on; box on;
+    set(gca, 'FontSize', 10); xlim([30 90]); ylim([-subj_panel_maxabs subj_panel_maxabs]); box on;
     if s == 1
-        legend(condLabels, 'FontSize', 8, 'Location', 'best');
+        valid_handles = isgraphics(fig_all_legend_handles);
+        if any(valid_handles)
+            legend(fig_all_legend_handles(valid_handles), condLabels(valid_handles), ...
+                'FontSize', 8, 'Location', 'best');
+        end
     end
 end
 saveas(fig_all, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_all_subjects.png'));
@@ -2234,7 +2534,7 @@ for di = 1:3
     set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 14, 'Box', 'off');
     ylabel('Detection Rate [%]');
     title(det_labels{di}, 'FontSize', 16, 'FontWeight', 'bold');
-    grid on;
+    
 end
 
 saveas(fig_det, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_detection_rate.png'));
@@ -2251,13 +2551,14 @@ save(save_path, ...
     'all_trial_centroid', ...
     'all_trial_mean_single', 'all_trial_median_single', ...
     'all_trial_mean_low', 'all_trial_median_low', ...
-    'all_trial_mean_high', 'all_trial_median_high', ...
+    'all_trial_mean_high', 'all_trial_median_high', 'all_trial_median_gap', ...
     'all_trial_mean_centroid', 'all_trial_median_centroid', ...
     'all_trial_detrate_single', 'all_trial_detrate_low', 'all_trial_detrate_high', ...
     'all_trial_detrate_centroid', ...
     'all_topos', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
+    'all_preperm_comp_indices_multi', 'all_preperm_comp_weights', ...
     'all_component_selection_stats', 'all_cv_curves', 'all_perm_thresholds', ...
     'all_trial_powratio_bench', 'all_trial_powratio_dt_bench', ...
     'benchmark_methods', 'raw_reference_definition', ...
@@ -2275,3 +2576,14 @@ save(save_path, ...
 
 clc
 fprintf('Done.\n');
+
+function vec_out = normalize_maxabs_curve(vec_in)
+vec_out = vec_in;
+if isempty(vec_in)
+    return;
+end
+scale = max(abs(vec_in(~isnan(vec_in))));
+if ~isempty(scale) && isfinite(scale) && scale > 0
+    vec_out = vec_in ./ scale;
+end
+end
