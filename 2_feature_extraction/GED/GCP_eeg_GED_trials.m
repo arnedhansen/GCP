@@ -1609,7 +1609,7 @@ for subj = 1:nSubj
     set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 10);
     d_single = single_med(4) - single_med(1);
     d_gap = gap_med(4) - gap_med(1);
-    text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\\n\\DeltaGap_{100-25}=%.2f Hz', d_single, d_gap), ...
+    text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\n\\DeltaGap_{100-25}=%.2f Hz', d_single, d_gap), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
     title('Single median + H-L gap (post-Perm+CV)');
     box on;
@@ -1633,7 +1633,7 @@ for subj = 1:nSubj
     ylabel('Trial CV (lower better)');
     ylim(bench_rel_ylim);
     set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
-    text(0.02, 0.96, sprintf('\\DeltaProm_{Post-R}=%.2f\\n\\DeltaCV_{Post-R}=%.3f', ...
+    text(0.02, 0.96, sprintf('\\DeltaProm_{Post-R}=%.2f\n\\DeltaCV_{Post-R}=%.3f', ...
         prom_vec(4)-prom_vec(1), rel_vec(4)-rel_vec(1)), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
     title('Prominence + Reliability');
@@ -1654,14 +1654,14 @@ for subj = 1:nSubj
     ylabel('\Delta median (100%-25%) [Hz]');
     ylim([-bench_delta_absmax bench_delta_absmax]);
     set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
-    text(0.02, 0.96, sprintf('Post-Perm+CV slope=%.2f\\nPost-Perm+CV \\Delta=%.2f Hz', ...
+    text(0.02, 0.96, sprintf('Post-Perm+CV slope=%.2f\nPost-Perm+CV \\Delta=%.2f Hz', ...
         slope_vec(4), delta_vec(4)), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
     title('Condition separation');
      box on;
 
     subplot(2, 4, 8); axis off;
-    text(0.05, 0.9, sprintf(['Method order:\\n1) %s\\n2) %s\\n3) %s\\n4) %s'], ...
+    text(0.05, 0.9, sprintf(['Method order:\n1) %s\n2) %s\n3) %s\n4) %s'], ...
         bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
         'FontSize', 10, 'VerticalAlignment', 'top');
 
@@ -1672,7 +1672,7 @@ end
 %  CENTROID METRIC: Subject/group summaries and concordance
 %  ====================================================================
 fig_cent = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('Trial-Level Gamma Centroid (Stripe-Center Metric, 40-80 Hz)', ...
+sgtitle('Trial-Level Gamma Centroid', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
 subplot(1, 2, 1); hold on;
@@ -1696,7 +1696,8 @@ sem_c = nanstd(all_trial_median_centroid, [], 2) ./ sqrt(sum(~isnan(all_trial_me
 errorbar(1:4, mu_c, sem_c, 'k', 'LineWidth', 2, 'CapSize', 10);
 plot(1:4, mu_c, 'k-', 'LineWidth', 2.5);
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13, 'Box', 'off');
-xlim([0.3 4.7]); ylim(centroid_freq_range); 
+xlim([0.3 4.7]); 
+ylim([50 70]); 
 ylabel('Centroid Frequency [Hz]');
 title('Subject medians by condition', 'FontSize', 14, 'FontWeight', 'bold');
 
@@ -1722,110 +1723,11 @@ if ~isempty(y_all_c)
     end
 end
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13, 'Box', 'off');
-xlim([0.3 4.7]); ylim(centroid_freq_range); 
+xlim([0.3 4.7]);
+ylim(centroid_freq_range); 
 ylabel('Centroid Frequency [Hz]');
 title('All trials pooled', 'FontSize', 14, 'FontWeight', 'bold');
 saveas(fig_cent, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_centroid_summary.png'));
-
-% Trend slopes and metric concordance across conditions
-trend_x = (1:4)';
-slope_single = nan(1, nSubj);
-slope_high = nan(1, nSubj);
-slope_centroid = nan(1, nSubj);
-corr_centroid_single = nan(1, nSubj);
-corr_centroid_high = nan(1, nSubj);
-
-for subj = 1:nSubj
-    ys = all_trial_median_single(:, subj);
-    yh = all_trial_median_high(:, subj);
-    yc = all_trial_median_centroid(:, subj);
-
-    vs = ~isnan(ys);
-    if sum(vs) >= 2
-        p = polyfit(trend_x(vs), ys(vs), 1);
-        slope_single(subj) = p(1);
-    end
-    vh = ~isnan(yh);
-    if sum(vh) >= 2
-        p = polyfit(trend_x(vh), yh(vh), 1);
-        slope_high(subj) = p(1);
-    end
-    vc = ~isnan(yc);
-    if sum(vc) >= 2
-        p = polyfit(trend_x(vc), yc(vc), 1);
-        slope_centroid(subj) = p(1);
-    end
-
-    vsc = ~isnan(ys) & ~isnan(yc);
-    if sum(vsc) >= 3 && std(ys(vsc)) > 0 && std(yc(vsc)) > 0
-        corr_centroid_single(subj) = corr(ys(vsc), yc(vsc));
-    end
-    vhc = ~isnan(yh) & ~isnan(yc);
-    if sum(vhc) >= 3 && std(yh(vhc)) > 0 && std(yc(vhc)) > 0
-        corr_centroid_high(subj) = corr(yh(vhc), yc(vhc));
-    end
-end
-
-metric_names = {'single', 'high', 'centroid'};
-metric_vals = {slope_single, slope_high, slope_centroid};
-trend_stats = struct();
-for mi = 1:numel(metric_names)
-    v = metric_vals{mi};
-    v = v(~isnan(v));
-    st = struct('n', numel(v), 'mean', NaN, 'ci95', [NaN NaN], ...
-        'p', NaN, 'cohens_d', NaN);
-    if numel(v) >= 2
-        st.mean = mean(v);
-        if numel(v) >= 3
-            [~, p, ci, stat_obj] = ttest(v);
-            st.p = p;
-            st.ci95 = ci;
-            st.cohens_d = st.mean / max(stat_obj.sd, eps);
-        end
-    end
-    trend_stats.(metric_names{mi}) = st;
-end
-
-concordance = struct();
-vcs = corr_centroid_single(~isnan(corr_centroid_single));
-vch = corr_centroid_high(~isnan(corr_centroid_high));
-concordance.n_centroid_single = numel(vcs);
-concordance.n_centroid_high = numel(vch);
-concordance.mean_r_centroid_single = mean(vcs);
-concordance.mean_r_centroid_high = mean(vch);
-
-fig_conc = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('Centroid Concordance with Peak-Based Metrics', ...
-    'FontSize', 18, 'FontWeight', 'bold');
-
-subplot(1, 3, 1); hold on;
-valid_sc = ~isnan(slope_single) & ~isnan(slope_centroid);
-scatter(slope_single(valid_sc), slope_centroid(valid_sc), 120, [0.2 0.2 0.2], ...
-    'filled', 'MarkerFaceAlpha', 0.7);
-xlabel('Single-peak slope [Hz/cond]');
-ylabel('Centroid slope [Hz/cond]');
-title('Slope agreement: single vs centroid');
- box on;
-
-subplot(1, 3, 2); hold on;
-valid_hc = ~isnan(slope_high) & ~isnan(slope_centroid);
-scatter(slope_high(valid_hc), slope_centroid(valid_hc), 120, [0.2 0.2 0.2], ...
-    'filled', 'MarkerFaceAlpha', 0.7);
-xlabel('High-gamma slope [Hz/cond]');
-ylabel('Centroid slope [Hz/cond]');
-title('Slope agreement: high vs centroid');
- box on;
-
-subplot(1, 3, 3); hold on;
-bar_vals = [mean(vcs), mean(vch)];
-bar(1:2, bar_vals, 0.6, 'FaceColor', [0.4 0.4 0.4]);
-scatter(ones(size(vcs)), vcs, 35, colors(2,:), 'filled', 'MarkerFaceAlpha', 0.6);
-scatter(2 * ones(size(vch)), vch, 35, colors(4,:), 'filled', 'MarkerFaceAlpha', 0.6);
-set(gca, 'XTick', 1:2, 'XTickLabel', {'Centroid~Single', 'Centroid~High'}, 'FontSize', 12);
-ylabel('Across-condition r (within subject)');
-ylim([-1 1]);  box on;
-title('Concordance');
-saveas(fig_conc, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_centroid_concordance.png'));
 
 %% ====================================================================
 %  METHOD COMPARISON: Three dual-peak assignment methods
@@ -2236,7 +2138,7 @@ scatter(1:4, gap_med, 30, 'ks', 'filled');
 ylabel('H-L separation mean [Hz]');
 ylim(bench_gap_ylim);
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 10);
-text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\\n\\DeltaGap_{100-25}=%.2f Hz', ...
+text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\n\\DeltaGap_{100-25}=%.2f Hz', ...
     single_mu(4)-single_mu(1), gap_mu(4)-gap_mu(1)), ...
     'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
 title('Single mean + H-L gap (post-Perm+CV)');
@@ -2263,7 +2165,7 @@ scatter(1:nBenchmarkMethods, rel_med, 25, 'ks', 'filled');
 ylabel('Trial CV (lower better)');
 ylim(bench_rel_ylim);
 set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
-text(0.02, 0.96, sprintf('\\DeltaProm_{Post-R}=%.2f\\n\\DeltaCV_{Post-R}=%.3f', ...
+text(0.02, 0.96, sprintf('\\DeltaProm_{Post-R}=%.2f\n\\DeltaCV_{Post-R}=%.3f', ...
     prom_mu(4)-prom_mu(1), rel_mu(4)-rel_mu(1)), ...
     'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
 title('Prominence + Reliability');
@@ -2284,14 +2186,14 @@ errorbar(1:nBenchmarkMethods, delta_mu, delta_se, 'ks--', 'LineWidth', 1.8, 'Mar
 ylabel('\Delta median (100%-25%) [Hz]');
 ylim([-bench_delta_absmax bench_delta_absmax]);
 set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
-text(0.02, 0.96, sprintf('Post-Perm+CV slope=%.2f\\nPost-Perm+CV \\Delta=%.2f Hz', ...
+text(0.02, 0.96, sprintf('Post-Perm+CV slope=%.2f\nPost-Perm+CV \\Delta=%.2f Hz', ...
     slope_mu(4), delta_mu(4)), ...
     'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
 title('Condition separation');
  box on;
 
 subplot(2, 4, 8); axis off;
-text(0.05, 0.9, sprintf(['Method order:\\n1) %s\\n2) %s\\n3) %s\\n4) %s'], ...
+text(0.05, 0.9, sprintf(['Method order:\n1) %s\n2) %s\n3) %s\n4) %s'], ...
     bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
     'FontSize', 10, 'VerticalAlignment', 'top');
 
@@ -2303,6 +2205,16 @@ saveas(fig_bench_group, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_benchmark_gra
 fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('GED Trials Summary Dashboard (Perm+CV backprojected)', ...
     'FontSize', 16, 'FontWeight', 'bold');
+
+% TEST: exclusion of bad data
+%all_trial_median_single = all_trial_median_single(:, [1:4, 7:10])
+% all_trial_median_low = all_trial_median_single(:, [1:4, 7:10])
+% all_trial_median_high = all_trial_median_high(:, [1:4, 7:10])
+% all_trial_median_gap = all_trial_median_gap(:, [1:4, 7:10])
+% benchmark_metric_prominence = benchmark_metric_prominence(:, :, [1:4, 7:10])
+% benchmark_metric_reliability_trialcv = benchmark_metric_reliability_trialcv(:, :, [1:4, 7:10])
+% all_trial_median_centroid = all_trial_median_centroid(:, [1:4, 7:10])
+% all_trial_detrate_centroid = all_trial_detrate_centroid(:, [1:4, 7:10])
 
 summary_metrics = { ...
     all_trial_median_single, ...
@@ -2331,14 +2243,31 @@ for mi = 1:numel(summary_metrics)
     for s = 1:nSubj
         for c = 1:4
             if ~isnan(dat(c, s))
-                scatter(c + (rand - 0.5) * 0.18, dat(c, s), 15, [0.35 0.35 0.35], ...
-                    'filled', 'MarkerFaceAlpha', 0.45);
+                scatter(c + (rand - 0.5) * 0.18, dat(c, s), 20, [0.5 0.5 0.5], ...
+                    'filled', ...
+                    'MarkerFaceAlpha', 0.5, ...
+                    'MarkerEdgeColor', [1 1 1], ...    % white ring
+                    'LineWidth', 0.5, ...              
+                    'MarkerEdgeAlpha', 0.9);                       
             end
         end
     end
     set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 9);
     title(summary_names{mi}, 'FontSize', 10, 'FontWeight', 'bold');
     box on;
+    if mi == 1
+        ylim([45 70]);
+    elseif mi == 2
+        ylim([35 50]);
+    elseif mi == 3
+        ylim([50 75]);
+    elseif mi == 4
+        ylim([22.5 36]);
+    elseif mi == 5
+        ylim([0 10]);
+    elseif mi == 7
+        ylim([50 60]);
+    end
 end
 saveas(fig_summary, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_metrics_summary.png'));
 
@@ -2392,7 +2321,8 @@ for ai = 1:2
             'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
     end
 
-    xlim([0.3 4.7]); ylim([30 90]);
+    xlim([0.3 4.7]); 
+    ylim([40 75]);
     set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
     ylabel('Peak Gamma Frequency [Hz]');
     title(agg_titles{ai}, 'FontSize', 16, 'FontWeight', 'bold');
@@ -2491,7 +2421,7 @@ for s = 1:nSubj
         valid_handles = isgraphics(fig_all_legend_handles);
         if any(valid_handles)
             legend(fig_all_legend_handles(valid_handles), condLabels(valid_handles), ...
-                'FontSize', 8, 'Location', 'best');
+                'FontSize', 8, 'Location', 'northwest');
         end
     end
 end
