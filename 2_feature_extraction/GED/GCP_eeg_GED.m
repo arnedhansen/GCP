@@ -40,8 +40,12 @@ nFreqs     = length(scan_freqs);
 scan_width = 3;
 
 % GED parameters
-lambda = 0.01;
-ged_search_n = 10;          % search first N GED components
+% Trial-limited per-subject setting:
+% These values are tuned for stability when each subject has limited trial
+% counts. If future data only add subjects (not trials/condition), these
+% settings should generally remain unchanged.
+lambda = 0.05;
+ged_search_n = 20;          % search first N GED components
 topo_display_n = 10;        % number of component topos to visualize
 template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.20;   % spatial smoothness for occipital template
@@ -58,18 +62,29 @@ min_occfront_ratio = 0.50;          % hard eligibility threshold (occ/front rati
 min_eigval_hard = 1.05;             % hard minimum GED eigenvalue
 min_corr_hard = 0.1;               % hard minimum template correlation
 min_gamma_hard = 0.05;              % hard minimum gamma evidence (log ratio)
-cv_gain_min = 0.01;                 % minimum positive held-out gain to add component
+cv_gain_min = 0.00;                 % minimum positive held-out gain to add component
 
 % Multi-component selection (perm + CV) and weighted projection
 comp_select_mode = 'perm_cv';
 projection_mode = 'weighted_power';  % fixed in this implementation
-n_perm = 200;                        % permutation count (balanced runtime/stability)
-perm_alpha = 0.05;                   % family-wise alpha for max-eigen threshold
-cv_folds = 10;                       % strict mode: K folds
-cv_repeats = 2;                      % strict mode: repeated K-fold
+n_perm = 1000;                       % stable null estimate for trial-limited data
+perm_alpha = 0.10;                   % exploratory sensitivity setting
+cv_folds = 5;                        % reduced fold variance
+cv_repeats = 12;                     % improved CV stability
 random_seed = 13;                    % reproducible randomization
 cv_min_train_trials = 10;            % minimum train trials per CV fold
 cv_min_test_trials = 3;              % minimum test trials per CV fold
+
+% Confirmatory analysis option (same trial counts, stricter inference):
+% cv_gain_min = 0.01;
+% perm_alpha = 0.05;
+%
+% Only if per-subject trial counts increase substantially:
+% lambda = 0.01;
+% ged_search_n = 10;
+% cv_folds = 10;
+% cv_repeats = 2;
+% n_perm = 200;
 
 % Four-way benchmark config (ordered for plotting/metrics):
 % raw -> top component -> pre-Perm+CV combined -> post-Perm+CV combined
@@ -2194,7 +2209,112 @@ set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
 ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency over Conditions', 'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_box1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_SinglePeak.png'));
+saveas(fig_box1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_GammaFreq.png'));
+
+%% ====================================================================
+%  GRAND AVERAGE: Single Peak with subject trajectories + ID labels
+%  ====================================================================
+fig_box1_traj = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+hold on;
+
+dat = all_trial_median_single;
+mu = nanmean(dat, 2);
+sem = nanstd(dat, [], 2) ./ sqrt(sum(~isnan(dat), 2));
+med = nanmedian(dat, 2);
+
+for c = 1:4
+    bar(c, mu(c), 0.6, 'FaceColor', colors(c,:), 'EdgeColor', 'k', 'FaceAlpha', 0.35);
+end
+errorbar(1:4, mu, sem, 'k', 'LineStyle', 'none', 'LineWidth', 1.4, 'CapSize', 6);
+scatter(1:4, med, 70, 'kd', 'filled');
+
+for s = 1:nSubj
+    subj_offset = (rand - 0.5) * 0.22;
+    x_subj = (1:4) + subj_offset;
+    y_subj = dat(:, s)';
+    valid_subj = ~isnan(y_subj);
+
+    if sum(valid_subj) >= 2
+        plot(x_subj(valid_subj), y_subj(valid_subj), '-', ...
+            'Color', [0.45 0.45 0.45], 'LineWidth', 1.0);
+    end
+
+    for c = 1:4
+        if ~isnan(dat(c, s))
+            scatter(x_subj(c), dat(c, s), 120, [0.45 0.45 0.45], ...
+                'filled', ...
+                'MarkerFaceAlpha', 0.55, ...
+                'MarkerEdgeColor', [1 1 1], ...
+                'LineWidth', 0.5, ...
+                'MarkerEdgeAlpha', 0.9);
+        end
+    end
+
+    if ~isnan(dat(4, s))
+        subj_id_txt = string(subjects{s});
+        text(x_subj(4) + 0.10, dat(4, s), subj_id_txt, ...
+            'HorizontalAlignment', 'left', ...
+            'VerticalAlignment', 'middle', ...
+            'FontSize', 9, ...
+            'Color', [0.15 0.15 0.15], ...
+            'BackgroundColor', [1 1 1], ...
+            'Margin', 1);
+    end
+end
+
+xlim([0.3 5.1]);
+ylim([45 75]);
+set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
+ylabel('Gamma Frequency [Hz]');
+title('Gamma Frequency over Conditions (Subject Trajectories)', ...
+    'FontSize', 18, 'FontWeight', 'bold');
+
+saveas(fig_box1_traj, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_GammaFreq_IDs.png'));
+
+%% ====================================================================
+%  GRAND AVERAGE: Single Peak (stats-style boxplot, non-baselined freq)
+%  ====================================================================
+fig_box1_statsstyle = figure('Position', [0 0 1512/2 982], 'Color', [0.94 0.94 0.94]);
+ax = gca;
+set(ax, 'Color', [0.94 0.94 0.94]);
+hold on;
+
+dat = all_trial_median_single;  % [condition x subject], absolute frequency (Hz)
+
+% Subject-wise lines across contrast conditions
+for s = 1:nSubj
+    y_subj = dat(:, s);
+    valid_subj = ~isnan(y_subj);
+    if sum(valid_subj) >= 2
+        plot(find(valid_subj), y_subj(valid_subj), '-', ...
+            'Color', [0.75 0.75 0.75], 'LineWidth', 1);
+    end
+end
+
+% Boxplot for each condition
+y_all = dat(:);
+g_all = repmat((1:4)', nSubj, 1);
+valid_all = ~isnan(y_all);
+boxplot(y_all(valid_all), g_all(valid_all), 'Colors', [0.45 0.45 0.45], ...
+    'Symbol', '', 'Widths', 0.5);
+
+% Overlay jittered subject points
+for c = 1:4
+    y_c = dat(c, :);
+    valid_c = ~isnan(y_c);
+    x_jit = c + (rand(1, sum(valid_c)) - 0.5) * 0.10;
+    scatter(x_jit, y_c(valid_c), 170, colors(c,:), 'filled', ...
+        'MarkerEdgeColor', [0.25 0.25 0.25], 'LineWidth', 0.7);
+end
+
+set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
+    'FontSize', 15, 'Box', 'off');
+xlim([0.5 4.5]);
+%ylim([30 90]);
+ylabel('Gamma Frequency [Hz]');
+title('Gamma Frequency', 'FontSize', 30, 'FontWeight', 'bold');
+
+saveas(fig_box1_statsstyle, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_GammaFreq_statsStyle.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak all trials pooled — raincloud
@@ -2241,7 +2361,7 @@ ylabel('Peak Gamma Frequency [Hz]');
 title('Single Peak: All Trials (pooled across subjects)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_trl1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_alltrials_SinglePeak.png'));
+saveas(fig_trl1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_alltrials_GammaFreq.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: All-subjects subplot (mean trial spectra)
