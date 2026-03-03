@@ -168,3 +168,4 @@ plot(gammacomp(1:1000))
 %power in segmente prä vs. post als zeitreihe plotten
 %powerscptrm von gammacomp
 %für jedes subj plot
+

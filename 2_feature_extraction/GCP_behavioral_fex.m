@@ -76,11 +76,11 @@ for subj = 1:length(subjects)
         'Accuracy', num2cell([c25_acc; c50_acc; c75_acc; c100_acc]), 'ReactionTime', num2cell([c25_rt; c50_rt; c75_rt; c100_rt]));
 
     %% Save
-    savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/behavioral/');
+    savepath = strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/',subjects{subj}, '/behavioral/');
     mkdir(savepath)
     cd(savepath)
     save behavioral_matrix_trial subj_data_behav_trial
-    save gaze_matrix_subj subj_data_behav
+    save behavioral_matrix_subj subj_data_behav
     save acc c25_acc c50_acc c75_acc c100_acc
     save rt c25_rt c50_rt c75_rt c100_rt
     clc
@@ -89,4 +89,4 @@ for subj = 1:length(subjects)
     % Append to the final structure array
     behav_data = [behav_data; subj_data_behav];
 end
-save /Volumes/methlab/Students/Arne/GCP/data/features/behavioral_matrix behav_data
+save /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/behavioral_matrix behav_data
