@@ -2200,6 +2200,58 @@ text(0.05, 0.9, sprintf(['Method order:\n1) %s\n2) %s\n3) %s\n4) %s'], ...
 saveas(fig_bench_group, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_benchmark_grandaverage.png'));
 
 %% ====================================================================
+%  STANDALONE CONDITION-SEPARATION METRICS (post-Perm+CV combined GED)
+%  ====================================================================
+close all
+fig_cond_slope = figure('Position', [0 0 1512 982], 'Color', 'w');
+
+post_idx = 4; % Combined GED (post-Perm+CV)
+slope_post = benchmark_metric_separation_slope(post_idx, :);
+delta_post = benchmark_metric_separation_delta(post_idx, :);
+
+tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+
+% ---------- Panel 1: condition slope ----------
+nexttile; hold on;
+valid_slope = isfinite(slope_post);
+slope_vals = slope_post(valid_slope);
+if ~isempty(slope_vals)
+    boxplot(slope_vals(:), ones(numel(slope_vals), 1), 'Colors', 'k', ...
+        'Symbol', '', 'Widths', 0.2);
+    xj = 1 + (rand(numel(slope_vals), 1) - 0.5) * 0.10;
+    scatter(xj, slope_vals(:), 250, [0.35 0.35 0.35], 'filled', ...
+        'MarkerFaceAlpha', 0.75, 'MarkerEdgeColor', 'k', 'LineWidth', 1);
+end
+yline(0, 'k--', 'LineWidth', 1.0);
+xlim([0.45 1.45]);
+ylim([-2 2]);
+set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED (post-Perm+CV)'}, ...
+    'FontSize', 16, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
+ylabel('Slope across contrast conditions [Hz/condition]', 'FontSize', 18, 'FontWeight', 'bold');
+title('Contrast Condition Slope', 'FontSize', 20, 'FontWeight', 'bold');
+
+% ---------- Panel 2: median shift (100%-25%) ----------
+nexttile; hold on;
+valid_delta = isfinite(delta_post);
+delta_vals = delta_post(valid_delta);
+if ~isempty(delta_vals)
+    boxplot(delta_vals(:), ones(numel(delta_vals), 1), 'Colors', 'k', ...
+        'Symbol', '', 'Widths', 0.2);
+    xj = 1 + (rand(numel(delta_vals), 1) - 0.5) * 0.10;
+    scatter(xj, delta_vals(:), 250, [0.35 0.35 0.35], 'filled', ...
+        'MarkerFaceAlpha', 0.75, 'MarkerEdgeColor', 'k', 'LineWidth', 1);
+end
+yline(0, 'k--', 'LineWidth', 1.0);
+xlim([0.45 1.45]);
+ylim([-6 6]);
+set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED (post-Perm+CV)'}, ...
+    'FontSize', 16, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
+ylabel('\Delta median (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
+title('Median Frequency Shift (100% - 25%)', 'FontSize', 20, 'FontWeight', 'bold');
+
+saveas(fig_cond_slope, fullfile(fig_save_dir, 'GCP_eeg_GED_condition_slope.png'));
+
+%% ====================================================================
 %  SUMMARY DASHBOARD (backprojected combined-component data)
 %  ====================================================================
 fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -2272,61 +2324,42 @@ end
 saveas(fig_summary, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_metrics_summary.png'));
 
 %% ====================================================================
-%  GRAND AVERAGE: Single Peak boxplots (mean & median) — raincloud
+%  GRAND AVERAGE: Single Peak (subject-level median, summary-style)
 %  ====================================================================
 fprintf('\nCreating grand average figures...\n');
 
 fig_box1 = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('Trial-Level Peak Frequency: Single Peak', 'FontSize', 18, 'FontWeight', 'bold');
+hold on;
 
-agg_data   = {all_trial_mean_single, all_trial_median_single};
-agg_titles = {'Mean over Trials', 'Median over Trials'};
+dat = all_trial_median_single;
+mu = nanmean(dat, 2);
+sem = nanstd(dat, [], 2) ./ sqrt(sum(~isnan(dat), 2));
+med = nanmedian(dat, 2);
 
-for ai = 1:2
-    subplot(1, 2, ai); hold on;
-    peak_data = agg_data{ai};
-
-    for s = 1:nSubj
-        pf = peak_data(:, s);
-        if sum(~isnan(pf)) >= 2
-            plot(1:4, pf, '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
-        end
-    end
-
-    for c = 1:4
-        pf = peak_data(c, :);
-        pf = pf(~isnan(pf));
-        if length(pf) >= 2
-            [f_dens, xi] = ksdensity(pf);
-            f_dens = f_dens / max(f_dens) * 0.3;
-            patch(c - f_dens - 0.05, xi, colors(c,:), ...
-                'FaceAlpha', 0.3, 'EdgeColor', colors(c,:), 'LineWidth', 1);
-        end
-    end
-
-    y_box = peak_data(:);
-    g_box = repelem((1:4)', nSubj, 1);
-    valid_box = ~isnan(y_box);
-    if any(valid_box)
-        boxplot(y_box(valid_box), g_box(valid_box), 'Colors', 'k', ...
-            'Symbol', '', 'Widths', 0.15);
-    end
-
-    hold on;
-    for c = 1:4
-        pf = peak_data(c, :);
-        pf = pf(~isnan(pf));
-        xJit = c + 0.15 + (rand(size(pf)) - 0.5) * 0.1;
-        scatter(xJit, pf, 200, colors(c,:), 'filled', ...
-            'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
-    end
-
-    xlim([0.3 4.7]); 
-    ylim([40 75]);
-    set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
-    ylabel('Peak Gamma Frequency [Hz]');
-    title(agg_titles{ai}, 'FontSize', 16, 'FontWeight', 'bold');
+for c = 1:4
+    bar(c, mu(c), 0.6, 'FaceColor', colors(c,:), 'EdgeColor', 'k', 'FaceAlpha', 0.7);
 end
+errorbar(1:4, mu, sem, 'k', 'LineStyle', 'none', 'LineWidth', 1.1, 'CapSize', 5);
+scatter(1:4, med, 60, 'kd', 'filled');
+
+for s = 1:nSubj
+    for c = 1:4
+        if ~isnan(dat(c, s))
+            scatter(c + (rand - 0.5) * 0.25, dat(c, s), 250, [0.5 0.5 0.5], ...
+                'filled', ...
+                'MarkerFaceAlpha', 0.5, ...
+                'MarkerEdgeColor', [1 1 1], ...
+                'LineWidth', 0.5, ...
+                'MarkerEdgeAlpha', 0.9);
+        end
+    end
+end
+
+xlim([0.3 4.7]);
+ylim([45 60]);
+set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
+ylabel('Gamma Frequency [Hz]');
+title('Gamma Frequency over Conditions', 'FontSize', 18, 'FontWeight', 'bold');
 
 saveas(fig_box1, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_boxplot_SinglePeak.png'));
 
@@ -2507,6 +2540,84 @@ save(save_path, ...
 clc
 fprintf('Done.\n');
 
+%% Quick trial-level GLMM check (single-peak gamma)
+fprintf('\n============================================================\n');
+fprintf('Trial-Level GLMM Check: GammaFrequency ~ Condition + (1|subjectID)\n');
+fprintf('============================================================\n');
+
+glmm_gamma = [];
+glmm_cond  = {};
+glmm_subj  = {};
+
+for subj = 1:nSubj
+    for cond = 1:4
+        trl_freqs = all_trial_peaks_single{cond, subj};
+        if isempty(trl_freqs)
+            continue;
+        end
+        valid_mask = isfinite(trl_freqs);
+        if any(valid_mask)
+            n_valid = sum(valid_mask);
+            glmm_gamma = [glmm_gamma; trl_freqs(valid_mask)];
+            glmm_cond  = [glmm_cond; repmat(condLabels(cond), n_valid, 1)];
+            glmm_subj  = [glmm_subj; repmat(subjects(subj), n_valid, 1)];
+        end
+    end
+end
+
+if isempty(glmm_gamma)
+    fprintf('GLMM skipped: no valid trial-level gamma frequencies were found.\n');
+else
+    tbl_glmm = table( ...
+        glmm_gamma, ...
+        categorical(glmm_cond, condLabels, 'Ordinal', true), ...
+        categorical(glmm_subj), ...
+        'VariableNames', {'GammaFrequency', 'Condition', 'subjectID'});
+
+    fprintf('Observations: %d\n', height(tbl_glmm));
+    fprintf('Subjects: %d\n', numel(unique(tbl_glmm.subjectID)));
+    fprintf('Condition counts:\n');
+    cond_levels = categories(tbl_glmm.Condition);
+    cond_counts = zeros(numel(cond_levels), 1);
+    for ci = 1:numel(cond_levels)
+        cond_counts(ci) = sum(tbl_glmm.Condition == cond_levels{ci});
+    end
+    disp(table(categorical(cond_levels, cond_levels, 'Ordinal', true), cond_counts, ...
+        'VariableNames', {'Condition', 'nTrials'}));
+
+    try
+        glmm_gamma_model = fitglme( ...
+            tbl_glmm, ...
+            'GammaFrequency ~ Condition + (1|subjectID)', ...
+            'Distribution', 'Normal', ...
+            'Link', 'Identity', ...
+            'FitMethod', 'Laplace');
+
+        fprintf('\nModel fit summary:\n');
+        disp(glmm_gamma_model);
+        fprintf('\nFixed-effects coefficients:\n');
+        disp(glmm_gamma_model.Coefficients);
+
+        coef_tbl = glmm_gamma_model.Coefficients;
+        coef_names = cellstr(string(coef_tbl.Name));
+        is_cond_coef = startsWith(coef_names, 'Condition_');
+        if any(is_cond_coef)
+            cond_names = coef_names(is_cond_coef);
+            p_raw = coef_tbl.pValue(is_cond_coef);
+            p_fdr = bh_fdr_adjust(p_raw);
+            sig_fdr = p_fdr < 0.05;
+
+            fprintf('\nFDR-corrected p-values (Benjamini-Hochberg, q=0.05):\n');
+            disp(table(cond_names, p_raw, p_fdr, sig_fdr, ...
+                'VariableNames', {'Contrast', 'pRaw', 'pFDR', 'isSignificantFDR'}));
+        else
+            fprintf('\nNo condition contrasts found for FDR correction.\n');
+        end
+    catch ME
+        fprintf('GLMM fit failed: %s\n', ME.message);
+    end
+end
+
 function vec_out = normalize_maxabs_curve(vec_in)
 vec_out = vec_in;
 if isempty(vec_in)
@@ -2516,4 +2627,25 @@ scale = max(abs(vec_in(~isnan(vec_in))));
 if ~isempty(scale) && isfinite(scale) && scale > 0
     vec_out = vec_in ./ scale;
 end
+end
+
+function p_adj = bh_fdr_adjust(p_raw)
+p = p_raw(:);
+n = numel(p);
+p_adj = nan(size(p));
+if n == 0
+    return;
+end
+
+[p_sorted, sort_idx] = sort(p);
+rank_idx = (1:n)';
+q_sorted = p_sorted .* n ./ rank_idx;
+q_sorted = min(q_sorted, 1);
+
+for k = n-1:-1:1
+    q_sorted(k) = min(q_sorted(k), q_sorted(k+1));
+end
+
+p_adj(sort_idx) = q_sorted;
+p_adj = reshape(p_adj, size(p_raw));
 end
