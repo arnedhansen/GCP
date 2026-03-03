@@ -9,11 +9,10 @@
 %   Phase 2 — For each condition & trial, narrowband scan (30-90 Hz),
 %             compute per-trial power ratio, detrend, detect peaks.
 %             Single-peak and dual-peak (hard 50 Hz) models per trial.
-%   Method comparison A — Four benchmark branches:
+%   Method comparison A — Three benchmark branches:
 %             1. Raw channel-space reference
 %             2. Top GED component (highest eigenvalue)
-%             3. Combined GED components before permutation/CV
-%             4. Combined GED components after permutation+CV
+%             3. Combined hard-eligible GED components
 %   Method comparison B — Three dual-peak assignment methods:
 %             1. Hard 50 Hz boundary
 %             2. Per-subject spectral-trough boundary
@@ -57,38 +56,23 @@ score_w_frontleak = 1;      % composite-score penalty for frontal leakage
 viz_suppress_nonocc_outliers = false;  % visualization-only suppression/interpolation
 viz_interp_k = 6;                   % nearest neighbors for channel interpolation
 viz_nonocc_outlier_mult = 1.00;     % non-occipital outlier threshold multiplier (vs posterior pctl)
-viz_topo_prctile = 99;              % robust percentile for color scaling
-min_occfront_ratio = 1.00;          % tightened hard threshold: occipital must exceed frontal
-min_eigval_hard = 1.05;             % hard minimum GED eigenvalue
-min_corr_hard = 0.20;               % tightened hard minimum template correlation
-min_gamma_hard = 0.10;              % tightened hard minimum gamma evidence (log ratio)
-cv_gain_min = 0.00;                 % minimum positive held-out gain to add component
+viz_topo_prctile = 99.9;            % robust percentile for color scaling
+min_occfront_ratio = 0.75;          % tightened hard threshold: occipital must exceed frontal
+min_eigval_hard = 1;                % hard minimum GED eigenvalue
+min_corr_hard = 0.1;                % tightened hard minimum template correlation
+min_gamma_hard = 0.05;              % tightened hard minimum gamma evidence (log ratio)
+exclude_dominant_outlier = true;    % remove dominant top outlier (lambda1/lambda2 + MAD)
+outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for dominant-outlier detection
+outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
+outlier_min_rest = 3;               % minimum number of non-top eligible components required
+min_valid_combined_components = 3;  % hard minimum count for combined GED branch
+threshold_inspection_targets = [1 3 5]; % requested valid-component targets for threshold inspection
 
-% Multi-component selection (perm + CV) and weighted projection
-comp_select_mode = 'perm_cv';
-projection_mode = 'weighted_power';  % fixed in this implementation
-n_perm = 1000;                       % stable null estimate for trial-limited data
-perm_alpha = 0.10;                   % exploratory sensitivity setting
-cv_folds = 5;                        % reduced fold variance
-cv_repeats = 12;                     % improved CV stability
 random_seed = 13;                    % reproducible randomization
-cv_min_train_trials = 10;            % minimum train trials per CV fold
-cv_min_test_trials = 3;              % minimum test trials per CV fold
 
-% Confirmatory analysis option (same trial counts, stricter inference):
-% cv_gain_min = 0.01;
-% perm_alpha = 0.05;
-%
-% Only if per-subject trial counts increase substantially:
-% lambda = 0.01;
-% ged_search_n = 10;
-% cv_folds = 10;
-% cv_repeats = 2;
-% n_perm = 200;
-
-% Four-way benchmark config (ordered for plotting/metrics):
-% raw -> top component -> pre-Perm+CV combined -> post-Perm+CV combined
-benchmark_methods = {'raw', 'ged_top_eig', 'ged_preperm_hard_weighted', 'ged_permcv_weighted'};
+% Three-way benchmark config (ordered for plotting/metrics):
+% raw -> top component -> combined hard-eligible weighted GED
+benchmark_methods = {'raw', 'ged_top_eig', 'ged_combined_hard_weighted'};
 nBenchmarkMethods = numel(benchmark_methods);
 raw_reference_definition = 'posterior_roi';  % locked reference for raw benchmark branch
 compute_detectability = true;
@@ -117,6 +101,7 @@ else
 end
 if ~exist(fig_save_dir_benchmark, 'dir'), mkdir(fig_save_dir_benchmark); end
 if ~exist(fig_save_dir_subj, 'dir'), mkdir(fig_save_dir_subj); end
+fig_save_dir = fig_save_dir_benchmark;
 comp_sel_save_dir = fullfile(fig_save_dir_subj, 'component_selection');
 if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
 
@@ -155,11 +140,9 @@ all_top5_topos         = cell(1, nSubj);
 all_simulated_templates = cell(1, nSubj);
 all_selected_comp_indices_multi = cell(1, nSubj);
 all_selected_comp_weights = cell(1, nSubj);
-all_preperm_comp_indices_multi = cell(1, nSubj);
-all_preperm_comp_weights = cell(1, nSubj);
 all_component_selection_stats = cell(1, nSubj);
-all_cv_curves = cell(1, nSubj);
-all_perm_thresholds = nan(1, nSubj);
+all_threshold_inspection = cell(1, nSubj);
+warning_log = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
 
 all_trial_powratio_bench = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_dt_bench = cell(nBenchmarkMethods, 4, nSubj);
@@ -199,14 +182,16 @@ for subj = 1:nSubj
     occ_idx  = find(occ_mask);
     nOcc     = length(occ_idx);
     if nOcc == 0
-        warning('No occipital channels matched for subject %s. Using all channels as template fallback.', subjects{subj});
+        msg = sprintf('No occipital channels matched for subject %s. Using all channels as template fallback.', subjects{subj});
+        warning_log = append_subject_warning(warning_log, subjects{subj}, 'NO_OCC_CHANNELS', msg, struct('nChans', nChans));
         occ_idx = 1:nChans;
         nOcc = nChans;
     end
     front_mask = cellfun(@(l) ~isempty(regexp(l, '^(Fp|AF|F)', 'once')), dataEEG_c25.label);
     front_idx  = find(front_mask);
     if isempty(front_idx)
-        warning('No frontal channels matched for subject %s. Frontal penalty disabled for this subject.', subjects{subj});
+        msg = sprintf('No frontal channels matched for subject %s. Frontal penalty disabled for this subject.', subjects{subj});
+        warning_log = append_subject_warning(warning_log, subjects{subj}, 'NO_FRONT_CHANNELS', msg, struct('nChans', nChans));
     end
     post_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|P)', 'once')), dataEEG_c25.label);
     post_idx  = find(post_mask);
@@ -284,6 +269,9 @@ for subj = 1:nSubj
         nTrials_total = nTrials_total + nTrl;
     end
 
+    if nTrials_total < 1
+        error('No valid trials available for subject %s after trial selection.', subjects{subj});
+    end
     covStim_full = covStim_full / nTrials_total;
     covBase_full = covBase_full / nTrials_total;
 
@@ -408,16 +396,84 @@ for subj = 1:nSubj
     comp_score = comp_score_raw;
     finite_metrics = isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec) & ...
         isfinite(evals_sorted(1:nSearch));
-    hard_eligible = finite_metrics & ...
+    hard_eligible_raw = finite_metrics & ...
         (evals_sorted(1:nSearch) >= min_eigval_hard) & ...
         (corr_vec >= min_corr_hard) & ...
         (ratio_vec >= min_occfront_ratio) & ...
         (gamma_vec >= min_gamma_hard);
+    all_threshold_inspection{subj} = compute_threshold_inspection( ...
+        evals_sorted(1:nSearch), corr_vec, ratio_vec, gamma_vec, ...
+        min_eigval_hard, min_corr_hard, min_occfront_ratio, min_gamma_hard, ...
+        threshold_inspection_targets, nSearch);
+    no_hard_threshold_match = ~any(hard_eligible_raw);
+    hard_eligible = hard_eligible_raw;
+    dominant_outlier_mask = false(nSearch, 1);
+    if exclude_dominant_outlier
+        [hard_eligible, dominant_outlier_idx] = exclude_dominant_top_outlier( ...
+            evals_sorted(1:nSearch), hard_eligible_raw, outlier_ratio_thr, outlier_mad_mult, outlier_min_rest);
+        if ~isempty(dominant_outlier_idx)
+            dominant_outlier_mask(dominant_outlier_idx) = true;
+            msg = sprintf(['Dominant top GED component excluded for subject %s (component C%d) ', ...
+                           'before combined-component selection.'], subjects{subj}, dominant_outlier_idx);
+            ratio12_val = NaN;
+            if numel(evals_sorted) >= 2 && isfinite(evals_sorted(2)) && evals_sorted(2) > 0
+                ratio12_val = evals_sorted(1) / evals_sorted(2);
+            end
+            warning_log = append_subject_warning(warning_log, subjects{subj}, 'DOMINANT_OUTLIER_EXCLUDED', msg, ...
+                struct('component_idx', dominant_outlier_idx, 'lambda1', evals_sorted(1), ...
+                       'lambda2', evals_sorted(min(2, numel(evals_sorted))), 'lambda1_lambda2_ratio', ratio12_val));
+        end
+    end
     searchScores = comp_score;
     searchScores(~hard_eligible) = -Inf;
     if ~any(isfinite(searchScores))
-        warning(['No components met hard thresholds for subject %s. ', ...
-                 'Falling back to unconstrained composite ranking.'], subjects{subj});
+        msg = sprintf(['No components met hard thresholds for subject %s. ', ...
+                       'Falling back to unconstrained composite ranking.'], subjects{subj});
+        top_fail_idx = NaN;
+        top_fail_eig = NaN;
+        top_fail_corr = NaN;
+        top_fail_ratio = NaN;
+        top_fail_gamma = NaN;
+        top_fail_pass_eig = false;
+        top_fail_pass_corr = false;
+        top_fail_pass_ratio = false;
+        top_fail_pass_gamma = false;
+        finite_idx = find(finite_metrics);
+        if ~isempty(finite_idx)
+            [~, fail_ord] = sort(evals_sorted(finite_idx), 'descend');
+            top_fail_idx = finite_idx(fail_ord(1));
+            top_fail_eig = evals_sorted(top_fail_idx);
+            top_fail_corr = corr_vec(top_fail_idx);
+            top_fail_ratio = ratio_vec(top_fail_idx);
+            top_fail_gamma = gamma_vec(top_fail_idx);
+            top_fail_pass_eig = top_fail_eig >= min_eigval_hard;
+            top_fail_pass_corr = top_fail_corr >= min_corr_hard;
+            top_fail_pass_ratio = top_fail_ratio >= min_occfront_ratio;
+            top_fail_pass_gamma = top_fail_gamma >= min_gamma_hard;
+        end
+        hard_metrics = struct( ...
+            'n_search', nSearch, ...
+            'n_finite_metrics', sum(finite_metrics), ...
+            'n_pass_eig', sum(finite_metrics & (evals_sorted(1:nSearch) >= min_eigval_hard)), ...
+            'n_pass_corr', sum(finite_metrics & (corr_vec >= min_corr_hard)), ...
+            'n_pass_ratio', sum(finite_metrics & (ratio_vec >= min_occfront_ratio)), ...
+            'n_pass_gamma', sum(finite_metrics & (gamma_vec >= min_gamma_hard)), ...
+            'n_pass_all_raw', sum(hard_eligible_raw), ...
+            'n_excluded_dominant_outlier', sum(dominant_outlier_mask), ...
+            'top_fail_idx', top_fail_idx, ...
+            'top_fail_eig', top_fail_eig, ...
+            'top_fail_corr', top_fail_corr, ...
+            'top_fail_ratio', top_fail_ratio, ...
+            'top_fail_gamma', top_fail_gamma, ...
+            'top_fail_pass_eig', top_fail_pass_eig, ...
+            'top_fail_pass_corr', top_fail_pass_corr, ...
+            'top_fail_pass_ratio', top_fail_pass_ratio, ...
+            'top_fail_pass_gamma', top_fail_pass_gamma, ...
+            'thr_eig', min_eigval_hard, ...
+            'thr_corr', min_corr_hard, ...
+            'thr_ratio', min_occfront_ratio, ...
+            'thr_gamma', min_gamma_hard);
+        warning_log = append_subject_warning(warning_log, subjects{subj}, 'NO_HARD_ELIGIBLE_COMPONENTS', msg, hard_metrics);
         searchScores = comp_score;
     end
     [bestScore, bestIdx] = max(searchScores);
@@ -435,276 +491,42 @@ for subj = 1:nSubj
     candidate_table.ratio = ratio_vec;
     candidate_table.front_leak = leak_vec;
     candidate_table.score = searchScores;
+    candidate_table.hard_eligible_raw = hard_eligible_raw;
+    candidate_table.dominant_outlier = dominant_outlier_mask;
     candidate_table.hard_eligible = hard_eligible;
 
-    perm_threshold = NaN;
-    perm_null_max = nan(n_perm, 1);
-    perm_null_max_unconstrained = nan(n_perm, 1);
-    perm_sig_mask = true(nSearch, 1);
-    postPermCV_fallback_used = false;
-    postPermCV_fallback_reason = '';
-    if strcmpi(comp_select_mode, 'perm_cv')
-        nStimTrials = numel(stim_cov_trials);
-        nBaseTrials = numel(base_cov_trials);
-        nPool = nStimTrials + nBaseTrials;
-        if nStimTrials > 0 && nBaseTrials > 0
-            all_cov_trials = [stim_cov_trials, base_cov_trials];
-            for pi = 1:n_perm
-                pidx = randperm(nPool);
-                stim_idx_perm = pidx(1:nStimTrials);
-                base_idx_perm = pidx(nStimTrials+1:end);
-                covStim_perm = zeros(nChans);
-                covBase_perm = zeros(nChans);
-                for ti = 1:numel(stim_idx_perm)
-                    covStim_perm = covStim_perm + all_cov_trials{stim_idx_perm(ti)};
-                end
-                for ti = 1:numel(base_idx_perm)
-                    covBase_perm = covBase_perm + all_cov_trials{base_idx_perm(ti)};
-                end
-                covStim_perm = covStim_perm / numel(stim_idx_perm);
-                covBase_perm = covBase_perm / numel(base_idx_perm);
-                covStim_perm_reg = (1-lambda)*covStim_perm + lambda*mean(diag(covStim_perm))*eye(nChans);
-                covBase_perm_reg = (1-lambda)*covBase_perm + lambda*mean(diag(covBase_perm))*eye(nChans);
-                [W_perm, D_perm] = eig(covStim_perm_reg, covBase_perm_reg);
-                [eval_perm, perm_ord] = sort(real(diag(D_perm)), 'descend');
-                W_perm = W_perm(:, perm_ord);
-                nPermSearch = min(nSearch, numel(eval_perm));
-                eval_perm = eval_perm(1:nPermSearch);
-                perm_null_max_unconstrained(pi) = max(eval_perm);
-                corr_perm = nan(nPermSearch, 1);
-                ratio_perm = nan(nPermSearch, 1);
-                gamma_perm = nan(nPermSearch, 1);
-                for ci_perm = 1:nPermSearch
-                    w_perm = W_perm(:, ci_perm);
-                    topo_perm = covStim_perm_reg * w_perm;
-                    r_perm = corr(topo_perm, sim_template, 'rows', 'complete');
-                    if ~isnan(r_perm) && r_perm < 0
-                        w_perm = -w_perm;
-                        topo_perm = -topo_perm;
-                        r_perm = -r_perm;
-                    end
-                    occ_perm = mean(abs(topo_perm(occ_idx)));
-                    if ~isempty(front_idx)
-                        front_perm = mean(abs(topo_perm(front_idx)));
-                        ratio_perm(ci_perm) = occ_perm / max(front_perm, eps);
-                    else
-                        ratio_perm(ci_perm) = Inf;
-                    end
-                    gamma_perm(ci_perm) = log(max((w_perm' * covStim_perm_reg * w_perm), eps) / ...
-                                             max((w_perm' * covBase_perm_reg * w_perm), eps));
-                    corr_perm(ci_perm) = r_perm;
-                end
-                finite_perm = isfinite(eval_perm) & isfinite(corr_perm) & ...
-                    isfinite(ratio_perm) & isfinite(gamma_perm);
-                hard_perm = finite_perm & ...
-                    (eval_perm >= min_eigval_hard) & ...
-                    (corr_perm >= min_corr_hard) & ...
-                    (ratio_perm >= min_occfront_ratio) & ...
-                    (gamma_perm >= min_gamma_hard);
-                if any(hard_perm)
-                    perm_null_max(pi) = max(eval_perm(hard_perm));
-                end
-            end
-            valid_null = perm_null_max(isfinite(perm_null_max));
-            if numel(valid_null) >= max(20, round(0.10 * n_perm))
-                perm_threshold = prctile(valid_null, 100*(1-perm_alpha));
-            else
-                warning('Too few valid permutation draws after hard gating for subject %s; relaxing null to unconstrained max eigen.', subjects{subj});
-                valid_null_unconstrained = perm_null_max_unconstrained(isfinite(perm_null_max_unconstrained));
-                if isempty(valid_null_unconstrained)
-                    perm_threshold = Inf;
-                else
-                    perm_threshold = prctile(valid_null_unconstrained, 100*(1-perm_alpha));
-                end
-            end
-            perm_sig_mask = hard_eligible & (evals_sorted(1:nSearch) > perm_threshold);
-        else
-            warning('Permutation testing skipped for subject %s due to insufficient trials.', subjects{subj});
-            perm_sig_mask = false(nSearch, 1);
-        end
+    combined_idx = find(hard_eligible & isfinite(searchScores));
+    if isempty(combined_idx)
+        msg = sprintf(['No hard-eligible finite-score components available for subject %s. ', ...
+            'A minimum of %d components is required.'], ...
+            subjects{subj}, min_valid_combined_components);
+        warning_log = append_subject_warning(warning_log, subjects{subj}, 'NO_HARD_COMPONENTS', msg, ...
+            struct('n_hard_eligible', sum(hard_eligible), 'n_finite_scores', sum(isfinite(searchScores))));
+        error(msg);
     end
-    all_perm_thresholds(subj) = perm_threshold;
-    candidate_table.perm_sig = perm_sig_mask;
-
-    candidate_pool_mask = hard_eligible & isfinite(searchScores);
-    if strcmpi(comp_select_mode, 'perm_cv')
-        candidate_pool_mask = candidate_pool_mask & perm_sig_mask;
-    end
-    candidate_pool_idx = find(candidate_pool_mask);
-    if isempty(candidate_pool_idx)
-        warning(['No components survived hard+permutation gating for subject %s. ', ...
-                 'Falling back to single best ranked component.'], subjects{subj});
-        candidate_pool_idx = bestIdx;
-        postPermCV_fallback_used = true;
-        postPermCV_fallback_reason = 'No components survived hard+permutation gating';
-    else
-        [~, pool_ord] = sort(evals_sorted(candidate_pool_idx), 'descend');
-        candidate_pool_idx = candidate_pool_idx(pool_ord);
+    [~, combined_ord] = sort(evals_sorted(combined_idx), 'descend');
+    combined_idx = combined_idx(combined_ord);
+    if numel(combined_idx) < min_valid_combined_components
+        msg = sprintf(['Insufficient valid hard-eligible components for subject %s ', ...
+            '(n=%d, min=%d).'], subjects{subj}, numel(combined_idx), min_valid_combined_components);
+        warning_log = append_subject_warning(warning_log, subjects{subj}, 'TOO_FEW_HARD_COMPONENTS', msg, ...
+            struct('n_valid_components', numel(combined_idx), 'min_required', min_valid_combined_components));
+        error(msg);
     end
 
-    k_max = numel(candidate_pool_idx);
-    if k_max < 1
-        k_max = 1;
-        candidate_pool_idx = bestIdx;
-        postPermCV_fallback_used = true;
-        if isempty(postPermCV_fallback_reason)
-            postPermCV_fallback_reason = 'Empty candidate pool after selection';
-        end
+    combined_weights = searchScores(combined_idx)';
+    combined_weights(~isfinite(combined_weights) | combined_weights < 0) = 0;
+    if sum(combined_weights) <= 0
+        combined_weights = evals_sorted(combined_idx)';
+        combined_weights(~isfinite(combined_weights) | combined_weights < 0) = 0;
     end
-
-    cv_curve_mean = nan(1, k_max);
-    cv_comp_utility = nan(1, k_max);
-    cv_fold_scores = nan(cv_repeats * cv_folds, k_max);
-    cv_fold_sep = nan(cv_repeats * cv_folds, k_max);
-    nCvRows = 0;
-    if strcmpi(comp_select_mode, 'perm_cv') && nTrials_total >= cv_folds && ...
-            nTrials_total >= (cv_min_train_trials + cv_min_test_trials) && k_max >= 1
-        for rep = 1:cv_repeats
-            trl_perm = randperm(nTrials_total);
-            fold_id = zeros(1, nTrials_total);
-            fold_edges = round(linspace(0, nTrials_total, cv_folds+1));
-            for fi_cv = 1:cv_folds
-                fold_range = (fold_edges(fi_cv)+1):fold_edges(fi_cv+1);
-                if isempty(fold_range), continue; end
-                fold_id(trl_perm(fold_range)) = fi_cv;
-            end
-
-            for fi_cv = 1:cv_folds
-                test_mask = (fold_id == fi_cv);
-                train_mask = ~test_mask;
-                nTest = sum(test_mask);
-                nTrain = sum(train_mask);
-                if nTest < cv_min_test_trials || nTrain < cv_min_train_trials
-                    continue;
-                end
-
-                covStim_train = zeros(nChans);
-                covBase_train = zeros(nChans);
-                covStim_test = zeros(nChans);
-                covBase_test = zeros(nChans);
-                train_idx = find(train_mask);
-                test_idx = find(test_mask);
-                for ti = train_idx
-                    covStim_train = covStim_train + stim_cov_trials{ti};
-                    covBase_train = covBase_train + base_cov_trials{ti};
-                end
-                for ti = test_idx
-                    covStim_test = covStim_test + stim_cov_trials{ti};
-                    covBase_test = covBase_test + base_cov_trials{ti};
-                end
-                covStim_train = covStim_train / numel(train_idx);
-                covBase_train = covBase_train / numel(train_idx);
-                covStim_test = covStim_test / numel(test_idx);
-                covBase_test = covBase_test / numel(test_idx);
-
-                covStim_train_reg = (1-lambda)*covStim_train + lambda*mean(diag(covStim_train))*eye(nChans);
-                covBase_train_reg = (1-lambda)*covBase_train + lambda*mean(diag(covBase_train))*eye(nChans);
-                covStim_test_reg = (1-lambda)*covStim_test + lambda*mean(diag(covStim_test))*eye(nChans);
-                covBase_test_reg = (1-lambda)*covBase_test + lambda*mean(diag(covBase_test))*eye(nChans);
-
-                [W_cv, D_cv] = eig(covStim_train_reg, covBase_train_reg);
-                [~, cv_sort] = sort(real(diag(D_cv)), 'descend');
-                W_cv = W_cv(:, cv_sort);
-                nCvComp = min(nSearch, size(W_cv, 2));
-                if nCvComp < 1
-                    continue;
-                end
-
-                nCvRows = nCvRows + 1;
-                for ki = 1:k_max
-                    target_idx = candidate_pool_idx(ki);
-                    target_topo = searchTopos(:, target_idx);
-                    best_map_abs = -Inf;
-                    best_map_idx = 1;
-                    best_map_sign = 1;
-                    for ci_cv = 1:nCvComp
-                        topo_cv = covStim_train_reg * W_cv(:, ci_cv);
-                        r_map = corr(topo_cv, target_topo, 'rows', 'complete');
-                        if isfinite(r_map) && abs(r_map) > best_map_abs
-                            best_map_abs = abs(r_map);
-                            best_map_idx = ci_cv;
-                            best_map_sign = sign(r_map);
-                        end
-                    end
-                    w_cv = W_cv(:, best_map_idx);
-                    if best_map_sign < 0
-                        w_cv = -w_cv;
-                    end
-                    sep_cv = log(max(w_cv' * covStim_test_reg * w_cv, eps) / ...
-                                 max(w_cv' * covBase_test_reg * w_cv, eps));
-                    cv_fold_sep(nCvRows, ki) = sep_cv;
-                    if ki == 1
-                        cv_fold_scores(nCvRows, ki) = sep_cv;
-                    else
-                        cv_fold_scores(nCvRows, ki) = cv_fold_scores(nCvRows, ki-1) + sep_cv;
-                    end
-                end
-            end
-        end
+    if sum(combined_weights) <= 0
+        combined_weights = ones(1, numel(combined_idx));
     end
+    combined_weights = combined_weights / sum(combined_weights);
 
-    if nCvRows > 0
-        cv_curve_mean = nanmean(cv_fold_scores(1:nCvRows, :), 1);
-        cv_gain_curve = [cv_curve_mean(1), diff(cv_curve_mean)];
-        valid_gain_idx = find(cv_gain_curve > cv_gain_min);
-        if isempty(valid_gain_idx)
-            cv_k_opt = 1;
-        else
-            cv_k_opt = max(valid_gain_idx);
-        end
-        cv_k_opt = max(1, min(cv_k_opt, k_max));
-        cv_comp_utility = nanmean(cv_fold_sep(1:nCvRows, 1:cv_k_opt), 1);
-    else
-        cv_k_opt = 1;
-        cv_curve_mean = nan(1, k_max);
-    end
-
-    selected_idx = candidate_pool_idx(1:min(cv_k_opt, numel(candidate_pool_idx)));
-    if isempty(selected_idx)
-        selected_idx = bestIdx;
-        postPermCV_fallback_used = true;
-        if isempty(postPermCV_fallback_reason)
-            postPermCV_fallback_reason = 'No selected components after CV; using best ranked component';
-        end
-    end
-
-    selected_weights = [];
-    if strcmpi(projection_mode, 'weighted_power')
-        if ~isempty(cv_comp_utility) && numel(cv_comp_utility) >= numel(selected_idx)
-            selected_weights = cv_comp_utility(1:numel(selected_idx));
-        else
-            selected_weights = evals_sorted(selected_idx)';
-        end
-        selected_weights(~isfinite(selected_weights) | selected_weights < 0) = 0;
-        if sum(selected_weights) <= 0
-            selected_weights = evals_sorted(selected_idx)';
-            selected_weights(~isfinite(selected_weights) | selected_weights < 0) = 0;
-        end
-        if sum(selected_weights) <= 0
-            selected_weights = ones(1, numel(selected_idx));
-        end
-        selected_weights = selected_weights / sum(selected_weights);
-    end
-
-    preperm_idx = find(hard_eligible & isfinite(searchScores));
-    if isempty(preperm_idx)
-        warning(['No hard-eligible pre-Perm+CV components for subject %s. ', ...
-                 'Falling back to best single component for pre-Perm+CV combined benchmark.'], subjects{subj});
-        preperm_idx = bestIdx;
-    else
-        [~, pre_ord] = sort(evals_sorted(preperm_idx), 'descend');
-        preperm_idx = preperm_idx(pre_ord);
-    end
-    preperm_weights = searchScores(preperm_idx)';
-    preperm_weights(~isfinite(preperm_weights) | preperm_weights < 0) = 0;
-    if sum(preperm_weights) <= 0
-        preperm_weights = evals_sorted(preperm_idx)';
-        preperm_weights(~isfinite(preperm_weights) | preperm_weights < 0) = 0;
-    end
-    if sum(preperm_weights) <= 0
-        preperm_weights = ones(1, numel(preperm_idx));
-    end
-    preperm_weights = preperm_weights / sum(preperm_weights);
+    selected_idx = combined_idx;
+    selected_weights = combined_weights;
 
     bestIdx = selected_idx(1);
     bestScore = searchScores(bestIdx);
@@ -724,7 +546,9 @@ for subj = 1:nSubj
 
     finite_scores = find(isfinite(searchScores));
     if isempty(finite_scores)
-        warning('No finite eligible component scores for subject %s; using unconstrained ordering for display.', subjects{subj});
+        msg = sprintf('No finite eligible component scores for subject %s; using unconstrained ordering for display.', subjects{subj});
+        warning_log = append_subject_warning(warning_log, subjects{subj}, 'NO_FINITE_SCORES_FOR_DISPLAY', msg, ...
+            struct('n_hard_eligible', sum(hard_eligible), 'n_search', nSearch));
         [~, topDispOrder] = sort(comp_score, 'descend');
     else
         [~, topDispOrder] = sort(searchScores, 'descend');
@@ -756,27 +580,11 @@ for subj = 1:nSubj
     all_simulated_templates{subj} = sim_template;
     all_selected_comp_indices_multi{subj} = selected_idx;
     all_selected_comp_weights{subj} = selected_weights(:)';
-    all_preperm_comp_indices_multi{subj} = preperm_idx;
-    all_preperm_comp_weights{subj} = preperm_weights(:)';
-    all_cv_curves{subj} = struct( ...
-        'mean_curve', cv_curve_mean, ...
-        'fold_scores', cv_fold_scores(1:max(nCvRows, 1), :), ...
-        'fold_sep', cv_fold_sep(1:max(nCvRows, 1), :), ...
-        'k_opt', cv_k_opt);
     all_component_selection_stats{subj} = struct( ...
-        'mode', comp_select_mode, ...
-        'projection_mode', projection_mode, ...
-        'perm_threshold', perm_threshold, ...
-        'perm_alpha', perm_alpha, ...
-        'n_perm', n_perm, ...
-        'n_cv_rows', nCvRows, ...
-        'cv_folds', cv_folds, ...
-        'cv_repeats', cv_repeats, ...
-        'preperm_idx', preperm_idx, ...
-        'preperm_weights', preperm_weights, ...
+        'selection_mode', 'hard_eligible_weighted', ...
+        'min_valid_combined_components', min_valid_combined_components, ...
         'selected_idx', selected_idx, ...
         'selected_weights', selected_weights, ...
-        'candidate_pool_idx', candidate_pool_idx, ...
         'candidate_table', candidate_table, ...
         'best_idx', bestIdx, ...
         'best_score', bestScore, ...
@@ -785,7 +593,8 @@ for subj = 1:nSubj
         'best_gamma', bestGamma, ...
         'best_front', bestFront, ...
         'best_occ', bestOcc, ...
-        'best_leak', bestLeak);
+        'best_leak', bestLeak, ...
+        'no_hard_threshold_match', no_hard_threshold_match);
 
     %% Phase 1b: Component/template sanity figures
     cfg_topo = [];
@@ -805,6 +614,14 @@ for subj = 1:nSubj
     annotation(fig_sel, 'textbox', [0.01 0.965 0.98 0.03], ...
         'String', title_str, 'EdgeColor', 'none', 'HorizontalAlignment', 'center', ...
         'VerticalAlignment', 'middle', 'FontSize', 14, 'FontWeight', 'bold');
+    if no_hard_threshold_match
+        annotation(fig_sel, 'textbox', [0.01 0.93 0.98 0.03], ...
+            'String', 'FALLBACK COMPONENT USED: No component met hard thresholds', ...
+            'EdgeColor', [0.7 0 0], 'Color', [0.7 0 0], ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+            'FontSize', 11, 'FontWeight', 'bold', ...
+            'BackgroundColor', [1 0.94 0.94]);
+    end
     nColsTopo = 5;
     nRowsTopo = ceil(nDispTopo / nColsTopo);
     for ci = 1:nDispTopo
@@ -881,30 +698,19 @@ for subj = 1:nSubj
             searchOccFrontRatio(comp_rank), searchGammaEvidence(comp_rank)), ...
             'FontSize', 7);
     end
-    saveas(fig_sel, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_prePermCV.png', subjects{subj})));
+    saveas(fig_sel, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_ranked.png', subjects{subj})));
 
-    % Post-selection topoplots: components surviving permutation + CV cap.
+    % Combined-component topoplots: all hard-eligible selected components.
     selTopoIdx = selected_idx(:)';
     nSelTopo = numel(selTopoIdx);
     nColsSel = 5;
     nRowsSel = ceil(max(nSelTopo, 1) / nColsSel);
     fig_post = figure('Position', [0 0 1512 982], 'Color', 'w');
-    title_post = sprintf(['Subject %s: POST perm+CV (n=%d, k*=%d, perm thr=%.3f, ', ...
-        'proj=%s)'], subjects{subj}, nSelTopo, cv_k_opt, perm_threshold, projection_mode);
+    title_post = sprintf('Subject %s: Combined hard-eligible components (n=%d)', ...
+        subjects{subj}, nSelTopo);
     annotation(fig_post, 'textbox', [0.01 0.965 0.98 0.03], ...
         'String', title_post, 'EdgeColor', 'none', 'HorizontalAlignment', 'center', ...
         'VerticalAlignment', 'middle', 'FontSize', 14, 'FontWeight', 'bold');
-    if postPermCV_fallback_used
-        if isempty(postPermCV_fallback_reason)
-            postPermCV_fallback_reason = 'Fallback component used';
-        end
-        annotation(fig_post, 'textbox', [0.01 0.93 0.98 0.03], ...
-            'String', ['FALLBACK COMPONENT USED: ', postPermCV_fallback_reason], ...
-            'EdgeColor', [0.7 0 0], 'Color', [0.7 0 0], ...
-            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-            'FontSize', 11, 'FontWeight', 'bold', ...
-            'BackgroundColor', [1 0.94 0.94]);
-    end
     if nSelTopo == 0
         subplot(1, 1, 1);
         axis off;
@@ -951,43 +757,29 @@ for subj = 1:nSubj
                 searchOccFrontRatio(comp_rank)), 'FontSize', 8);
         end
     end
-    saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_postPermCV.png', subjects{subj})));
+    saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_combined.png', subjects{subj})));
 
     %% ================================================================
     %  PHASE 2: Per condition — trial-level narrowband scanning
     %  ================================================================
-    W_sel = searchFilters(:, selected_idx);
-    w_sel = all_selected_comp_weights{subj};
-    W_pre = searchFilters(:, preperm_idx);
-    w_pre = all_preperm_comp_weights{subj};
-    if isempty(W_sel)
-        warning('No selected filters for subject %s. Falling back to best single component.', subjects{subj});
-        W_sel = zeros(0, 0);
-    end
-    if isempty(W_pre)
-        warning('No pre-Perm+CV filters for subject %s. Falling back to best single component.', subjects{subj});
-        W_pre = searchFilters(:, bestIdx);
+    W_combined = searchFilters(:, selected_idx);
+    w_combined = all_selected_comp_weights{subj};
+    if isempty(W_combined)
+        msg = sprintf('No selected combined filters for subject %s.', subjects{subj});
+        warning_log = append_subject_warning(warning_log, subjects{subj}, 'EMPTY_W_COMBINED', msg, struct());
+        error(msg);
     end
     if isempty(W_top)
         W_top = zeros(0, 1);
     end
-    if isempty(w_sel) && ~isempty(W_sel)
-        w_sel = ones(1, size(W_sel, 2)) / size(W_sel, 2);
+    if isempty(w_combined) && ~isempty(W_combined)
+        w_combined = ones(1, size(W_combined, 2)) / size(W_combined, 2);
     end
-    if sum(w_sel) <= 0 && ~isempty(W_sel)
-        w_sel = ones(1, size(W_sel, 2)) / size(W_sel, 2);
+    if sum(w_combined) <= 0 && ~isempty(W_combined)
+        w_combined = ones(1, size(W_combined, 2)) / size(W_combined, 2);
     end
-    if ~isempty(W_sel)
-        w_sel = w_sel(:)' / sum(w_sel);
-    end
-    if isempty(w_pre) && ~isempty(W_pre)
-        w_pre = ones(1, size(W_pre, 2)) / size(W_pre, 2);
-    end
-    if sum(w_pre) <= 0 && ~isempty(W_pre)
-        w_pre = ones(1, size(W_pre, 2)) / size(W_pre, 2);
-    end
-    if ~isempty(W_pre)
-        w_pre = w_pre(:)' / sum(w_pre);
+    if ~isempty(W_combined)
+        w_combined = w_combined(:)' / sum(w_combined);
     end
 
     for cond = 1:4
@@ -1043,41 +835,22 @@ for subj = 1:nSubj
                     end
                 end
 
-                % Method 3: pre-Perm+CV weighted GED combination.
-                if ~isempty(W_pre)
-                    comp_stim = W_pre' * x_stim;
-                    comp_base = W_pre' * x_base;
+                % Method 3: weighted combined hard-eligible GED components.
+                if ~isempty(W_combined)
+                    comp_stim = W_combined' * x_stim;
+                    comp_base = W_combined' * x_base;
                     pow_stim_vec = mean(comp_stim.^2, 2);
                     pow_base_vec = mean(comp_base.^2, 2);
                     valid_comp = isfinite(pow_stim_vec) & isfinite(pow_base_vec) & (pow_base_vec > 0);
                     if any(valid_comp)
                         ratio_vec = pow_stim_vec(valid_comp) ./ pow_base_vec(valid_comp);
-                        w_use = w_pre(valid_comp);
+                        w_use = w_combined(valid_comp);
                         if sum(w_use) <= 0
                             w_use = ones(1, numel(ratio_vec)) / numel(ratio_vec);
                         else
                             w_use = w_use / sum(w_use);
                         end
                         powratio_methods(3, trl, fi) = sum(ratio_vec(:)' .* w_use);
-                    end
-                end
-
-                % Method 4: post-Perm+CV weighted GED combination.
-                if ~isempty(W_sel)
-                    comp_stim = W_sel' * x_stim;
-                    comp_base = W_sel' * x_base;
-                    pow_stim_vec = mean(comp_stim.^2, 2);
-                    pow_base_vec = mean(comp_base.^2, 2);
-                    valid_comp = isfinite(pow_stim_vec) & isfinite(pow_base_vec) & (pow_base_vec > 0);
-                    if any(valid_comp)
-                        ratio_vec = pow_stim_vec(valid_comp) ./ pow_base_vec(valid_comp);
-                        w_use = w_sel(valid_comp);
-                        if sum(w_use) <= 0
-                            w_use = ones(1, numel(ratio_vec)) / numel(ratio_vec);
-                        else
-                            w_use = w_use / sum(w_use);
-                        end
-                        powratio_methods(4, trl, fi) = sum(ratio_vec(:)' .* w_use);
                     end
                 end
             end
@@ -1096,8 +869,8 @@ for subj = 1:nSubj
             end
         end
 
-        % Keep legacy pipeline outputs based on post-Perm+CV weighted GED.
-        powratio_trials = squeeze(powratio_methods(4, :, :));
+        % Keep legacy pipeline outputs based on weighted combined GED branch.
+        powratio_trials = squeeze(powratio_methods(3, :, :));
         all_trial_powratio{cond, subj} = powratio_trials;
         if ~isempty(powratio_trials)
             % Condition-wise gamma power summary from weighted power-ratio spectra.
@@ -1456,8 +1229,11 @@ for subj = 1:nSubj
     toc
 end % subject loop
 
+print_subject_warning_summary(warning_log);
+print_threshold_inspection_summary(subjects, all_threshold_inspection, threshold_inspection_targets);
+
 %% ====================================================================
-%  FOUR-WAY BENCHMARK METRICS (raw vs top-eig GED vs pre/post combined GED)
+%  THREE-WAY BENCHMARK METRICS (raw vs top-eig GED vs combined GED)
 %  ====================================================================
 for mi = 1:nBenchmarkMethods
     for subj = 1:nSubj
@@ -1572,11 +1348,11 @@ else
 end
 
 %% Subject-level benchmark figures
-bench_method_labels = {'Raw', 'Top-Eig GED', 'Combined GED (pre-Perm+CV)', 'Combined GED (post-Perm+CV)'};
-bench_method_colors = [0.2 0.2 0.2; 0.1 0.35 0.75; 0.85 0.55 0.10; 0.75 0.2 0.1];
+bench_method_labels = {'Raw', 'Top-Eig GED', 'Combined GED'};
+bench_method_colors = [0.2 0.2 0.2; 0.1 0.35 0.75; 0.85 0.55 0.10];
 for subj = 1:nSubj
     fig_bench_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf('Four-Way Spectrum Benchmark: Subject %s', subjects{subj}), ...
+    sgtitle(sprintf('Three-Way Spectrum Benchmark: Subject %s', subjects{subj}), ...
         'FontSize', 18, 'FontWeight', 'bold');
 
     for mi = 1:nBenchmarkMethods
@@ -1650,7 +1426,7 @@ for subj = 1:nSubj
     d_gap = gap_med(4) - gap_med(1);
     text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\n\\DeltaGap_{100-25}=%.2f Hz', d_single, d_gap), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
-    title('Single median + H-L gap (post-Perm+CV)');
+    title('Single median + H-L gap (combined GED)');
     box on;
 
     subplot(2, 4, 6); hold on;
@@ -1672,8 +1448,8 @@ for subj = 1:nSubj
     ylabel('Trial CV (lower better)');
     ylim(bench_rel_ylim);
     set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
-    text(0.02, 0.96, sprintf('\\DeltaProm_{Post-R}=%.2f\n\\DeltaCV_{Post-R}=%.3f', ...
-        prom_vec(4)-prom_vec(1), rel_vec(4)-rel_vec(1)), ...
+    text(0.02, 0.96, sprintf('\\DeltaProm_{Comb-R}=%.2f\n\\DeltaCV_{Comb-R}=%.3f', ...
+        prom_vec(end)-prom_vec(1), rel_vec(end)-rel_vec(1)), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
     title('Prominence + Reliability');
      box on;
@@ -1693,15 +1469,15 @@ for subj = 1:nSubj
     ylabel('\Delta median (100%-25%) [Hz]');
     ylim([-bench_delta_absmax bench_delta_absmax]);
     set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
-    text(0.02, 0.96, sprintf('Post-Perm+CV slope=%.2f\nPost-Perm+CV \\Delta=%.2f Hz', ...
-        slope_vec(4), delta_vec(4)), ...
+    text(0.02, 0.96, sprintf('Combined slope=%.2f\nCombined \\Delta=%.2f Hz', ...
+        slope_vec(end), delta_vec(end)), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
     title('Condition separation');
      box on;
 
     subplot(2, 4, 8); axis off;
-    text(0.05, 0.9, sprintf(['Method order:\n1) %s\n2) %s\n3) %s\n4) %s'], ...
-        bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
+    text(0.05, 0.9, sprintf(['Method order:\n1) %s\n2) %s\n3) %s'], ...
+        bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}), ...
         'FontSize', 10, 'VerticalAlignment', 'top');
 
     saveas(fig_bench_subj, fullfile(fig_save_dir_benchmark, sprintf('GCP_eeg_GED_benchmark_subj%s.png', subjects{subj})));
@@ -1956,10 +1732,10 @@ for mi = 1:3
 end
 
 %% ====================================================================
-%  GRAND-AVERAGE FOUR-WAY BENCHMARK
+%  GRAND-AVERAGE THREE-WAY BENCHMARK
 %  ====================================================================
 fig_bench_group = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('Four-Way Spectrum Benchmark: Grand Average', 'FontSize', 18, 'FontWeight', 'bold');
+sgtitle('Three-Way Spectrum Benchmark: Grand Average', 'FontSize', 18, 'FontWeight', 'bold');
 
 for mi = 1:nBenchmarkMethods
     subplot(2, 4, mi); hold on;
@@ -2022,7 +1798,7 @@ set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 10);
 text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\n\\DeltaGap_{100-25}=%.2f Hz', ...
     single_mu(4)-single_mu(1), gap_mu(4)-gap_mu(1)), ...
     'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
-title('Single mean + H-L gap (post-Perm+CV)');
+title('Single mean + H-L gap (combined GED)');
 box on;
 
 subplot(2, 4, 6); hold on;
@@ -2046,8 +1822,8 @@ scatter(1:nBenchmarkMethods, rel_med, 25, 'ks', 'filled');
 ylabel('Trial CV (lower better)');
 ylim(bench_rel_ylim);
 set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
-text(0.02, 0.96, sprintf('\\DeltaProm_{Post-R}=%.2f\n\\DeltaCV_{Post-R}=%.3f', ...
-    prom_mu(4)-prom_mu(1), rel_mu(4)-rel_mu(1)), ...
+text(0.02, 0.96, sprintf('\\DeltaProm_{Comb-R}=%.2f\n\\DeltaCV_{Comb-R}=%.3f', ...
+    prom_mu(end)-prom_mu(1), rel_mu(end)-rel_mu(1)), ...
     'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
 title('Prominence + Reliability');
  box on;
@@ -2067,26 +1843,26 @@ errorbar(1:nBenchmarkMethods, delta_mu, delta_se, 'ks--', 'LineWidth', 1.8, 'Mar
 ylabel('\Delta median (100%-25%) [Hz]');
 ylim([-bench_delta_absmax bench_delta_absmax]);
 set(gca, 'XTick', 1:nBenchmarkMethods, 'XTickLabel', bench_method_labels, 'XTickLabelRotation', 20, 'FontSize', 10);
-text(0.02, 0.96, sprintf('Post-Perm+CV slope=%.2f\nPost-Perm+CV \\Delta=%.2f Hz', ...
-    slope_mu(4), delta_mu(4)), ...
+text(0.02, 0.96, sprintf('Combined slope=%.2f\nCombined \\Delta=%.2f Hz', ...
+    slope_mu(end), delta_mu(end)), ...
     'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
 title('Condition separation');
  box on;
 
 subplot(2, 4, 8); axis off;
-text(0.05, 0.9, sprintf(['Method order:\n1) %s\n2) %s\n3) %s\n4) %s'], ...
-    bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
+text(0.05, 0.9, sprintf(['Method order:\n1) %s\n2) %s\n3) %s'], ...
+    bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}), ...
     'FontSize', 10, 'VerticalAlignment', 'top');
 
 saveas(fig_bench_group, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_benchmark_grandaverage.png'));
 
 %% ====================================================================
-%  STANDALONE CONDITION-SEPARATION METRICS (post-Perm+CV combined GED)
+%  STANDALONE CONDITION-SEPARATION METRICS (combined GED)
 %  ====================================================================
 close all
 fig_cond_slope = figure('Position', [0 0 1512 982], 'Color', 'w');
 
-post_idx = 4; % Combined GED (post-Perm+CV)
+post_idx = 3; % Combined GED
 slope_post = benchmark_metric_separation_slope(post_idx, :);
 delta_post = benchmark_metric_separation_delta(post_idx, :);
 
@@ -2106,7 +1882,7 @@ end
 yline(0, 'k--', 'LineWidth', 1.0);
 xlim([0.45 1.45]);
 ylim([-2 2]);
-set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED (post-Perm+CV)'}, ...
+set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED'}, ...
     'FontSize', 16, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 ylabel('Slope across contrast conditions [Hz/condition]', 'FontSize', 18, 'FontWeight', 'bold');
 title('Contrast Condition Slope', 'FontSize', 20, 'FontWeight', 'bold');
@@ -2125,7 +1901,7 @@ end
 yline(0, 'k--', 'LineWidth', 1.0);
 xlim([0.45 1.45]);
 ylim([-6 6]);
-set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED (post-Perm+CV)'}, ...
+set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED'}, ...
     'FontSize', 16, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 ylabel('\Delta median (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
 title('Median Frequency Shift (100% - 25%)', 'FontSize', 20, 'FontWeight', 'bold');
@@ -2134,7 +1910,7 @@ saveas(fig_cond_slope, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_condition_s
 
 %% Mean gamma frequency shift bar plot
 close all
-fig_cond_shift_bar = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_cond_shift_bar = figure('Position', [0 0 1512 982], 'Color', 'w');
 valid_delta = isfinite(delta_post);
 subj_idx = find(valid_delta);
 delta_vals = delta_post(valid_delta);
@@ -2151,7 +1927,7 @@ xlabel('Subject', 'FontSize', 18, 'FontWeight', 'bold');
 ylabel('\Delta mean frequency shift (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
 title('Gamma Frequency Shift', 'FontSize', 20, 'FontWeight', 'bold');
 set(gca, 'FontSize', 14, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
-saveas(fig_cond_shift_bar, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_bar_GammaFreq.png'));
+saveas(fig_cond_shift_bar, fullfile(fig_save_dir, 'GCP_eeg_GED_bar_GammaFreq.png'));
 
 %% ====================================================================
 %  SUMMARY DASHBOARD (backprojected combined-component data)
@@ -2215,7 +1991,7 @@ for mi = 1:numel(summary_metrics)
         ylim([0 15]);
     end
 end
-saveas(fig_summary, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_metrics_summary.png'));
+saveas(fig_summary, fullfile(fig_save_dir, 'GCP_eeg_GED_metrics_summary.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak (subject-level median, summary-style)
@@ -2223,7 +1999,7 @@ saveas(fig_summary, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_metrics_summar
 close all
 fprintf('\nCreating grand average figures...\n');
 
-fig_box1 = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_box1 = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
 dat = all_trial_median_single;
@@ -2256,12 +2032,12 @@ set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
 ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency over Conditions', 'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_box1, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_boxplot_GammaFreq.png'));
+saveas(fig_box1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_GammaFreq.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak with subject trajectories + ID labels
 %  ====================================================================
-fig_box1_traj = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_box1_traj = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
 dat = all_trial_median_single;
@@ -2316,12 +2092,12 @@ ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency over Conditions (Subject Trajectories)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_box1_traj, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_boxplot_GammaFreq_IDs.png'));
+saveas(fig_box1_traj, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_GammaFreq_IDs.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak (stats-style boxplot, non-baselined freq)
 %  ====================================================================
-fig_box1_statsstyle = figure('Position', [0 0 1512/2 982], 'Color', 'W');
+fig_box1_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'W');
 hold on;
 
 dat = all_trial_median_single;  % [condition x subject], absolute frequency (Hz)
@@ -2359,7 +2135,7 @@ xlim([0.5 4.5]);
 ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency', 'FontSize', 30, 'FontWeight', 'bold');
 
-saveas(fig_box1_statsstyle, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_boxplot_GammaFreq_statsStyle.png'));
+saveas(fig_box1_statsstyle, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_GammaFreq_statsStyle.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak all trials pooled — raincloud
@@ -2406,13 +2182,13 @@ ylabel('Peak Gamma Frequency [Hz]');
 title('Single Peak: All Trials (pooled across subjects)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_trl1, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_boxplot_alltrials_GammaFreq.png'));
+saveas(fig_trl1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_alltrials_GammaFreq.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Mean detrended power spectrum
 %  ====================================================================
 close all
-fig_grand_psd = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_grand_psd = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 grand_line_handles = gobjects(1, 4);
 grand_panel_maxabs = 0;
@@ -2454,8 +2230,8 @@ for cond = 1:4
         %    [mu - se, fliplr(mu + se)], ...
         %    colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.25);
 
-        % Power spectra with edge-reflective smoothing.
-        mu_plot = smooth_reflective(mu, 5);
+        % Stronger edge-only smoothing for 30-39 Hz and 81-90 Hz.
+        mu_plot = smooth_reflective_edges(mu, scan_freqs, [40 80], 5, 11);
         grand_line_handles(cond) = plot(scan_freqs, mu_plot, '-', ...
             'Color', colors(cond,:), 'LineWidth', 5);
 
@@ -2592,8 +2368,7 @@ save(save_path, ...
     'all_topos', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
-    'all_preperm_comp_indices_multi', 'all_preperm_comp_weights', ...
-    'all_component_selection_stats', 'all_cv_curves', 'all_perm_thresholds', ...
+    'all_component_selection_stats', 'warning_log', ...
     'all_trial_powratio_bench', 'all_trial_powratio_dt_bench', ...
     'benchmark_methods', 'raw_reference_definition', ...
     'benchmark_metric_detectability', 'benchmark_metric_prominence', ...
@@ -2686,6 +2461,122 @@ else
     end
 end
 
+function [eligible_mask_out, dominant_outlier_idx] = exclude_dominant_top_outlier(eigvals_sorted, eligible_mask_in, ratio_thr, mad_mult, min_rest_n)
+eligible_mask_out = logical(eligible_mask_in(:));
+dominant_outlier_idx = [];
+if isempty(eigvals_sorted) || isempty(eligible_mask_out)
+    return;
+end
+
+eigvals_sorted = eigvals_sorted(:);
+if numel(eigvals_sorted) ~= numel(eligible_mask_out)
+    return;
+end
+if nargin < 5 || isempty(min_rest_n)
+    min_rest_n = 3;
+end
+
+eligible_idx = find(eligible_mask_out & isfinite(eigvals_sorted) & eigvals_sorted > 0);
+if numel(eligible_idx) < 2
+    return;
+end
+
+[~, elig_ord] = sort(eigvals_sorted(eligible_idx), 'descend');
+eligible_ranked_idx = eligible_idx(elig_ord);
+top_idx = eligible_ranked_idx(1);
+lambda_top = eigvals_sorted(top_idx);
+lambda_second = eigvals_sorted(eligible_ranked_idx(2));
+rest_vals = eigvals_sorted(eligible_ranked_idx(2:end));
+if numel(rest_vals) < min_rest_n || ~isfinite(lambda_top) || ~isfinite(lambda_second) || lambda_second <= 0
+    return;
+end
+
+rest_log = log(rest_vals);
+rest_log = rest_log(isfinite(rest_log));
+if numel(rest_log) < min_rest_n
+    return;
+end
+
+lambda_top_log = log(max(lambda_top, eps));
+ratio12 = lambda_top / max(lambda_second, eps);
+med_rest = median(rest_log);
+mad_rest = mad(rest_log, 1);
+if ~isfinite(mad_rest) || mad_rest <= eps
+    mad_criterion = lambda_top_log > med_rest;
+else
+    mad_criterion = lambda_top_log > (med_rest + mad_mult * mad_rest);
+end
+
+if ratio12 >= ratio_thr && mad_criterion
+    eligible_mask_out(top_idx) = false;
+    dominant_outlier_idx = top_idx;
+end
+end
+
+function warning_log = append_subject_warning(warning_log, subject_id, code, message, metrics)
+if nargin < 5 || isempty(metrics)
+    metrics = struct();
+end
+entry = struct('subject', subject_id, 'code', code, 'message', message, 'metrics', metrics);
+if isempty(warning_log)
+    warning_log = entry;
+else
+    warning_log(end+1) = entry;
+end
+end
+
+function print_subject_warning_summary(warning_log)
+fprintf('\n============================================================\n');
+fprintf('Per-subject warning summary\n');
+fprintf('============================================================\n');
+if isempty(warning_log)
+    fprintf('No warnings were logged across subjects.\n');
+    return;
+end
+
+for wi = 1:numel(warning_log)
+    w = warning_log(wi);
+    fprintf('%3d) subject=%s | code=%s\n', wi, w.subject, w.code);
+    fprintf('     %s\n', w.message);
+    if strcmp(w.code, 'NO_HARD_ELIGIBLE_COMPONENTS')
+        m = w.metrics;
+        fprintf(['     hard-gate diagnostics: nSearch=%d, finite=%d, passEig=%d, passCorr=%d, ', ...
+                 'passRatio=%d, passGamma=%d, passAllRaw=%d, excludedOutlier=%d\n'], ...
+            m.n_search, m.n_finite_metrics, m.n_pass_eig, m.n_pass_corr, ...
+            m.n_pass_ratio, m.n_pass_gamma, m.n_pass_all_raw, m.n_excluded_dominant_outlier);
+        if isfield(m, 'top_fail_idx') && isfinite(m.top_fail_idx)
+            fprintf(['     top failing component: C%d | eig=%.3f (thr=%.3f, pass=%d), ', ...
+                     'corr=%.3f (thr=%.3f, pass=%d), ratio=%.3f (thr=%.3f, pass=%d), ', ...
+                     'gamma=%.3f (thr=%.3f, pass=%d)\n'], ...
+                m.top_fail_idx, m.top_fail_eig, m.thr_eig, m.top_fail_pass_eig, ...
+                m.top_fail_corr, m.thr_corr, m.top_fail_pass_corr, ...
+                m.top_fail_ratio, m.thr_ratio, m.top_fail_pass_ratio, ...
+                m.top_fail_gamma, m.thr_gamma, m.top_fail_pass_gamma);
+        end
+    elseif strcmp(w.code, 'NO_HARD_COMPONENTS') || strcmp(w.code, 'TOO_FEW_HARD_COMPONENTS')
+        m = w.metrics;
+        if isfield(m, 'n_valid_components')
+            fprintf('     combined-selection diagnostics: valid=%d, minRequired=%d\n', ...
+                m.n_valid_components, m.min_required);
+        else
+            fprintf('     combined-selection diagnostics: nHardEligible=%d, nFiniteScores=%d\n', ...
+                m.n_hard_eligible, m.n_finite_scores);
+        end
+    elseif strcmp(w.code, 'DOMINANT_OUTLIER_EXCLUDED')
+        m = w.metrics;
+        fprintf('     outlier diagnostics: C%d, lambda1=%.3f, lambda2=%.3f, ratio12=%.3f\n', ...
+            m.component_idx, m.lambda1, m.lambda2, m.lambda1_lambda2_ratio);
+    end
+end
+
+codes = {warning_log.code};
+[u_codes, ~, ic] = unique(codes);
+fprintf('\nWarning counts by code:\n');
+for ci = 1:numel(u_codes)
+    fprintf('  %s: %d\n', u_codes{ci}, sum(ic == ci));
+end
+end
+
 function vec_out = normalize_maxabs_curve(vec_in)
 vec_out = vec_in;
 if isempty(vec_in)
@@ -2718,6 +2609,175 @@ p_adj(sort_idx) = q_sorted;
 p_adj = reshape(p_adj, size(p_raw));
 end
 
+function inspection = compute_threshold_inspection(eig_vec, corr_vec, ratio_vec, gamma_vec, ...
+    thr_eig, thr_corr, thr_ratio, thr_gamma, target_counts, n_search)
+inspection = struct();
+inspection.n_search = n_search;
+inspection.target_counts = target_counts(:)';
+inspection.thr_default = [thr_eig, thr_corr, thr_ratio, thr_gamma];
+inspection.base_pass_count = sum(isfinite(eig_vec) & isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec) & ...
+    eig_vec >= thr_eig & corr_vec >= thr_corr & ratio_vec >= thr_ratio & gamma_vec >= thr_gamma);
+
+finite_mask = isfinite(eig_vec) & isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec);
+inspection.n_finite_metrics = sum(finite_mask);
+
+scale_cap_eig = eig_vec ./ max(thr_eig, eps);
+scale_cap_corr = corr_vec ./ max(thr_corr, eps);
+scale_cap_ratio = ratio_vec ./ max(thr_ratio, eps);
+scale_cap_gamma = gamma_vec ./ max(thr_gamma, eps);
+
+component_scale_cap = min([scale_cap_eig(:), scale_cap_corr(:), scale_cap_ratio(:), scale_cap_gamma(:)], [], 2);
+component_scale_cap(~finite_mask(:)) = -Inf;
+component_scale_cap(component_scale_cap < 0) = -Inf;
+
+valid_caps = component_scale_cap(isfinite(component_scale_cap));
+valid_caps = valid_caps(valid_caps >= 0);
+if isempty(valid_caps)
+    max_scale_any = NaN;
+else
+    max_scale_any = max(valid_caps);
+end
+inspection.max_feasible_scale = max_scale_any;
+inspection.max_pass_at_zero = sum(finite_mask & eig_vec >= 0 & corr_vec >= 0 & ratio_vec >= 0 & gamma_vec >= 0);
+
+n_targets = numel(target_counts);
+inspection.results = repmat(struct( ...
+    'target_count', NaN, ...
+    'joint_achievable', false, ...
+    'joint_required_scale', NaN, ...
+    'required_thr_eig', NaN, ...
+    'required_thr_corr', NaN, ...
+    'required_thr_ratio', NaN, ...
+    'required_thr_gamma', NaN, ...
+    'pass_count_at_required_scale', NaN, ...
+    'by_criterion', struct()), 1, n_targets);
+
+caps_sorted = sort(valid_caps, 'descend');
+for ti = 1:n_targets
+    k_target = target_counts(ti);
+    inspection.results(ti).target_count = k_target;
+    if k_target <= 0
+        inspection.results(ti).joint_achievable = true;
+        inspection.results(ti).joint_required_scale = 1;
+        inspection.results(ti).required_thr_eig = thr_eig;
+        inspection.results(ti).required_thr_corr = thr_corr;
+        inspection.results(ti).required_thr_ratio = thr_ratio;
+        inspection.results(ti).required_thr_gamma = thr_gamma;
+        inspection.results(ti).pass_count_at_required_scale = inspection.base_pass_count;
+    else
+        if numel(caps_sorted) >= k_target
+            req_scale = caps_sorted(k_target);
+            req_scale = min(req_scale, 1);
+            req_scale = max(req_scale, 0);
+            pass_at_scale = sum(finite_mask & ...
+                eig_vec >= (thr_eig * req_scale) & ...
+                corr_vec >= (thr_corr * req_scale) & ...
+                ratio_vec >= (thr_ratio * req_scale) & ...
+                gamma_vec >= (thr_gamma * req_scale));
+
+            inspection.results(ti).joint_achievable = pass_at_scale >= k_target;
+            inspection.results(ti).joint_required_scale = req_scale;
+            inspection.results(ti).required_thr_eig = thr_eig * req_scale;
+            inspection.results(ti).required_thr_corr = thr_corr * req_scale;
+            inspection.results(ti).required_thr_ratio = thr_ratio * req_scale;
+            inspection.results(ti).required_thr_gamma = thr_gamma * req_scale;
+            inspection.results(ti).pass_count_at_required_scale = pass_at_scale;
+        end
+    end
+
+    by_criterion = struct();
+    by_criterion.eig = compute_single_criterion_min_threshold( ...
+        eig_vec, finite_mask & corr_vec >= thr_corr & ratio_vec >= thr_ratio & gamma_vec >= thr_gamma, ...
+        thr_eig, k_target);
+    by_criterion.corr = compute_single_criterion_min_threshold( ...
+        corr_vec, finite_mask & eig_vec >= thr_eig & ratio_vec >= thr_ratio & gamma_vec >= thr_gamma, ...
+        thr_corr, k_target);
+    by_criterion.ratio = compute_single_criterion_min_threshold( ...
+        ratio_vec, finite_mask & eig_vec >= thr_eig & corr_vec >= thr_corr & gamma_vec >= thr_gamma, ...
+        thr_ratio, k_target);
+    by_criterion.gamma = compute_single_criterion_min_threshold( ...
+        gamma_vec, finite_mask & eig_vec >= thr_eig & corr_vec >= thr_corr & ratio_vec >= thr_ratio, ...
+        thr_gamma, k_target);
+    inspection.results(ti).by_criterion = by_criterion;
+end
+end
+
+function print_threshold_inspection_summary(subjects, all_threshold_inspection, target_counts)
+fprintf('\n============================================================\n');
+fprintf('Threshold-inspection summary (hard-gate only)\n');
+fprintf('============================================================\n');
+fprintf(['For each subject, "scale" is the maximum common multiplier applied to all hard thresholds ', ...
+         '(eig/corr/ratio/gamma) that still yields at least K valid components.\n']);
+fprintf(['Criterion-specific minimums are also reported: each threshold is relaxed alone while ', ...
+         'all other thresholds remain fixed.\n']);
+fprintf('Current thresholds correspond to scale=1.000; lower scale means relaxed thresholds.\n');
+
+if isempty(all_threshold_inspection)
+    fprintf('No threshold-inspection results available.\n');
+    return;
+end
+
+for subj = 1:numel(subjects)
+    ins = all_threshold_inspection{subj};
+    if isempty(ins)
+        fprintf('  %s: no inspection data\n', subjects{subj});
+        continue;
+    end
+    fprintf('  %s: basePass=%d/%d finite=%d\n', ...
+        subjects{subj}, ins.base_pass_count, ins.n_search, ins.n_finite_metrics);
+    for ti = 1:numel(target_counts)
+        r = ins.results(ti);
+        if r.joint_achievable
+            fprintf(['    K=%d -> scale=%.3f | eig>=%.3f, corr>=%.3f, ratio>=%.3f, gamma>=%.3f ', ...
+                     '(pass=%d)\n'], ...
+                r.target_count, r.joint_required_scale, r.required_thr_eig, r.required_thr_corr, ...
+                r.required_thr_ratio, r.required_thr_gamma, r.pass_count_at_required_scale);
+        else
+            fprintf('    K=%d -> not achievable within finite candidates (max nonnegative-pass=%d)\n', ...
+                r.target_count, ins.max_pass_at_zero);
+        end
+        c = r.by_criterion;
+        fprintf('      min-by-criterion: eig>=%.3f (%s), corr>=%.3f (%s), ratio>=%.3f (%s), gamma>=%.3f (%s)\n', ...
+            c.eig.required_threshold, logical_str(c.eig.achievable), ...
+            c.corr.required_threshold, logical_str(c.corr.achievable), ...
+            c.ratio.required_threshold, logical_str(c.ratio.achievable), ...
+            c.gamma.required_threshold, logical_str(c.gamma.achievable));
+    end
+end
+end
+
+function out = compute_single_criterion_min_threshold(metric_vec, base_mask, default_thr, k_target)
+out = struct('achievable', false, 'required_threshold', NaN, 'pass_count', 0, 'pool_count', 0);
+if k_target <= 0
+    out.achievable = true;
+    out.required_threshold = default_thr;
+    out.pass_count = sum(base_mask & metric_vec >= default_thr);
+    out.pool_count = sum(base_mask);
+    return;
+end
+
+pool_vals = metric_vec(base_mask);
+pool_vals = pool_vals(isfinite(pool_vals));
+out.pool_count = numel(pool_vals);
+if numel(pool_vals) < k_target
+    return;
+end
+
+pool_sorted = sort(pool_vals, 'descend');
+kth_val = pool_sorted(k_target);
+out.required_threshold = min(default_thr, kth_val);
+out.pass_count = sum(base_mask & metric_vec >= out.required_threshold);
+out.achievable = out.pass_count >= k_target;
+end
+
+function txt = logical_str(tf)
+if tf
+    txt = 'ok';
+else
+    txt = 'NA';
+end
+end
+
 function y = smooth_reflective(x, win)
 y = x;
 if nargin < 2 || isempty(win) || win <= 1 || isempty(x)
@@ -2735,6 +2795,28 @@ end
 x_pad = [fliplr(x(1:pad)), x, fliplr(x(end-pad+1:end))];
 y_pad = movmean(x_pad, win);
 y = y_pad(pad+1:end-pad);
+end
+
+function y = smooth_reflective_edges(x, freqs, core_band, core_win, edge_win)
+y = x;
+if isempty(x) || isempty(freqs) || numel(x) ~= numel(freqs)
+    return;
+end
+if nargin < 4 || isempty(core_win)
+    core_win = 5;
+end
+if nargin < 5 || isempty(edge_win)
+    edge_win = 11;
+end
+if nargin < 3 || isempty(core_band) || numel(core_band) ~= 2
+    core_band = [40 80];
+end
+
+y_core = smooth_reflective(x, core_win);
+y_edge = smooth_reflective(x, edge_win);
+edge_mask = freqs < core_band(1) | freqs > core_band(2);
+y(edge_mask) = y_edge(edge_mask);
+y(~edge_mask) = y_core(~edge_mask);
 end
 
 function y_dt = detrend_poly_stable(y, x, ord, edge_exclude_n)
