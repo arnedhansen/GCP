@@ -58,10 +58,10 @@ viz_suppress_nonocc_outliers = false;  % visualization-only suppression/interpol
 viz_interp_k = 6;                   % nearest neighbors for channel interpolation
 viz_nonocc_outlier_mult = 1.00;     % non-occipital outlier threshold multiplier (vs posterior pctl)
 viz_topo_prctile = 99;              % robust percentile for color scaling
-min_occfront_ratio = 0.50;          % hard eligibility threshold (occ/front ratio)
+min_occfront_ratio = 1.00;          % tightened hard threshold: occipital must exceed frontal
 min_eigval_hard = 1.05;             % hard minimum GED eigenvalue
-min_corr_hard = 0.1;               % hard minimum template correlation
-min_gamma_hard = 0.05;              % hard minimum gamma evidence (log ratio)
+min_corr_hard = 0.20;               % tightened hard minimum template correlation
+min_gamma_hard = 0.10;              % tightened hard minimum gamma evidence (log ratio)
 cv_gain_min = 0.00;                 % minimum positive held-out gain to add component
 
 % Multi-component selection (perm + CV) and weighted projection
@@ -109,21 +109,16 @@ condLabels = {'25%', '50%', '75%', '100%'};
 
 % Figure save directories
 if ispc
-    fig_save_dir = 'W:\Students\Arne\GCP\figures\eeg\ged';
+    fig_save_dir_benchmark = 'W:\Students\Arne\GCP\figures\eeg\ged\benchmark';
+    fig_save_dir_subj = 'W:\Students\Arne\GCP\figures\eeg\ged\subj';
 else
-    fig_save_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged';
+    fig_save_dir_benchmark = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/benchmark';
+    fig_save_dir_subj = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/subj';
 end
-if ~exist(fig_save_dir, 'dir'), mkdir(fig_save_dir); end
-comp_sel_save_dir = fullfile(fig_save_dir, 'component_selection');
+if ~exist(fig_save_dir_benchmark, 'dir'), mkdir(fig_save_dir_benchmark); end
+if ~exist(fig_save_dir_subj, 'dir'), mkdir(fig_save_dir_subj); end
+comp_sel_save_dir = fullfile(fig_save_dir_subj, 'component_selection');
 if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
-
-method_base = fullfile(fig_save_dir, 'method_comparison');
-method_dirs = {fullfile(method_base, 'hard_50Hz'), ...
-    fullfile(method_base, 'spectral_trough'), ...
-    fullfile(method_base, 'gmm')};
-for mi = 1:3
-    if ~exist(method_dirs{mi}, 'dir'), mkdir(method_dirs{mi}); end
-end
 
 %% Preallocate storage
 all_trial_powratio     = cell(4, nSubj);
@@ -146,6 +141,7 @@ all_trial_detrate_single = nan(4, nSubj);
 all_trial_detrate_low    = nan(4, nSubj);
 all_trial_detrate_high   = nan(4, nSubj);
 all_trial_detrate_centroid = nan(4, nSubj);
+all_trial_gamma_power = nan(4, nSubj);
 
 all_topos       = cell(1, nSubj);
 all_topo_labels = cell(1, nSubj);
@@ -445,6 +441,8 @@ for subj = 1:nSubj
     perm_null_max = nan(n_perm, 1);
     perm_null_max_unconstrained = nan(n_perm, 1);
     perm_sig_mask = true(nSearch, 1);
+    postPermCV_fallback_used = false;
+    postPermCV_fallback_reason = '';
     if strcmpi(comp_select_mode, 'perm_cv')
         nStimTrials = numel(stim_cov_trials);
         nBaseTrials = numel(base_cov_trials);
@@ -537,6 +535,8 @@ for subj = 1:nSubj
         warning(['No components survived hard+permutation gating for subject %s. ', ...
                  'Falling back to single best ranked component.'], subjects{subj});
         candidate_pool_idx = bestIdx;
+        postPermCV_fallback_used = true;
+        postPermCV_fallback_reason = 'No components survived hard+permutation gating';
     else
         [~, pool_ord] = sort(evals_sorted(candidate_pool_idx), 'descend');
         candidate_pool_idx = candidate_pool_idx(pool_ord);
@@ -546,6 +546,10 @@ for subj = 1:nSubj
     if k_max < 1
         k_max = 1;
         candidate_pool_idx = bestIdx;
+        postPermCV_fallback_used = true;
+        if isempty(postPermCV_fallback_reason)
+            postPermCV_fallback_reason = 'Empty candidate pool after selection';
+        end
     end
 
     cv_curve_mean = nan(1, k_max);
@@ -658,6 +662,10 @@ for subj = 1:nSubj
     selected_idx = candidate_pool_idx(1:min(cv_k_opt, numel(candidate_pool_idx)));
     if isempty(selected_idx)
         selected_idx = bestIdx;
+        postPermCV_fallback_used = true;
+        if isempty(postPermCV_fallback_reason)
+            postPermCV_fallback_reason = 'No selected components after CV; using best ranked component';
+        end
     end
 
     selected_weights = [];
@@ -886,6 +894,17 @@ for subj = 1:nSubj
     annotation(fig_post, 'textbox', [0.01 0.965 0.98 0.03], ...
         'String', title_post, 'EdgeColor', 'none', 'HorizontalAlignment', 'center', ...
         'VerticalAlignment', 'middle', 'FontSize', 14, 'FontWeight', 'bold');
+    if postPermCV_fallback_used
+        if isempty(postPermCV_fallback_reason)
+            postPermCV_fallback_reason = 'Fallback component used';
+        end
+        annotation(fig_post, 'textbox', [0.01 0.93 0.98 0.03], ...
+            'String', ['FALLBACK COMPONENT USED: ', postPermCV_fallback_reason], ...
+            'EdgeColor', [0.7 0 0], 'Color', [0.7 0 0], ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+            'FontSize', 11, 'FontWeight', 'bold', ...
+            'BackgroundColor', [1 0.94 0.94]);
+    end
     if nSelTopo == 0
         subplot(1, 1, 1);
         axis off;
@@ -1080,6 +1099,11 @@ for subj = 1:nSubj
         % Keep legacy pipeline outputs based on post-Perm+CV weighted GED.
         powratio_trials = squeeze(powratio_methods(4, :, :));
         all_trial_powratio{cond, subj} = powratio_trials;
+        if ~isempty(powratio_trials)
+            % Condition-wise gamma power summary from weighted power-ratio spectra.
+            trl_gamma_power = mean(powratio_trials, 2, 'omitnan');
+            all_trial_gamma_power(cond, subj) = mean(trl_gamma_power, 'omitnan');
+        end
 
         %% Per-trial peak detection
         trl_peaks_single = nan(nTrl, 1);
@@ -1428,7 +1452,7 @@ for subj = 1:nSubj
     legend(bh, condLabels, 'FontSize', 10, 'Location', 'best');
     set(gca, 'FontSize', 11); xlim([30 90]);  box on;
 
-    saveas(fig, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_subj%s.png', subjects{subj})));
+    saveas(fig, fullfile(fig_save_dir_subj, sprintf('GCP_eeg_GED_subj%s.png', subjects{subj})));
     toc
 end % subject loop
 
@@ -1680,7 +1704,7 @@ for subj = 1:nSubj
         bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
         'FontSize', 10, 'VerticalAlignment', 'top');
 
-    saveas(fig_bench_subj, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_benchmark_subj%s.png', subjects{subj})));
+    saveas(fig_bench_subj, fullfile(fig_save_dir_benchmark, sprintf('GCP_eeg_GED_benchmark_subj%s.png', subjects{subj})));
 end
 
 %% ====================================================================
@@ -1742,7 +1766,7 @@ xlim([0.3 4.7]);
 ylim(centroid_freq_range); 
 ylabel('Centroid Frequency [Hz]');
 title('All trials pooled', 'FontSize', 14, 'FontWeight', 'bold');
-saveas(fig_cent, fullfile(fig_save_dir, 'GCP_eeg_GED_centroid_summary.png'));
+saveas(fig_cent, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_centroid_summary.png'));
 
 %% ====================================================================
 %  METHOD COMPARISON: Three dual-peak assignment methods
@@ -2054,7 +2078,7 @@ text(0.05, 0.9, sprintf(['Method order:\n1) %s\n2) %s\n3) %s\n4) %s'], ...
     bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
     'FontSize', 10, 'VerticalAlignment', 'top');
 
-saveas(fig_bench_group, fullfile(fig_save_dir, 'GCP_eeg_GED_benchmark_grandaverage.png'));
+saveas(fig_bench_group, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_benchmark_grandaverage.png'));
 
 %% ====================================================================
 %  STANDALONE CONDITION-SEPARATION METRICS (post-Perm+CV combined GED)
@@ -2106,7 +2130,28 @@ set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED (post-Perm+CV)'}, ...
 ylabel('\Delta median (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
 title('Median Frequency Shift (100% - 25%)', 'FontSize', 20, 'FontWeight', 'bold');
 
-saveas(fig_cond_slope, fullfile(fig_save_dir, 'GCP_eeg_GED_condition_slope.png'));
+saveas(fig_cond_slope, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_condition_slope.png'));
+
+%% Mean gamma frequency shift bar plot
+close all
+fig_cond_shift_bar = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+valid_delta = isfinite(delta_post);
+subj_idx = find(valid_delta);
+delta_vals = delta_post(valid_delta);
+bar(subj_idx, delta_vals, 0.75, 'FaceColor', [0.6 0.6 0.6], 'EdgeColor', 'k');
+hold on;
+yline(0, 'k--', 'LineWidth', 1.2);
+xlim([0.5 max(subj_idx) + 0.5]);
+ylim([-6 6]);
+xticks(subj_idx);
+if exist('subjects', 'var') == 1 && numel(subjects) >= max(subj_idx) && numel(subj_idx) <= 35
+    xticklabels(subjects(subj_idx));
+end
+xlabel('Subject', 'FontSize', 18, 'FontWeight', 'bold');
+ylabel('\Delta mean frequency shift (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
+title('Gamma Frequency Shift', 'FontSize', 20, 'FontWeight', 'bold');
+set(gca, 'FontSize', 14, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
+saveas(fig_cond_shift_bar, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_bar_GammaFreq.png'));
 
 %% ====================================================================
 %  SUMMARY DASHBOARD (backprojected combined-component data)
@@ -2123,10 +2168,10 @@ summary_metrics = { ...
     squeeze(benchmark_metric_prominence(4, :, :)), ...
     squeeze(benchmark_metric_reliability_trialcv(4, :, :)), ...
     all_trial_median_centroid, ...
-    all_trial_detrate_centroid * 100};
+    all_trial_gamma_power};
 summary_names = {'Single median [Hz]', 'Low median [Hz]', 'High median [Hz]', ...
     'H-L separation [Hz]', 'Prominence', 'Trial CV', ...
-    'Centroid median [Hz]', 'Centroid detectability [%]'};
+    'Centroid median [Hz]', 'Gamma Power over Conditions'};
 
 for mi = 1:numel(summary_metrics)
     subplot(2, 4, mi); hold on;
@@ -2166,9 +2211,11 @@ for mi = 1:numel(summary_metrics)
         ylim([0 10]);
     elseif mi == 7
         ylim([50 60]);
+    elseif mi == 8
+        ylim([0 15]);
     end
 end
-saveas(fig_summary, fullfile(fig_save_dir, 'GCP_eeg_GED_metrics_summary.png'));
+saveas(fig_summary, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_metrics_summary.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak (subject-level median, summary-style)
@@ -2209,7 +2256,7 @@ set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
 ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency over Conditions', 'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_box1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_GammaFreq.png'));
+saveas(fig_box1, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_boxplot_GammaFreq.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak with subject trajectories + ID labels
@@ -2269,14 +2316,12 @@ ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency over Conditions (Subject Trajectories)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_box1_traj, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_GammaFreq_IDs.png'));
+saveas(fig_box1_traj, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_boxplot_GammaFreq_IDs.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak (stats-style boxplot, non-baselined freq)
 %  ====================================================================
-fig_box1_statsstyle = figure('Position', [0 0 1512/2 982], 'Color', [0.94 0.94 0.94]);
-ax = gca;
-set(ax, 'Color', [0.94 0.94 0.94]);
+fig_box1_statsstyle = figure('Position', [0 0 1512/2 982], 'Color', 'W');
 hold on;
 
 dat = all_trial_median_single;  % [condition x subject], absolute frequency (Hz)
@@ -2314,7 +2359,7 @@ xlim([0.5 4.5]);
 ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency', 'FontSize', 30, 'FontWeight', 'bold');
 
-saveas(fig_box1_statsstyle, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_GammaFreq_statsStyle.png'));
+saveas(fig_box1_statsstyle, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_boxplot_GammaFreq_statsStyle.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak all trials pooled — raincloud
@@ -2361,7 +2406,81 @@ ylabel('Peak Gamma Frequency [Hz]');
 title('Single Peak: All Trials (pooled across subjects)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_trl1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_alltrials_GammaFreq.png'));
+saveas(fig_trl1, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_boxplot_alltrials_GammaFreq.png'));
+
+%% ====================================================================
+%  GRAND AVERAGE: Mean detrended power spectrum
+%  ====================================================================
+close all
+fig_grand_psd = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+hold on;
+grand_line_handles = gobjects(1, 4);
+grand_panel_maxabs = 0;
+
+for cond = 1:4
+    subj_curves = nan(nSubj, nFreqs);
+    for s = 1:nSubj
+        pr_mat = all_trial_powratio{cond, s};
+        if isempty(pr_mat)
+            continue;
+        end
+        nTrl = size(pr_mat, 1);
+        pr_dt_mat = nan(size(pr_mat));
+        for trl = 1:nTrl
+            pr_dt_mat(trl,:) = detrend_poly_stable(pr_mat(trl,:), scan_freqs, poly_order, 2);
+        end
+        subj_mu = nanmean(pr_dt_mat, 1);
+        subj_curves(s, :) = normalize_maxabs_curve(subj_mu);
+    end
+
+    mu = nanmean(subj_curves, 1);
+    n_valid_subj = sum(~isnan(subj_curves(:,1)));
+    if n_valid_subj > 0
+        se = nanstd(subj_curves, [], 1) ./ sqrt(n_valid_subj);
+    else
+        se = nan(size(mu));
+    end
+
+    if any(isfinite(mu))
+        env_vals = [mu - se, mu + se];
+        env_vals = env_vals(isfinite(env_vals));
+        if ~isempty(env_vals)
+            grand_panel_maxabs = max(grand_panel_maxabs, max(abs(env_vals)));
+        end
+
+        faceC = 0.8 * colors(cond,:) + 0.2 * [1 1 1];
+        % SEB
+        % patch([scan_freqs, fliplr(scan_freqs)], ...
+        %    [mu - se, fliplr(mu + se)], ...
+        %    colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.25);
+
+        % Power spectra with edge-reflective smoothing.
+        mu_plot = smooth_reflective(mu, 5);
+        grand_line_handles(cond) = plot(scan_freqs, mu_plot, '-', ...
+            'Color', colors(cond,:), 'LineWidth', 5);
+
+        % Xlines for Median Gamma Freqs
+        % md_pf = nanmedian(all_trial_median_single(cond, :));
+        % if ~isnan(md_pf)
+        %     xline(md_pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.2, 'Alpha', 0.7);
+        % end
+    end
+end
+
+yline(0, 'k--', 'LineWidth', 0.5);
+grand_panel_maxabs = max(grand_panel_maxabs, eps);
+xlim([30 90]);
+ylim([-grand_panel_maxabs grand_panel_maxabs]);
+xlabel('Frequency [Hz]');
+ylabel('\Delta Power Ratio (normalized)');
+title(sprintf('Grand Average Detrended Power Spectrum'), 'FontSize', 25, 'FontWeight', 'bold');
+set(gca, 'FontSize', 15);
+valid_handles = isgraphics(grand_line_handles);
+if any(valid_handles)
+    legend(grand_line_handles(valid_handles), condLabels(valid_handles), ...
+        'Location', 'best', 'FontSize', 15);
+end
+saveas(fig_grand_psd, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_grand_average_power_spectrum.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: All-subjects subplot (mean trial spectra)
@@ -2381,8 +2500,7 @@ for s = 1:nSubj
             nTrl = size(pr_mat, 1);
             pr_dt_mat = nan(size(pr_mat));
             for trl = 1:nTrl
-                p = polyfit(scan_freqs, pr_mat(trl,:), poly_order);
-                pr_dt_mat(trl,:) = pr_mat(trl,:) - polyval(p, scan_freqs);
+                pr_dt_mat(trl,:) = detrend_poly_stable(pr_mat(trl,:), scan_freqs, poly_order, 2);
             end
             mu_dt = nanmean(pr_dt_mat, 1);
             mu_dt = normalize_maxabs_curve(mu_dt);
@@ -2411,7 +2529,7 @@ for s = 1:nSubj
         end
     end
 end
-saveas(fig_all, fullfile(fig_save_dir, 'GCP_eeg_GED_all_subjects.png'));
+saveas(fig_all, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_all_subjects.png'));
 
 %% ====================================================================
 %  DETECTION RATE FIGURE (primary: hard 50 Hz)
@@ -2453,7 +2571,7 @@ for di = 1:3
     
 end
 
-saveas(fig_det, fullfile(fig_save_dir, 'GCP_eeg_GED_detection_rate.png'));
+saveas(fig_det, fullfile(fig_save_dir_benchmark, 'GCP_eeg_GED_detection_rate.png'));
 
 %% Save results
 if ispc
@@ -2470,7 +2588,7 @@ save(save_path, ...
     'all_trial_mean_high', 'all_trial_median_high', 'all_trial_median_gap', ...
     'all_trial_mean_centroid', 'all_trial_median_centroid', ...
     'all_trial_detrate_single', 'all_trial_detrate_low', 'all_trial_detrate_high', ...
-    'all_trial_detrate_centroid', ...
+    'all_trial_detrate_centroid', 'all_trial_gamma_power', ...
     'all_topos', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
@@ -2598,4 +2716,51 @@ end
 
 p_adj(sort_idx) = q_sorted;
 p_adj = reshape(p_adj, size(p_raw));
+end
+
+function y = smooth_reflective(x, win)
+y = x;
+if nargin < 2 || isempty(win) || win <= 1 || isempty(x)
+    return;
+end
+win = max(1, round(win));
+if mod(win,2) == 0
+    win = win + 1;
+end
+pad = floor(win/2);
+if numel(x) <= pad
+    y = movmean(x, min(win, numel(x)));
+    return;
+end
+x_pad = [fliplr(x(1:pad)), x, fliplr(x(end-pad+1:end))];
+y_pad = movmean(x_pad, win);
+y = y_pad(pad+1:end-pad);
+end
+
+function y_dt = detrend_poly_stable(y, x, ord, edge_exclude_n)
+y_dt = y;
+if isempty(y) || isempty(x) || numel(y) ~= numel(x)
+    return;
+end
+if nargin < 4 || isempty(edge_exclude_n)
+    edge_exclude_n = 0;
+end
+edge_exclude_n = max(0, round(edge_exclude_n));
+n = numel(x);
+
+fit_idx = (1 + edge_exclude_n):(n - edge_exclude_n);
+if numel(fit_idx) < (ord + 1)
+    fit_idx = 1:n;
+end
+
+valid_fit = fit_idx(isfinite(y(fit_idx)) & isfinite(x(fit_idx)));
+if numel(valid_fit) < (ord + 1)
+    valid_fit = find(isfinite(y) & isfinite(x));
+end
+if numel(valid_fit) < (ord + 1)
+    return;
+end
+
+p = polyfit(x(valid_fit), y(valid_fit), ord);
+y_dt = y - polyval(p, x);
 end
