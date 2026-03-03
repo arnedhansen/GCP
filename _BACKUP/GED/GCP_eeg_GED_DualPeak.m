@@ -7,9 +7,12 @@
 % Pipeline:
 %   Phase 1 — Pool all conditions; broadband GED; derive common spatial filter.
 %   Phase 2 — Per condition and trial: narrowband scan (30–90 Hz), power ratio,
-%             polynomial detrending, peak detection. Single-peak model per trial.
+%             polynomial detrending, peak detection. Single-peak and dual-peak
+%             (hard 50 Hz boundary) models are computed per trial.
 %   Component comparison — Three branches: raw channel-space reference,
 %             top GED component, and combined hard-eligible GED components.
+%   Dual-peak comparison — Three assignment methods: hard 50 Hz boundary,
+%             per-subject spectral-trough boundary, GMM on single-peak freqs.
 %   Output — Mean and median peak frequency per condition per subject;
 %             centroid metric; detectability, separation, reliability metrics.
 
@@ -53,11 +56,11 @@ viz_topo_prctile = 99.9;            % robust percentile for color scaling
 min_occfront_ratio = 0.75;          % tightened hard threshold: occipital must exceed frontal
 min_eigval_hard = 1.05;             % hard minimum GED eigenvalue
 min_corr_hard = 0.1;                % tightened hard minimum template correlation
-min_gamma_hard = 0.1;               % tightened hard minimum gamma evidence (log ratio)
+min_gamma_hard = 0.05;              % tightened hard minimum gamma evidence (log ratio)
 exclude_dominant_outlier = true;    % remove dominant top outlier (lambda1/lambda2 + MAD)
 outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for dominant-outlier detection
 outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
-outlier_min_rest = 2;               % minimum number of non-top eligible components required
+outlier_min_rest = 3;               % minimum number of non-top eligible components required
 min_valid_combined_components = 2;  % hard minimum count for combined GED branch
 threshold_inspection_targets = [1 3 5]; % requested valid-component targets for threshold inspection
 
@@ -106,14 +109,23 @@ comp_sel_save_dir = fig_save_dir_component_selection;
 %% Preallocate storage
 all_trial_powratio     = cell(4, nSubj);
 all_trial_peaks_single = cell(4, nSubj);
+all_trial_peaks_low    = cell(4, nSubj);
+all_trial_peaks_high   = cell(4, nSubj);
 all_trial_centroid     = cell(4, nSubj);
 
 all_trial_mean_single   = nan(4, nSubj);
 all_trial_median_single = nan(4, nSubj);
+all_trial_mean_low      = nan(4, nSubj);
+all_trial_median_low    = nan(4, nSubj);
+all_trial_mean_high     = nan(4, nSubj);
+all_trial_median_high   = nan(4, nSubj);
+all_trial_median_gap    = nan(4, nSubj);
 all_trial_mean_centroid   = nan(4, nSubj);
 all_trial_median_centroid = nan(4, nSubj);
 
 all_trial_detrate_single = nan(4, nSubj);
+all_trial_detrate_low    = nan(4, nSubj);
+all_trial_detrate_high   = nan(4, nSubj);
 all_trial_detrate_centroid = nan(4, nSubj);
 all_trial_gamma_power = nan(4, nSubj);
 
@@ -598,9 +610,7 @@ for subj = 1:nSubj
     nSelTopo = numel(selTopoIdx);
     nColsSel = 5;
     nRowsSel = ceil(max(nSelTopo, 1) / nColsSel);
-    % Scale figure height by number of rows: single-row figures use ~half height to reduce excess whitespace
-    fig_height = min(982, round(491 * nRowsSel));  % 491 ≈ 982/2 per row, capped at 982
-    fig_post = figure('Position', [0 0 1512 fig_height], 'Color', 'w');
+    fig_post = figure('Position', [0 0 1512 982], 'Color', 'w');
     title_post = sprintf('Subject %s: Eligible Components (n=%d)', ...
         subjects{subj}, nSelTopo);
     annotation(fig_post, 'textbox', [0.01 0.965 0.98 0.03], ...
@@ -648,11 +658,9 @@ for subj = 1:nSubj
                 w_show = selWeightsOrdered(si);
             end
             score_show = searchScores(comp_rank);
-            g_log = searchGammaEvidence(comp_rank);
-            g_pct = 100 * (exp(g_log) - 1);   % gamma amplification as % change from baseline
-            title(sprintf('C%d:\\lambda=%.2f,score=%.2f,w=%.3f,r=%.2f,ratio=%.2f,g=%.0f%%', ...
+            title(sprintf('C%d:\\lambda=%.2f,score=%.2f,w=%.3f,r=%.2f,ratio=%.2f,g=%.2f', ...
                 comp_rank, evals_sorted(comp_rank), score_show, w_show, searchCorrs(comp_rank), ...
-                searchOccFrontRatio(comp_rank), g_pct), 'FontSize', 6);
+                searchOccFrontRatio(comp_rank), searchGammaEvidence(comp_rank)), 'FontSize', 6);
         end
     end
     saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_combined.png', subjects{subj})));
@@ -783,6 +791,8 @@ for subj = 1:nSubj
 
         %% Per-trial peak detection
         trl_peaks_single = nan(nTrl, 1);
+        trl_peaks_low    = nan(nTrl, 1);
+        trl_peaks_high   = nan(nTrl, 1);
         trl_centroid     = nan(nTrl, 1);
 
         for trl = 1:nTrl
@@ -813,15 +823,51 @@ for subj = 1:nSubj
                 [~, best_pk] = max(pks);
                 trl_peaks_single(trl) = locs(best_pk);
             end
+
+            % Dual-peak: hard 50 Hz boundary (primary method)
+            [pks_all, locs_all] = findpeaks(pr_dt_smooth, scan_freqs, ...
+                'MinPeakDistance', 5);
+            pos_mask = pks_all > 0;
+            pks_pos  = pks_all(pos_mask);
+            locs_pos = locs_all(pos_mask);
+
+            in_lo = locs_pos >= 30 & locs_pos <= 49;
+            in_hi = locs_pos >= 50 & locs_pos <= 90;
+            if any(in_lo)
+                [~, bi] = max(pks_pos(in_lo));
+                tmp = locs_pos(in_lo);
+                trl_peaks_low(trl) = tmp(bi);
+            end
+            if any(in_hi)
+                [~, bi] = max(pks_pos(in_hi));
+                tmp = locs_pos(in_hi);
+                trl_peaks_high(trl) = tmp(bi);
+            end
         end
 
         all_trial_peaks_single{cond, subj} = trl_peaks_single;
+        all_trial_peaks_low{cond, subj}    = trl_peaks_low;
+        all_trial_peaks_high{cond, subj}   = trl_peaks_high;
         all_trial_centroid{cond, subj}     = trl_centroid;
 
         valid_s = ~isnan(trl_peaks_single);
         all_trial_mean_single(cond, subj)   = mean(trl_peaks_single(valid_s));
         all_trial_median_single(cond, subj) = median(trl_peaks_single(valid_s));
         all_trial_detrate_single(cond, subj) = sum(valid_s) / nTrl;
+
+        valid_lo = ~isnan(trl_peaks_low);
+        all_trial_mean_low(cond, subj)   = mean(trl_peaks_low(valid_lo));
+        all_trial_median_low(cond, subj) = median(trl_peaks_low(valid_lo));
+        all_trial_detrate_low(cond, subj) = sum(valid_lo) / nTrl;
+
+        valid_hi = ~isnan(trl_peaks_high);
+        all_trial_mean_high(cond, subj)   = mean(trl_peaks_high(valid_hi));
+        all_trial_median_high(cond, subj) = median(trl_peaks_high(valid_hi));
+        all_trial_detrate_high(cond, subj) = sum(valid_hi) / nTrl;
+        valid_gap = valid_lo & valid_hi;
+        if any(valid_gap)
+            all_trial_median_gap(cond, subj) = median(trl_peaks_high(valid_gap) - trl_peaks_low(valid_gap));
+        end
 
         valid_c = ~isnan(trl_centroid);
         all_trial_mean_centroid(cond, subj)   = mean(trl_centroid(valid_c));
@@ -841,7 +887,7 @@ for subj = 1:nSubj
     cmap_div = interp1([0 0.5 1], ...
         [0.17 0.27 0.53; 0.97 0.97 0.97; 0.70 0.09 0.17], linspace(0,1,256));
 
-    % Pre-compute detrended matrices (3 rows: heatmap, single-peak spectra, topoplot+histogram)
+    % Pre-compute detrended matrices
     pr_dt_mats = cell(1, 4);
     for cond = 1:4
         pr_mat = all_trial_powratio{cond, subj};
@@ -874,7 +920,7 @@ for subj = 1:nSubj
 
     % --- Row 1: Heatmap of trial-level detrended power-ratio spectra ---
     for cond = 1:4
-        subplot(3, 4, cond);
+        subplot(4, 4, cond);
         if ~isempty(pr_dt_mats{cond})
             hold on;
             imagesc(scan_freqs, 1:size(pr_dt_mats{cond},1), pr_dt_mats{cond});
@@ -901,7 +947,7 @@ for subj = 1:nSubj
 
     % --- Row 2: Mean trial-level spectrum with single-peak markers ---
     for cond = 1:4
-        subplot(3, 4, 4 + cond); hold on;
+        subplot(4, 4, 4 + cond); hold on;
         if ~isempty(pr_dt_mats{cond})
             mu_dt = nanmean(pr_dt_mats{cond}, 1);
             nTrl = size(pr_dt_mats{cond}, 1);
@@ -938,7 +984,49 @@ for subj = 1:nSubj
         set(gca, 'FontSize', 10); xlim([30 90]);  box on;
     end
 
-    % --- Row 3: Topoplot + histogram ---
+    % --- Row 3: Mean trial-level spectrum with dual-peak markers (50 Hz) ---
+    for cond = 1:4
+        subplot(4, 4, 8 + cond); hold on;
+        if ~isempty(pr_dt_mats{cond})
+            mu_dt = nanmean(pr_dt_mats{cond}, 1);
+            nTrl = size(pr_dt_mats{cond}, 1);
+            sem_dt = nanstd(pr_dt_mats{cond}, [], 1) / sqrt(nTrl);
+            row3_abs = max(abs([mu_dt - sem_dt, mu_dt + sem_dt]), [], 'omitnan');
+            if ~isfinite(row3_abs) || row3_abs <= 0
+                row3_abs = 1;
+            end
+            faceC = 0.8*colors(cond,:) + 0.2*[1 1 1];
+            patch([scan_freqs, fliplr(scan_freqs)], ...
+                [mu_dt - sem_dt, fliplr(mu_dt + sem_dt)], ...
+                colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
+            plot(scan_freqs, mu_dt, '-', 'Color', colors(cond,:), 'LineWidth', 2.5);
+            yline(0, 'k-', 'LineWidth', 0.5);
+            xline(50, 'k:', 'LineWidth', 1, 'Alpha', 0.5);
+            pf_lo = all_trial_median_low(cond, subj);
+            pf_hi = all_trial_median_high(cond, subj);
+            if ~isnan(pf_lo)
+                xline(pf_lo, '--', 'LineWidth', 2, 'Color', [0 0 0.7]);
+                text(pf_lo + 1, max(mu_dt) * 0.85, ...
+                    sprintf('L:%.0f', pf_lo), 'FontSize', 9, ...
+                    'Color', [0 0 0.7], 'FontWeight', 'bold');
+            end
+            if ~isnan(pf_hi)
+                xline(pf_hi, '--', 'LineWidth', 2, 'Color', [0.7 0 0]);
+                text(pf_hi + 1, max(mu_dt) * 0.65, ...
+                    sprintf('H:%.0f', pf_hi), 'FontSize', 9, ...
+                    'Color', [0.7 0 0], 'FontWeight', 'bold');
+            end
+            ylim([-row3_abs row3_abs]);
+        end
+        xlabel('Freq [Hz]'); ylabel('\Delta PR');
+        det_lo = all_trial_detrate_low(cond, subj);
+        det_hi = all_trial_detrate_high(cond, subj);
+        title(sprintf('%s Dual (L:%.0f%% H:%.0f%%)', condLabels{cond}, det_lo*100, det_hi*100), ...
+            'FontSize', 10);
+        set(gca, 'FontSize', 10); xlim([30 90]);  box on;
+    end
+
+    % --- Row 4: Topoplot + histogram ---
     % Use the same occipital-channel definition as component selection.
     occ_highlight = dataEEG_c25.label(occ_idx);
 
@@ -957,7 +1045,7 @@ for subj = 1:nSubj
     cfg_topo.highlightsize      = {12};
     cfg_topo.highlightcolor     = {[0 0 0]};
 
-    subplot(3, 4, 9);
+    subplot(4, 4, 13);
     if ~isempty(all_topos{subj})
         topo_data = [];
         topo_data.label  = all_topo_labels{subj};
@@ -1028,7 +1116,7 @@ for subj = 1:nSubj
         title(sprintf('Weighted GED (%d comps, \\lambda=%.2f)', n_sel_show, all_eigenvalues(subj)), 'FontSize', 11);
     end
 
-    subplot(3, 4, [10 11 12]); hold on;
+    subplot(4, 4, [14 15 16]); hold on;
     edges = 30:2:90;
     hist_mat = zeros(4, length(edges)-1);
     for cond = 1:4
@@ -1129,6 +1217,15 @@ else
     bench_single_ylim = [max(30, single_q(1) - 1), min(90, single_q(2) + 1)];
 end
 
+gap_vals = all_trial_median_gap(isfinite(all_trial_median_gap));
+if isempty(gap_vals)
+    bench_gap_ylim = [-10 10];
+else
+    gap_q = prctile(gap_vals, [2 98]);
+    gap_pad = max(1, 0.1 * (gap_q(2) - gap_q(1)));
+    bench_gap_ylim = [gap_q(1) - gap_pad, gap_q(2) + gap_pad];
+end
+
 prom_vals = benchmark_metric_prominence(isfinite(benchmark_metric_prominence));
 if isempty(prom_vals)
     bench_prom_ylim = [0 1];
@@ -1205,6 +1302,9 @@ for subj = 1:nSubj
     single_med = nan(1, 4);
     single_lo = nan(1, 4);
     single_hi = nan(1, 4);
+    gap_med = nan(1, 4);
+    gap_lo = nan(1, 4);
+    gap_hi = nan(1, 4);
     for cond = 1:4
         sp = all_trial_peaks_single{cond, subj};
         sp = sp(~isnan(sp));
@@ -1214,17 +1314,34 @@ for subj = 1:nSubj
             single_lo(cond) = single_med(cond) - sq(1);
             single_hi(cond) = sq(2) - single_med(cond);
         end
+
+        lp = all_trial_peaks_low{cond, subj};
+        hp = all_trial_peaks_high{cond, subj};
+        vgap = ~isnan(lp) & ~isnan(hp);
+        if any(vgap)
+            g = hp(vgap) - lp(vgap);
+            gap_med(cond) = median(g);
+            gq = prctile(g, [25 75]);
+            gap_lo(cond) = gap_med(cond) - gq(1);
+            gap_hi(cond) = gq(2) - gap_med(cond);
+        end
     end
+    yyaxis left
     b4 = bar(1:4, single_med, 0.58, 'FaceColor', 'flat', 'EdgeColor', 'none');
     b4.CData = colors;
     errorbar(1:4, single_med, single_lo, single_hi, 'k', 'LineStyle', 'none', 'LineWidth', 1.1, 'CapSize', 5);
     ylabel('Single-peak median [Hz]');
     ylim(bench_single_ylim);
+    yyaxis right
+    errorbar(1:4, gap_med, gap_lo, gap_hi, 'ko-', 'LineWidth', 1.4, 'MarkerFaceColor', [0.2 0.2 0.2], 'CapSize', 5);
+    ylabel('H-L separation [Hz]');
+    ylim(bench_gap_ylim);
     set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 10);
     d_single = single_med(4) - single_med(1);
-    text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz', d_single), ...
+    d_gap = gap_med(4) - gap_med(1);
+    text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\n\\DeltaGap_{100-25}=%.2f Hz', d_single, d_gap), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
-    title('Single median (combined GED)');
+    title('Single median + H-L gap (combined GED)');
     box on;
 
     subplot(2, 4, 6); hold on;
@@ -1343,6 +1460,193 @@ title('All trials pooled', 'FontSize', 14, 'FontWeight', 'bold');
 saveas(fig_cent, fullfile(fig_save_dir_component_comparison, 'GCP_eeg_GED_centroid_summary.png'));
 
 %% ====================================================================
+%  METHOD COMPARISON: Three dual-peak assignment methods
+%  ====================================================================
+fprintf('\nRunning method comparison...\n');
+
+method_names = {'Hard 50 Hz', 'Spectral Trough', 'GMM'};
+
+% Per-method storage: m_peaks_{low,high}{method}{cond, subj}
+m_peaks_low  = cell(1, 3);
+m_peaks_high = cell(1, 3);
+for mi = 1:3
+    m_peaks_low{mi}  = cell(4, nSubj);
+    m_peaks_high{mi} = cell(4, nSubj);
+end
+m_median_low   = nan(4, nSubj, 3);
+m_median_high  = nan(4, nSubj, 3);
+m_detrate_low  = nan(4, nSubj, 3);
+m_detrate_high = nan(4, nSubj, 3);
+
+trough_freqs = nan(1, nSubj);
+gmm_means    = nan(2, nSubj);
+gmm_boundary = nan(1, nSubj);
+
+for subj = 1:nSubj
+    clc
+    fprintf('Method comparison: Subject %s (%d/%d)\n', subjects{subj}, subj, nSubj);
+
+    %% --- Method 1: Hard 50 Hz (already computed in Phase 2) ---
+    for cond = 1:4
+        m_peaks_low{1}{cond, subj}  = all_trial_peaks_low{cond, subj};
+        m_peaks_high{1}{cond, subj} = all_trial_peaks_high{cond, subj};
+    end
+
+    %% --- Method 2: Per-subject spectral trough ---
+    all_pr_dt = [];
+    for cond = 1:4
+        pr_mat = all_trial_powratio{cond, subj};
+        if ~isempty(pr_mat)
+            nTrl_m = size(pr_mat, 1);
+            dt_mat = nan(size(pr_mat));
+            for trl = 1:nTrl_m
+                p = polyfit(scan_freqs, pr_mat(trl,:), poly_order);
+                dt_mat(trl,:) = pr_mat(trl,:) - polyval(p, scan_freqs);
+            end
+            all_pr_dt = [all_pr_dt; dt_mat];
+        end
+    end
+
+    mean_dt = nanmean(all_pr_dt, 1);
+    mean_dt_smooth = movmean(mean_dt, 5);
+
+    [avg_pks, avg_locs] = findpeaks(mean_dt_smooth, scan_freqs, 'MinPeakDistance', 5);
+    avg_pos_mask = avg_pks > 0;
+    avg_pks_pos  = avg_pks(avg_pos_mask);
+    avg_locs_pos = avg_locs(avg_pos_mask);
+
+    split_freq_m2 = 50;
+    if length(avg_pks_pos) >= 2
+        [~, sortI] = sort(avg_pks_pos, 'descend');
+        pk1_loc = avg_locs_pos(sortI(1));
+        pk2_loc = avg_locs_pos(sortI(2));
+        lo_pk = min(pk1_loc, pk2_loc);
+        hi_pk = max(pk1_loc, pk2_loc);
+        lo_idx = find(scan_freqs == lo_pk);
+        hi_idx = find(scan_freqs == hi_pk);
+        if hi_idx > lo_idx
+            [~, min_rel_idx] = min(mean_dt_smooth(lo_idx:hi_idx));
+            split_freq_m2 = scan_freqs(lo_idx + min_rel_idx - 1);
+        end
+    end
+    trough_freqs(subj) = split_freq_m2;
+
+    for cond = 1:4
+        pr_mat = all_trial_powratio{cond, subj};
+        if isempty(pr_mat), continue; end
+        nTrl_m = size(pr_mat, 1);
+        trl_lo = nan(nTrl_m, 1);
+        trl_hi = nan(nTrl_m, 1);
+
+        for trl = 1:nTrl_m
+            pr = pr_mat(trl, :);
+            if all(isnan(pr)), continue; end
+            p = polyfit(scan_freqs, pr, poly_order);
+            pr_dt_smooth = movmean(pr - polyval(p, scan_freqs), 5);
+
+            [pks_a, locs_a] = findpeaks(pr_dt_smooth, scan_freqs, 'MinPeakDistance', 5);
+            pm = pks_a > 0;
+            pp = pks_a(pm);
+            lp = locs_a(pm);
+
+            mask_lo = lp < split_freq_m2;
+            mask_hi = lp >= split_freq_m2;
+            if any(mask_lo)
+                [~, bi] = max(pp(mask_lo));
+                tmp = lp(mask_lo); trl_lo(trl) = tmp(bi);
+            end
+            if any(mask_hi)
+                [~, bi] = max(pp(mask_hi));
+                tmp = lp(mask_hi); trl_hi(trl) = tmp(bi);
+            end
+        end
+        m_peaks_low{2}{cond, subj}  = trl_lo;
+        m_peaks_high{2}{cond, subj} = trl_hi;
+    end
+
+    %% --- Method 3: GMM on single-peak frequencies ---
+    all_single = [];
+    for cond = 1:4
+        sp = all_trial_peaks_single{cond, subj};
+        if ~isempty(sp)
+            all_single = [all_single; sp(~isnan(sp))];
+        end
+    end
+
+    gmm_ok = false;
+    if length(all_single) >= 20
+        try
+            gm = fitgmdist(all_single, 2, 'RegularizationValue', 0.1, ...
+                'Options', statset('MaxIter', 500));
+            [mu1, mu2] = deal(gm.mu(1), gm.mu(2));
+            if abs(mu1 - mu2) >= 5
+                gmm_ok = true;
+                gmm_means(:, subj) = sort(gm.mu);
+                gmm_boundary(subj) = mean(gm.mu);
+            end
+        catch
+        end
+    end
+
+    for cond = 1:4
+        sp = all_trial_peaks_single{cond, subj};
+        if isempty(sp), continue; end
+        nTrl_m = length(sp);
+        trl_lo = nan(nTrl_m, 1);
+        trl_hi = nan(nTrl_m, 1);
+
+        if gmm_ok
+            lo_comp_mu = min(gm.mu);
+            for trl = 1:nTrl_m
+                if isnan(sp(trl)), continue; end
+                post = posterior(gm, sp(trl));
+                [~, cluster] = max(post);
+                if gm.mu(cluster) == lo_comp_mu
+                    trl_lo(trl) = sp(trl);
+                else
+                    trl_hi(trl) = sp(trl);
+                end
+            end
+        else
+            for trl = 1:nTrl_m
+                if isnan(sp(trl)), continue; end
+                if sp(trl) < 50
+                    trl_lo(trl) = sp(trl);
+                else
+                    trl_hi(trl) = sp(trl);
+                end
+            end
+        end
+        m_peaks_low{3}{cond, subj}  = trl_lo;
+        m_peaks_high{3}{cond, subj} = trl_hi;
+    end
+end
+
+% Compute aggregates for all methods
+for mi = 1:3
+    for subj = 1:nSubj
+        for cond = 1:4
+            lo = m_peaks_low{mi}{cond, subj};
+            hi = m_peaks_high{mi}{cond, subj};
+            if ~isempty(lo)
+                valid_lo = ~isnan(lo);
+                if any(valid_lo)
+                    m_median_low(cond, subj, mi)  = median(lo(valid_lo));
+                    m_detrate_low(cond, subj, mi) = sum(valid_lo) / length(lo);
+                end
+            end
+            if ~isempty(hi)
+                valid_hi = ~isnan(hi);
+                if any(valid_hi)
+                    m_median_high(cond, subj, mi)  = median(hi(valid_hi));
+                    m_detrate_high(cond, subj, mi) = sum(valid_hi) / length(hi);
+                end
+            end
+        end
+    end
+end
+
+%% ====================================================================
 %  GRAND-AVERAGE THREE-WAY BENCHMARK
 %  ====================================================================
 fig_bench_group = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -1390,16 +1694,26 @@ subplot(2, 4, 5); hold on;
 single_mu = nanmean(all_trial_median_single, 2);
 single_se = nanstd(all_trial_median_single, [], 2) ./ sqrt(sum(~isnan(all_trial_median_single), 2));
 single_med = nanmedian(all_trial_median_single, 2);
+gap_mu = nanmean(all_trial_median_gap, 2);
+gap_se = nanstd(all_trial_median_gap, [], 2) ./ sqrt(sum(~isnan(all_trial_median_gap), 2));
+gap_med = nanmedian(all_trial_median_gap, 2);
+yyaxis left
 b4g = bar(1:4, single_mu, 0.58, 'FaceColor', 'flat', 'EdgeColor', 'none');
 b4g.CData = colors;
 errorbar(1:4, single_mu, single_se, 'k', 'LineStyle', 'none', 'LineWidth', 1.2, 'CapSize', 6);
 scatter(1:4, single_med, 35, 'kd', 'filled');
 ylabel('Single-peak mean [Hz]');
 ylim(bench_single_ylim);
+yyaxis right
+errorbar(1:4, gap_mu, gap_se, 'ko-', 'LineWidth', 1.6, 'MarkerFaceColor', [0.2 0.2 0.2], 'CapSize', 6);
+scatter(1:4, gap_med, 30, 'ks', 'filled');
+ylabel('H-L separation mean [Hz]');
+ylim(bench_gap_ylim);
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 10);
-text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz', single_mu(4)-single_mu(1)), ...
+text(0.02, 0.96, sprintf('\\DeltaSingle_{100-25}=%.2f Hz\n\\DeltaGap_{100-25}=%.2f Hz', ...
+    single_mu(4)-single_mu(1), gap_mu(4)-gap_mu(1)), ...
     'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', 'FontSize', 8);
-title('Single mean (combined GED)');
+title('Single mean + H-L gap (combined GED)');
 box on;
 
 subplot(2, 4, 6); hold on;
@@ -1539,11 +1853,15 @@ sgtitle('GED Trials Summary Dashboard (component selection backprojected)', ...
 
 summary_metrics = { ...
     all_trial_median_single, ...
+    all_trial_median_low, ...
+    all_trial_median_high, ...
+    all_trial_median_gap, ...
     squeeze(benchmark_metric_prominence(3, :, :)), ...
     squeeze(benchmark_metric_reliability_trialcv(3, :, :)), ...
     all_trial_median_centroid, ...
     all_trial_gamma_power};
-summary_names = {'Single median [Hz]', 'Prominence', 'Trial CV', ...
+summary_names = {'Single median [Hz]', 'Low median [Hz]', 'High median [Hz]', ...
+    'H-L separation [Hz]', 'Prominence', 'Trial CV', ...
     'Centroid median [Hz]', 'Gamma Power over Conditions'};
 
 for mi = 1:numel(summary_metrics)
@@ -1575,10 +1893,16 @@ for mi = 1:numel(summary_metrics)
     if mi == 1
         ylim([45 70]);
     elseif mi == 2
-        ylim([0 10]);
+        ylim([35 50]);
+    elseif mi == 3
+        ylim([50 75]);
     elseif mi == 4
-        ylim([50 60]);
+        ylim([22.5 36]);
     elseif mi == 5
+        ylim([0 10]);
+    elseif mi == 7
+        ylim([50 60]);
+    elseif mi == 8
         ylim([0 15]);
     end
 end
@@ -1899,38 +2223,44 @@ end
 saveas(fig_all, fullfile(fig_save_dir_component_comparison, 'GCP_eeg_GED_all_subjects.png'));
 
 %% ====================================================================
-%  DETECTION RATE FIGURE (single peak)
+%  DETECTION RATE FIGURE (primary: hard 50 Hz)
 %  ====================================================================
 fig_det = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Trial-Level Peak Detection Rate (mean across subjects)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-subplot(1, 1, 1); hold on;
-dr = all_trial_detrate_single;
+det_data   = {all_trial_detrate_single, all_trial_detrate_low, all_trial_detrate_high};
+det_labels = {'Single Peak', 'Low Gamma', 'High Gamma'};
 
-mu_dr  = nanmean(dr, 2) * 100;
-sem_dr = nanstd(dr, [], 2) / sqrt(nSubj) * 100;
+for di = 1:3
+    subplot(1, 3, di); hold on;
+    dr = det_data{di};
 
-b = bar(1:4, mu_dr, 0.6);
-b.FaceColor = 'flat';
-for c = 1:4
-    b.CData(c,:) = colors(c,:);
-end
-errorbar(1:4, mu_dr, sem_dr, 'k', 'LineStyle', 'none', 'LineWidth', 2, 'CapSize', 10);
+    mu_dr  = nanmean(dr, 2) * 100;
+    sem_dr = nanstd(dr, [], 2) / sqrt(nSubj) * 100;
 
-for s = 1:nSubj
+    b = bar(1:4, mu_dr, 0.6);
+    b.FaceColor = 'flat';
     for c = 1:4
-        if ~isnan(dr(c, s))
-            scatter(c + (rand-0.5)*0.2, dr(c, s)*100, 30, [0.4 0.4 0.4], ...
-                'filled', 'MarkerFaceAlpha', 0.5);
+        b.CData(c,:) = colors(c,:);
+    end
+    errorbar(1:4, mu_dr, sem_dr, 'k', 'LineStyle', 'none', 'LineWidth', 2, 'CapSize', 10);
+
+    for s = 1:nSubj
+        for c = 1:4
+            if ~isnan(dr(c, s))
+                scatter(c + (rand-0.5)*0.2, dr(c, s)*100, 30, [0.4 0.4 0.4], ...
+                    'filled', 'MarkerFaceAlpha', 0.5);
+            end
         end
     end
-end
 
-ylim([0 105]);
-set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 14, 'Box', 'off');
-ylabel('Detection Rate [%]');
-title('Single Peak', 'FontSize', 16, 'FontWeight', 'bold');
+    ylim([0 105]);
+    set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 14, 'Box', 'off');
+    ylabel('Detection Rate [%]');
+    title(det_labels{di}, 'FontSize', 16, 'FontWeight', 'bold');
+    
+end
 
 saveas(fig_det, fullfile(fig_save_dir_component_comparison, 'GCP_eeg_GED_detection_rate.png'));
 
@@ -1942,10 +2272,14 @@ else
 end
 save(save_path, ...
     'all_trial_powratio', ...
-    'all_trial_peaks_single', 'all_trial_centroid', ...
+    'all_trial_peaks_single', 'all_trial_peaks_low', 'all_trial_peaks_high', ...
+    'all_trial_centroid', ...
     'all_trial_mean_single', 'all_trial_median_single', ...
+    'all_trial_mean_low', 'all_trial_median_low', ...
+    'all_trial_mean_high', 'all_trial_median_high', 'all_trial_median_gap', ...
     'all_trial_mean_centroid', 'all_trial_median_centroid', ...
-    'all_trial_detrate_single', 'all_trial_detrate_centroid', 'all_trial_gamma_power', ...
+    'all_trial_detrate_single', 'all_trial_detrate_low', 'all_trial_detrate_high', ...
+    'all_trial_detrate_centroid', 'all_trial_gamma_power', ...
     'all_topos', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
@@ -1956,6 +2290,9 @@ save(save_path, ...
     'benchmark_metric_separation_slope', 'benchmark_metric_separation_delta', ...
     'benchmark_metric_reliability_trialcv', 'benchmark_metric_reliability_subjspread', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
+    'm_peaks_low', 'm_peaks_high', 'm_median_low', 'm_median_high', ...
+    'm_detrate_low', 'm_detrate_high', ...
+    'trough_freqs', 'gmm_means', 'gmm_boundary', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
 clc
