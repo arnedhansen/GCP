@@ -2,7 +2,7 @@
 %
 % Identical spatial filter approach as GCP_eeg_GED_subjects.m, but:
 %   - Peak detection is done on INDIVIDUAL TRIALS rather than
-%     condition-averaged spectra
+%     condition-averaged spec
 %
 % Pipeline:
 %   Phase 1 — Pool all conditions -> broadband GED -> common spatial filter
@@ -94,9 +94,9 @@ condLabels = {'25%', '50%', '75%', '100%'};
 
 % Figure save directories
 if ispc
-    fig_save_dir = 'W:\Students\Arne\GCP\figures\eeg\ged\trials';
+    fig_save_dir = 'W:\Students\Arne\GCP\figures\eeg\ged';
 else
-    fig_save_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/trials';
+    fig_save_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged';
 end
 if ~exist(fig_save_dir, 'dir'), mkdir(fig_save_dir); end
 comp_sel_save_dir = fullfile(fig_save_dir, 'component_selection');
@@ -858,7 +858,7 @@ for subj = 1:nSubj
             searchOccFrontRatio(comp_rank), searchGammaEvidence(comp_rank)), ...
             'FontSize', 7);
     end
-    saveas(fig_sel, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_trials_component_selection_subj%s_prePermCV.png', subjects{subj})));
+    saveas(fig_sel, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_prePermCV.png', subjects{subj})));
 
     % Post-selection topoplots: components surviving permutation + CV cap.
     selTopoIdx = selected_idx(:)';
@@ -917,7 +917,7 @@ for subj = 1:nSubj
                 searchOccFrontRatio(comp_rank)), 'FontSize', 8);
         end
     end
-    saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_trials_component_selection_subj%s_postPermCV.png', subjects{subj})));
+    saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_postPermCV.png', subjects{subj})));
 
     %% ================================================================
     %  PHASE 2: Per condition — trial-level narrowband scanning
@@ -1413,7 +1413,7 @@ for subj = 1:nSubj
     legend(bh, condLabels, 'FontSize', 10, 'Location', 'best');
     set(gca, 'FontSize', 11); xlim([30 90]);  box on;
 
-    saveas(fig, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_subj%s.png', subjects{subj})));
+    saveas(fig, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_subj%s.png', subjects{subj})));
     toc
 end % subject loop
 
@@ -1665,7 +1665,7 @@ for subj = 1:nSubj
         bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
         'FontSize', 10, 'VerticalAlignment', 'top');
 
-    saveas(fig_bench_subj, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_trials_benchmark_subj%s.png', subjects{subj})));
+    saveas(fig_bench_subj, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_benchmark_subj%s.png', subjects{subj})));
 end
 
 %% ====================================================================
@@ -1727,7 +1727,7 @@ xlim([0.3 4.7]);
 ylim(centroid_freq_range); 
 ylabel('Centroid Frequency [Hz]');
 title('All trials pooled', 'FontSize', 14, 'FontWeight', 'bold');
-saveas(fig_cent, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_centroid_summary.png'));
+saveas(fig_cent, fullfile(fig_save_dir, 'GCP_eeg_GED_centroid_summary.png'));
 
 %% ====================================================================
 %  METHOD COMPARISON: Three dual-peak assignment methods
@@ -1917,164 +1917,6 @@ for mi = 1:3
 end
 
 %% ====================================================================
-%  METHOD COMPARISON FIGURES
-%  ====================================================================
-close all
-
-for mi = 1:3
-    save_dir = method_dirs{mi};
-
-    %% --- Subject-level median dual-peak: raincloud ---
-    fig_box = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf('%s: Dual Peak Frequency (Median)', method_names{mi}), ...
-        'FontSize', 18, 'FontWeight', 'bold');
-
-    dual_data   = {m_median_low(:,:,mi), m_median_high(:,:,mi)};
-    dual_titles = {'Low Gamma', 'High Gamma'};
-    dual_ylims  = {[30 55], [45 90]};
-
-    for di = 1:2
-        subplot(1, 2, di); hold on;
-        peak_data = dual_data{di};
-
-        for s = 1:nSubj
-            pf = peak_data(:, s);
-            if sum(~isnan(pf)) >= 2
-                plot(1:4, pf, '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
-            end
-        end
-
-        for c = 1:4
-            pf = peak_data(c, :);
-            pf = pf(~isnan(pf));
-            if length(pf) >= 2
-                [f_dens, xi] = ksdensity(pf);
-                f_dens = f_dens / max(f_dens) * 0.3;
-                patch(c - f_dens - 0.05, xi, colors(c,:), ...
-                    'FaceAlpha', 0.3, 'EdgeColor', colors(c,:), 'LineWidth', 1);
-            end
-        end
-
-        y_box = peak_data(:);
-        g_box = repelem((1:4)', nSubj, 1);
-        valid_box = ~isnan(y_box);
-        if any(valid_box)
-            boxplot(y_box(valid_box), g_box(valid_box), 'Colors', 'k', ...
-                'Symbol', '', 'Widths', 0.15);
-        end
-
-        hold on;
-        for c = 1:4
-            pf = peak_data(c, :);
-            pf = pf(~isnan(pf));
-            xJit = c + 0.15 + (rand(size(pf)) - 0.5) * 0.1;
-            scatter(xJit, pf, 200, colors(c,:), 'filled', ...
-                'MarkerEdgeColor', 'k', 'LineWidth', 0.5);
-        end
-
-        xlim([0.3 4.7]); ylim(dual_ylims{di});
-        set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
-        ylabel('Peak Gamma Frequency [Hz]');
-        title(dual_titles{di}, 'FontSize', 16, 'FontWeight', 'bold');
-    end
-
-    saveas(fig_box, fullfile(save_dir, 'boxplot_DualGamma.png'));
-
-    %% --- All-trials pooled dual-peak: raincloud ---
-    fig_trl = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf('%s: All Trials (pooled)', method_names{mi}), ...
-        'FontSize', 18, 'FontWeight', 'bold');
-
-    dual_trl_data   = {m_peaks_low{mi}, m_peaks_high{mi}};
-    dual_trl_titles = {'Low Gamma', 'High Gamma'};
-    dual_trl_ylims  = {[30 55], [45 90]};
-
-    for di = 1:2
-        subplot(1, 2, di); hold on;
-
-        y_all = []; g_all = [];
-        for c = 1:4
-            for s = 1:nSubj
-                tpk = dual_trl_data{di}{c, s};
-                if ~isempty(tpk)
-                    valid = tpk(~isnan(tpk));
-                    y_all = [y_all; valid(:)];
-                    g_all = [g_all; ones(length(valid), 1) * c];
-                end
-            end
-        end
-
-        for c = 1:4
-            vals = y_all(g_all == c);
-            if length(vals) >= 5
-                [f_dens, xi] = ksdensity(vals);
-                f_dens = f_dens / max(f_dens) * 0.35;
-                patch(c - f_dens - 0.05, xi, colors(c,:), ...
-                    'FaceAlpha', 0.3, 'EdgeColor', colors(c,:), 'LineWidth', 1);
-            end
-        end
-
-        if ~isempty(y_all)
-            boxplot(y_all, g_all, 'Colors', 'k', 'Symbol', '', 'Widths', 0.15);
-        end
-        hold on;
-        for c = 1:4
-            vals = y_all(g_all == c);
-            xJit = c + 0.15 + (rand(size(vals)) - 0.5) * 0.25;
-            scatter(xJit, vals, 12, colors(c,:), 'filled', 'MarkerFaceAlpha', 0.2);
-        end
-
-        xlim([0.3 4.7]); ylim(dual_trl_ylims{di});
-        set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
-        ylabel('Peak Gamma Frequency [Hz]');
-        title(dual_trl_titles{di}, 'FontSize', 16, 'FontWeight', 'bold');
-    end
-
-    saveas(fig_trl, fullfile(save_dir, 'boxplot_alltrials_DualGamma.png'));
-
-    %% --- Detection rate ---
-    fig_det_m = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf('%s: Detection Rate', method_names{mi}), ...
-        'FontSize', 18, 'FontWeight', 'bold');
-
-    det_data_m   = {all_trial_detrate_single, m_detrate_low(:,:,mi), m_detrate_high(:,:,mi)};
-    det_labels_m = {'Single Peak', 'Low Gamma', 'High Gamma'};
-
-    for di = 1:3
-        subplot(1, 3, di); hold on;
-        dr = det_data_m{di};
-
-        mu_dr  = nanmean(dr, 2) * 100;
-        sem_dr = nanstd(dr, [], 2) / sqrt(nSubj) * 100;
-
-        b = bar(1:4, mu_dr, 0.6);
-        b.FaceColor = 'flat';
-        for c = 1:4
-            b.CData(c,:) = colors(c,:);
-        end
-        errorbar(1:4, mu_dr, sem_dr, 'k', 'LineStyle', 'none', 'LineWidth', 2, 'CapSize', 10);
-
-        for s = 1:nSubj
-            for c = 1:4
-                if ~isnan(dr(c, s))
-                    scatter(c + (rand-0.5)*0.2, dr(c, s)*100, 30, [0.4 0.4 0.4], ...
-                        'filled', 'MarkerFaceAlpha', 0.5);
-                end
-            end
-        end
-
-        ylim([0 105]);
-        set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 14, 'Box', 'off');
-        ylabel('Detection Rate [%]');
-        title(det_labels_m{di}, 'FontSize', 16, 'FontWeight', 'bold');
-        
-    end
-
-    saveas(fig_det_m, fullfile(save_dir, 'detection_rate.png'));
-    close all
-end
-
-%% ====================================================================
 %  GRAND-AVERAGE FOUR-WAY BENCHMARK
 %  ====================================================================
 fig_bench_group = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -2197,7 +2039,7 @@ text(0.05, 0.9, sprintf(['Method order:\n1) %s\n2) %s\n3) %s\n4) %s'], ...
     bench_method_labels{1}, bench_method_labels{2}, bench_method_labels{3}, bench_method_labels{4}), ...
     'FontSize', 10, 'VerticalAlignment', 'top');
 
-saveas(fig_bench_group, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_benchmark_grandaverage.png'));
+saveas(fig_bench_group, fullfile(fig_save_dir, 'GCP_eeg_GED_benchmark_grandaverage.png'));
 
 %% ====================================================================
 %  STANDALONE CONDITION-SEPARATION METRICS (post-Perm+CV combined GED)
@@ -2258,16 +2100,6 @@ fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('GED Trials Summary Dashboard (Perm+CV backprojected)', ...
     'FontSize', 16, 'FontWeight', 'bold');
 
-% TEST: exclusion of bad data
-%all_trial_median_single = all_trial_median_single(:, [1:4, 7:10])
-% all_trial_median_low = all_trial_median_single(:, [1:4, 7:10])
-% all_trial_median_high = all_trial_median_high(:, [1:4, 7:10])
-% all_trial_median_gap = all_trial_median_gap(:, [1:4, 7:10])
-% benchmark_metric_prominence = benchmark_metric_prominence(:, :, [1:4, 7:10])
-% benchmark_metric_reliability_trialcv = benchmark_metric_reliability_trialcv(:, :, [1:4, 7:10])
-% all_trial_median_centroid = all_trial_median_centroid(:, [1:4, 7:10])
-% all_trial_detrate_centroid = all_trial_detrate_centroid(:, [1:4, 7:10])
-
 summary_metrics = { ...
     all_trial_median_single, ...
     all_trial_median_low, ...
@@ -2321,14 +2153,15 @@ for mi = 1:numel(summary_metrics)
         ylim([50 60]);
     end
 end
-saveas(fig_summary, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_metrics_summary.png'));
+saveas(fig_summary, fullfile(fig_save_dir, 'GCP_eeg_GED_metrics_summary.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak (subject-level median, summary-style)
 %  ====================================================================
+close all
 fprintf('\nCreating grand average figures...\n');
 
-fig_box1 = figure('Position', [0 0 1512 982], 'Color', 'w');
+fig_box1 = figure('Position', [0 0 1512/2 982], 'Color', 'w');
 hold on;
 
 dat = all_trial_median_single;
@@ -2356,12 +2189,12 @@ for s = 1:nSubj
 end
 
 xlim([0.3 4.7]);
-ylim([45 60]);
+ylim([45 75]);
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
 ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency over Conditions', 'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_box1, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_boxplot_SinglePeak.png'));
+saveas(fig_box1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_SinglePeak.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak all trials pooled — raincloud
@@ -2408,7 +2241,7 @@ ylabel('Peak Gamma Frequency [Hz]');
 title('Single Peak: All Trials (pooled across subjects)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_trl1, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_boxplot_alltrials_SinglePeak.png'));
+saveas(fig_trl1, fullfile(fig_save_dir, 'GCP_eeg_GED_boxplot_alltrials_SinglePeak.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: All-subjects subplot (mean trial spectra)
@@ -2458,7 +2291,7 @@ for s = 1:nSubj
         end
     end
 end
-saveas(fig_all, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_all_subjects.png'));
+saveas(fig_all, fullfile(fig_save_dir, 'GCP_eeg_GED_all_subjects.png'));
 
 %% ====================================================================
 %  DETECTION RATE FIGURE (primary: hard 50 Hz)
@@ -2500,13 +2333,13 @@ for di = 1:3
     
 end
 
-saveas(fig_det, fullfile(fig_save_dir, 'GCP_eeg_GED_trials_detection_rate.png'));
+saveas(fig_det, fullfile(fig_save_dir, 'GCP_eeg_GED_detection_rate.png'));
 
 %% Save results
 if ispc
-    save_path = 'W:\Students\Arne\GCP\data\features\GCP_eeg_GED_trials.mat';
+    save_path = 'W:\Students\Arne\GCP\data\features\GCP_eeg_GED.mat';
 else
-    save_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_eeg_GED_trials.mat';
+    save_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_eeg_GED.mat';
 end
 save(save_path, ...
     'all_trial_powratio', ...
@@ -2531,9 +2364,6 @@ save(save_path, ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'm_peaks_low', 'm_peaks_high', 'm_median_low', 'm_median_high', ...
     'm_detrate_low', 'm_detrate_high', ...
-    'slope_single', 'slope_high', 'slope_centroid', ...
-    'corr_centroid_single', 'corr_centroid_high', ...
-    'trend_stats', 'concordance', ...
     'trough_freqs', 'gmm_means', 'gmm_boundary', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
