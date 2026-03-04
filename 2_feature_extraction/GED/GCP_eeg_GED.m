@@ -2998,7 +2998,13 @@ if numel(fit_idx) < (ord + 1)
     fit_idx = 1:n;
 end
 
-valid_fit = fit_idx(isfinite(y(fit_idx)) & isfinite(x(fit_idx)));
+% Restrict to valid indices for both y and x, and force same orientation
+% to avoid implicit expansion when y is column and x is row (e.g. y 61x1, x 1x61)
+fit_idx = fit_idx(fit_idx <= min(numel(y), numel(x)) & fit_idx >= 1);
+yv = y(fit_idx);
+xv = x(fit_idx);
+valid_mask = isfinite(yv(:)) & isfinite(xv(:));
+valid_fit = fit_idx(valid_mask);
 if numel(valid_fit) < (ord + 1)
     valid_fit = find(isfinite(y) & isfinite(x));
 end
