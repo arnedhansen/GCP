@@ -3006,7 +3006,7 @@ xv = x(fit_idx);
 valid_mask = isfinite(yv(:)) & isfinite(xv(:));
 valid_fit = fit_idx(valid_mask);
 if numel(valid_fit) < (ord + 1)
-    valid_fit = find(isfinite(y) & isfinite(x));
+    valid_fit = find(isfinite(y(:)) & isfinite(x(:)));
 end
 if numel(valid_fit) < (ord + 1)
     return;
