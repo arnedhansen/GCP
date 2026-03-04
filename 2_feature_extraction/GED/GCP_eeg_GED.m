@@ -226,6 +226,7 @@ parfor subj = 1:nSubj
     if isempty(post_idx)
         post_idx = occ_idx;
     end
+    raw_w = [];
     switch lower(raw_reference_definition)
         case 'posterior_roi'
             raw_w = zeros(nChans, 1);
@@ -237,6 +238,9 @@ parfor subj = 1:nSubj
             end
         otherwise
             error('Unsupported raw_reference_definition: %s', raw_reference_definition);
+    end
+    if isempty(raw_w)
+        error('raw_w was not initialized for subject %s.', subjects{subj});
     end
     nonocc_idx = setdiff(1:nChans, occ_idx);
 
