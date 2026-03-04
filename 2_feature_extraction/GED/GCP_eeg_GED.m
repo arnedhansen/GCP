@@ -60,6 +60,7 @@ outlier_min_rest = 0;               % minimum non-top eligible components for do
 threshold_inspection_targets = [1 3 5]; % requested valid-component targets for threshold inspection
 
 random_seed = 13;                    % reproducible randomization
+max_parallel_subjects = 4;           % memory guard: cap concurrent subjects in parfor
 
 % Run mode: 'full' = full pipeline; 'component_check' = GED + component selection only (Phase 1)
 run_mode = 'full';
@@ -183,7 +184,7 @@ chanlocs_all = tmp_chanlocs.dataEEG_c25.label;
 if strcmpi(run_mode, 'component_check')
     fprintf('Run mode: component_check — GED + component selection only (Phase 1)\n');
 end
-parfor subj = 1:nSubj
+parfor (subj = 1:nSubj, max_parallel_subjects)
     close all
     tic
     datapath = fullfile(path, subjects{subj}, 'eeg');
@@ -718,22 +719,18 @@ parfor subj = 1:nSubj
             cfg_filt.bpfiltord  = round(3 * fsample / bpfreq(1));
             dat_nb = ft_preprocessing(cfg_filt, dat);
 
-            cfg_t = [];
-            cfg_t.latency = baseline_window;
-            dat_base_nb = ft_selectdata(cfg_t, dat_nb);
-
-            cfg_t.latency = full_window;
-            dat_full_nb = ft_selectdata(cfg_t, dat_nb);
-            cfg_t.latency = early_window;
-            dat_early_nb = ft_selectdata(cfg_t, dat_nb);
-            cfg_t.latency = late_window;
-            dat_late_nb = ft_selectdata(cfg_t, dat_nb);
-
             for trl = 1:nTrl
-                x_base = double(dat_base_nb.trial{trl});
-                x_full = double(dat_full_nb.trial{trl});
-                x_early = double(dat_early_nb.trial{trl});
-                x_late = double(dat_late_nb.trial{trl});
+                x_nb = double(dat_nb.trial{trl});
+                t_nb = dat_nb.time{trl};
+                idx_base = t_nb >= baseline_window(1) & t_nb <= baseline_window(2);
+                idx_full = t_nb >= full_window(1) & t_nb <= full_window(2);
+                idx_early = t_nb >= early_window(1) & t_nb <= early_window(2);
+                idx_late = t_nb >= late_window(1) & t_nb <= late_window(2);
+
+                x_base = x_nb(:, idx_base);
+                x_full = x_nb(:, idx_full);
+                x_early = x_nb(:, idx_early);
+                x_late = x_nb(:, idx_late);
 
                 comp_base_all = searchFilters(:, 1:nSearch)' * x_base;
                 pow_base_all = mean(comp_base_all.^2, 2);
@@ -762,6 +759,7 @@ parfor subj = 1:nSubj
                 powratio_methods_late(:, trl, fi) = compute_method_ratios_from_components( ...
                     ratio_all_late, x_late, x_base, raw_w, W_top, W_combined, selected_idx, w_combined, nBenchmarkMethods);
             end
+            clear dat_nb
         end
         all_trial_powratio_components{cond, subj} = powratio_components;
 
