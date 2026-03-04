@@ -187,7 +187,12 @@ parfor subj = 1:nSubj
     close all
     tic
     datapath = fullfile(path, subjects{subj}, 'eeg');
-    load(fullfile(datapath, 'dataEEG.mat'))
+    eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
+        'dataEEG_c25', 'dataEEG_c50', 'dataEEG_c75', 'dataEEG_c100');
+    dataEEG_c25 = eeg_data.dataEEG_c25;
+    dataEEG_c50 = eeg_data.dataEEG_c50;
+    dataEEG_c75 = eeg_data.dataEEG_c75;
+    dataEEG_c100 = eeg_data.dataEEG_c100;
     warning_log_subj = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
 
     fsample = dataEEG_c25.fsample;
@@ -546,6 +551,10 @@ parfor subj = 1:nSubj
     storeCorrs = searchCorrs(storeCompIdx);
     storeEvals = evals_sorted(storeCompIdx);
     storeTopos = searchTopos(:, storeCompIdx);
+    storeCorrsFixed = nan(5, 1);
+    storeEvalsFixed = nan(5, 1);
+    storeCorrsFixed(1:nStore) = storeCorrs(:);
+    storeEvalsFixed(1:nStore) = storeEvals(:);
 
     all_topos{subj}       = topo_temp;
     all_topo_labels{subj} = dataEEG_c25.label;
@@ -553,8 +562,8 @@ parfor subj = 1:nSubj
     all_selected_comp_idx(subj)  = bestIdx;
     all_selected_comp_corr(subj) = bestCorr;
     all_selected_comp_eval(subj) = evals_sorted(bestIdx);
-    all_top5_corrs(1:nStore, subj) = storeCorrs;
-    all_top5_evals(1:nStore, subj) = storeEvals;
+    all_top5_corrs(:, subj) = storeCorrsFixed;
+    all_top5_evals(:, subj) = storeEvalsFixed;
     all_top5_topos{subj} = storeTopos;
     all_simulated_templates{subj} = sim_template;
     all_selected_comp_indices_multi{subj} = selected_idx;
