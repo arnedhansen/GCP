@@ -48,6 +48,10 @@ ged_search_n = 20;          % search first N GED components
 template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.20;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
+score_w_corr = 2;           % composite-score weight for template correlation
+score_w_gamma = 1.75;       % composite-score weight for pooled gamma evidence
+score_w_eval = 1.5;         % composite-score weight for GED eigenvalue evidence
+score_w_frontleak = 1;      % composite-score penalty for frontal leakage
 viz_suppress_nonocc_outliers = false;  % visualization-only suppression/interpolation
 viz_interp_k = 6;                   % nearest neighbors for channel interpolation
 viz_nonocc_outlier_mult = 1.00;     % non-occipital outlier threshold multiplier (vs posterior pctl)
@@ -441,12 +445,29 @@ for subj = 1:nSubj
     end
     W_top = searchFilters(:, 1);
 
-    % Candidate metrics (ranking uses eigenvalue only after hard eligibility gates).
+    % Candidate metrics (composite score favors gamma + template match after hard gates).
     corr_vec = searchCorrs;
     ratio_vec = searchOccFrontRatio;
     gamma_vec = searchGammaEvidence;
     eval_vec = log(max(evals_sorted(1:nSearch), eps));
     leak_vec = searchFrontLeak;
+    valid_corr = isfinite(corr_vec);
+    valid_gamma = isfinite(gamma_vec);
+    valid_eval = isfinite(eval_vec);
+    valid_leak = isfinite(leak_vec);
+    if any(valid_corr), corr_mu = mean(corr_vec(valid_corr)); corr_sd = std(corr_vec(valid_corr));
+    else, corr_mu = 0; corr_sd = 1; end
+    if any(valid_gamma), gamma_mu = mean(gamma_vec(valid_gamma)); gamma_sd = std(gamma_vec(valid_gamma));
+    else, gamma_mu = 0; gamma_sd = 1; end
+    if any(valid_eval), eval_mu = mean(eval_vec(valid_eval)); eval_sd = std(eval_vec(valid_eval));
+    else, eval_mu = 0; eval_sd = 1; end
+    if any(valid_leak), leak_mu = mean(leak_vec(valid_leak)); leak_sd = std(leak_vec(valid_leak));
+    else, leak_mu = 0; leak_sd = 1; end
+    z_corr = (corr_vec - corr_mu) / max(corr_sd, eps);
+    z_gamma = (gamma_vec - gamma_mu) / max(gamma_sd, eps);
+    z_eval = (eval_vec - eval_mu) / max(eval_sd, eps);
+    z_leak = (leak_vec - leak_mu) / max(leak_sd, eps);
+    comp_score = score_w_corr * z_corr + score_w_gamma * z_gamma + score_w_eval * z_eval - score_w_frontleak * z_leak;
     finite_metrics = isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec) & ...
         isfinite(evals_sorted(1:nSearch));
     hard_eligible_raw = finite_metrics & ...
@@ -479,7 +500,7 @@ for subj = 1:nSubj
                        'lambda2', evals_sorted(min(2, numel(evals_sorted))), 'lambda1_lambda2_ratio', ratio12_val));
         end
     end
-    searchScores = evals_sorted(1:nSearch);
+    searchScores = comp_score;
     searchScores(~hard_eligible) = -Inf;
     if ~any(isfinite(searchScores))
         msg = sprintf(['No components met hard thresholds for subject %s. ', ...
@@ -529,7 +550,7 @@ for subj = 1:nSubj
             'thr_ratio', min_occfront_ratio, ...
             'thr_gamma', min_gamma_hard);
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_HARD_ELIGIBLE_COMPONENTS', msg, hard_metrics);
-        searchScores = evals_sorted(1:nSearch);
+        searchScores = comp_score;
     end
     [bestScore, bestIdx] = max(searchScores);
     if isempty(bestIdx) || isnan(bestScore)
@@ -559,11 +580,15 @@ for subj = 1:nSubj
             'fallback_idx', bestIdx));
         combined_idx = bestIdx;
     end
-    [~, combined_ord] = sort(evals_sorted(combined_idx), 'descend');
+    [~, combined_ord] = sort(searchScores(combined_idx), 'descend');
     combined_idx = combined_idx(combined_ord);
 
-    combined_weights = evals_sorted(combined_idx)';
+    combined_weights = searchScores(combined_idx)';
     combined_weights(~isfinite(combined_weights) | combined_weights <= 0) = 0;
+    if sum(combined_weights) <= 0
+        combined_weights = evals_sorted(combined_idx)';
+        combined_weights(~isfinite(combined_weights) | combined_weights <= 0) = 0;
+    end
     if sum(combined_weights) <= 0
         combined_weights = ones(1, numel(combined_idx));
     end
@@ -649,7 +674,7 @@ for subj = 1:nSubj
             all_topos_late{subj} = topo_temp;
         end
         comp_sel_struct = struct( ...
-            'selection_mode', 'hard_eligible_eigenvalue_weighted', ...
+            'selection_mode', 'hard_eligible_weighted', ...
             'selected_idx', selected_idx, ...
             'selected_weights', selected_weights, ...
             'candidate_table', candidate_table, ...
