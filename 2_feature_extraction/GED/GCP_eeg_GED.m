@@ -2974,7 +2974,7 @@ if nargin < 6
 end
 y_fit = y;
 if in_log
-    y_fit = log(max(y(:), eps));
+    y_fit = log(max(y, eps));  % preserve shape; y(:) would force column and cause implicit expansion downstream
 end
 y_dt = detrend_poly_stable(y_fit, x, ord, edge_exclude_n, flat_edges);
 end
@@ -3014,6 +3014,7 @@ end
 
 p = polyfit(x(valid_fit), y(valid_fit), ord);
 baseline = polyval(p, x);
+baseline = reshape(baseline, size(y));  % match y orientation to avoid implicit expansion
 y_dt = y - baseline;
 
 % Constrain residual to zero at edges
@@ -3026,6 +3027,7 @@ if flat_edges && n >= 2
         if isfinite(d1) && isfinite(dn)
             % Linear ramp from d1 at x1 to dn at xn; subtract so residual -> 0 at edges
             ramp = d1 + (dn - d1) * (x(:) - x1) / (xn - x1);
+            ramp = reshape(ramp, size(y_dt));  % match orientation
             y_dt = y_dt - ramp;
         end
     end
