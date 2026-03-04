@@ -15,12 +15,11 @@ startup
 
 %% Extract TFR
 % Read data, segment and convert to FieldTrip data structure
-for subj = 1 : length(subjects)
-    datapath = strcat(path, subjects{subj}, '/eeg');
+parfor subj = 1 : length(subjects)
+    datapath = fullfile(path, subjects{subj}, 'eeg');
     %if ~isfile(strcat([datapath, '/data_tfr.mat'])) % only new data
-    cd(datapath)
     close all
-    load dataEEG
+    load(fullfile(datapath, 'dataEEG.mat'))
     load('/Volumes/g_psyplafor_methlab$/Students/Arne/MA/headmodel/ant128lay.mat');
 
     %% Identify indices of trials belonging to conditions
@@ -134,12 +133,11 @@ for subj = 1 : length(subjects)
     disp(upper('Smoothing done...'))
 
     %% Save data
-    cd(datapath)
-    save data_tfr tfr_c25 tfr_c50 tfr_c75 tfr_c100 ...
-        tfr_c25_fooof tfr_c50_fooof tfr_c75_fooof tfr_c100_fooof ...
-        tfr_c25_bl tfr_c50_bl tfr_c75_bl tfr_c100_bl ...
-        tfr_c25_fooof_bl tfr_c50_fooof_bl tfr_c75_fooof_bl tfr_c100_fooof_bl ...
-        tfr_c25_fooof_bl_smooth tfr_c50_fooof_bl_smooth tfr_c75_fooof_bl_smooth tfr_c100_fooof_bl_smooth
+    save(fullfile(datapath, 'data_tfr.mat'), 'tfr_c25', 'tfr_c50', 'tfr_c75', 'tfr_c100', ...
+        'tfr_c25_fooof', 'tfr_c50_fooof', 'tfr_c75_fooof', 'tfr_c100_fooof', ...
+        'tfr_c25_bl', 'tfr_c50_bl', 'tfr_c75_bl', 'tfr_c100_bl', ...
+        'tfr_c25_fooof_bl', 'tfr_c50_fooof_bl', 'tfr_c75_fooof_bl', 'tfr_c100_fooof_bl', ...
+        'tfr_c25_fooof_bl_smooth', 'tfr_c50_fooof_bl_smooth', 'tfr_c75_fooof_bl_smooth', 'tfr_c100_fooof_bl_smooth')
     clc
     fprintf('Subject GCP %s (%.3d/%.3d) TFR DATA computed... \n', num2str(subjects{subj}), subj, length(subjects))
     %end
@@ -153,12 +151,11 @@ analysis_period = [0.3 2]; % only start from 300ms after stimulus presentation
 freq_range = [30 90];
 [subjects, path] = setup('GCP');
 
-for subj = 1 : length(subjects)
-    datapath = strcat(path, subjects{subj}, '/eeg');
+parfor subj = 1 : length(subjects)
+    datapath = fullfile(path, subjects{subj}, 'eeg');
     %if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
     % Load data
-    cd(datapath);
-    load('data_tfr.mat');
+    load(fullfile(datapath, 'data_tfr.mat'));
 
     %% Select analysis and baseline period data
     % (1) Analysis period data, no baseline
@@ -209,22 +206,23 @@ for subj = 1 : length(subjects)
     pow_c100_baseline_period                       = remove_time_dimension(pow_c100_baseline_period);
 
     %% Save data
-    savepath = strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
-    mkdir(savepath)
-    cd(savepath)
-    save power_spectra pow_c25 pow_c25_baselined pow_c25_fooof_bl_smooth pow_c25_baseline_period ...
-        pow_c50 pow_c50_baselined pow_c50_fooof_bl_smooth pow_c50_baseline_period ...
-        pow_c75 pow_c75_baselined pow_c75_fooof_bl_smooth pow_c75_baseline_period ...
-        pow_c100 pow_c100_baselined pow_c100_fooof_bl_smooth pow_c100_baseline_period
+    savepath = fullfile('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features', subjects{subj}, 'eeg');
+    if ~exist(savepath, 'dir')
+        mkdir(savepath)
+    end
+    save(fullfile(savepath, 'power_spectra.mat'), 'pow_c25', 'pow_c25_baselined', 'pow_c25_fooof_bl_smooth', 'pow_c25_baseline_period', ...
+        'pow_c50', 'pow_c50_baselined', 'pow_c50_fooof_bl_smooth', 'pow_c50_baseline_period', ...
+        'pow_c75', 'pow_c75_baselined', 'pow_c75_fooof_bl_smooth', 'pow_c75_baseline_period', ...
+        'pow_c100', 'pow_c100_baselined', 'pow_c100_fooof_bl_smooth', 'pow_c100_baseline_period')
 end
 %end
 
 %% Define channels
-datapath = strcat(path, subjects{1}, '/eeg');
-cd(datapath);
+first_subj_power_file = fullfile('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features', subjects{1}, 'eeg', 'power_spectra.mat');
 % Occipital channels
 occ_channels = {};
-pow_label = pow_c25;
+tmp_pow = load(first_subj_power_file, 'pow_c25');
+pow_label = tmp_pow.pow_c25;
 for i = 1:length(pow_label.label)
     label = pow_label.label{i};
     if contains(label, {'O'}) || contains(label, {'I'})
@@ -234,10 +232,10 @@ end
 channels = occ_channels;
 
 %% Extract gamma peak power and frequency
-eeg_data = [];
-for subj = 1:length(subjects)
+subj_data_cell = cell(length(subjects), 1);
+parfor subj = 1:length(subjects)
     % Load power spectra data
-    load(strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    load(fullfile('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features', subjects{subj}, 'eeg', 'power_spectra.mat'))
 
     % Find channels and frequencies of interest
     channels_idx = ismember(pow_c25_fooof_bl_smooth.label, channels);
@@ -366,18 +364,20 @@ for subj = 1:length(subjects)
         'Frequency',     num2cell(frequencies));
 
     % Save data
-    savepath = strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/');
-    mkdir(savepath)
-    cd(savepath)
-    save eeg_matrix_subj subj_data_eeg
-    save pow c25_pow c50_pow c75_pow c100_pow
-    save freq c25_freq c50_freq c75_freq c100_freq
+    savepath = fullfile('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features', subjects{subj}, 'eeg');
+    if ~exist(savepath, 'dir')
+        mkdir(savepath)
+    end
+    save(fullfile(savepath, 'eeg_matrix_subj.mat'), 'subj_data_eeg')
+    save(fullfile(savepath, 'pow.mat'), 'c25_pow', 'c50_pow', 'c75_pow', 'c100_pow')
+    save(fullfile(savepath, 'freq.mat'), 'c25_freq', 'c50_freq', 'c75_freq', 'c100_freq')
 
     disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' gamma peak POWER and FREQUENCY extracted.'])
 
-    % Append to the final structure array
-    eeg_data = [eeg_data; subj_data_eeg];
+    % Collect per-subject structure for one-time concatenation after parfor
+    subj_data_cell{subj} = subj_data_eeg;
 end
-save /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/eeg_matrix eeg_data
+eeg_data = vertcat(subj_data_cell{:});
+save('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/eeg_matrix.mat', 'eeg_data')
 clc
 disp('EEG Feature Matrix created')
