@@ -40,7 +40,10 @@ scan_width = 3;
 % These values are tuned for stability when each subject has limited trial
 % counts. If future data only add subjects (not trials/condition), these
 % settings should generally remain unchanged.
-lambda = 0.05;
+lambda = 0.05;              % full window [0, 2 s]
+lambda_full  = 0.05;        % full window [0, 2 s]
+lambda_early = 0.10;        % early window [0, 0.6 s] — stronger regularization (fewer samples)
+lambda_late  = 0.08;       % late window [1, 2 s] — moderate (1 s of data)
 ged_search_n = 20;          % search first N GED components
 template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.20;   % spatial smoothness for occipital template
@@ -143,6 +146,8 @@ all_trial_gamma_power_early = nan(4, nSubj);
 all_trial_gamma_power_late  = nan(4, nSubj);
 
 all_topos       = cell(1, nSubj);
+all_topos_early = cell(1, nSubj);
+all_topos_late  = cell(1, nSubj);
 all_topo_labels = cell(1, nSubj);
 all_eigenvalues = nan(1, nSubj);
 all_selected_comp_idx  = nan(1, nSubj);
@@ -154,7 +159,10 @@ all_top5_topos         = cell(1, nSubj);
 all_simulated_templates = cell(1, nSubj);
 all_selected_comp_indices_multi = cell(1, nSubj);
 all_selected_comp_weights = cell(1, nSubj);
-all_component_selection_stats = cell(1, nSubj);
+all_component_selection_stats = cell(1, nSubj); % full window; kept for backward compat
+all_component_selection_stats_full  = cell(1, nSubj);
+all_component_selection_stats_early = cell(1, nSubj);
+all_component_selection_stats_late  = cell(1, nSubj);
 all_threshold_inspection = cell(1, nSubj);
 warning_log_by_subj = cell(nSubj, 1);
 
@@ -164,7 +172,10 @@ all_trial_powratio_bench_late  = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_dt_bench = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_dt_bench_early = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_dt_bench_late  = cell(nBenchmarkMethods, 4, nSubj);
-all_trial_powratio_components = cell(4, nSubj); % [component x trial x frequency]
+all_trial_powratio_components = cell(4, nSubj); % full window [component x trial x frequency]; kept for backward compat
+all_trial_powratio_components_full  = cell(4, nSubj);
+all_trial_powratio_components_early = cell(4, nSubj);
+all_trial_powratio_components_late  = cell(4, nSubj);
 benchmark_metric_detectability = nan(nBenchmarkMethods, 4, nSubj);
 benchmark_metric_prominence = nan(nBenchmarkMethods, 4, nSubj);
 benchmark_metric_separation_slope = nan(nBenchmarkMethods, nSubj);
@@ -172,6 +183,9 @@ benchmark_metric_separation_delta = nan(nBenchmarkMethods, nSubj);
 benchmark_metric_reliability_trialcv = nan(nBenchmarkMethods, 4, nSubj);
 benchmark_metric_reliability_subjspread = nan(nBenchmarkMethods, 4);
 sensitivity_results = table();
+sensitivity_results_full  = table();
+sensitivity_results_early = table();
+sensitivity_results_late  = table();
 primary_slope_stats = struct();
 primary_delta_stats = struct();
 
@@ -245,18 +259,22 @@ for subj = 1:nSubj
     nonocc_idx = setdiff(1:nChans, occ_idx);
 
     %% ================================================================
-    %  PHASE 1: Build POOLED covariance across all conditions -> one GED
+    %  PHASE 1: Build POOLED covariance per window -> three GEDs
     %  ================================================================
     clc
-    fprintf('Subject %s (%d/%d) — Phase 1: Full-head GED + occipital template (%d occ / %d ch)\n', ...
+    fprintf('Subject %s (%d/%d) — Phase 1: Per-window GED (full, early, late) (%d occ / %d ch)\n', ...
         subjects{subj}, subj, nSubj, nOcc, nChans);
     rng(random_seed + subj, 'twister');
 
-    covStim_full = zeros(nChans);
-    covBase_full = zeros(nChans);
+    stim_windows = {full_window, early_window, late_window};
+    win_names   = {'full', 'early', 'late'};
+    lambdas     = [lambda_full, lambda_early, lambda_late];
+
+    covStim_full  = zeros(nChans);
+    covStim_early = zeros(nChans);
+    covStim_late  = zeros(nChans);
+    covBase_full  = zeros(nChans);
     nTrials_total = 0;
-    stim_cov_trials = {};
-    base_cov_trials = {};
 
     dat_per_cond = cell(1, 4);
 
@@ -281,22 +299,32 @@ for subj = 1:nSubj
         cfg_t.latency = baseline_window;
         dat_base = ft_selectdata(cfg_t, dat_gamma);
 
-        cfg_t.latency = stimulus_window;
-        dat_stim = ft_selectdata(cfg_t, dat_gamma);
+        cfg_t.latency = full_window;
+        dat_stim_full = ft_selectdata(cfg_t, dat_gamma);
+        cfg_t.latency = early_window;
+        dat_stim_early = ft_selectdata(cfg_t, dat_gamma);
+        cfg_t.latency = late_window;
+        dat_stim_late = ft_selectdata(cfg_t, dat_gamma);
 
-        nTrl = length(dat_stim.trial);
+        nTrl = length(dat_stim_full.trial);
         for trl = 1:nTrl
-            d = double(dat_stim.trial{trl});
+            d_base = double(dat_base.trial{trl});
+            d_base = bsxfun(@minus, d_base, mean(d_base, 2));
+            cov_base_trl = (d_base * d_base') / size(d_base, 2);
+            covBase_full = covBase_full + cov_base_trl;
+
+            d = double(dat_stim_full.trial{trl});
             d = bsxfun(@minus, d, mean(d, 2));
             cov_stim_trl = (d * d') / size(d, 2);
             covStim_full = covStim_full + cov_stim_trl;
-            stim_cov_trials{end + 1} = cov_stim_trl; %#ok<AGROW>
 
-            d = double(dat_base.trial{trl});
+            d = double(dat_stim_early.trial{trl});
             d = bsxfun(@minus, d, mean(d, 2));
-            cov_base_trl = (d * d') / size(d, 2);
-            covBase_full = covBase_full + cov_base_trl;
-            base_cov_trials{end + 1} = cov_base_trl; %#ok<AGROW>
+            covStim_early = covStim_early + (d * d') / size(d, 2);
+
+            d = double(dat_stim_late.trial{trl});
+            d = bsxfun(@minus, d, mean(d, 2));
+            covStim_late = covStim_late + (d * d') / size(d, 2);
         end
         nTrials_total = nTrials_total + nTrl;
     end
@@ -304,31 +332,30 @@ for subj = 1:nSubj
     if nTrials_total < 1
         error('No valid trials available for subject %s after trial selection.', subjects{subj});
     end
-    covStim_full = covStim_full / nTrials_total;
-    covBase_full = covBase_full / nTrials_total;
+    covStim_full  = covStim_full / nTrials_total;
+    covStim_early = covStim_early / nTrials_total;
+    covStim_late  = covStim_late / nTrials_total;
+    covBase_full  = covBase_full / nTrials_total;
 
-    % Shrinkage regularization (full-head GED)
-    covStim_reg = (1-lambda)*covStim_full + lambda*mean(diag(covStim_full))*eye(nChans);
+    % Covariances per window (for loop below)
+    covStim_per_win = {covStim_full, covStim_early, covStim_late};
+    % covBase_reg: regularized once, shared by all three GEDs (full, early, late)
     covBase_reg = (1-lambda)*covBase_full + lambda*mean(diag(covBase_full))*eye(nChans);
 
-    % GED on full-head covariance
-    [W_full, D_full] = eig(covStim_reg, covBase_reg);
-    [evals_sorted, sortIdx] = sort(real(diag(D_full)), 'descend');
-    W_full = W_full(:, sortIdx);
+    % Run GED + component selection per window
+    searchFilters_full  = [];
+    searchFilters_early = [];
+    searchFilters_late  = [];
+    W_top_full  = []; W_top_early  = []; W_top_late  = [];
+    W_combined_full  = []; W_combined_early  = []; W_combined_late  = [];
+    selected_idx_full  = []; selected_idx_early  = []; selected_idx_late  = [];
+    w_combined_full  = []; w_combined_early  = []; w_combined_late  = [];
+    all_searchTopos  = cell(1, 3);
+    all_evals_sorted = cell(1, 3);
+    all_bestIdx      = cell(1, 3);
+    all_topo_temp    = cell(1, 3);
 
-    nSearch = min(ged_search_n, size(W_full, 2));
-    searchFilters = nan(nChans, nSearch);
-    searchTopos = nan(nChans, nSearch);
-    searchCorrs = nan(nSearch, 1);
-    searchScores = nan(nSearch, 1);
-    searchOccStrength = nan(nSearch, 1);
-    searchFrontStrength = nan(nSearch, 1);
-    searchOccFrontRatio = nan(nSearch, 1);
-    searchGammaEvidence = nan(nSearch, 1);
-    searchFrontLeak = nan(nSearch, 1);
-
-    % Simulated signed occipital template with frontal anti-template.
-    % Spatial smoothing uses layout coordinates when available.
+    % Simulated signed occipital template (same for all windows)
     sim_template = zeros(nChans, 1);
     lay_labels = headmodel.layANThead.label;
     lay_pos = headmodel.layANThead.pos;
@@ -359,11 +386,30 @@ for subj = 1:nSubj
         sim_template = (sim_template - mean(sim_template)) / std(sim_template);
     end
 
-    % Full-head forward model for topoplot and component scoring
-    covStim_full_reg = (1-lambda)*covStim_full + lambda*mean(diag(covStim_full))*eye(nChans);
-    for ci = 1:nSearch
-        w_ci = W_full(:, ci);
-        topo_ci = covStim_full_reg * w_ci;
+    for w = 1:3
+        covStim_w = covStim_per_win{w};
+        lam_w = lambdas(w);
+        covStim_reg = (1-lam_w)*covStim_w + lam_w*mean(diag(covStim_w))*eye(nChans);
+
+        [W_full, D_full] = eig(covStim_reg, covBase_reg);
+        [evals_sorted, sortIdx] = sort(real(diag(D_full)), 'descend');
+        W_full = W_full(:, sortIdx);
+
+        nSearch = min(ged_search_n, size(W_full, 2));
+        searchFilters = nan(nChans, nSearch);
+        searchTopos = nan(nChans, nSearch);
+        searchCorrs = nan(nSearch, 1);
+        searchScores = nan(nSearch, 1);
+        searchOccStrength = nan(nSearch, 1);
+        searchFrontStrength = nan(nSearch, 1);
+        searchOccFrontRatio = nan(nSearch, 1);
+        searchGammaEvidence = nan(nSearch, 1);
+        searchFrontLeak = nan(nSearch, 1);
+
+        % Forward model for topoplot and component scoring (window-specific)
+        for ci = 1:nSearch
+            w_ci = W_full(:, ci);
+            topo_ci = covStim_reg * w_ci;
         r_ci = corr(topo_ci, sim_template, 'rows', 'complete');
         if ~isnan(r_ci) && r_ci < 0
             w_ci = -w_ci;
@@ -408,11 +454,13 @@ for subj = 1:nSubj
         (corr_vec >= min_corr_hard) & ...
         (ratio_vec >= min_occfront_ratio) & ...
         (gamma_vec >= min_gamma_hard);
-    all_threshold_inspection{subj} = compute_threshold_inspection( ...
+        if w == 1
+            all_threshold_inspection{subj} = compute_threshold_inspection( ...
         evals_sorted(1:nSearch), corr_vec, ratio_vec, gamma_vec, ...
         min_eigval_hard, min_corr_hard, min_occfront_ratio, min_gamma_hard, ...
         threshold_inspection_targets, nSearch);
-    no_hard_threshold_match = ~any(hard_eligible_raw);
+        end
+        no_hard_threshold_match = ~any(hard_eligible_raw);
     hard_eligible = hard_eligible_raw;
     dominant_outlier_mask = false(nSearch, 1);
     if exclude_dominant_outlier
@@ -533,12 +581,12 @@ for subj = 1:nSubj
     bestGamma = searchGammaEvidence(bestIdx);
     bestLeak = searchFrontLeak(bestIdx);
 
-    topComp = searchFilters(:, bestIdx);
-    if numel(selected_idx) > 1
-        topo_temp = searchTopos(:, selected_idx) * selected_weights(:);
-    else
-        topo_temp = covStim_full_reg * topComp;
-    end
+        topComp = searchFilters(:, bestIdx);
+        if numel(selected_idx) > 1
+            topo_temp = searchTopos(:, selected_idx) * selected_weights(:);
+        else
+            topo_temp = covStim_reg * topComp;
+        end
 
     finite_scores = find(isfinite(searchScores));
     if isempty(finite_scores)
@@ -560,32 +608,68 @@ for subj = 1:nSubj
     storeCorrsFixed(1:nStore) = storeCorrs(:);
     storeEvalsFixed(1:nStore) = storeEvals(:);
 
-    all_topos{subj}       = topo_temp;
-    all_topo_labels{subj} = dataEEG_c25.label;
-    all_eigenvalues(subj) = evals_sorted(bestIdx);
-    all_selected_comp_idx(subj)  = bestIdx;
-    all_selected_comp_corr(subj) = bestCorr;
-    all_selected_comp_eval(subj) = evals_sorted(bestIdx);
-    all_top5_corrs(:, subj) = storeCorrsFixed;
-    all_top5_evals(:, subj) = storeEvalsFixed;
-    all_top5_topos{subj} = storeTopos;
-    all_simulated_templates{subj} = sim_template;
-    all_selected_comp_indices_multi{subj} = selected_idx;
-    all_selected_comp_weights{subj} = selected_weights(:)';
-    all_component_selection_stats{subj} = struct( ...
-        'selection_mode', 'hard_eligible_eigenvalue_weighted', ...
-        'selected_idx', selected_idx, ...
-        'selected_weights', selected_weights, ...
-        'candidate_table', candidate_table, ...
-        'best_idx', bestIdx, ...
-        'best_score', bestScore, ...
-        'best_corr', bestCorr, ...
-        'best_ratio', bestRatio, ...
-        'best_gamma', bestGamma, ...
-        'best_front', bestFront, ...
-        'best_occ', bestOcc, ...
-        'best_leak', bestLeak, ...
-        'no_hard_threshold_match', no_hard_threshold_match);
+        % Store per-window filters for Phase 2
+        if w == 1
+            searchFilters_full = searchFilters;
+            W_top_full = searchFilters(:, 1);
+            W_combined_full = searchFilters(:, selected_idx);
+            selected_idx_full = selected_idx;
+            w_combined_full = selected_weights(:)';
+        elseif w == 2
+            searchFilters_early = searchFilters;
+            W_top_early = searchFilters(:, 1);
+            W_combined_early = searchFilters(:, selected_idx);
+            selected_idx_early = selected_idx;
+            w_combined_early = selected_weights(:)';
+        else
+            searchFilters_late = searchFilters;
+            W_top_late = searchFilters(:, 1);
+            W_combined_late = searchFilters(:, selected_idx);
+            selected_idx_late = selected_idx;
+            w_combined_late = selected_weights(:)';
+        end
+        all_topo_temp{w} = topo_temp;
+
+        if w == 1
+            all_topos{subj}       = topo_temp;
+            all_topo_labels{subj} = dataEEG_c25.label;
+            all_eigenvalues(subj) = evals_sorted(bestIdx);
+            all_selected_comp_idx(subj)  = bestIdx;
+            all_selected_comp_corr(subj) = bestCorr;
+            all_selected_comp_eval(subj) = evals_sorted(bestIdx);
+            all_top5_corrs(:, subj) = storeCorrsFixed;
+            all_top5_evals(:, subj) = storeEvalsFixed;
+            all_top5_topos{subj} = storeTopos;
+            all_simulated_templates{subj} = sim_template;
+            all_selected_comp_indices_multi{subj} = selected_idx;
+            all_selected_comp_weights{subj} = selected_weights(:)';
+        elseif w == 2
+            all_topos_early{subj} = topo_temp;
+        else
+            all_topos_late{subj} = topo_temp;
+        end
+        comp_sel_struct = struct( ...
+            'selection_mode', 'hard_eligible_eigenvalue_weighted', ...
+            'selected_idx', selected_idx, ...
+            'selected_weights', selected_weights, ...
+            'candidate_table', candidate_table, ...
+            'best_idx', bestIdx, ...
+            'best_score', bestScore, ...
+            'best_corr', bestCorr, ...
+            'best_ratio', bestRatio, ...
+            'best_gamma', bestGamma, ...
+            'best_front', bestFront, ...
+            'best_occ', bestOcc, ...
+            'best_leak', bestLeak, ...
+            'no_hard_threshold_match', no_hard_threshold_match);
+        if w == 1
+            all_component_selection_stats{subj} = comp_sel_struct;
+            all_component_selection_stats_full{subj} = comp_sel_struct;
+        elseif w == 2
+            all_component_selection_stats_early{subj} = comp_sel_struct;
+        else
+            all_component_selection_stats_late{subj} = comp_sel_struct;
+        end
 
     %% Phase 1b: Component/template sanity figures
     cfg_topo = [];
@@ -662,7 +746,8 @@ for subj = 1:nSubj
                 searchOccFrontRatio(comp_rank), g_pct), 'FontSize', 6);
         end
     end
-    saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_combined.png', subjects{subj})));
+        saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_%s.png', subjects{subj}, win_names{w})));
+    end
 
     if strcmpi(run_mode, 'component_check')
         warning_log_by_subj{subj} = warning_log_subj;
@@ -673,25 +758,81 @@ for subj = 1:nSubj
     %% ================================================================
     %  PHASE 2: Per condition — trial-level narrowband scanning
     %  ================================================================
-    W_combined = searchFilters(:, selected_idx);
-    w_combined = all_selected_comp_weights{subj};
-    if isempty(W_combined)
-        msg = sprintf('No selected combined filters for subject %s.', subjects{subj});
+    % Use window-specific filters for each power-ratio output
+    for wi = 1:3
+        if wi == 1
+            W_comb = W_combined_full;
+            w_comb = w_combined_full;
+            W_t = W_top_full;
+            sel_idx = selected_idx_full;
+        elseif wi == 2
+            W_comb = W_combined_early;
+            w_comb = w_combined_early;
+            W_t = W_top_early;
+            sel_idx = selected_idx_early;
+        else
+            W_comb = W_combined_late;
+            w_comb = w_combined_late;
+            W_t = W_top_late;
+            sel_idx = selected_idx_late;
+        end
+        if isempty(W_comb)
+            msg = sprintf('No selected combined filters for subject %s (%s window).', subjects{subj}, win_names{wi});
+            warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'EMPTY_W_COMBINED', msg, struct());
+        end
+        if isempty(W_t)
+            W_t = zeros(nChans, 0);
+        end
+        if isempty(w_comb) && ~isempty(W_comb)
+            w_comb = ones(1, size(W_comb, 2)) / size(W_comb, 2);
+        end
+        if sum(w_comb) <= 0 && ~isempty(W_comb)
+            w_comb = ones(1, size(W_comb, 2)) / size(W_comb, 2);
+        end
+        if ~isempty(W_comb)
+            w_comb = w_comb(:)' / sum(w_comb);
+        end
+        if wi == 1
+            W_combined_full_norm = W_comb;
+            w_combined_full_norm = w_comb;
+            W_top_full_norm = W_t;
+            selected_idx_full_norm = sel_idx;
+        elseif wi == 2
+            W_combined_early_norm = W_comb;
+            w_combined_early_norm = w_comb;
+            W_top_early_norm = W_t;
+            selected_idx_early_norm = sel_idx;
+        else
+            W_combined_late_norm = W_comb;
+            w_combined_late_norm = w_comb;
+            W_top_late_norm = W_t;
+            selected_idx_late_norm = sel_idx;
+        end
+    end
+    % Require at least full-window filters
+    if isempty(W_combined_full)
+        msg = sprintf('No selected combined filters for subject %s (full window).', subjects{subj});
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'EMPTY_W_COMBINED', msg, struct());
         error(msg);
     end
-    if isempty(W_top)
-        W_top = zeros(0, 1);
-    end
-    if isempty(w_combined) && ~isempty(W_combined)
-        w_combined = ones(1, size(W_combined, 2)) / size(W_combined, 2);
-    end
-    if sum(w_combined) <= 0 && ~isempty(W_combined)
-        w_combined = ones(1, size(W_combined, 2)) / size(W_combined, 2);
-    end
-    if ~isempty(W_combined)
-        w_combined = w_combined(:)' / sum(w_combined);
-    end
+
+    % Per-window filters struct for Phase 2
+    filters = struct('full', struct(), 'early', struct(), 'late', struct());
+    filters.full.searchFilters = searchFilters_full;
+    filters.full.W_top = W_top_full_norm;
+    filters.full.W_combined = W_combined_full_norm;
+    filters.full.selected_idx = selected_idx_full_norm;
+    filters.full.w_combined = w_combined_full_norm;
+    filters.early.searchFilters = searchFilters_early;
+    filters.early.W_top = W_top_early_norm;
+    filters.early.W_combined = W_combined_early_norm;
+    filters.early.selected_idx = selected_idx_early_norm;
+    filters.early.w_combined = w_combined_early_norm;
+    filters.late.searchFilters = searchFilters_late;
+    filters.late.W_top = W_top_late_norm;
+    filters.late.W_combined = W_combined_late_norm;
+    filters.late.selected_idx = selected_idx_late_norm;
+    filters.late.w_combined = w_combined_late_norm;
 
     for cond = 1:4
 
@@ -702,7 +843,12 @@ for subj = 1:nSubj
         powratio_methods_full = nan(nBenchmarkMethods, nTrl, nFreqs);
         powratio_methods_early = nan(nBenchmarkMethods, nTrl, nFreqs);
         powratio_methods_late = nan(nBenchmarkMethods, nTrl, nFreqs);
-        powratio_components = nan(nSearch, nTrl, nFreqs);
+        nSearch_full = size(filters.full.searchFilters, 2);
+        nSearch_early = size(filters.early.searchFilters, 2);
+        nSearch_late = size(filters.late.searchFilters, 2);
+        powratio_components       = nan(nSearch_full, nTrl, nFreqs);
+        powratio_components_early = nan(nSearch_early, nTrl, nFreqs);
+        powratio_components_late  = nan(nSearch_late, nTrl, nFreqs);
 
         for fi = 1:nFreqs
             clc
@@ -731,36 +877,48 @@ for subj = 1:nSubj
                 x_early = x_nb(:, idx_early);
                 x_late = x_nb(:, idx_late);
 
-                comp_base_all = searchFilters(:, 1:nSearch)' * x_base;
-                pow_base_all = mean(comp_base_all.^2, 2);
-                ratio_all_full = nan(nSearch, 1);
-                comp_stim_all_full = searchFilters(:, 1:nSearch)' * x_full;
+                nSearch_full = size(filters.full.searchFilters, 2);
+                comp_base_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_base;
+                pow_base_all_full = mean(comp_base_all_full.^2, 2);
+                ratio_all_full = nan(nSearch_full, 1);
+                comp_stim_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_full;
                 pow_stim_all_full = mean(comp_stim_all_full.^2, 2);
-                valid_all_full = isfinite(pow_stim_all_full) & isfinite(pow_base_all) & (pow_base_all > 0);
-                ratio_all_full(valid_all_full) = pow_stim_all_full(valid_all_full) ./ pow_base_all(valid_all_full);
+                valid_all_full = isfinite(pow_stim_all_full) & isfinite(pow_base_all_full) & (pow_base_all_full > 0);
+                ratio_all_full(valid_all_full) = pow_stim_all_full(valid_all_full) ./ pow_base_all_full(valid_all_full);
                 powratio_components(:, trl, fi) = ratio_all_full;
                 powratio_methods_full(:, trl, fi) = compute_method_ratios_from_components( ...
-                    ratio_all_full, x_full, x_base, raw_w, W_top, W_combined, selected_idx, w_combined, nBenchmarkMethods);
+                    ratio_all_full, x_full, x_base, raw_w, filters.full.W_top, filters.full.W_combined, filters.full.selected_idx, filters.full.w_combined, nBenchmarkMethods);
 
-                ratio_all_early = nan(nSearch, 1);
-                comp_stim_all_early = searchFilters(:, 1:nSearch)' * x_early;
+                nSearch_early = size(filters.early.searchFilters, 2);
+                comp_base_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_base;
+                pow_base_all_early = mean(comp_base_all_early.^2, 2);
+                ratio_all_early = nan(nSearch_early, 1);
+                comp_stim_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_early;
                 pow_stim_all_early = mean(comp_stim_all_early.^2, 2);
-                valid_all_early = isfinite(pow_stim_all_early) & isfinite(pow_base_all) & (pow_base_all > 0);
-                ratio_all_early(valid_all_early) = pow_stim_all_early(valid_all_early) ./ pow_base_all(valid_all_early);
+                valid_all_early = isfinite(pow_stim_all_early) & isfinite(pow_base_all_early) & (pow_base_all_early > 0);
+                ratio_all_early(valid_all_early) = pow_stim_all_early(valid_all_early) ./ pow_base_all_early(valid_all_early);
+                powratio_components_early(1:nSearch_early, trl, fi) = ratio_all_early;
                 powratio_methods_early(:, trl, fi) = compute_method_ratios_from_components( ...
-                    ratio_all_early, x_early, x_base, raw_w, W_top, W_combined, selected_idx, w_combined, nBenchmarkMethods);
+                    ratio_all_early, x_early, x_base, raw_w, filters.early.W_top, filters.early.W_combined, filters.early.selected_idx, filters.early.w_combined, nBenchmarkMethods);
 
-                ratio_all_late = nan(nSearch, 1);
-                comp_stim_all_late = searchFilters(:, 1:nSearch)' * x_late;
+                nSearch_late = size(filters.late.searchFilters, 2);
+                comp_base_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_base;
+                pow_base_all_late = mean(comp_base_all_late.^2, 2);
+                ratio_all_late = nan(nSearch_late, 1);
+                comp_stim_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_late;
                 pow_stim_all_late = mean(comp_stim_all_late.^2, 2);
-                valid_all_late = isfinite(pow_stim_all_late) & isfinite(pow_base_all) & (pow_base_all > 0);
-                ratio_all_late(valid_all_late) = pow_stim_all_late(valid_all_late) ./ pow_base_all(valid_all_late);
+                valid_all_late = isfinite(pow_stim_all_late) & isfinite(pow_base_all_late) & (pow_base_all_late > 0);
+                ratio_all_late(valid_all_late) = pow_stim_all_late(valid_all_late) ./ pow_base_all_late(valid_all_late);
+                powratio_components_late(1:nSearch_late, trl, fi) = ratio_all_late;
                 powratio_methods_late(:, trl, fi) = compute_method_ratios_from_components( ...
-                    ratio_all_late, x_late, x_base, raw_w, W_top, W_combined, selected_idx, w_combined, nBenchmarkMethods);
+                    ratio_all_late, x_late, x_base, raw_w, filters.late.W_top, filters.late.W_combined, filters.late.selected_idx, filters.late.w_combined, nBenchmarkMethods);
             end
             clear dat_nb
         end
-        all_trial_powratio_components{cond, subj} = powratio_components;
+        all_trial_powratio_components{cond, subj} = powratio_components;          % full; backward compat
+        all_trial_powratio_components_full{cond, subj}  = powratio_components;
+        all_trial_powratio_components_early{cond, subj} = powratio_components_early;
+        all_trial_powratio_components_late{cond, subj}  = powratio_components_late;
 
         for mi = 1:nBenchmarkMethods
             pr_m_full = squeeze(powratio_methods_full(mi, :, :));
@@ -2121,11 +2279,20 @@ saveas(fig_det, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_detection_rate.png'));
 %  SENSITIVITY ANALYSIS (thresholds and detrending order)
 %  ====================================================================
 if sensitivity_enable
-    fprintf('\n============================================================\n');
-    fprintf('Sensitivity analysis: all hard-coded threshold robustness\n');
-    fprintf('============================================================\n');
+    sens_win_names = {'full', 'early', 'late'};
+    sens_comp_stats = {all_component_selection_stats_full, all_component_selection_stats_early, all_component_selection_stats_late};
+    sens_comp_cubes = {all_trial_powratio_components_full, all_trial_powratio_components_early, all_trial_powratio_components_late};
 
-    base_cfg = struct( ...
+    for win_idx = 1:3
+        wname = sens_win_names{win_idx};
+        subj_stats_source = sens_comp_stats{win_idx};
+        comp_cube_source = sens_comp_cubes{win_idx};
+
+        fprintf('\n============================================================\n');
+        fprintf('Sensitivity analysis (%s window): threshold robustness\n', wname);
+        fprintf('============================================================\n');
+
+        base_cfg = struct( ...
         'minEigThr', min_eigval_hard, ...
         'minCorrThr', min_corr_hard, ...
         'minOccFrontRatioThr', min_occfront_ratio, ...
@@ -2196,18 +2363,18 @@ if sensitivity_enable
         cfg_list(end).peakMinDistanceHz = cfg_i.peakMinDistanceHz;
     end
 
-    fprintf('Evaluating %d sensitivity configurations (default + one-at-a-time sweeps).\n', numel(cfg_list));
-    sens_rows = [];
-    sens_sweep_param = cell(0, 1);
-    sens_sweep_scale = [];
-    for cfg_id = 1:numel(cfg_list)
-        cfg_cur = cfg_list(cfg_id);
+        fprintf('Evaluating %d sensitivity configurations (%s window).\n', numel(cfg_list), wname);
+        sens_rows = [];
+        sens_sweep_param = cell(0, 1);
+        sens_sweep_scale = [];
+        for cfg_id = 1:numel(cfg_list)
+            cfg_cur = cfg_list(cfg_id);
 
-        slope_cfg = nan(1, nSubj);
-        delta_cfg = nan(1, nSubj);
+            slope_cfg = nan(1, nSubj);
+            delta_cfg = nan(1, nSubj);
 
-        for subj = 1:nSubj
-            subj_stats = all_component_selection_stats{subj};
+            for subj = 1:nSubj
+                subj_stats = subj_stats_source{subj};
             if isempty(subj_stats) || ~isfield(subj_stats, 'candidate_table')
                 continue;
             end
@@ -2252,7 +2419,7 @@ if sensitivity_enable
 
             cond_medians = nan(4, 1);
             for cond = 1:4
-                comp_cube = all_trial_powratio_components{cond, subj};
+                comp_cube = comp_cube_source{cond, subj};
                 if isempty(comp_cube)
                     continue;
                 end
@@ -2316,52 +2483,62 @@ if sensitivity_enable
             cfg_cur.peakMinPromFrac, cfg_cur.peakMinDistanceHz, ...
             slope_stats_cfg.n, slope_stats_cfg.mean, slope_stats_cfg.p, slope_stats_cfg.ci_low, slope_stats_cfg.ci_high, slope_stats_cfg.cohens_d, ...
             delta_stats_cfg.n, delta_stats_cfg.mean, delta_stats_cfg.p, delta_stats_cfg.ci_low, delta_stats_cfg.ci_high, delta_stats_cfg.cohens_d]; %#ok<AGROW>
-    end
+        end
 
-    if isempty(sens_rows)
-        fprintf('Sensitivity analysis skipped: no valid parameter configurations produced finite outputs.\n');
-        sensitivity_results = table();
-    else
-        sensitivity_results = array2table(sens_rows, 'VariableNames', ...
+        if isempty(sens_rows)
+            fprintf('Sensitivity analysis (%s window) skipped: no valid outputs.\n', wname);
+            sens_results_win = table();
+        else
+        sens_results_win = array2table(sens_rows, 'VariableNames', ...
             {'cfgID', 'minEigThr', 'minCorrThr', 'minOccFrontRatioThr', 'minGammaThr', ...
             'outlierRatioThr', 'outlierMadMult', 'polyOrder', 'peakMinPromFrac', 'peakMinDistanceHz', ...
             'nSlope', 'meanSlope', 'pSlope', 'ciSlopeLow', 'ciSlopeHigh', 'dSlope', ...
             'nDelta', 'meanDelta', 'pDelta', 'ciDeltaLow', 'ciDeltaHigh', 'dDelta'});
-        sensitivity_results.sweepParam = string(sens_sweep_param);
-        sensitivity_results.sweepScale = sens_sweep_scale;
-        sensitivity_results.sigSlope = sensitivity_results.pSlope < 0.05;
-        sensitivity_results.sigDelta = sensitivity_results.pDelta < 0.05;
+            sens_results_win.sweepParam = string(sens_sweep_param);
+            sens_results_win.sweepScale = sens_sweep_scale;
+            sens_results_win.sigSlope = sens_results_win.pSlope < 0.05;
+            sens_results_win.sigDelta = sens_results_win.pDelta < 0.05;
 
-        fprintf('Sensitivity summary: %d/%d configurations significant for slope, %d/%d for delta (p<0.05)\n', ...
-            sum(sensitivity_results.sigSlope), height(sensitivity_results), ...
-            sum(sensitivity_results.sigDelta), height(sensitivity_results));
+            fprintf('Sensitivity (%s): %d/%d significant slope, %d/%d delta (p<0.05)\n', ...
+                wname, sum(sens_results_win.sigSlope), height(sens_results_win), ...
+                sum(sens_results_win.sigDelta), height(sens_results_win));
 
-        [~, sort_delta_idx] = sort(sensitivity_results.pDelta, 'ascend');
-        n_show = min(10, height(sensitivity_results));
-        disp(sensitivity_results(sort_delta_idx(1:n_show), :));
+            [~, sort_delta_idx] = sort(sens_results_win.pDelta, 'ascend');
+            n_show = min(10, height(sens_results_win));
+            disp(sens_results_win(sort_delta_idx(1:n_show), :));
 
-        fig_sens = figure('Position', [0 0 1512 982], 'Color', 'w');
-        tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
-        nexttile; hold on;
-        scatter(sensitivity_results.cfgID, sensitivity_results.meanSlope, 120, ...
-            sensitivity_results.pSlope, 'filled');
-        yline(0, 'k--', 'LineWidth', 1.0);
-        cb1 = colorbar; cb1.Label.String = 'p-value (slope)';
-        xlabel('Configuration ID');
-        ylabel('Mean slope [Hz/condition]');
-        title('Sensitivity: slope');
-        box on;
+            fig_sens = figure('Position', [0 0 1512 982], 'Color', 'w');
+            tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+            nexttile; hold on;
+            scatter(sens_results_win.cfgID, sens_results_win.meanSlope, 120, ...
+                sens_results_win.pSlope, 'filled');
+            yline(0, 'k--', 'LineWidth', 1.0);
+            cb1 = colorbar; cb1.Label.String = 'p-value (slope)';
+            xlabel('Configuration ID');
+            ylabel('Mean slope [Hz/condition]');
+            title(sprintf('Sensitivity (%s): slope', wname));
+            box on;
 
-        nexttile; hold on;
-        scatter(sensitivity_results.cfgID, sensitivity_results.meanDelta, 120, ...
-            sensitivity_results.pDelta, 'filled');
-        yline(0, 'k--', 'LineWidth', 1.0);
-        cb2 = colorbar; cb2.Label.String = 'p-value (delta)';
-        xlabel('Configuration ID');
-        ylabel('Mean \Delta(100%-25%) [Hz]');
-        title('Sensitivity: delta');
-        box on;
-        saveas(fig_sens, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_sensitivity_summary.png'));
+            nexttile; hold on;
+            scatter(sens_results_win.cfgID, sens_results_win.meanDelta, 120, ...
+                sens_results_win.pDelta, 'filled');
+            yline(0, 'k--', 'LineWidth', 1.0);
+            cb2 = colorbar; cb2.Label.String = 'p-value (delta)';
+            xlabel('Configuration ID');
+            ylabel('Mean \Delta(100%-25%) [Hz]');
+            title(sprintf('Sensitivity (%s): delta', wname));
+            box on;
+            saveas(fig_sens, fullfile(fig_save_dir_ged, sprintf('GCP_eeg_GED_sensitivity_summary_%s.png', wname)));
+        end
+
+        if win_idx == 1
+            sensitivity_results = sens_results_win;
+            sensitivity_results_full = sens_results_win;
+        elseif win_idx == 2
+            sensitivity_results_early = sens_results_win;
+        else
+            sensitivity_results_late = sens_results_win;
+        end
     end
 end
 
@@ -2382,11 +2559,12 @@ save(save_path, ...
     'all_trial_mean_centroid', 'all_trial_median_centroid', ...
     'all_trial_detrate_single', 'all_trial_detrate_single_early', 'all_trial_detrate_single_late', ...
     'all_trial_detrate_centroid', 'all_trial_gamma_power', 'all_trial_gamma_power_early', 'all_trial_gamma_power_late', ...
-    'all_topos', 'all_topo_labels', 'all_eigenvalues', ...
+    'all_topos', 'all_topos_early', 'all_topos_late', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
-    'all_component_selection_stats', 'warning_log', ...
+    'all_component_selection_stats', 'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', 'warning_log', ...
     'all_trial_powratio_bench', 'all_trial_powratio_dt_bench', 'all_trial_powratio_components', ...
+    'all_trial_powratio_components_full', 'all_trial_powratio_components_early', 'all_trial_powratio_components_late', ...
     'all_trial_powratio_bench_early', 'all_trial_powratio_bench_late', ...
     'all_trial_powratio_dt_bench_early', 'all_trial_powratio_dt_bench_late', ...
     'benchmark_methods', 'raw_reference_definition', ...
@@ -2394,6 +2572,7 @@ save(save_path, ...
     'benchmark_metric_separation_slope', 'benchmark_metric_separation_delta', ...
     'benchmark_metric_reliability_trialcv', 'benchmark_metric_reliability_subjspread', ...
     'primary_slope_stats', 'primary_delta_stats', 'sensitivity_results', ...
+    'sensitivity_results_full', 'sensitivity_results_early', 'sensitivity_results_late', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
@@ -2480,6 +2659,7 @@ end
 end % run_mode == 'full'
 
 function method_ratios = compute_method_ratios_from_components(ratio_all, x_stim, x_base, raw_w, W_top, W_combined, selected_idx, w_combined, nBenchmarkMethods)
+% ratio_all: power ratios indexed by component (1 = highest eigenvalue); must match W_top (col 1) and selected_idx
 method_ratios = nan(nBenchmarkMethods, 1);
 
 pow_stim_chan = mean(x_stim.^2, 2);
