@@ -837,8 +837,9 @@ for subj = 1:nSubj
             end
 
             % Single-peak: tallest prominent peak
+            mprom = max(0, max(pr_dt_smooth) * peak_min_prom_frac);
             [pks, locs] = findpeaks(pr_dt_smooth, scan_freqs, ...
-                'MinPeakProminence', max(pr_dt_smooth) * peak_min_prom_frac, ...
+                'MinPeakProminence', mprom, ...
                 'MinPeakDistance', peak_min_distance_hz);
 
             if ~isempty(pks)
@@ -1131,9 +1132,10 @@ for mi = 1:nBenchmarkMethods
                 if all(isnan(y))
                     continue;
                 end
+                mprom = max(0, max(y) * peak_min_prom_frac);
                 [pks, locs, ~, p] = findpeaks(y, scan_freqs, ...
                     'MinPeakDistance', peak_min_distance_hz, ...
-                    'MinPeakProminence', max(y) * peak_min_prom_frac);
+                    'MinPeakProminence', mprom);
                 if ~isempty(pks)
                     [~, bi] = max(pks);
                     peak_freq(trl) = locs(bi);
@@ -2519,8 +2521,9 @@ for trl = 1:nTrl
     end
     pr_dt = detrend_power_ratio(pr, scan_freqs, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
     pr_dt_smooth = movmean(pr_dt, 5);
+    mprom = max(0, max(pr_dt_smooth) * peak_min_prom_frac);
     [pks, locs] = findpeaks(pr_dt_smooth, scan_freqs, ...
-        'MinPeakProminence', max(pr_dt_smooth) * peak_min_prom_frac, ...
+        'MinPeakProminence', mprom, ...
         'MinPeakDistance', peak_min_distance_hz);
     if ~isempty(pks)
         [~, best_pk] = max(pks);
