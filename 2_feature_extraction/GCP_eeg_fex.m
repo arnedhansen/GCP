@@ -33,7 +33,7 @@ parfor subj = 1 : length(subjects)
     cfg.output      = 'pow';
     cfg.method      = 'mtmconvol';
     cfg.taper       = 'dpss';
-    cfg.foi         = 30:5:120;                         % Analysis 30 to 120 Hz in steps of 5 Hz
+    cfg.foi         = 30:5:90;                         % Analysis 30 to 90 Hz in steps of 5 Hz
     cfg.tapsmofrq   = 5;                                % Analysis of FOI +/- 5 Hz
     cfg.t_ftimwin   = ones(length(cfg.foi),1).*0.5;     % Length of time window = 0.5 sec
     cfg.toi          = -1.75:0.05:2;                 % Time window "slides" from -0.5 to 1.5 sec in steps of 0.05 sec (50 ms)
@@ -56,7 +56,7 @@ parfor subj = 1 : length(subjects)
     tfr_c100 = ft_freqanalysis(cfg,dataEEG_c100);
 
     %% FOOOF
-    orig_freq = 30:5:120;
+    orig_freq = 30:5:90;
     tfrs = {tfr_c25, tfr_c50, tfr_c75, tfr_c100};
     for tfr_contrast = 1:4
         clc
@@ -124,8 +124,8 @@ parfor subj = 1 : length(subjects)
     disp(upper('Baseline done...'))
 
     %% Smooth powerspectra
-    orig_freq = 30:5:120; % 19 values
-    new_freq  = 30:1:120; % 91 values
+    orig_freq = 30:5:90; 
+    new_freq  = 30:1:90; 
     tfr_c25_fooof_bl_smooth  = smooth_tfr(tfr_c25_fooof_bl, orig_freq, new_freq);
     tfr_c50_fooof_bl_smooth  = smooth_tfr(tfr_c50_fooof_bl, orig_freq, new_freq);
     tfr_c75_fooof_bl_smooth  = smooth_tfr(tfr_c75_fooof_bl, orig_freq, new_freq);
