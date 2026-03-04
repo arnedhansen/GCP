@@ -2283,8 +2283,9 @@ if sensitivity_enable
                     pr_dt = detrend_power_ratio(pr, scan_freqs, cfg_cur.polyOrder, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
                     pr_dt_smooth = movmean(pr_dt, 5);
 
+                    mprom = max(0, max(pr_dt_smooth) * cfg_cur.peakMinPromFrac);
                     [pks, locs] = findpeaks(pr_dt_smooth, scan_freqs, ...
-                        'MinPeakProminence', max(pr_dt_smooth) * cfg_cur.peakMinPromFrac, ...
+                        'MinPeakProminence', mprom, ...
                         'MinPeakDistance', cfg_cur.peakMinDistanceHz);
                     if ~isempty(pks)
                         [~, best_pk] = max(pks);
