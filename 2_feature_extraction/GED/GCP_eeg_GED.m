@@ -60,7 +60,6 @@ outlier_min_rest = 0;               % minimum non-top eligible components for do
 threshold_inspection_targets = [1 3 5]; % requested valid-component targets for threshold inspection
 
 random_seed = 13;                    % reproducible randomization
-max_parallel_subjects = 4;           % memory guard: cap concurrent subjects in parfor
 
 % Run mode: 'full' = full pipeline; 'component_check' = GED + component selection only (Phase 1)
 run_mode = 'full';
@@ -184,7 +183,7 @@ chanlocs_all = tmp_chanlocs.dataEEG_c25.label;
 if strcmpi(run_mode, 'component_check')
     fprintf('Run mode: component_check — GED + component selection only (Phase 1)\n');
 end
-parfor (subj = 1:nSubj, max_parallel_subjects)
+for subj = 1:nSubj
     close all
     tic
     datapath = fullfile(path, subjects{subj}, 'eeg');
