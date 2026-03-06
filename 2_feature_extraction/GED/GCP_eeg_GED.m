@@ -45,10 +45,10 @@ scan_width = 3;
 % counts. If future data only add subjects (not trials/condition), these
 % settings should generally remain unchanged.
 lambda = 0.05;              % full window [0, 2 s]
-lambda_full  = 0.05;        % full window [0, 2 s]
-lambda_early = 0.10;        % early window [0, 0.6 s] — stronger regularization (fewer samples)
-lambda_late  = 0.08;       % late window [1, 2 s] — moderate (1 s of data)
-ged_search_n = 20;          % search first N GED components
+lambda_full  = lambda;        % full window [0, 2 s]
+lambda_early = lambda;        % early window [0, 0.6 s] — stronger regularization (fewer samples)
+lambda_late  = lambda;       % late window [1, 2 s] — moderate (1 s of data)
+ged_search_n = 30;          % search first N GED components
 template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.20;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
@@ -57,7 +57,7 @@ viz_interp_k = 6;                   % nearest neighbors for channel interpolatio
 viz_nonocc_outlier_mult = 1.00;     % non-occipital outlier threshold multiplier (vs posterior pctl)
 viz_topo_prctile = 99.9;            % robust percentile for color scaling
 min_eigval_hard = 1.0;              % hard minimum GED eigenvalue (lambda > 1)
-min_gamma_increase_hard = 0.10;     % hard minimum gamma increase (>= 10% vs baseline)
+min_gamma_increase_hard = 0.05;     % hard minimum gamma increase (>= 5% vs baseline)
 include_occipital_label_override = true; % force-include occipital-labeled comps after eig+gamma core gates
 min_peak_form_single_hard = 0.65;   % hard minimum PF score with single-peak mode (applies to all components)
 max_frontleak_hard = 1.25;          % artifact guard: frontal leakage (front/occ)
@@ -80,12 +80,12 @@ outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for dominant-out
 outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
 outlier_min_rest = 0;               % minimum non-top eligible components for dominant-outlier exclusion (0 = no minimum)
 exclude_flat_topomap = true;        % remove spatially flat/one-color topographies
-flat_topo_mad_ratio_thr = 0.18;     % relaxed flat-map guard: MAD relative to maxabs
-flat_topo_iqr_ratio_thr = 0.24;     % relaxed flat-map guard: IQR relative to maxabs
-flat_topo_span_ratio_thr = 0.25;    % relaxed flat-map guard: span relative to maxabs
-flat_topo_std_ratio_thr = 0.08;     % relaxed flat-map guard: STD relative to maxabs
-flat_topo_minority_frac_thr = 0.08; % one-color guard: minimum minority-sign channel fraction
-flat_topo_minority_amp_thr = 0.12;  % one-color guard: minimum minority-sign amplitude (p95/maxabs)
+flat_topo_mad_ratio_thr = 0.16;     % relaxed flat-map guard: MAD relative to maxabs
+flat_topo_iqr_ratio_thr = 0.22;     % relaxed flat-map guard: IQR relative to maxabs
+flat_topo_span_ratio_thr = 0.23;    % relaxed flat-map guard: span relative to maxabs
+flat_topo_std_ratio_thr = 0.07;     % relaxed flat-map guard: STD relative to maxabs
+flat_topo_minority_frac_thr = 0.07; % one-color guard: minimum minority-sign channel fraction
+flat_topo_minority_amp_thr = 0.10;  % one-color guard: minimum minority-sign amplitude (p95/maxabs)
 peak_form_weight = 3.00;            % strongly prioritize shift-invariant gamma peak form during ranking
 peak_bonus_weight = 0.5;            % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
@@ -1069,80 +1069,8 @@ for subj = 1:nSubj
             all_component_selection_stats_late{subj} = comp_sel_struct;
         end
 
-    %% Phase 1b: Component/template sanity figures
-    cfg_topo = [];
-    cfg_topo.layout    = headmodel.layANThead;
-    cfg_topo.comment   = 'no';
-    cfg_topo.marker    = 'off';
-    cfg_topo.style     = 'straight';
-    cfg_topo.gridscale = 300;
-    cfg_topo.zlim      = 'maxabs';
-    cfg_topo.colormap  = '*RdBu';
-    cfg_topo.figure    = 'gcf';
-
-    % Combined-component topoplots: selected components (ordered by eigenvalue).
-    [~, score_ord] = sort(evals_sorted(selected_idx), 'descend');
-    selTopoIdx = selected_idx(score_ord)';
-    selWeightsOrdered = selected_weights(score_ord);
-    nSelTopo = numel(selTopoIdx);
-    nColsSel = 5;
-    nRowsSel = ceil(max(nSelTopo, 1) / nColsSel);
-    % Scale figure height by number of rows: single-row figures use ~half height to reduce excess whitespace
-    fig_height = min(982, round(491 * nRowsSel));  % 491 ≈ 982/2 per row, capped at 982
-    fig_post = figure('Position', [0 0 1512 fig_height], 'Color', 'w');
-    title_post = sprintf('Subject %s: Eligible Components (n=%d)', ...
-        subjects{subj}, nSelTopo);
-    annotation(fig_post, 'textbox', [0.01 0.965 0.98 0.03], ...
-        'String', title_post, 'EdgeColor', 'none', 'HorizontalAlignment', 'center', ...
-        'VerticalAlignment', 'middle', 'FontSize', 18, 'FontWeight', 'bold');
-    if nSelTopo == 0
-        subplot(1, 1, 1);
-        axis off;
-        text(0.5, 0.5, 'No selected components', 'HorizontalAlignment', 'center');
-    else
-        for si = 1:nSelTopo
-            subplot(nRowsSel, nColsSel, si);
-            comp_rank = selTopoIdx(si);
-            topo_data = [];
-            topo_data.label = all_topo_labels{subj};
-            topo_data.avg = searchTopos(:, comp_rank);
-            topo_data.dimord = 'chan';
-            topo_abs_ci = abs(topo_data.avg(post_idx));
-            topo_abs_ci = topo_abs_ci(isfinite(topo_abs_ci));
-            if isempty(topo_abs_ci)
-                topo_abs_ci = abs(topo_data.avg(:));
-                topo_abs_ci = topo_abs_ci(isfinite(topo_abs_ci));
-            end
-            if isempty(topo_abs_ci)
-                topo_clim_ci = 1;
-            else
-                topo_clim_ci = prctile(topo_abs_ci, viz_topo_prctile);
-                if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
-                    topo_clim_ci = max(topo_abs_ci);
-                end
-                if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
-                    topo_clim_ci = 1;
-                end
-            end
-            cfg_topo_ci = cfg_topo;
-            cfg_topo_ci.zlim = [-topo_clim_ci topo_clim_ci];
-            try
-                ft_topoplotER(cfg_topo_ci, topo_data);
-                colorbar;
-            catch
-                imagesc(topo_data.avg); caxis([-topo_clim_ci topo_clim_ci]); colorbar;
-            end
-            g_log = searchGammaEvidence(comp_rank);
-            g_pct = 100 * (exp(g_log) - 1);   % gamma amplification as % change from baseline
-            title(sprintf('C%d:\\lambda=%.2f,r=%.2f,ratio=%.2f,g=%.0f%%', ...
-                comp_rank, evals_sorted(comp_rank), searchCorrs(comp_rank), ...
-                searchOccFrontRatio(comp_rank), g_pct), 'FontSize', 6);
-        end
-    end
-        saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_subj%s_eligible_components_%s.png', subjects{subj}, win_names{w})));
-        close(fig_post);
-        % EMG exclusion diagnostics are generated after all windows are processed,
-        % once cross-window IDs and consistency updates are available.
+    % EMG exclusion diagnostics are generated after all windows are processed,
+    % once cross-window IDs and consistency updates are available.
     end
 
     match_cfg = struct( ...
@@ -1278,6 +1206,8 @@ for subj = 1:nSubj
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(crosswin_id_full)), gamma_vec_full, ...
         occipital_evidence_full, emg_artifact_score_full, searchEmgClass_full, unknown_proxy_full, ...
         candidate_table_full.hard_eligible, hard_reject_full, soft_warn_full, rejection_flags_full, ...
+        candidate_table_full.front_leak, candidate_table_full.temp_leak, ...
+        candidate_table_full.lineharm_ratio, candidate_table_full.hf_slope, ...
         adaptive_thr_full, cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
         candidate_table_full.peak_form_mode, crosswin_id_full);
     plot_emg_exclusion_diagnostics( ...
@@ -1285,6 +1215,8 @@ for subj = 1:nSubj
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(crosswin_id_early)), gamma_vec_early, ...
         occipital_evidence_early, emg_artifact_score_early, searchEmgClass_early, unknown_proxy_early, ...
         candidate_table_early.hard_eligible, hard_reject_early, soft_warn_early, rejection_flags_early, ...
+        candidate_table_early.front_leak, candidate_table_early.temp_leak, ...
+        candidate_table_early.lineharm_ratio, candidate_table_early.hf_slope, ...
         adaptive_thr_early, cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
         candidate_table_early.peak_form_mode, crosswin_id_early);
     plot_emg_exclusion_diagnostics( ...
@@ -1292,6 +1224,8 @@ for subj = 1:nSubj
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(crosswin_id_late)), gamma_vec_late, ...
         occipital_evidence_late, emg_artifact_score_late, searchEmgClass_late, unknown_proxy_late, ...
         candidate_table_late.hard_eligible, hard_reject_late, soft_warn_late, rejection_flags_late, ...
+        candidate_table_late.front_leak, candidate_table_late.temp_leak, ...
+        candidate_table_late.lineharm_ratio, candidate_table_late.hf_slope, ...
         adaptive_thr_late, cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
         candidate_table_late.peak_form_mode, crosswin_id_late);
 
@@ -3182,16 +3116,23 @@ z(valid) = (xv - xm) / xs;
 z(valid) = max(min(z(valid), 3), -3);
 end
 
-function cmap = emg_white_yellow_orange_red_colormap(n)
+function cmap = emg_white_yellow_orange_red_colormap(n, white_until_frac)
 if nargin < 1 || isempty(n)
     n = 256;
 end
+if nargin < 2 || isempty(white_until_frac)
+    white_until_frac = 0.05;
+end
+white_until_frac = max(0, min(white_until_frac, 0.95));
 anchors = [ ...
+    1.00 1.00 1.00; ...
     1.00 1.00 1.00; ...
     1.00 1.00 0.65; ...
     1.00 0.65 0.20; ...
     0.78 0.00 0.00];
-anchor_pos = [0.00, 0.10, 0.55, 1.00];
+pos_yellow = white_until_frac + (1 - white_until_frac) * 0.25;
+pos_orange = white_until_frac + (1 - white_until_frac) * 0.65;
+anchor_pos = [0.00, white_until_frac, pos_yellow, pos_orange, 1.00];
 xi = linspace(0, 1, n);
 cmap = interp1(anchor_pos, anchors, xi, 'linear');
 cmap = max(min(cmap, 1), 0);
@@ -3199,7 +3140,9 @@ end
 
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
     searchMeanPrSpectrum, eval_vec, gamma_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
-    hard_eligible, hard_reject_flags, soft_warn_flags, rejection_flags, adaptive_thr, cfg_topo, topo_labels, ...
+    hard_eligible, hard_reject_flags, soft_warn_flags, rejection_flags, ...
+    front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec, ...
+    adaptive_thr, cfg_topo, topo_labels, ...
     peak_form_score, peak_form_mode, crosswin_id)
 nComp = numel(eval_vec);
 if nComp < 1
@@ -3209,7 +3152,8 @@ end
 figA = figure('Position', [0 0 1512 982]);
 scatter_size = 60 + 80 * max(eval_vec - min(eval_vec), 0) / max(max(eval_vec) - min(eval_vec), eps);
 g_pct = 100 * (exp(gamma_vec) - 1);
-scatter(occ_evidence, emg_score, scatter_size, g_pct, 'filled'); hold on;
+scatter(occ_evidence, emg_score, scatter_size, g_pct, 'filled', ...
+    'MarkerEdgeColor', 'k', 'LineWidth', 0.8); hold on;
 xline(adaptive_thr.occ_class_thr, 'k--', 'LineWidth', 1.0);
 yline(adaptive_thr.emg_class_thr, 'k--', 'LineWidth', 1.0);
 xline(0, '-', 'Color', [0.45 0.45 0.45], 'LineWidth', 0.8);
@@ -3218,7 +3162,6 @@ idx_unknown = find(unknown_high_risk);
 if ~isempty(idx_unknown)
     scatter(occ_evidence(idx_unknown), emg_score(idx_unknown), 130, 'rx', 'LineWidth', 2.0);
 end
-colormap(gca, emg_white_yellow_orange_red_colormap(256));
 g_finite = g_pct(isfinite(g_pct));
 if isempty(g_finite)
     g_upper = 10;
@@ -3231,6 +3174,8 @@ end
 if ~isfinite(g_upper) || g_upper <= 0
     g_upper = 10;
 end
+white_until_frac = min(5 / g_upper, 0.95);
+colormap(gca, emg_white_yellow_orange_red_colormap(256, white_until_frac));
 caxis([0 g_upper]);
 x_vals = occ_evidence(isfinite(occ_evidence));
 y_vals = emg_score(isfinite(emg_score));
@@ -3261,14 +3206,17 @@ for ci = 1:nComp
     if isfinite(occ_evidence(ci)) && isfinite(emg_score(ci))
         lbl = sprintf('C%d', ci);
         text(occ_evidence(ci) + 0.015 * x_lim_absmax, emg_score(ci) + 0.015 * y_lim_absmax, ...
-            lbl, 'FontSize', 7, 'Color', [0.15 0.15 0.15], 'Interpreter', 'none');
+            lbl, 'FontSize', 9, 'Color', [0.15 0.15 0.15], 'Interpreter', 'none');
     end
 end
 cb = colorbar;
 cb.Label.String = 'Gamma change [%]';
-xlabel('OccipitalScore');
-ylabel('EMGArtifactScore');
-title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
+cb.FontSize = 13;
+cb.Label.FontSize = 14;
+set(gca, 'FontSize', 13, 'LineWidth', 1.0);
+xlabel('OccipitalScore', 'FontSize', 14);
+ylabel('EMGArtifactScore', 'FontSize', 14);
+title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), 'FontSize', 16, 'FontWeight', 'bold');
 box on;
 saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_scatter_%s.png', subject_id, win_name)));
 close(figA);
@@ -3362,6 +3310,18 @@ for k = 1:nCols
         ci = rej_idx(k);
         plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.3);
         yline(0, 'k--');
+        info_txt = sprintf(['flat_topomap: %d\n' ...
+                            'lineharm: %.2f\n' ...
+                            'hf_slope: %.2f\n' ...
+                            'front_leak: %.2f\n' ...
+                            'temp_leak: %.2f'], ...
+                            double(rejection_flags.flat_topomap(ci)), ...
+                            lineharm_vec(ci), hf_slope_vec(ci), ...
+                            front_leak_vec(ci), temp_leak_vec(ci));
+        text(0.02, 1.34, info_txt, 'Units', 'normalized', 'Clipping', 'off', ...
+            'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', 'FontSize', 6.5, ...
+            'Interpreter', 'none', 'BackgroundColor', [1 1 1], 'EdgeColor', [0.75 0.75 0.75], ...
+            'Margin', 1);
         xlabel('Hz'); ylabel('PR');
         title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
             eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
@@ -3989,6 +3949,10 @@ nComp = numel(candidate_table.comp_idx);
 if isempty(crosswin_id) || numel(crosswin_id) ~= nComp
     crosswin_id = nan(nComp, 1);
 end
+eligible_mask = candidate_table.hard_eligible;
+if isfield(candidate_table, 'force_include_occipital')
+    eligible_mask = eligible_mask | logical(candidate_table.force_include_occipital);
+end
 score_final = candidate_table.score_base;
 bonus_vec = zeros(nComp, 1);
 for ci = 1:nComp
@@ -3998,12 +3962,12 @@ for ci = 1:nComp
     end
     if isKey(group_consistent_map, gid) && isKey(group_occipital_map, gid) && ...
             logical(group_consistent_map(gid)) && logical(group_occipital_map(gid)) && ...
-            candidate_table.hard_eligible(ci) && candidate_table.soft_warn(ci)
+            eligible_mask(ci) && candidate_table.soft_warn(ci)
         bonus_vec(ci) = bonus_val;
     end
 end
 score_final = score_final + bonus_vec;
-eligible = find(candidate_table.hard_eligible & isfinite(score_final));
+eligible = find(eligible_mask & isfinite(score_final));
 if isempty(eligible)
     finite_idx = find(isfinite(candidate_table.score_base));
     if isempty(finite_idx)
