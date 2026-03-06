@@ -75,6 +75,9 @@ exclude_dominant_outlier = true;    % remove dominant top outlier (lambda1/lambd
 outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for dominant-outlier detection
 outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
 outlier_min_rest = 0;               % minimum non-top eligible components for dominant-outlier exclusion (0 = no minimum)
+exclude_flat_topomap = true;        % remove spatially flat/one-color topographies
+flat_topo_mad_ratio_thr = 0.20;     % stricter flat-map guard: MAD relative to maxabs
+flat_topo_iqr_ratio_thr = 0.28;     % stricter flat-map guard: IQR relative to maxabs
 threshold_inspection_targets = [1 3 5]; % retained for backwards-compatible diagnostics
 
 random_seed = 13;                    % reproducible randomization
@@ -535,6 +538,10 @@ for subj = 1:nSubj
     searchOccipitalEvidence = occipital_evidence;
     searchEmgArtifactScore = emg_artifact_score;
     hard_eligible_raw = finite_metrics & (eval_raw_vec >= min_eigval_hard);
+    flat_topomap_mask = false(nSearch, 1);
+    if exclude_flat_topomap
+        flat_topomap_mask = detect_flat_topomap_outliers(searchTopos, flat_topo_mad_ratio_thr, flat_topo_iqr_ratio_thr);
+    end
     artifact_flags = (finite_metrics & ( ...
         (leak_vec > max_frontleak_hard) | ...
         (temp_leak_vec > max_templeak_hard) | ...
@@ -543,38 +550,27 @@ for subj = 1:nSubj
         (stationarity_vec > max_stationarity_cv_hard) | ...
         (burst_vec > max_burst_ratio_hard) | ...
         (hf_slope_vec > max_hf_slope_hard) | ...
-        (condlock_vec < min_condlock_rho_hard))) | unknown_proxy_vec;
+        (condlock_vec < min_condlock_rho_hard))) | unknown_proxy_vec | flat_topomap_mask;
     for ci = 1:nSearch
         if unknown_proxy_vec(ci)
-            searchEmgClass{ci} = 'unknown_high_risk';
+            searchEmgClass{ci} = 'unclear';
         elseif (occipital_evidence(ci) >= 0.6) && (emg_artifact_score(ci) < 0.5)
-            searchEmgClass{ci} = 'likely_occipital';
+            searchEmgClass{ci} = 'occipital';
         elseif (occipital_evidence(ci) < 0.6) && (emg_artifact_score(ci) >= 0.5)
-            searchEmgClass{ci} = 'likely_emg';
+            searchEmgClass{ci} = 'EMG';
         elseif (occipital_evidence(ci) >= 0.6) && (emg_artifact_score(ci) >= 0.5)
             searchEmgClass{ci} = 'mixed';
         else
             searchEmgClass{ci} = 'unclear';
         end
     end
-    % User-directed override: likely occipital components are retained even
-    % when hard artifact thresholds are exceeded.
-    force_include_occipital = strcmp(searchEmgClass, 'likely_occipital') & hard_eligible_raw;
-    artifact_flags(force_include_occipital) = false;
-    if w == 1
-        all_threshold_inspection{subj} = compute_threshold_inspection( ...
-            eval_raw_vec, corr_vec, ratio_vec, gamma_vec, ...
-            min_eigval_hard, min_corr_hard, 0, 0, ...
-            threshold_inspection_targets, nSearch);
-    end
-    no_hard_threshold_match = ~any(hard_eligible_raw);
-    hard_eligible = hard_eligible_raw & ~artifact_flags;
     dominant_outlier_mask = false(nSearch, 1);
     if exclude_dominant_outlier
-        [hard_eligible, dominant_outlier_idx] = exclude_dominant_top_outlier( ...
+        [~, dominant_outlier_idx] = exclude_dominant_top_outlier( ...
             evals_sorted(1:nSearch), hard_eligible_raw, outlier_ratio_thr, outlier_mad_mult, outlier_min_rest);
         if ~isempty(dominant_outlier_idx)
             dominant_outlier_mask(dominant_outlier_idx) = true;
+            artifact_flags(dominant_outlier_idx) = true;
             msg = sprintf(['Dominant top GED component excluded for subject %s (component C%d) ', ...
                            'before combined-component selection.'], subjects{subj}, dominant_outlier_idx);
             ratio12_val = NaN;
@@ -586,8 +582,21 @@ for subj = 1:nSubj
                        'lambda2', evals_sorted(min(2, numel(evals_sorted))), 'lambda1_lambda2_ratio', ratio12_val));
         end
     end
-    hard_eligible = hard_eligible & ~artifact_flags;
+    % User-directed override: occipital components are retained even
+    % when hard artifact thresholds are exceeded.
+    force_include_occipital = strcmp(searchEmgClass, 'occipital') & hard_eligible_raw & ...
+        ~dominant_outlier_mask & ~flat_topomap_mask;
+    artifact_flags(force_include_occipital) = false;
+    if w == 1
+        all_threshold_inspection{subj} = compute_threshold_inspection( ...
+            eval_raw_vec, corr_vec, ratio_vec, gamma_vec, ...
+            min_eigval_hard, min_corr_hard, 0, 0, ...
+            threshold_inspection_targets, nSearch);
+    end
+    no_hard_threshold_match = ~any(hard_eligible_raw);
+    hard_eligible = hard_eligible_raw & ~artifact_flags;
     hard_eligible = hard_eligible | force_include_occipital;
+    hard_eligible(dominant_outlier_mask | flat_topomap_mask) = false;
     searchScores = eval_raw_vec;
     searchScores(~hard_eligible) = -Inf;
     if ~any(isfinite(searchScores))
@@ -3034,6 +3043,21 @@ z(valid) = (xv - xm) / xs;
 z(valid) = max(min(z(valid), 3), -3);
 end
 
+function cmap = emg_white_yellow_orange_red_colormap(n)
+if nargin < 1 || isempty(n)
+    n = 256;
+end
+anchors = [ ...
+    1.00 1.00 1.00; ...
+    1.00 1.00 0.65; ...
+    1.00 0.65 0.20; ...
+    0.78 0.00 0.00];
+anchor_pos = [0.00, 0.10, 0.55, 1.00];
+xi = linspace(0, 1, n);
+cmap = interp1(anchor_pos, anchors, xi, 'linear');
+cmap = max(min(cmap, 1), 0);
+end
+
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
     searchMeanPrSpectrum, eval_vec, gamma_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
     hard_eligible, artifact_flags, cfg_topo, topo_labels)
@@ -3052,13 +3076,43 @@ idx_unknown = find(unknown_high_risk);
 if ~isempty(idx_unknown)
     scatter(occ_evidence(idx_unknown), emg_score(idx_unknown), 130, 'rx', 'LineWidth', 2.0);
 end
+colormap(gca, emg_white_yellow_orange_red_colormap(256));
+g_finite = g_pct(isfinite(g_pct));
+if isempty(g_finite)
+    g_upper = 10;
+else
+    g_upper = prctile(g_finite, 95);
+    if ~isfinite(g_upper) || g_upper < 10
+        g_upper = max(10, max(g_finite));
+    end
+end
+if ~isfinite(g_upper) || g_upper <= 0
+    g_upper = 10;
+end
+caxis([0 g_upper]);
+x_vals = occ_evidence(isfinite(occ_evidence));
+y_vals = emg_score(isfinite(emg_score));
+if isempty(x_vals)
+    x_absmax = 1;
+else
+    x_absmax = max(abs(x_vals));
+end
+if isempty(y_vals)
+    y_absmax = 1;
+else
+    y_absmax = max(abs(y_vals));
+end
+x_absmax = max([x_absmax, abs(0.6), 0.1]);
+y_absmax = max([y_absmax, abs(0.5), 0.1]);
+xlim([-x_absmax x_absmax]);
+ylim([-y_absmax y_absmax]);
 cb = colorbar;
 cb.Label.String = 'Gamma change [%]';
 xlabel('OccipitalEvidenceScore');
 ylabel('EMGArtifactScore');
 title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-grid on; box on;
-saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_EMG_scatter_subj%s_%s.png', subject_id, win_name)));
+box on;
+saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_scatter_%s.png', subject_id, win_name)));
 close(figA);
 
 sel_idx = find(hard_eligible);
@@ -3081,13 +3135,19 @@ for k = 1:nShow
         topo_data.avg = searchTopos(:, ci);
         topo_data.dimord = 'chan';
         cfg_ci = cfg_topo;
-        cfg_ci.zlim = 'maxabs';
+        topo_vals = topo_data.avg(isfinite(topo_data.avg));
+        topo_clim_ci = max(abs(topo_vals));
+        if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
+            topo_clim_ci = 1;
+        end
+        cfg_ci.zlim = [-topo_clim_ci topo_clim_ci];
         try
             ft_topoplotER(cfg_ci, topo_data);
         catch
             imagesc(topo_data.avg(:)); axis tight;
+            caxis([-topo_clim_ci topo_clim_ci]);
         end
-        title(sprintf('Sel C%d (%s)', ci, emg_class{ci}), 'FontSize', 8);
+        title(sprintf('Sel C%d (%s)', ci, emg_class{ci}), 'FontSize', 8, 'Interpreter', 'none');
     else
         axis off;
     end
@@ -3110,13 +3170,19 @@ for k = 1:nShow
         topo_data.avg = searchTopos(:, ci);
         topo_data.dimord = 'chan';
         cfg_ci = cfg_topo;
-        cfg_ci.zlim = 'maxabs';
+        topo_vals = topo_data.avg(isfinite(topo_data.avg));
+        topo_clim_ci = max(abs(topo_vals));
+        if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
+            topo_clim_ci = 1;
+        end
+        cfg_ci.zlim = [-topo_clim_ci topo_clim_ci];
         try
             ft_topoplotER(cfg_ci, topo_data);
         catch
             imagesc(topo_data.avg(:)); axis tight;
+            caxis([-topo_clim_ci topo_clim_ci]);
         end
-        title(sprintf('Rej C%d (%s)', ci, emg_class{ci}), 'FontSize', 8);
+        title(sprintf('Rej C%d (%s)', ci, emg_class{ci}), 'FontSize', 8, 'Interpreter', 'none');
     else
         axis off;
     end
@@ -3133,28 +3199,48 @@ for k = 1:nShow
     end
 end
 sgtitle(sprintf('Selected vs Artifact-Rejected Components: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-saveas(figB, fullfile(save_dir, sprintf('GCP_eeg_GED_EMG_topo_spectra_subj%s_%s.png', subject_id, win_name)));
+saveas(figB, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_%s.png', subject_id, win_name)));
 close(figB);
 
-figC = figure('Position', [0 0 1512 982]);
-counts = [sum(hard_eligible), sum(artifact_flags), sum(unknown_high_risk), numel(eval_vec)];
-cats = {'Selected', 'ArtifactFlagged', 'UnknownHighRisk', 'Candidates'};
-subplot(1, 2, 1);
+figC = figure('Position', [0 0 756 982]);
+counts = [sum(hard_eligible), sum(artifact_flags), numel(eval_vec)];
+cats = {'Selected', 'ArtifactFlagged', 'Candidates'};
 bar(counts, 0.6, 'FaceColor', [0.3 0.4 0.7]); hold on;
 set(gca, 'XTick', 1:numel(cats), 'XTickLabel', cats, 'XTickLabelRotation', 20);
 ylabel('Count');
 title('Component counts');
 box on;
-subplot(1, 2, 2);
-rates = counts / max(numel(eval_vec), 1);
-bar(100 * rates, 0.6, 'FaceColor', [0.2 0.6 0.5]); hold on;
-set(gca, 'XTick', 1:numel(cats), 'XTickLabel', cats, 'XTickLabelRotation', 20);
-ylabel('Rate [%]');
-title('Component rates');
-box on;
 sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_EMG_summary_subj%s_%s.png', subject_id, win_name)));
+saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_summary_%s.png', subject_id, win_name)));
 close(figC);
+end
+
+function flat_mask = detect_flat_topomap_outliers(topo_mat, mad_ratio_thr, iqr_ratio_thr)
+nComp = size(topo_mat, 2);
+flat_mask = false(nComp, 1);
+if isempty(topo_mat)
+    return;
+end
+for ci = 1:nComp
+    topo_vec = topo_mat(:, ci);
+    topo_vec = topo_vec(isfinite(topo_vec));
+    if isempty(topo_vec)
+        flat_mask(ci) = true;
+        continue;
+    end
+    amp_max = max(abs(topo_vec));
+    if ~isfinite(amp_max) || amp_max <= eps
+        flat_mask(ci) = true;
+        continue;
+    end
+    mad_ratio = mad(topo_vec, 1) / amp_max;
+    iqr_ratio = iqr(topo_vec) / amp_max;
+    span_ratio = (max(topo_vec) - min(topo_vec)) / amp_max;
+    if ~isfinite(mad_ratio), mad_ratio = 0; end
+    if ~isfinite(iqr_ratio), iqr_ratio = 0; end
+    if ~isfinite(span_ratio), span_ratio = 0; end
+    flat_mask(ci) = (mad_ratio <= mad_ratio_thr) || (iqr_ratio <= iqr_ratio_thr) || (span_ratio <= 0.25);
+end
 end
 
 function proxy = estimate_component_artifact_proxies(filter_w, dat_per_cond, stim_window, base_window, scan_freqs, scan_width, max_trials)
