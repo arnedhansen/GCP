@@ -76,7 +76,7 @@ exclude_dominant_outlier = true;    % remove dominant top outlier (lambda1/lambd
 outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for dominant-outlier detection
 outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
 outlier_min_rest = 0;               % minimum non-top eligible components for dominant-outlier exclusion (0 = no minimum)
-exclude_flat_topomap = true;        % remove spatially flat/one-color topographies
+exclude_flat_topomap = false;       % do not exclude components based on flat/one-color topographies
 flat_topo_mad_ratio_thr = 0.08;     % lenient flat-map guard: MAD relative to maxabs
 flat_topo_iqr_ratio_thr = 0.12;     % lenient flat-map guard: IQR relative to maxabs
 selection_min_eigengap_ratio = 1.03; % stability guard: minimum lambda1/lambda2 among hard-eligible set
@@ -84,12 +84,13 @@ peak_support_weight = 0.25;         % soft score bonus from peak-shape support
 peak_occ_margin_weight = 0.10;      % soft score bonus from occ-minus-EMG margin
 
 % GED window quality gate (degeneracy / numerical stability).
-quality_max_sr_similarity = 0.995;      % reject if S and R are nearly proportional
-quality_min_eigs_stdlog = 0.030;        % reject if eigenspectrum spread is too flat
-quality_min_lambda12_ratio = 1.005;     % reject if top eigengap collapses
-quality_max_whitened_cv = 0.10;         % reject if whitened spectrum is near identity
-quality_max_condition_number = 1e8;     % reject ill-conditioned covariance matrices
-quality_min_effective_rank_frac = 0.20; % reject if effective rank too low (relative to channels)
+enforce_window_quality_gate = false;    % diagnostics only: do not hard-exclude components on window quality
+quality_max_sr_similarity = 0.9995;     % more lenient near-proportionality threshold
+quality_min_eigs_stdlog = 0.005;        % allow much flatter eigenspectra
+quality_min_lambda12_ratio = 1.0005;    % allow near-collapsed top eigengap
+quality_max_whitened_cv = 0.02;         % only fail for almost perfectly identity-like spectra
+quality_max_condition_number = 1e10;    % tolerate higher covariance condition numbers
+quality_min_effective_rank_frac = 0.08; % tolerate lower effective rank (relative to channels)
 quality_diag_topk = 20;                 % eigenspectrum diagnostics on first K eigenvalues
 
 random_seed = 13;                    % reproducible randomization
@@ -467,9 +468,15 @@ for subj = 1:nSubj
         ged_diag.alpha_base_final = alpha_base;
         window_quality_stats{w} = ged_diag;
         if ~ged_window_valid
-            msg = sprintf(['GED window quality gate failed for subject %s (%s): %s. ', ...
-                'Window marked invalid and outputs will be propagated as NaN.'], ...
-                subjects{subj}, win_names{w}, ged_window_fail_reason);
+            if enforce_window_quality_gate
+                msg = sprintf(['GED window quality gate failed for subject %s (%s): %s. ', ...
+                    'Window marked invalid and outputs will be propagated as NaN.'], ...
+                    subjects{subj}, win_names{w}, ged_window_fail_reason);
+            else
+                msg = sprintf(['GED window quality diagnostics flagged subject %s (%s): %s. ', ...
+                    'Gate enforcement is disabled, so component selection continues.'], ...
+                    subjects{subj}, win_names{w}, ged_window_fail_reason);
+            end
             warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'GED_WINDOW_INVALID', msg, ged_diag);
         end
 
@@ -627,7 +634,7 @@ for subj = 1:nSubj
     fail_occ_margin = finite_metrics & (emg_artifact_score >= adaptive_thr.emg_class_thr) & ...
         (occ_minus_emg < adaptive_thr.min_occ_margin);
     fail_window_quality = false(nSearch, 1);
-    if ~ged_window_valid
+    if enforce_window_quality_gate && ~ged_window_valid
         fail_window_quality(:) = true;
     end
     artifact_flags = fail_front_leak | fail_temp_leak | fail_corr | fail_lineharm | ...
@@ -3043,7 +3050,8 @@ cb = colorbar;
 cb.Label.String = 'Gamma change [%]';
 xlabel('OccipitalEvidenceScore');
 ylabel('EMGArtifactScore');
-title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
+title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), ...
+    'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
 box on;
 saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_scatter_%s.png', subject_id, win_name)));
 close(figA);
@@ -3137,7 +3145,12 @@ else
     fig_title = sprintf('Selected vs Artifact-Rejected Components: %s (%s, invalid: %s)', ...
         subject_id, win_name, window_fail_reason);
 end
-sgtitle(fig_title, 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle(fig_title, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
+annotation(figB, 'textbox', [0.87 0.56 0.12 0.12], ...
+    'String', sprintf('Total components: %d', numel(eval_vec)), ...
+    'EdgeColor', [0.2 0.2 0.2], 'LineWidth', 0.8, ...
+    'BackgroundColor', [1 1 1], 'HorizontalAlignment', 'center', ...
+    'VerticalAlignment', 'middle', 'FontSize', 10, 'FontWeight', 'bold');
 if isempty(sel_idx)
     annotation(figB, 'textbox', [0.02 0.92 0.96 0.05], ...
         'String', 'No hard-eligible components. Window outputs propagated as NaN.', ...
@@ -3146,7 +3159,7 @@ end
 saveas(figB, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_%s.png', subject_id, win_name)));
 close(figB);
 
-figC = figure('Position', [0 0 1512 982]);
+figC = figure('Position', [0 0 1512/2 982]);
 tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile;
 counts = [sum(hard_eligible), sum(artifact_flags), numel(eval_vec)];
@@ -3167,11 +3180,13 @@ for ri = 1:numel(reason_names)
     end
 end
 bar(reason_counts, 0.65, 'FaceColor', [0.72 0.40 0.30]); hold on;
-set(gca, 'XTick', 1:numel(reason_names), 'XTickLabel', reason_names, 'XTickLabelRotation', 35);
+set(gca, 'XTick', 1:numel(reason_names), 'XTickLabel', reason_names, ...
+    'XTickLabelRotation', 35, 'TickLabelInterpreter', 'none');
 ylabel('Rejected components');
 title('Rejection reasons (criterion-level)');
 box on;
-sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
+sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), ...
+    'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
 saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_summary_%s.png', subject_id, win_name)));
 close(figC);
 end
