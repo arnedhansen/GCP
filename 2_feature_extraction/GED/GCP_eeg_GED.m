@@ -83,7 +83,7 @@ flat_topo_span_ratio_thr = 0.25;    % relaxed flat-map guard: span relative to m
 flat_topo_std_ratio_thr = 0.08;     % relaxed flat-map guard: STD relative to maxabs
 flat_topo_minority_frac_thr = 0.08; % one-color guard: minimum minority-sign channel fraction
 flat_topo_minority_amp_thr = 0.12;  % one-color guard: minimum minority-sign amplitude (p95/maxabs)
-peak_form_weight = 2.00;            % strongly prioritize shift-invariant gamma peak form during ranking
+peak_form_weight = 3.00;            % strongly prioritize shift-invariant gamma peak form during ranking
 peak_bonus_weight = 0.5;            % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
 peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
@@ -1111,7 +1111,7 @@ for subj = 1:nSubj
                 searchOccFrontRatio(comp_rank), g_pct), 'FontSize', 6);
         end
     end
-        saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_%s.png', subjects{subj}, win_names{w})));
+        saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_subj%s_eligible_components_%s.png', subjects{subj}, win_names{w})));
         close(fig_post);
         % EMG exclusion diagnostics are generated after all windows are processed,
         % once cross-window IDs and consistency updates are available.
@@ -3238,7 +3238,7 @@ for ci = 1:nComp
 end
 cb = colorbar;
 cb.Label.String = 'Gamma change [%]';
-xlabel('OccipitalEvidenceScore');
+xlabel('OccipitalScore');
 ylabel('EMGArtifactScore');
 title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
 box on;
