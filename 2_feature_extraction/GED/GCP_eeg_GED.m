@@ -84,6 +84,14 @@ flat_topo_std_ratio_thr = 0.08;     % relaxed flat-map guard: STD relative to ma
 peak_bonus_weight = 0.35;           % positive score term for clear 1-2 peak spectra
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
 peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
+hard_leak_severity_mult = 1.15;     % leak must exceed adaptive threshold by this factor for hard reject
+hard_emg_severity_mult = 1.10;      % EMG score must exceed adaptive threshold by this factor for hard reject
+crosswin_w_topo = 0.50;             % cross-window matching weight for topography similarity
+crosswin_w_spec = 0.35;             % cross-window matching weight for spectrum similarity
+crosswin_w_feat = 0.15;             % cross-window matching weight for scalar-feature similarity
+crosswin_match_min_conf = 0.65;     % minimum confidence required to accept a cross-window match
+crosswin_consistency_min = 0.65;    % minimum mean confidence to treat a cross-window group as stable
+crosswin_consistency_bonus = 0.12;  % additive score bonus for stable occipital-like cross-window groups
 
 random_seed = 13;                    % reproducible randomization
 
@@ -134,12 +142,11 @@ fig_save_dir_ged = fullfile(gcp_root_path, 'figures', 'eeg', 'ged');
 fig_save_dir_component_comparison = fullfile(fig_save_dir_ged, 'component_comparison');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
 fig_save_dir_subj = fullfile(fig_save_dir_ged, 'subj');
-fig_save_dir_emg_exclusion = fullfile(fig_save_dir_component_selection, 'EMG_exclusion');
+fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_comparison, 'dir'), mkdir(fig_save_dir_component_comparison); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
 if ~exist(fig_save_dir_subj, 'dir'), mkdir(fig_save_dir_subj); end
-if ~exist(fig_save_dir_emg_exclusion, 'dir'), mkdir(fig_save_dir_emg_exclusion); end
 comp_sel_save_dir = fig_save_dir_component_selection;
 
 %% Preallocate storage
@@ -195,6 +202,7 @@ all_selected_comp_weights = cell(1, nSubj);
 all_component_selection_stats_full  = cell(1, nSubj);
 all_component_selection_stats_early = cell(1, nSubj);
 all_component_selection_stats_late  = cell(1, nSubj);
+all_crosswin_match_stats = cell(1, nSubj);
 warning_log_by_subj = cell(nSubj, 1);
 
 all_trial_powratio_bench = cell(nBenchmarkMethods, 4, nSubj);
@@ -380,6 +388,26 @@ for subj = 1:nSubj
     W_combined_full  = []; W_combined_early  = []; W_combined_late  = [];
     selected_idx_full  = []; selected_idx_early  = []; selected_idx_late  = [];
     w_combined_full  = []; w_combined_early  = []; w_combined_late  = [];
+    evals_sorted_full = []; evals_sorted_early = []; evals_sorted_late = [];
+    searchCorrs_full = []; searchCorrs_early = []; searchCorrs_late = [];
+    searchOccFrontRatio_full = []; searchOccFrontRatio_early = []; searchOccFrontRatio_late = [];
+    searchGammaEvidence_full = []; searchGammaEvidence_early = []; searchGammaEvidence_late = [];
+    searchTopos_full = []; searchTopos_early = []; searchTopos_late = [];
+    searchMeanPrSpectrum_full = []; searchMeanPrSpectrum_early = []; searchMeanPrSpectrum_late = [];
+    gamma_vec_full = []; gamma_vec_early = []; gamma_vec_late = [];
+    occipital_evidence_full = []; occipital_evidence_early = []; occipital_evidence_late = [];
+    emg_artifact_score_full = []; emg_artifact_score_early = []; emg_artifact_score_late = [];
+    searchEmgClass_full = {}; searchEmgClass_early = {}; searchEmgClass_late = {};
+    unknown_proxy_full = []; unknown_proxy_early = []; unknown_proxy_late = [];
+    hard_eligible_full = []; hard_eligible_early = []; hard_eligible_late = [];
+    hard_reject_full = []; hard_reject_early = []; hard_reject_late = [];
+    soft_warn_full = []; soft_warn_early = []; soft_warn_late = [];
+    rejection_flags_full = struct(); rejection_flags_early = struct(); rejection_flags_late = struct();
+    soft_warn_flags_full = struct(); soft_warn_flags_early = struct(); soft_warn_flags_late = struct();
+    adaptive_thr_full = struct(); adaptive_thr_early = struct(); adaptive_thr_late = struct();
+    component_signature_full = struct(); component_signature_early = struct(); component_signature_late = struct();
+    candidate_table_full = struct(); candidate_table_early = struct(); candidate_table_late = struct();
+    crosswin_id_full = []; crosswin_id_early = []; crosswin_id_late = [];
     all_searchTopos  = cell(1, 3);
     all_evals_sorted = cell(1, 3);
     all_bestIdx      = cell(1, 3);
@@ -567,6 +595,9 @@ for subj = 1:nSubj
     fail_hf_slope = finite_metrics & (hf_slope_vec > adaptive_thr.max_hf_slope);
     fail_condlock = finite_metrics & (condlock_vec < adaptive_thr.min_condlock);
     fail_emg_score = finite_metrics & (emg_artifact_score > adaptive_thr.max_emg_score);
+    severe_front_leak = finite_metrics & (leak_vec > adaptive_thr.max_frontleak * hard_leak_severity_mult);
+    severe_temp_leak = finite_metrics & (temp_leak_vec > adaptive_thr.max_templeak * hard_leak_severity_mult);
+    severe_emg_score = finite_metrics & (emg_artifact_score > adaptive_thr.max_emg_score * hard_emg_severity_mult);
     occ_minus_emg = occipital_evidence - emg_artifact_score;
     fail_occ_margin = finite_metrics & (emg_artifact_score >= adaptive_thr.emg_class_thr) & ...
         (occ_minus_emg < adaptive_thr.min_occ_margin);
@@ -580,9 +611,21 @@ for subj = 1:nSubj
             (occ_minus_emg >= adaptive_thr.min_occ_margin) & (corr_vec >= adaptive_thr.min_corr);
         flat_topomap_mask(peak_rescue_mask) = false;
     end
-    artifact_flags = fail_front_leak | fail_temp_leak | fail_corr | fail_lineharm | ...
-        fail_stationarity | fail_burst | fail_hf_slope | fail_condlock | fail_emg_score | ...
-        fail_occ_margin | unknown_proxy_vec | flat_topomap_mask;
+    hard_reject_flags = severe_front_leak | severe_temp_leak | fail_lineharm | fail_hf_slope | ...
+        severe_emg_score | unknown_proxy_vec | flat_topomap_mask;
+    soft_warn_any = fail_front_leak | fail_temp_leak | fail_corr | fail_stationarity | ...
+        fail_burst | fail_condlock | fail_emg_score | fail_occ_margin;
+    soft_warn_flags = struct( ...
+        'front_leak', fail_front_leak & ~severe_front_leak, ...
+        'temp_leak', fail_temp_leak & ~severe_temp_leak, ...
+        'corr', fail_corr, ...
+        'stationarity', fail_stationarity, ...
+        'burst', fail_burst, ...
+        'condlock', fail_condlock, ...
+        'emg_score', fail_emg_score & ~severe_emg_score, ...
+        'occ_margin', fail_occ_margin, ...
+        'any', soft_warn_any);
+    artifact_flags = hard_reject_flags;
     rejection_flags = struct( ...
         'unknown_proxy', unknown_proxy_vec, ...
         'flat_topomap', flat_topomap_mask, ...
@@ -596,6 +639,9 @@ for subj = 1:nSubj
         'condlock', fail_condlock, ...
         'emg_score', fail_emg_score, ...
         'occ_margin', fail_occ_margin, ...
+        'severe_front_leak', severe_front_leak, ...
+        'severe_temp_leak', severe_temp_leak, ...
+        'severe_emg_score', severe_emg_score, ...
         'peak_rescue', peak_rescue_mask);
     for ci = 1:nSearch
         if unknown_proxy_vec(ci)
@@ -717,7 +763,12 @@ for subj = 1:nSubj
     candidate_table.emg_class = searchEmgClass;
     candidate_table.unknown_high_risk = unknown_proxy_vec;
     candidate_table.score = searchScores;
+    candidate_table.score_base = searchScores;
+    candidate_table.score_final = searchScores;
+    candidate_table.consistency_bonus = zeros(nSearch, 1);
     candidate_table.artifact_flag = artifact_flags;
+    candidate_table.hard_reject = hard_reject_flags;
+    candidate_table.soft_warn = soft_warn_any;
     candidate_table.reject_reason = compute_primary_rejection_reason(rejection_flags);
     candidate_table.fail_unknown_proxy = rejection_flags.unknown_proxy;
     candidate_table.fail_flat_topomap = rejection_flags.flat_topomap;
@@ -731,14 +782,30 @@ for subj = 1:nSubj
     candidate_table.fail_condlock = rejection_flags.condlock;
     candidate_table.fail_emg_score = rejection_flags.emg_score;
     candidate_table.fail_occ_margin = rejection_flags.occ_margin;
+    candidate_table.fail_severe_front_leak = rejection_flags.severe_front_leak;
+    candidate_table.fail_severe_temp_leak = rejection_flags.severe_temp_leak;
+    candidate_table.fail_severe_emg_score = rejection_flags.severe_emg_score;
+    candidate_table.soft_warn_front_leak = soft_warn_flags.front_leak;
+    candidate_table.soft_warn_temp_leak = soft_warn_flags.temp_leak;
+    candidate_table.soft_warn_corr = soft_warn_flags.corr;
+    candidate_table.soft_warn_stationarity = soft_warn_flags.stationarity;
+    candidate_table.soft_warn_burst = soft_warn_flags.burst;
+    candidate_table.soft_warn_condlock = soft_warn_flags.condlock;
+    candidate_table.soft_warn_emg_score = soft_warn_flags.emg_score;
+    candidate_table.soft_warn_occ_margin = soft_warn_flags.occ_margin;
     candidate_table.peak_rescued_from_flat = rejection_flags.peak_rescue;
     candidate_table.hard_eligible_raw = hard_eligible_raw;
     candidate_table.dominant_outlier = dominant_outlier_mask;
     candidate_table.hard_eligible = hard_eligible;
+    candidate_table.crosswin_id = nan(nSearch, 1);
+    candidate_table.crosswin_match_conf = nan(nSearch, 1);
     candidate_table.thr_min_eigval = repmat(adaptive_thr.min_eigval, nSearch, 1);
     candidate_table.thr_occ_class = repmat(adaptive_thr.occ_class_thr, nSearch, 1);
     candidate_table.thr_emg_class = repmat(adaptive_thr.emg_class_thr, nSearch, 1);
     candidate_table.thr_occ_margin = repmat(adaptive_thr.min_occ_margin, nSearch, 1);
+    component_signature = build_component_signature_block( ...
+        searchTopos, searchMeanPrSpectrum, corr_vec, ratio_vec, condlock_vec, ...
+        lineharm_vec, hf_slope_vec, leak_vec, temp_leak_vec, eval_raw_vec);
 
     combined_idx = find(hard_eligible & isfinite(searchScores));
     if isempty(combined_idx)
@@ -809,18 +876,75 @@ for subj = 1:nSubj
             W_combined_full = searchFilters(:, selected_idx);
             selected_idx_full = selected_idx;
             w_combined_full = selected_weights(:)';
+            evals_sorted_full = evals_sorted;
+            searchCorrs_full = searchCorrs;
+            searchOccFrontRatio_full = searchOccFrontRatio;
+            searchGammaEvidence_full = searchGammaEvidence;
+            searchTopos_full = searchTopos;
+            searchMeanPrSpectrum_full = searchMeanPrSpectrum;
+            gamma_vec_full = gamma_vec;
+            occipital_evidence_full = occipital_evidence;
+            emg_artifact_score_full = emg_artifact_score;
+            searchEmgClass_full = searchEmgClass;
+            unknown_proxy_full = unknown_proxy_vec;
+            hard_eligible_full = hard_eligible;
+            hard_reject_full = artifact_flags;
+            soft_warn_full = soft_warn_flags.any;
+            rejection_flags_full = rejection_flags;
+            soft_warn_flags_full = soft_warn_flags;
+            adaptive_thr_full = adaptive_thr;
+            component_signature_full = component_signature;
+            candidate_table_full = candidate_table;
         elseif w == 2
             searchFilters_early = searchFilters;
             W_top_early = searchFilters(:, 1);
             W_combined_early = searchFilters(:, selected_idx);
             selected_idx_early = selected_idx;
             w_combined_early = selected_weights(:)';
+            evals_sorted_early = evals_sorted;
+            searchCorrs_early = searchCorrs;
+            searchOccFrontRatio_early = searchOccFrontRatio;
+            searchGammaEvidence_early = searchGammaEvidence;
+            searchTopos_early = searchTopos;
+            searchMeanPrSpectrum_early = searchMeanPrSpectrum;
+            gamma_vec_early = gamma_vec;
+            occipital_evidence_early = occipital_evidence;
+            emg_artifact_score_early = emg_artifact_score;
+            searchEmgClass_early = searchEmgClass;
+            unknown_proxy_early = unknown_proxy_vec;
+            hard_eligible_early = hard_eligible;
+            hard_reject_early = artifact_flags;
+            soft_warn_early = soft_warn_flags.any;
+            rejection_flags_early = rejection_flags;
+            soft_warn_flags_early = soft_warn_flags;
+            adaptive_thr_early = adaptive_thr;
+            component_signature_early = component_signature;
+            candidate_table_early = candidate_table;
         else
             searchFilters_late = searchFilters;
             W_top_late = searchFilters(:, 1);
             W_combined_late = searchFilters(:, selected_idx);
             selected_idx_late = selected_idx;
             w_combined_late = selected_weights(:)';
+            evals_sorted_late = evals_sorted;
+            searchCorrs_late = searchCorrs;
+            searchOccFrontRatio_late = searchOccFrontRatio;
+            searchGammaEvidence_late = searchGammaEvidence;
+            searchTopos_late = searchTopos;
+            searchMeanPrSpectrum_late = searchMeanPrSpectrum;
+            gamma_vec_late = gamma_vec;
+            occipital_evidence_late = occipital_evidence;
+            emg_artifact_score_late = emg_artifact_score;
+            searchEmgClass_late = searchEmgClass;
+            unknown_proxy_late = unknown_proxy_vec;
+            hard_eligible_late = hard_eligible;
+            hard_reject_late = artifact_flags;
+            soft_warn_late = soft_warn_flags.any;
+            rejection_flags_late = rejection_flags;
+            soft_warn_flags_late = soft_warn_flags;
+            adaptive_thr_late = adaptive_thr;
+            component_signature_late = component_signature;
+            candidate_table_late = candidate_table;
         end
         all_topo_temp{w} = topo_temp;
 
@@ -847,6 +971,7 @@ for subj = 1:nSubj
             'selected_idx', selected_idx, ...
             'selected_weights', selected_weights, ...
             'candidate_table', candidate_table, ...
+            'component_signature', component_signature, ...
             'best_idx', bestIdx, ...
             'best_score', bestScore, ...
             'best_corr', bestCorr, ...
@@ -860,6 +985,8 @@ for subj = 1:nSubj
             'emg_class', {searchEmgClass}, ...
             'unknown_high_risk', unknown_proxy_vec, ...
             'adaptive_thresholds', adaptive_thr, ...
+            'hard_reject_flags', artifact_flags, ...
+            'soft_warn_flags', soft_warn_flags, ...
             'rejection_flags', rejection_flags, ...
             'no_hard_threshold_match', no_hard_threshold_match);
         if w == 1
@@ -942,12 +1069,156 @@ for subj = 1:nSubj
     end
         saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_%s.png', subjects{subj}, win_names{w})));
         close(fig_post);
-        plot_emg_exclusion_diagnostics( ...
-            fig_save_dir_emg_exclusion, subjects{subj}, win_names{w}, scan_freqs, searchTopos, ...
-            searchMeanPrSpectrum, evals_sorted(1:nSearch), gamma_vec, occipital_evidence, emg_artifact_score, ...
-            searchEmgClass, unknown_proxy_vec, hard_eligible, artifact_flags, rejection_flags, ...
-            adaptive_thr, cfg_topo, all_topo_labels{subj});
+        % EMG exclusion diagnostics are generated after all windows are processed,
+        % once cross-window IDs and consistency updates are available.
     end
+
+    match_cfg = struct( ...
+        'w_topo', crosswin_w_topo, ...
+        'w_spec', crosswin_w_spec, ...
+        'w_feat', crosswin_w_feat, ...
+        'min_conf', crosswin_match_min_conf);
+    crosswin_match = match_components_full_anchor( ...
+        component_signature_full, component_signature_early, component_signature_late, match_cfg);
+    crosswin_id_full = crosswin_match.id_full;
+    crosswin_id_early = crosswin_match.id_early;
+    crosswin_id_late = crosswin_match.id_late;
+
+    [group_consistent_map, group_occipital_map, group_member_count, group_mean_conf] = ...
+        compute_crosswindow_group_consistency( ...
+            crosswin_match, candidate_table_full, candidate_table_early, candidate_table_late, ...
+            crosswin_consistency_min);
+
+    [candidate_table_full, selected_idx_full, w_combined_full] = ...
+        apply_crosswindow_consistency_bonus(candidate_table_full, crosswin_id_full, ...
+            group_consistent_map, group_occipital_map, crosswin_consistency_bonus, max_components_to_combine);
+    [candidate_table_early, selected_idx_early, w_combined_early] = ...
+        apply_crosswindow_consistency_bonus(candidate_table_early, crosswin_id_early, ...
+            group_consistent_map, group_occipital_map, crosswin_consistency_bonus, max_components_to_combine);
+    [candidate_table_late, selected_idx_late, w_combined_late] = ...
+        apply_crosswindow_consistency_bonus(candidate_table_late, crosswin_id_late, ...
+            group_consistent_map, group_occipital_map, crosswin_consistency_bonus, max_components_to_combine);
+
+    if isempty(selected_idx_full)
+        selected_idx_full = 1;
+        w_combined_full = 1;
+    end
+    if isempty(selected_idx_early)
+        selected_idx_early = 1;
+        w_combined_early = 1;
+    end
+    if isempty(selected_idx_late)
+        selected_idx_late = 1;
+        w_combined_late = 1;
+    end
+
+    W_combined_full = searchFilters_full(:, selected_idx_full);
+    W_combined_early = searchFilters_early(:, selected_idx_early);
+    W_combined_late = searchFilters_late(:, selected_idx_late);
+    W_top_full = searchFilters_full(:, 1);
+    W_top_early = searchFilters_early(:, 1);
+    W_top_late = searchFilters_late(:, 1);
+
+    topo_temp_full = searchTopos_full(:, selected_idx_full) * w_combined_full(:);
+    topo_temp_early = searchTopos_early(:, selected_idx_early) * w_combined_early(:);
+    topo_temp_late = searchTopos_late(:, selected_idx_late) * w_combined_late(:);
+    all_topo_temp{1} = topo_temp_full;
+    all_topo_temp{2} = topo_temp_early;
+    all_topo_temp{3} = topo_temp_late;
+    all_topos{subj} = topo_temp_full;
+    all_topos_early{subj} = topo_temp_early;
+    all_topos_late{subj} = topo_temp_late;
+    all_selected_comp_indices_multi{subj} = selected_idx_full;
+    all_selected_comp_weights{subj} = w_combined_full(:)';
+    all_selected_comp_idx(subj) = selected_idx_full(1);
+    all_selected_comp_corr(subj) = searchCorrs_full(selected_idx_full(1));
+    all_selected_comp_eval(subj) = evals_sorted_full(selected_idx_full(1));
+    all_eigenvalues(subj) = evals_sorted_full(selected_idx_full(1));
+
+    sel_id_full = crosswin_id_full(selected_idx_full(1));
+    sel_id_early = crosswin_id_early(selected_idx_early(1));
+    sel_id_late = crosswin_id_late(selected_idx_late(1));
+    sanity_report = struct( ...
+        'subject', subjects{subj}, ...
+        'selected_id_full', sel_id_full, ...
+        'selected_id_early', sel_id_early, ...
+        'selected_id_late', sel_id_late, ...
+        'full_matches_early', isfinite(sel_id_full) && isfinite(sel_id_early) && (sel_id_full == sel_id_early), ...
+        'full_matches_late', isfinite(sel_id_full) && isfinite(sel_id_late) && (sel_id_full == sel_id_late), ...
+        'early_matches_late', isfinite(sel_id_early) && isfinite(sel_id_late) && (sel_id_early == sel_id_late), ...
+        'selected_hard_reject_full', any(candidate_table_full.hard_reject(selected_idx_full)), ...
+        'selected_hard_reject_early', any(candidate_table_early.hard_reject(selected_idx_early)), ...
+        'selected_hard_reject_late', any(candidate_table_late.hard_reject(selected_idx_late)));
+    crosswin_match.sanity_report = sanity_report;
+    all_crosswin_match_stats{subj} = crosswin_match;
+
+    candidate_table_full.crosswin_id = crosswin_id_full;
+    candidate_table_early.crosswin_id = crosswin_id_early;
+    candidate_table_late.crosswin_id = crosswin_id_late;
+    candidate_table_full.crosswin_match_conf = crosswin_match.conf_full;
+    candidate_table_early.crosswin_match_conf = crosswin_match.conf_early;
+    candidate_table_late.crosswin_match_conf = crosswin_match.conf_late;
+    candidate_table_full.crosswin_group_consistent = lookup_group_property(crosswin_id_full, group_consistent_map);
+    candidate_table_early.crosswin_group_consistent = lookup_group_property(crosswin_id_early, group_consistent_map);
+    candidate_table_late.crosswin_group_consistent = lookup_group_property(crosswin_id_late, group_consistent_map);
+    candidate_table_full.crosswin_group_occipital = lookup_group_property(crosswin_id_full, group_occipital_map);
+    candidate_table_early.crosswin_group_occipital = lookup_group_property(crosswin_id_early, group_occipital_map);
+    candidate_table_late.crosswin_group_occipital = lookup_group_property(crosswin_id_late, group_occipital_map);
+    candidate_table_full.crosswin_group_members = lookup_group_property(crosswin_id_full, group_member_count);
+    candidate_table_early.crosswin_group_members = lookup_group_property(crosswin_id_early, group_member_count);
+    candidate_table_late.crosswin_group_members = lookup_group_property(crosswin_id_late, group_member_count);
+    candidate_table_full.crosswin_group_mean_conf = lookup_group_property(crosswin_id_full, group_mean_conf);
+    candidate_table_early.crosswin_group_mean_conf = lookup_group_property(crosswin_id_early, group_mean_conf);
+    candidate_table_late.crosswin_group_mean_conf = lookup_group_property(crosswin_id_late, group_mean_conf);
+
+    all_component_selection_stats_full{subj}.selected_idx = selected_idx_full;
+    all_component_selection_stats_full{subj}.selected_weights = w_combined_full;
+    all_component_selection_stats_full{subj}.candidate_table = candidate_table_full;
+    all_component_selection_stats_full{subj}.crosswin_id = crosswin_id_full;
+    all_component_selection_stats_full{subj}.crosswin_match = crosswin_match;
+    all_component_selection_stats_full{subj}.crosswin_group_consistent = group_consistent_map;
+
+    all_component_selection_stats_early{subj}.selected_idx = selected_idx_early;
+    all_component_selection_stats_early{subj}.selected_weights = w_combined_early;
+    all_component_selection_stats_early{subj}.candidate_table = candidate_table_early;
+    all_component_selection_stats_early{subj}.crosswin_id = crosswin_id_early;
+    all_component_selection_stats_early{subj}.crosswin_match = crosswin_match;
+    all_component_selection_stats_early{subj}.crosswin_group_consistent = group_consistent_map;
+
+    all_component_selection_stats_late{subj}.selected_idx = selected_idx_late;
+    all_component_selection_stats_late{subj}.selected_weights = w_combined_late;
+    all_component_selection_stats_late{subj}.candidate_table = candidate_table_late;
+    all_component_selection_stats_late{subj}.crosswin_id = crosswin_id_late;
+    all_component_selection_stats_late{subj}.crosswin_match = crosswin_match;
+    all_component_selection_stats_late{subj}.crosswin_group_consistent = group_consistent_map;
+
+    cfg_topo = [];
+    cfg_topo.layout    = headmodel.layANThead;
+    cfg_topo.comment   = 'no';
+    cfg_topo.marker    = 'off';
+    cfg_topo.style     = 'straight';
+    cfg_topo.gridscale = 300;
+    cfg_topo.zlim      = 'maxabs';
+    cfg_topo.colormap  = '*RdBu';
+    cfg_topo.figure    = 'gcf';
+    plot_emg_exclusion_diagnostics( ...
+        fig_save_dir_emg_exclusion, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
+        searchMeanPrSpectrum_full, evals_sorted_full(1:numel(crosswin_id_full)), gamma_vec_full, ...
+        occipital_evidence_full, emg_artifact_score_full, searchEmgClass_full, unknown_proxy_full, ...
+        candidate_table_full.hard_eligible, hard_reject_full, soft_warn_full, rejection_flags_full, ...
+        adaptive_thr_full, cfg_topo, all_topo_labels{subj}, crosswin_id_full);
+    plot_emg_exclusion_diagnostics( ...
+        fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
+        searchMeanPrSpectrum_early, evals_sorted_early(1:numel(crosswin_id_early)), gamma_vec_early, ...
+        occipital_evidence_early, emg_artifact_score_early, searchEmgClass_early, unknown_proxy_early, ...
+        candidate_table_early.hard_eligible, hard_reject_early, soft_warn_early, rejection_flags_early, ...
+        adaptive_thr_early, cfg_topo, all_topo_labels{subj}, crosswin_id_early);
+    plot_emg_exclusion_diagnostics( ...
+        fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
+        searchMeanPrSpectrum_late, evals_sorted_late(1:numel(crosswin_id_late)), gamma_vec_late, ...
+        occipital_evidence_late, emg_artifact_score_late, searchEmgClass_late, unknown_proxy_late, ...
+        candidate_table_late.hard_eligible, hard_reject_late, soft_warn_late, rejection_flags_late, ...
+        adaptive_thr_late, cfg_topo, all_topo_labels{subj}, crosswin_id_late);
 
     if strcmpi(run_mode, 'component_check')
         warning_log_by_subj{subj} = warning_log_subj;
@@ -2601,7 +2872,8 @@ save(save_path, ...
     'all_topos', 'all_topos_early', 'all_topos_late', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
-    'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', 'warning_log', ...
+    'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
+    'all_crosswin_match_stats', 'warning_log', ...
     'all_trial_powratio_bench', 'all_trial_powratio_dt_bench', ...
     'all_trial_powratio_components_full', 'all_trial_powratio_components_early', 'all_trial_powratio_components_late', ...
     'all_trial_powratio_bench_early', 'all_trial_powratio_bench_late', ...
@@ -2852,7 +3124,7 @@ end
 
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
     searchMeanPrSpectrum, eval_vec, gamma_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
-    hard_eligible, artifact_flags, rejection_flags, adaptive_thr, cfg_topo, topo_labels)
+    hard_eligible, hard_reject_flags, soft_warn_flags, rejection_flags, adaptive_thr, cfg_topo, topo_labels, crosswin_id)
 nComp = numel(eval_vec);
 if nComp < 1
     return;
@@ -2911,8 +3183,17 @@ plot([adaptive_thr.occ_class_thr, adaptive_thr.occ_class_thr], [-y_lim_absmax, a
     '-', 'Color', bracket_color, 'LineWidth', 2.2);
 for ci = 1:nComp
     if isfinite(occ_evidence(ci)) && isfinite(emg_score(ci))
+        cid = NaN;
+        if nargin >= 20 && ~isempty(crosswin_id) && numel(crosswin_id) >= ci
+            cid = crosswin_id(ci);
+        end
+        if isfinite(cid)
+            lbl = sprintf('C%d[ID%d]', ci, round(cid));
+        else
+            lbl = sprintf('C%d', ci);
+        end
         text(occ_evidence(ci) + 0.015 * x_lim_absmax, emg_score(ci) + 0.015 * y_lim_absmax, ...
-            sprintf('C%d', ci), 'FontSize', 7, 'Color', [0.15 0.15 0.15], 'Interpreter', 'none');
+            lbl, 'FontSize', 7, 'Color', [0.15 0.15 0.15], 'Interpreter', 'none');
     end
 end
 cb = colorbar;
@@ -2925,7 +3206,7 @@ saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_scatter_%s.png',
 close(figA);
 
 sel_idx = find(hard_eligible);
-rej_idx = find(artifact_flags);
+rej_idx = find(hard_reject_flags);
 [~, so] = sort(eval_vec(sel_idx), 'descend');
 sel_idx = sel_idx(so);
 [~, ro] = sort(eval_vec(rej_idx), 'descend');
@@ -2960,7 +3241,12 @@ for k = 1:nCols
             imagesc(topo_data.avg(:)); axis tight;
             caxis([-topo_clim_ci topo_clim_ci]);
         end
-        title(sprintf('Sel C%d (%s)', ci, emg_class{ci}), 'FontSize', 8, 'Interpreter', 'none');
+        if nargin >= 20 && ~isempty(crosswin_id) && numel(crosswin_id) >= ci && isfinite(crosswin_id(ci))
+            ttl = sprintf('Sel C%d [ID%d] (%s)', ci, round(crosswin_id(ci)), emg_class{ci});
+        else
+            ttl = sprintf('Sel C%d (%s)', ci, emg_class{ci});
+        end
+        title(ttl, 'FontSize', 8, 'Interpreter', 'none');
     else
         axis off;
     end
@@ -2999,7 +3285,12 @@ for k = 1:nCols
             imagesc(topo_data.avg(:)); axis tight;
             caxis([-topo_clim_ci topo_clim_ci]);
         end
-        title(sprintf('Rej C%d (%s)', ci, emg_class{ci}), 'FontSize', 8, 'Interpreter', 'none');
+        if nargin >= 20 && ~isempty(crosswin_id) && numel(crosswin_id) >= ci && isfinite(crosswin_id(ci))
+            ttl = sprintf('Rej C%d [ID%d] (%s)', ci, round(crosswin_id(ci)), emg_class{ci});
+        else
+            ttl = sprintf('Rej C%d (%s)', ci, emg_class{ci});
+        end
+        title(ttl, 'FontSize', 8, 'Interpreter', 'none');
     else
         axis off;
     end
@@ -3025,8 +3316,8 @@ close(figSel);
 figC = figure('Position', [0 0 756 982]);
 tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile;
-counts = [sum(hard_eligible), sum(artifact_flags), numel(eval_vec)];
-cats = {'Selected', 'ArtifactFlagged', 'Candidates'};
+counts = [sum(hard_eligible), sum(logical(soft_warn_flags)), sum(logical(hard_reject_flags)), numel(eval_vec)];
+cats = {'Selected', 'SoftWarn', 'HardRejected', 'Candidates'};
 bar(counts, 0.6, 'FaceColor', [0.3 0.4 0.7]); hold on;
 set(gca, 'XTick', 1:numel(cats), 'XTickLabel', cats, 'XTickLabelRotation', 20);
 ylabel('Count');
@@ -3039,7 +3330,7 @@ reason_counts = zeros(1, numel(reason_names));
 for ri = 1:numel(reason_names)
     rname = reason_names{ri};
     if isfield(rejection_flags, rname)
-        reason_counts(ri) = sum(artifact_flags & rejection_flags.(rname));
+        reason_counts(ri) = sum(hard_reject_flags & rejection_flags.(rname));
     end
 end
 bar(reason_counts, 0.65, 'FaceColor', [0.72 0.40 0.30]); hold on;
@@ -3094,6 +3385,303 @@ for ci = 1:nComp
     prom_score = min(1, mean(prom(1:n_keep)) / max(peak_scale, eps));
     count_score = n_keep / 2;
     peak_bonus_vec(ci) = max(0, min(1, 0.65 * prom_score + 0.35 * count_score));
+end
+end
+
+function signature = build_component_signature_block(searchTopos, searchMeanPrSpectrum, corr_vec, ratio_vec, ...
+    condlock_vec, lineharm_vec, hf_slope_vec, leak_vec, temp_leak_vec, eval_raw_vec)
+nComp = size(searchTopos, 2);
+nFreq = size(searchMeanPrSpectrum, 2);
+signature = struct();
+signature.nComp = nComp;
+signature.topo_norm = zeros(size(searchTopos));
+signature.spec_norm = zeros(size(searchMeanPrSpectrum));
+signature.scalar_raw = nan(nComp, 8);
+signature.scalar_z = nan(nComp, 8);
+if nComp < 1
+    return;
+end
+for ci = 1:nComp
+    topo_ci = searchTopos(:, ci);
+    topo_finite = topo_ci(isfinite(topo_ci));
+    if isempty(topo_finite)
+        topo_finite = 0;
+    end
+    topo_ci = topo_ci - mean(topo_finite);
+    topo_scale = norm(topo_ci(isfinite(topo_ci)));
+    if ~isfinite(topo_scale) || topo_scale <= eps
+        topo_scale = 1;
+    end
+    topo_ci(~isfinite(topo_ci)) = 0;
+    signature.topo_norm(:, ci) = topo_ci / topo_scale;
+
+    if nFreq > 0
+        spec_ci = searchMeanPrSpectrum(ci, :);
+        spec_ci = spec_ci(:)';
+        if any(isfinite(spec_ci))
+            spec_ci = spec_ci - nanmean(spec_ci);
+            spec_scale = norm(spec_ci(isfinite(spec_ci)));
+            if ~isfinite(spec_scale) || spec_scale <= eps
+                spec_scale = 1;
+            end
+            spec_ci(~isfinite(spec_ci)) = 0;
+            signature.spec_norm(ci, :) = spec_ci / spec_scale;
+        end
+    end
+end
+signature.scalar_raw(:, 1) = corr_vec(:);
+signature.scalar_raw(:, 2) = ratio_vec(:);
+signature.scalar_raw(:, 3) = condlock_vec(:);
+signature.scalar_raw(:, 4) = lineharm_vec(:);
+signature.scalar_raw(:, 5) = hf_slope_vec(:);
+signature.scalar_raw(:, 6) = leak_vec(:);
+signature.scalar_raw(:, 7) = temp_leak_vec(:);
+signature.scalar_raw(:, 8) = eval_raw_vec(:);
+for fi = 1:size(signature.scalar_raw, 2)
+    signature.scalar_z(:, fi) = normalize_robust(signature.scalar_raw(:, fi));
+end
+end
+
+function match = match_components_full_anchor(sig_full, sig_early, sig_late, cfg)
+nFull = sig_full.nComp;
+nEarly = sig_early.nComp;
+nLate = sig_late.nComp;
+id_full = (1:nFull)';
+id_early = nan(nEarly, 1);
+id_late = nan(nLate, 1);
+conf_full = nan(nFull, 1);
+conf_early = nan(nEarly, 1);
+conf_late = nan(nLate, 1);
+
+[map_full_to_early, conf_full_early, map_early_to_full, conf_early_full] = ...
+    match_anchor_to_target(sig_full, sig_early, cfg);
+[map_full_to_late, conf_full_late, map_late_to_full, conf_late_full] = ...
+    match_anchor_to_target(sig_full, sig_late, cfg);
+
+for ei = 1:nEarly
+    fi = map_early_to_full(ei);
+    if fi > 0
+        id_early(ei) = id_full(fi);
+        conf_early(ei) = conf_early_full(ei);
+    end
+end
+for li = 1:nLate
+    fi = map_late_to_full(li);
+    if fi > 0
+        id_late(li) = id_full(fi);
+        conf_late(li) = conf_late_full(li);
+    end
+end
+conf_full = max([conf_full_early(:), conf_full_late(:)], [], 2);
+
+next_id = nFull + 1;
+for ei = 1:nEarly
+    if ~isfinite(id_early(ei))
+        id_early(ei) = next_id;
+        conf_early(ei) = 0;
+        next_id = next_id + 1;
+    end
+end
+for li = 1:nLate
+    if ~isfinite(id_late(li))
+        id_late(li) = next_id;
+        conf_late(li) = 0;
+        next_id = next_id + 1;
+    end
+end
+for fi = 1:nFull
+    if ~isfinite(conf_full(fi))
+        conf_full(fi) = 0;
+    end
+end
+
+match = struct();
+match.id_full = id_full;
+match.id_early = id_early;
+match.id_late = id_late;
+match.conf_full = conf_full;
+match.conf_early = conf_early;
+match.conf_late = conf_late;
+match.full_to_early = map_full_to_early;
+match.full_to_late = map_full_to_late;
+match.full_to_early_conf = conf_full_early;
+match.full_to_late_conf = conf_full_late;
+match.cfg = cfg;
+end
+
+function [anchor_to_target, conf_anchor, target_to_anchor, conf_target] = match_anchor_to_target(sig_anchor, sig_target, cfg)
+nAnchor = sig_anchor.nComp;
+nTarget = sig_target.nComp;
+anchor_to_target = zeros(nAnchor, 1);
+conf_anchor = zeros(nAnchor, 1);
+target_to_anchor = zeros(nTarget, 1);
+conf_target = zeros(nTarget, 1);
+if nAnchor < 1 || nTarget < 1
+    return;
+end
+sim_mat = build_crosswindow_similarity_matrix(sig_anchor, sig_target, cfg);
+sim_work = sim_mat;
+assigned_anchor = false(nAnchor, 1);
+assigned_target = false(nTarget, 1);
+while true
+    sim_work(assigned_anchor, :) = -Inf;
+    sim_work(:, assigned_target) = -Inf;
+    [best_val, lin_idx] = max(sim_work(:));
+    if ~isfinite(best_val)
+        break;
+    end
+    [ai, tj] = ind2sub(size(sim_work), lin_idx);
+    assigned_anchor(ai) = true;
+    assigned_target(tj) = true;
+    if best_val >= cfg.min_conf
+        anchor_to_target(ai) = tj;
+        conf_anchor(ai) = best_val;
+        target_to_anchor(tj) = ai;
+        conf_target(tj) = best_val;
+    end
+end
+end
+
+function sim_mat = build_crosswindow_similarity_matrix(sig_a, sig_b, cfg)
+nA = sig_a.nComp;
+nB = sig_b.nComp;
+sim_mat = nan(nA, nB);
+for ai = 1:nA
+    topo_a = sig_a.topo_norm(:, ai);
+    spec_a = sig_a.spec_norm(ai, :);
+    feat_a = sig_a.scalar_z(ai, :);
+    for bj = 1:nB
+        topo_b = sig_b.topo_norm(:, bj);
+        spec_b = sig_b.spec_norm(bj, :);
+        feat_b = sig_b.scalar_z(bj, :);
+        sim_topo = corr(topo_a, topo_b, 'rows', 'complete');
+        if ~isfinite(sim_topo), sim_topo = 0; end
+        sim_topo = abs(sim_topo);
+        sim_spec = corr(spec_a(:), spec_b(:), 'rows', 'complete');
+        if ~isfinite(sim_spec), sim_spec = 0; end
+        sim_spec = max(min((sim_spec + 1) / 2, 1), 0);
+        feat_diff = feat_a - feat_b;
+        feat_diff = feat_diff(isfinite(feat_diff));
+        if isempty(feat_diff)
+            sim_feat = 0;
+        else
+            feat_dist = sqrt(mean(feat_diff .^ 2));
+            sim_feat = max(0, 1 - min(feat_dist / 3, 1));
+        end
+        sim_mat(ai, bj) = cfg.w_topo * sim_topo + cfg.w_spec * sim_spec + cfg.w_feat * sim_feat;
+    end
+end
+sim_mat = max(min(sim_mat, 1), 0);
+end
+
+function [group_consistent, group_occipital, group_member_count, group_mean_conf] = ...
+    compute_crosswindow_group_consistency(match, tbl_full, tbl_early, tbl_late, min_conf)
+all_ids = unique([match.id_full(:); match.id_early(:); match.id_late(:)]);
+all_ids = all_ids(isfinite(all_ids));
+group_consistent = containers.Map('KeyType', 'double', 'ValueType', 'any');
+group_occipital = containers.Map('KeyType', 'double', 'ValueType', 'any');
+group_member_count = containers.Map('KeyType', 'double', 'ValueType', 'any');
+group_mean_conf = containers.Map('KeyType', 'double', 'ValueType', 'any');
+for ii = 1:numel(all_ids)
+    gid = all_ids(ii);
+    idx_f = find(match.id_full == gid);
+    idx_e = find(match.id_early == gid);
+    idx_l = find(match.id_late == gid);
+    member_count = numel(idx_f) + numel(idx_e) + numel(idx_l);
+    occ_votes = 0;
+    hard_votes = 0;
+    conf_vals = [];
+    if ~isempty(idx_f)
+        occ_votes = occ_votes + sum(strcmp(tbl_full.emg_class(idx_f), 'occipital'));
+        hard_votes = hard_votes + sum(tbl_full.hard_reject(idx_f));
+        conf_vals = [conf_vals; match.conf_full(idx_f)]; %#ok<AGROW>
+    end
+    if ~isempty(idx_e)
+        occ_votes = occ_votes + sum(strcmp(tbl_early.emg_class(idx_e), 'occipital'));
+        hard_votes = hard_votes + sum(tbl_early.hard_reject(idx_e));
+        conf_vals = [conf_vals; match.conf_early(idx_e)]; %#ok<AGROW>
+    end
+    if ~isempty(idx_l)
+        occ_votes = occ_votes + sum(strcmp(tbl_late.emg_class(idx_l), 'occipital'));
+        hard_votes = hard_votes + sum(tbl_late.hard_reject(idx_l));
+        conf_vals = [conf_vals; match.conf_late(idx_l)]; %#ok<AGROW>
+    end
+    conf_vals = conf_vals(isfinite(conf_vals) & conf_vals > 0);
+    if isempty(conf_vals)
+        mean_conf = 0;
+    else
+        mean_conf = mean(conf_vals);
+    end
+    occipital_like = (occ_votes >= max(1, ceil(0.5 * member_count))) && (hard_votes == 0);
+    consistent = (member_count >= 2) && (mean_conf >= min_conf) && occipital_like;
+    group_consistent(gid) = logical(consistent);
+    group_occipital(gid) = logical(occipital_like);
+    group_member_count(gid) = member_count;
+    group_mean_conf(gid) = mean_conf;
+end
+end
+
+function [candidate_table, selected_idx, selected_weights] = apply_crosswindow_consistency_bonus( ...
+    candidate_table, crosswin_id, group_consistent_map, group_occipital_map, bonus_val, max_components_to_combine)
+nComp = numel(candidate_table.comp_idx);
+if isempty(crosswin_id) || numel(crosswin_id) ~= nComp
+    crosswin_id = nan(nComp, 1);
+end
+score_final = candidate_table.score_base;
+bonus_vec = zeros(nComp, 1);
+for ci = 1:nComp
+    gid = crosswin_id(ci);
+    if ~isfinite(gid)
+        continue;
+    end
+    if isKey(group_consistent_map, gid) && isKey(group_occipital_map, gid) && ...
+            logical(group_consistent_map(gid)) && logical(group_occipital_map(gid)) && ...
+            candidate_table.hard_eligible(ci) && candidate_table.soft_warn(ci)
+        bonus_vec(ci) = bonus_val;
+    end
+end
+score_final = score_final + bonus_vec;
+eligible = find(candidate_table.hard_eligible & isfinite(score_final));
+if isempty(eligible)
+    finite_idx = find(isfinite(candidate_table.score_base));
+    if isempty(finite_idx)
+        selected_idx = 1;
+    else
+        [~, ord_fallback] = sort(candidate_table.score_base(finite_idx), 'descend');
+        selected_idx = finite_idx(ord_fallback(1));
+    end
+else
+    [~, ord] = sort(score_final(eligible), 'descend');
+    selected_idx = eligible(ord);
+    selected_idx = selected_idx(1:min(max_components_to_combine, numel(selected_idx)));
+end
+selected_weights = candidate_table.eigenvalue(selected_idx)';
+selected_weights(~isfinite(selected_weights) | selected_weights <= 0) = 0;
+if sum(selected_weights) <= 0
+    selected_weights = ones(1, numel(selected_idx));
+end
+selected_weights = selected_weights / sum(selected_weights);
+candidate_table.consistency_bonus = bonus_vec;
+candidate_table.score_final = score_final;
+candidate_table.score = score_final;
+candidate_table.crosswin_id = crosswin_id;
+end
+
+function values = lookup_group_property(id_vec, prop_map)
+values = nan(numel(id_vec), 1);
+for ii = 1:numel(id_vec)
+    gid = id_vec(ii);
+    if ~isfinite(gid)
+        continue;
+    end
+    if isKey(prop_map, gid)
+        val = prop_map(gid);
+        if islogical(val)
+            values(ii) = double(val);
+        else
+            values(ii) = val;
+        end
+    end
 end
 end
 
