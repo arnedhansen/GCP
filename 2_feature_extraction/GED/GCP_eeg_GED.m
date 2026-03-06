@@ -124,17 +124,15 @@ condLabels = {'25%', '50%', '75%', '100%'};
 
 % Figure save directories
 if ispc
-    fig_save_dir_ged = 'W:\Students\Arne\GCP\figures\eeg\ged';
-    fig_save_dir_component_comparison = 'W:\Students\Arne\GCP\figures\eeg\ged\component_comparison';
-    fig_save_dir_component_selection = 'W:\Students\Arne\GCP\figures\eeg\ged\component_selection';
-    fig_save_dir_subj = 'W:\Students\Arne\GCP\figures\eeg\ged\subj';
+    gcp_root_path = 'W:\Students\Arne\GCP';
 else
-    fig_save_dir_ged = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged';
-    fig_save_dir_component_comparison = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/component_comparison';
-    fig_save_dir_component_selection = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/component_selection';
-    fig_save_dir_subj = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/subj';
+    gcp_root_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP';
 end
-fig_save_dir_emg_exclusion = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/component_selection/EMG_exclusion';
+fig_save_dir_ged = fullfile(gcp_root_path, 'figures', 'eeg', 'ged');
+fig_save_dir_component_comparison = fullfile(fig_save_dir_ged, 'component_comparison');
+fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
+fig_save_dir_subj = fullfile(fig_save_dir_ged, 'subj');
+fig_save_dir_emg_exclusion = fullfile(fig_save_dir_component_selection, 'EMG_exclusion');
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_comparison, 'dir'), mkdir(fig_save_dir_component_comparison); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
@@ -2778,11 +2776,7 @@ if simulation_validation_enable
 end
 
 %% Save results
-if ispc
-    save_path = 'W:\Students\Arne\GCP\data\features\GCP_eeg_GED.mat';
-else
-    save_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_eeg_GED.mat';
-end
+save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_GED.mat');
 save(save_path, ...
     'all_trial_powratio', ...
     'all_trial_powratio_fullscan', ...
