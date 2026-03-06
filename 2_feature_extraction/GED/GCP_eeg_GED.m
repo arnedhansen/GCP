@@ -584,10 +584,10 @@ for subj = 1:nSubj
     % Non-finite proxy values are explicitly marked as unknown/high-risk.
     unknown_proxy_vec = unknown_proxy_vec | ~isfinite(lineharm_vec) | ~isfinite(stationarity_vec) | ...
         ~isfinite(burst_vec) | ~isfinite(hf_slope_vec) | ~isfinite(condlock_vec);
-    finite_metrics = isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec) & ...
-        isfinite(eval_raw_vec) & isfinite(leak_vec) & isfinite(temp_leak_vec) & ...
-        isfinite(lineharm_vec) & isfinite(stationarity_vec) & isfinite(burst_vec) & ...
-        isfinite(hf_slope_vec) & isfinite(condlock_vec) & isfinite(peak_support_vec);
+    finite_hard_metrics = isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec) & ...
+        isfinite(eval_raw_vec) & isfinite(leak_vec) & isfinite(temp_leak_vec);
+    finite_diag_metrics = finite_hard_metrics & isfinite(lineharm_vec) & isfinite(stationarity_vec) & ...
+        isfinite(burst_vec) & isfinite(hf_slope_vec) & isfinite(condlock_vec) & isfinite(peak_support_vec);
     occipital_evidence = 0.40 * normalize_robust(corr_vec) + ...
         0.30 * normalize_robust(ratio_vec) + ...
         0.30 * normalize_robust(condlock_vec);
@@ -616,30 +616,30 @@ for subj = 1:nSubj
         burst_vec, hf_slope_vec, condlock_vec, occipital_evidence, emg_artifact_score, default_thresholds);
     searchOccipitalEvidence = occipital_evidence;
     searchEmgArtifactScore = emg_artifact_score;
-    hard_eligible_raw = finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval);
+    hard_eligible_raw = finite_hard_metrics & (eval_raw_vec >= adaptive_thr.min_eigval);
     flat_topomap_mask = false(nSearch, 1);
     if exclude_flat_topomap
         flat_topomap_mask = detect_flat_topomap_outliers(searchTopos, flat_topo_mad_ratio_thr, flat_topo_iqr_ratio_thr);
     end
-    fail_front_leak = finite_metrics & (leak_vec > adaptive_thr.max_frontleak);
-    fail_temp_leak = finite_metrics & (temp_leak_vec > adaptive_thr.max_templeak);
-    fail_corr = finite_metrics & (corr_vec < adaptive_thr.min_corr);
-    fail_lineharm = finite_metrics & (lineharm_vec > adaptive_thr.max_lineharm);
-    fail_stationarity = finite_metrics & (stationarity_vec > adaptive_thr.max_stationarity);
-    fail_burst = finite_metrics & (burst_vec > adaptive_thr.max_burst_ratio);
-    fail_hf_slope = finite_metrics & (hf_slope_vec > adaptive_thr.max_hf_slope);
-    fail_condlock = finite_metrics & (condlock_vec < adaptive_thr.min_condlock);
-    fail_emg_score = finite_metrics & (emg_artifact_score > adaptive_thr.max_emg_score);
+    fail_front_leak = finite_hard_metrics & (leak_vec > adaptive_thr.max_frontleak);
+    fail_temp_leak = finite_hard_metrics & (temp_leak_vec > adaptive_thr.max_templeak);
+    fail_corr = finite_hard_metrics & (corr_vec < adaptive_thr.min_corr);
+    fail_lineharm = finite_diag_metrics & (lineharm_vec > adaptive_thr.max_lineharm);
+    fail_stationarity = finite_diag_metrics & (stationarity_vec > adaptive_thr.max_stationarity);
+    fail_burst = finite_diag_metrics & (burst_vec > adaptive_thr.max_burst_ratio);
+    fail_hf_slope = finite_diag_metrics & (hf_slope_vec > adaptive_thr.max_hf_slope);
+    fail_condlock = finite_diag_metrics & (condlock_vec < adaptive_thr.min_condlock);
+    fail_emg_score = finite_diag_metrics & (emg_artifact_score > adaptive_thr.max_emg_score);
     occ_minus_emg = occipital_evidence - emg_artifact_score;
-    fail_occ_margin = finite_metrics & (emg_artifact_score >= adaptive_thr.emg_class_thr) & ...
+    fail_occ_margin = finite_diag_metrics & (emg_artifact_score >= adaptive_thr.emg_class_thr) & ...
         (occ_minus_emg < adaptive_thr.min_occ_margin);
     fail_window_quality = false(nSearch, 1);
     if enforce_window_quality_gate && ~ged_window_valid
         fail_window_quality(:) = true;
     end
-    artifact_flags = fail_front_leak | fail_temp_leak | fail_corr | fail_lineharm | ...
-        fail_stationarity | fail_burst | fail_hf_slope | fail_condlock | fail_emg_score | ...
-        fail_occ_margin | unknown_proxy_vec | flat_topomap_mask | fail_window_quality;
+    % Hard exclusion intentionally uses only core gates; EMG proxy stack remains diagnostics-only.
+    artifact_flags = fail_front_leak | fail_temp_leak | fail_corr | ...
+        flat_topomap_mask | fail_window_quality;
     rejection_flags = struct( ...
         'window_quality', fail_window_quality, ...
         'unknown_proxy', unknown_proxy_vec, ...
@@ -734,7 +734,7 @@ for subj = 1:nSubj
         top_fail_gamma = NaN;
         top_fail_pass_eig = false;
         top_fail_artifact = false;
-        finite_idx = find(finite_metrics);
+        finite_idx = find(finite_hard_metrics);
         if ~isempty(finite_idx)
             [~, fail_ord] = sort(evals_sorted(finite_idx), 'descend');
             top_fail_idx = finite_idx(fail_ord(1));
@@ -748,8 +748,8 @@ for subj = 1:nSubj
         hard_metrics = struct( ...
             'window', win_names{w}, ...
             'n_search', nSearch, ...
-            'n_finite_metrics', sum(finite_metrics), ...
-            'n_pass_eig', sum(finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval)), ...
+            'n_finite_metrics', sum(finite_hard_metrics), ...
+            'n_pass_eig', sum(finite_hard_metrics & (eval_raw_vec >= adaptive_thr.min_eigval)), ...
             'n_artifact_flagged', sum(artifact_flags), ...
             'n_unknown_high_risk', sum(unknown_proxy_vec), ...
             'n_pass_all_raw', sum(hard_eligible_raw), ...
@@ -810,7 +810,12 @@ for subj = 1:nSubj
     candidate_table.score = searchScores;
     candidate_table.score_base = base_score;
     candidate_table.artifact_flag = artifact_flags;
-    candidate_table.reject_reason = compute_primary_rejection_reason(rejection_flags);
+    candidate_table.hard_reject_flag = artifact_flags;
+    candidate_table.diagnostic_emg_flag = unknown_proxy_vec | fail_lineharm | fail_stationarity | ...
+        fail_burst | fail_hf_slope | fail_condlock | fail_emg_score | fail_occ_margin;
+    hard_reason_order = {'window_quality', 'flat_topomap', 'front_leak', 'temp_leak', 'corr'};
+    candidate_table.reject_reason = compute_primary_rejection_reason(rejection_flags, hard_reason_order, artifact_flags);
+    candidate_table.reject_reason_diagnostic = compute_primary_rejection_reason(rejection_flags);
     candidate_table.fail_window_quality = rejection_flags.window_quality;
     candidate_table.fail_unknown_proxy = rejection_flags.unknown_proxy;
     candidate_table.fail_flat_topomap = rejection_flags.flat_topomap;
@@ -1070,15 +1075,11 @@ for subj = 1:nSubj
             catch
                 imagesc(topo_data.avg); caxis([-topo_clim_ci topo_clim_ci]); colorbar;
             end
-            w_show = NaN;
-            if ~isempty(selWeightsOrdered) && numel(selWeightsOrdered) >= si
-                w_show = selWeightsOrdered(si);
-            end
             score_show = searchScores(comp_rank);
             g_log = searchGammaEvidence(comp_rank);
             g_pct = 100 * (exp(g_log) - 1);   % gamma amplification as % change from baseline
-            title(sprintf('C%d:\\lambda=%.2f,score=%.2f,w=%.3f,r=%.2f,ratio=%.2f,g=%.0f%%,E=%.2f,O=%.2f,%s', ...
-                comp_rank, evals_sorted(comp_rank), score_show, w_show, searchCorrs(comp_rank), ...
+            title(sprintf('C%d:\\lambda=%.2f,score=%.2f,r=%.2f,ratio=%.2f,g=%.0f%%,E=%.2f,O=%.2f,%s', ...
+                comp_rank, evals_sorted(comp_rank), score_show, searchCorrs(comp_rank), ...
                 searchOccFrontRatio(comp_rank), g_pct, searchEmgArtifactScore(comp_rank), ...
                 searchOccipitalEvidence(comp_rank), searchEmgClass{comp_rank}), 'FontSize', 6);
         end
@@ -3222,19 +3223,18 @@ end
 saveas(figB, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_%s.png', subject_id, win_name)));
 close(figB);
 
-figC = figure('Position', [0 0 1512/2 982]);
-tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
+figC = figure('Position', [0 0 1512 982]);
+tiledlayout(3, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile;
 counts = [sum(hard_eligible), sum(artifact_flags), numel(eval_vec)];
-cats = {'Selected', 'ArtifactFlagged', 'Candidates'};
+cats = {'Selected', 'HardRejected', 'Candidates'};
 bar(counts, 0.6, 'FaceColor', [0.3 0.4 0.7]); hold on;
 set(gca, 'XTick', 1:numel(cats), 'XTickLabel', cats, 'XTickLabelRotation', 20);
 ylabel('Count');
 title('Component counts');
 box on;
 nexttile;
-reason_names = {'window_quality', 'stability', 'unknown_proxy', 'flat_topomap', 'front_leak', 'temp_leak', 'corr', ...
-    'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin'};
+reason_names = {'window_quality', 'flat_topomap', 'front_leak', 'temp_leak', 'corr'};
 reason_counts = zeros(1, numel(reason_names));
 for ri = 1:numel(reason_names)
     rname = reason_names{ri};
@@ -3246,7 +3246,22 @@ bar(reason_counts, 0.65, 'FaceColor', [0.72 0.40 0.30]); hold on;
 set(gca, 'XTick', 1:numel(reason_names), 'XTickLabel', reason_names, ...
     'XTickLabelRotation', 35, 'TickLabelInterpreter', 'none');
 ylabel('Rejected components');
-title('Rejection reasons (criterion-level)');
+title('Hard rejection reasons (criterion-level)');
+box on;
+nexttile;
+diag_reason_names = {'unknown_proxy', 'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin'};
+diag_reason_counts = zeros(1, numel(diag_reason_names));
+for ri = 1:numel(diag_reason_names)
+    rname = diag_reason_names{ri};
+    if isfield(rejection_flags, rname)
+        diag_reason_counts(ri) = sum(rejection_flags.(rname));
+    end
+end
+bar(diag_reason_counts, 0.65, 'FaceColor', [0.65 0.62 0.30]); hold on;
+set(gca, 'XTick', 1:numel(diag_reason_names), 'XTickLabel', diag_reason_names, ...
+    'XTickLabelRotation', 35, 'TickLabelInterpreter', 'none');
+ylabel('Components');
+title('Diagnostic-only EMG criteria (not exclusion gates)');
 box on;
 sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), ...
     'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
@@ -3560,12 +3575,25 @@ peak_stats.peak_prominence = peak_prom;
 peak_stats.peak_harmonic_penalty = harm_fraction;
 end
 
-function reasons = compute_primary_rejection_reason(rejection_flags)
-reason_order = {'window_quality', 'stability', 'unknown_proxy', 'flat_topomap', 'front_leak', 'temp_leak', 'corr', ...
-    'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin'};
+function reasons = compute_primary_rejection_reason(rejection_flags, reason_order, include_mask)
+if nargin < 2 || isempty(reason_order)
+    reason_order = {'window_quality', 'stability', 'unknown_proxy', 'flat_topomap', 'front_leak', 'temp_leak', 'corr', ...
+        'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin'};
+end
 nComp = numel(rejection_flags.unknown_proxy);
 reasons = repmat({'pass'}, nComp, 1);
+if nargin < 3 || isempty(include_mask)
+    include_mask = true(nComp, 1);
+else
+    include_mask = logical(include_mask(:));
+    if numel(include_mask) ~= nComp
+        include_mask = true(nComp, 1);
+    end
+end
 for ci = 1:nComp
+    if ~include_mask(ci)
+        continue;
+    end
     for ri = 1:numel(reason_order)
         rname = reason_order{ri};
         if isfield(rejection_flags, rname) && rejection_flags.(rname)(ci)
