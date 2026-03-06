@@ -81,8 +81,8 @@ flat_topo_mad_ratio_thr = 0.18;     % relaxed flat-map guard: MAD relative to ma
 flat_topo_iqr_ratio_thr = 0.24;     % relaxed flat-map guard: IQR relative to maxabs
 flat_topo_span_ratio_thr = 0.25;    % relaxed flat-map guard: span relative to maxabs
 flat_topo_std_ratio_thr = 0.08;     % relaxed flat-map guard: STD relative to maxabs
-peak_form_weight = 1.25;            % dominant positive score term for shift-invariant gamma peak form
-peak_bonus_weight = 0.00;           % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
+peak_form_weight = 2.00;            % strongly prioritize shift-invariant gamma peak form during ranking
+peak_bonus_weight = 0.5;            % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
 peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
 peak_form_shift_max_hz = 25;        % max template-shift alignment range for shift-invariant matching
@@ -3225,15 +3225,7 @@ plot([adaptive_thr.occ_class_thr, adaptive_thr.occ_class_thr], [-y_lim_absmax, a
     '-', 'Color', bracket_color, 'LineWidth', 2.2);
 for ci = 1:nComp
     if isfinite(occ_evidence(ci)) && isfinite(emg_score(ci))
-        cid = NaN;
-        if nargin >= 20 && ~isempty(crosswin_id) && numel(crosswin_id) >= ci
-            cid = crosswin_id(ci);
-        end
-        if isfinite(cid)
-            lbl = sprintf('C%d[ID%d]', ci, round(cid));
-        else
-            lbl = sprintf('C%d', ci);
-        end
+        lbl = sprintf('C%d', ci);
         text(occ_evidence(ci) + 0.015 * x_lim_absmax, emg_score(ci) + 0.015 * y_lim_absmax, ...
             lbl, 'FontSize', 7, 'Color', [0.15 0.15 0.15], 'Interpreter', 'none');
     end
@@ -3283,11 +3275,7 @@ for k = 1:nCols
             imagesc(topo_data.avg(:)); axis tight;
             caxis([-topo_clim_ci topo_clim_ci]);
         end
-        if nargin >= 20 && ~isempty(crosswin_id) && numel(crosswin_id) >= ci && isfinite(crosswin_id(ci))
-            ttl = sprintf('Sel C%d [ID%d] (%s)', ci, round(crosswin_id(ci)), emg_class{ci});
-        else
-            ttl = sprintf('Sel C%d (%s)', ci, emg_class{ci});
-        end
+        ttl = sprintf('Sel C%d (%s)', ci, emg_class{ci});
         title(ttl, 'FontSize', 8, 'Interpreter', 'none');
     else
         axis off;
@@ -3300,12 +3288,8 @@ for k = 1:nCols
         plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'k-', 'LineWidth', 1.3);
         yline(0, 'k--');
         xlabel('Hz'); ylabel('PR');
-        pf_mode = 'none';
-        if ~isempty(peak_form_mode) && numel(peak_form_mode) >= ci && ~isempty(peak_form_mode{ci})
-            pf_mode = peak_form_mode{ci};
-        end
-        title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f (%s)', ...
-            eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci), pf_mode), 'FontSize', 8);
+        title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
+            eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
         box on;
     else
         axis off;
@@ -3332,11 +3316,7 @@ for k = 1:nCols
             imagesc(topo_data.avg(:)); axis tight;
             caxis([-topo_clim_ci topo_clim_ci]);
         end
-        if nargin >= 20 && ~isempty(crosswin_id) && numel(crosswin_id) >= ci && isfinite(crosswin_id(ci))
-            ttl = sprintf('Rej C%d [ID%d] (%s)', ci, round(crosswin_id(ci)), emg_class{ci});
-        else
-            ttl = sprintf('Rej C%d (%s)', ci, emg_class{ci});
-        end
+        ttl = sprintf('Rej C%d (%s)', ci, emg_class{ci});
         title(ttl, 'FontSize', 8, 'Interpreter', 'none');
     else
         axis off;
@@ -3349,12 +3329,8 @@ for k = 1:nCols
         plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.3);
         yline(0, 'k--');
         xlabel('Hz'); ylabel('PR');
-        pf_mode = 'none';
-        if ~isempty(peak_form_mode) && numel(peak_form_mode) >= ci && ~isempty(peak_form_mode{ci})
-            pf_mode = peak_form_mode{ci};
-        end
-        title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f (%s)', ...
-            eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci), pf_mode), 'FontSize', 8);
+        title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
+            eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
         box on;
     else
         axis off;
