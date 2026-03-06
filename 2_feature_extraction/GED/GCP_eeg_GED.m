@@ -696,6 +696,7 @@ for subj = 1:nSubj
     hard_eligible(dominant_outlier_mask | flat_topomap_mask) = false;
     stability_fail = false;
     stability_ratio = NaN;
+    stability_penalty = 0;
     eligible_idx_pre = find(hard_eligible);
     if numel(eligible_idx_pre) >= 2
         [~, elig_ord] = sort(evals_sorted(eligible_idx_pre), 'descend');
@@ -703,12 +704,12 @@ for subj = 1:nSubj
         sec_idx = eligible_idx_pre(elig_ord(2));
         stability_ratio = evals_sorted(top_idx) / max(evals_sorted(sec_idx), eps);
         if stability_ratio < selection_min_eigengap_ratio
-            hard_eligible(:) = false;
             rejection_flags.stability(:) = true;
-            artifact_flags(:) = true;
             stability_fail = true;
+            stability_gap = selection_min_eigengap_ratio - stability_ratio;
+            stability_penalty = max(0.10, min(0.40, stability_gap));
             msg = sprintf(['Unstable eigengap in hard-eligible set for subject %s (%s). ', ...
-                'Top eigengap %.4f < %.4f; window set to no-selection.'], ...
+                'Top eigengap %.4f < %.4f; applying score penalty only (no global exclusion).'], ...
                 subjects{subj}, win_names{w}, stability_ratio, selection_min_eigengap_ratio);
             warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'LOW_EIGENGAP_STABILITY', msg, ...
                 struct('window', win_names{w}, 'eigengap_ratio', stability_ratio, ...
@@ -719,6 +720,9 @@ for subj = 1:nSubj
         peak_support_weight * normalize_robust(peak_support_vec) + ...
         peak_occ_margin_weight * max(normalize_robust(occ_minus_emg), 0);
     searchScores = base_score;
+    if stability_fail
+        searchScores = searchScores - stability_penalty;
+    end
     searchScores(~hard_eligible) = -Inf;
     if ~any(isfinite(searchScores))
         msg = sprintf(['No hard-eligible components remained for subject %s (%s). ', ...
@@ -1024,10 +1028,13 @@ for subj = 1:nSubj
     if nSelTopo == 0
         subplot(1, 1, 1);
         axis off;
-        if ged_window_valid
-            txt = 'No selected components (NaN propagated)';
+        if enforce_window_quality_gate && ~ged_window_valid
+            txt = sprintf('No selected components (excluded by window-quality gate: %s)', ged_window_fail_reason);
+        elseif ~ged_window_valid
+            txt = sprintf(['No selected components survived screening. ', ...
+                'Window invalidity is informational only (reason: %s).'], ged_window_fail_reason);
         else
-            txt = sprintf('No selected components (Window invalid: %s)', ged_window_fail_reason);
+            txt = 'No selected components survived artifact screening (NaN propagated)';
         end
         text(0.5, 0.5, txt, 'HorizontalAlignment', 'center');
     else
@@ -1082,7 +1089,8 @@ for subj = 1:nSubj
             fig_save_dir_emg_exclusion, subjects{subj}, win_names{w}, scan_freqs, searchTopos, ...
             searchMeanPrSpectrum, evals_sorted(1:nSearch), gamma_vec, occipital_evidence, emg_artifact_score, ...
             searchEmgClass, unknown_proxy_vec, hard_eligible, artifact_flags, rejection_flags, ...
-            adaptive_thr, cfg_topo, all_topo_labels{subj}, ged_window_valid, ged_window_fail_reason);
+            adaptive_thr, cfg_topo, all_topo_labels{subj}, ged_window_valid, ged_window_fail_reason, ...
+            enforce_window_quality_gate, stability_fail);
     end
     all_window_quality_stats{subj} = window_quality_stats;
 
@@ -3000,7 +3008,7 @@ end
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
     searchMeanPrSpectrum, eval_vec, gamma_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
     hard_eligible, artifact_flags, rejection_flags, adaptive_thr, cfg_topo, topo_labels, ...
-    window_valid, window_fail_reason)
+    window_valid, window_fail_reason, quality_gate_enforced, stability_fail)
 nComp = numel(eval_vec);
 if nComp < 1
     return;
@@ -3062,99 +3070,154 @@ rej_idx = find(artifact_flags);
 sel_idx = sel_idx(so);
 [~, ro] = sort(eval_vec(rej_idx), 'descend');
 rej_idx = rej_idx(ro);
+has_sel = ~isempty(sel_idx);
+has_rej = ~isempty(rej_idx);
 nShow = min(5, max(numel(sel_idx), numel(rej_idx)));
 if nShow < 1
     nShow = 1;
 end
 figB = figure('Position', [0 0 1512 982]);
-for k = 1:nShow
-    subplot(4, nShow, k);
-    if k <= numel(sel_idx)
-        ci = sel_idx(k);
-        topo_data = [];
-        topo_data.label = topo_labels;
-        topo_data.avg = searchTopos(:, ci);
-        topo_data.dimord = 'chan';
-        cfg_ci = cfg_topo;
-        topo_vals = topo_data.avg(isfinite(topo_data.avg));
-        topo_clim_ci = max(abs(topo_vals));
-        if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
-            topo_clim_ci = 1;
+figB_rows = max(1, double(has_sel) + double(has_rej));
+tiledlayout(figB_rows * 2, nShow, 'Padding', 'compact', 'TileSpacing', 'compact');
+row_ptr = 1;
+if has_sel
+    for k = 1:nShow
+        nexttile((row_ptr - 1) * nShow + k);
+        if k <= numel(sel_idx)
+            ci = sel_idx(k);
+            topo_data = [];
+            topo_data.label = topo_labels;
+            topo_data.avg = searchTopos(:, ci);
+            topo_data.dimord = 'chan';
+            cfg_ci = cfg_topo;
+            topo_vals = topo_data.avg(isfinite(topo_data.avg));
+            topo_clim_ci = max(abs(topo_vals));
+            if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
+                topo_clim_ci = 1;
+            end
+            cfg_ci.zlim = [-topo_clim_ci topo_clim_ci];
+            try
+                ft_topoplotER(cfg_ci, topo_data);
+            catch
+                imagesc(topo_data.avg(:)); axis tight;
+                caxis([-topo_clim_ci topo_clim_ci]);
+            end
+            title(sprintf('Sel C%d (%s)', ci, emg_class{ci}), 'FontSize', 8, 'Interpreter', 'none');
+        else
+            axis off;
         end
-        cfg_ci.zlim = [-topo_clim_ci topo_clim_ci];
-        try
-            ft_topoplotER(cfg_ci, topo_data);
-        catch
-            imagesc(topo_data.avg(:)); axis tight;
-            caxis([-topo_clim_ci topo_clim_ci]);
+    end
+    for k = 1:nShow
+        nexttile(row_ptr * nShow + k); hold on;
+        if k <= numel(sel_idx)
+            ci = sel_idx(k);
+            plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'k-', 'LineWidth', 1.4);
+            yline(0, 'k--');
+            xlabel('Hz');
+            if k == 1
+                ylabel('PR (selected)');
+            else
+                ylabel('PR');
+            end
+            title(sprintf('\\lambda=%.2f, g=%.0f%%', eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1)), 'FontSize', 8);
+            box on;
+        else
+            axis off;
         end
-        title(sprintf('Sel C%d (%s)', ci, emg_class{ci}), 'FontSize', 8, 'Interpreter', 'none');
-    else
-        axis off;
     end
-    subplot(4, nShow, nShow + k); hold on;
-    if k <= numel(sel_idx)
-        ci = sel_idx(k);
-        plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'k-', 'LineWidth', 1.4);
-        yline(0, 'k--');
-        xlabel('Hz'); ylabel('PR');
-        title(sprintf('\\lambda=%.2f, g=%.0f%%', eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1)), 'FontSize', 8);
-        box on;
-    else
-        axis off;
-    end
-    subplot(4, nShow, 2*nShow + k);
-    if k <= numel(rej_idx)
-        ci = rej_idx(k);
-        topo_data = [];
-        topo_data.label = topo_labels;
-        topo_data.avg = searchTopos(:, ci);
-        topo_data.dimord = 'chan';
-        cfg_ci = cfg_topo;
-        topo_vals = topo_data.avg(isfinite(topo_data.avg));
-        topo_clim_ci = max(abs(topo_vals));
-        if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
-            topo_clim_ci = 1;
+    row_ptr = row_ptr + 2;
+end
+if has_rej
+    for k = 1:nShow
+        nexttile((row_ptr - 1) * nShow + k);
+        if k <= numel(rej_idx)
+            ci = rej_idx(k);
+            topo_data = [];
+            topo_data.label = topo_labels;
+            topo_data.avg = searchTopos(:, ci);
+            topo_data.dimord = 'chan';
+            cfg_ci = cfg_topo;
+            topo_vals = topo_data.avg(isfinite(topo_data.avg));
+            topo_clim_ci = max(abs(topo_vals));
+            if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
+                topo_clim_ci = 1;
+            end
+            cfg_ci.zlim = [-topo_clim_ci topo_clim_ci];
+            try
+                ft_topoplotER(cfg_ci, topo_data);
+            catch
+                imagesc(topo_data.avg(:)); axis tight;
+                caxis([-topo_clim_ci topo_clim_ci]);
+            end
+            title(sprintf('Rej C%d (%s)', ci, emg_class{ci}), 'FontSize', 8, 'Interpreter', 'none');
+        else
+            axis off;
         end
-        cfg_ci.zlim = [-topo_clim_ci topo_clim_ci];
-        try
-            ft_topoplotER(cfg_ci, topo_data);
-        catch
-            imagesc(topo_data.avg(:)); axis tight;
-            caxis([-topo_clim_ci topo_clim_ci]);
+    end
+    for k = 1:nShow
+        nexttile(row_ptr * nShow + k); hold on;
+        if k <= numel(rej_idx)
+            ci = rej_idx(k);
+            plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.4);
+            yline(0, 'k--');
+            xlabel('Hz');
+            if k == 1
+                ylabel('PR (rejected)');
+            else
+                ylabel('PR');
+            end
+            title(sprintf('\\lambda=%.2f, g=%.0f%%', eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1)), 'FontSize', 8);
+            box on;
+        else
+            axis off;
         end
-        title(sprintf('Rej C%d (%s)', ci, emg_class{ci}), 'FontSize', 8, 'Interpreter', 'none');
-    else
-        axis off;
     end
-    subplot(4, nShow, 3*nShow + k); hold on;
-    if k <= numel(rej_idx)
-        ci = rej_idx(k);
-        plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.4);
-        yline(0, 'k--');
-        xlabel('Hz'); ylabel('PR');
-        title(sprintf('\\lambda=%.2f, g=%.0f%%', eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1)), 'FontSize', 8);
-        box on;
-    else
-        axis off;
-    end
+end
+if ~has_sel && ~has_rej
+    nexttile(1);
+    axis off;
+    text(0.5, 0.5, 'No components available for selected/rejected display.', ...
+        'HorizontalAlignment', 'center', 'FontSize', 10);
 end
 if window_valid
     fig_title = sprintf('Selected vs Artifact-Rejected Components: %s (%s)', subject_id, win_name);
+elseif quality_gate_enforced
+    fig_title = sprintf('Selected vs Artifact-Rejected Components: %s (%s, gate-excluded: %s)', ...
+        subject_id, win_name, window_fail_reason);
 else
-    fig_title = sprintf('Selected vs Artifact-Rejected Components: %s (%s, invalid: %s)', ...
+    fig_title = sprintf('Selected vs Artifact-Rejected Components: %s (%s, invalid info: %s)', ...
         subject_id, win_name, window_fail_reason);
 end
 sgtitle(fig_title, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
-annotation(figB, 'textbox', [0.87 0.56 0.12 0.12], ...
+if window_valid
+    win_state = 'valid';
+else
+    win_state = sprintf('invalid:%s', window_fail_reason);
+end
+if quality_gate_enforced
+    gate_state = 'ON';
+else
+    gate_state = 'OFF';
+end
+if stability_fail
+    stability_state = 'warning';
+else
+    stability_state = 'ok';
+end
+annotation(figB, 'textbox', [0.02 0.91 0.78 0.05], ...
+    'String', sprintf('Window %s | Quality gate %s | Stability %s | Selected %d | Artifact flagged %d/%d', ...
+    win_state, gate_state, stability_state, numel(sel_idx), numel(rej_idx), numel(eval_vec)), ...
+    'EdgeColor', 'none', 'HorizontalAlignment', 'left', 'FontSize', 10, ...
+    'Interpreter', 'none');
+annotation(figB, 'textbox', [0.84 0.90 0.14 0.07], ...
     'String', sprintf('Total components: %d', numel(eval_vec)), ...
     'EdgeColor', [0.2 0.2 0.2], 'LineWidth', 0.8, ...
     'BackgroundColor', [1 1 1], 'HorizontalAlignment', 'center', ...
     'VerticalAlignment', 'middle', 'FontSize', 10, 'FontWeight', 'bold');
 if isempty(sel_idx)
-    annotation(figB, 'textbox', [0.02 0.92 0.96 0.05], ...
-        'String', 'No hard-eligible components. Window outputs propagated as NaN.', ...
-        'EdgeColor', 'none', 'HorizontalAlignment', 'center', 'FontSize', 10);
+    annotation(figB, 'textbox', [0.02 0.87 0.78 0.04], ...
+        'String', 'No hard-eligible components survived artifact screening.', ...
+        'EdgeColor', 'none', 'HorizontalAlignment', 'left', 'FontSize', 10);
 end
 saveas(figB, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_%s.png', subject_id, win_name)));
 close(figB);
