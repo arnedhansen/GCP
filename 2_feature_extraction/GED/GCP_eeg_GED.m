@@ -57,6 +57,9 @@ viz_interp_k = 6;                   % nearest neighbors for channel interpolatio
 viz_nonocc_outlier_mult = 1.00;     % non-occipital outlier threshold multiplier (vs posterior pctl)
 viz_topo_prctile = 99.9;            % robust percentile for color scaling
 min_eigval_hard = 1.0;              % hard minimum GED eigenvalue (lambda > 1)
+min_gamma_increase_hard = 0.10;     % hard minimum gamma increase (>= 10% vs baseline)
+include_occipital_label_override = true; % force-include occipital-labeled comps after eig+gamma core gates
+min_peak_form_single_hard = 0.65;   % hard minimum PF score with single-peak mode (applies to all components)
 max_frontleak_hard = 1.25;          % artifact guard: frontal leakage (front/occ)
 max_templeak_hard = 1.35;           % artifact guard: temporal leakage (temp/occ)
 min_corr_hard = -0.10;              % artifact guard: strongly anti-template components
@@ -167,13 +170,12 @@ end
 fig_save_dir_ged = fullfile(gcp_root_path, 'figures', 'eeg', 'ged');
 fig_save_dir_component_comparison = fullfile(fig_save_dir_ged, 'component_comparison');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
-fig_save_dir_subj = fullfile(fig_save_dir_ged, 'subj');
 fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_comparison, 'dir'), mkdir(fig_save_dir_component_comparison); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
-if ~exist(fig_save_dir_subj, 'dir'), mkdir(fig_save_dir_subj); end
 comp_sel_save_dir = fig_save_dir_component_selection;
+min_gamma_log_hard = log(1 + min_gamma_increase_hard);
 
 %% Preallocate storage
 all_trial_powratio     = cell(4, nSubj);
@@ -261,6 +263,9 @@ end
 for subj = 1:nSubj
     close all
     tic
+    comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
+    if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
+    fig_save_dir_emg_exclusion = comp_sel_save_dir;
     datapath = fullfile(path, subjects{subj}, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
         'dataEEG_c25', 'dataEEG_c50', 'dataEEG_c75', 'dataEEG_c100');
@@ -553,7 +558,7 @@ for subj = 1:nSubj
     end
     W_top = searchFilters(:, 1);
 
-    % Candidate metrics (selection = eig > 1 + explicit artifact rejection; no fixed gamma threshold).
+    % Candidate metrics (selection = eig + gamma core gates + explicit artifact rejection).
     corr_vec = searchCorrs;
     ratio_vec = searchOccFrontRatio;
     gamma_vec = searchGammaEvidence;
@@ -610,7 +615,11 @@ for subj = 1:nSubj
         burst_vec, hf_slope_vec, condlock_vec, occipital_evidence, emg_artifact_score, default_thresholds);
     searchOccipitalEvidence = occipital_evidence;
     searchEmgArtifactScore = emg_artifact_score;
-    hard_eligible_raw = finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval);
+    pass_eig_gate = finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval);
+    pass_gamma_gate = finite_metrics & (gamma_vec >= min_gamma_log_hard);
+    single_peak_mode_mask = cellfun(@(m) strcmpi(m, 'single'), peak_form_mode_vec(:));
+    pass_single_peak_gate = finite_metrics & single_peak_mode_mask & (peak_form_score_vec >= min_peak_form_single_hard);
+    hard_eligible_raw = pass_eig_gate & pass_gamma_gate & pass_single_peak_gate;
     flat_topomap_mask = false(nSearch, 1);
     one_color_topomap_mask = false(nSearch, 1);
     if exclude_flat_topomap
@@ -716,9 +725,11 @@ for subj = 1:nSubj
     no_hard_threshold_match = ~any(hard_eligible_raw);
     hard_eligible = hard_eligible_raw & ~artifact_flags;
     hard_eligible(dominant_outlier_mask | flat_topomap_mask) = false;
+    occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
+    force_include_occipital_mask = include_occipital_label_override & hard_eligible_raw & occipital_class_mask;
     searchScores = eval_raw_vec + peak_form_weight * peak_form_score_vec + peak_bonus_weight * peak_bonus_vec;
     searchScores(~finite_metrics) = -Inf;
-    searchScores(~hard_eligible) = -Inf;
+    searchScores(~(hard_eligible | force_include_occipital_mask)) = -Inf;
     if ~any(isfinite(searchScores))
         msg = sprintf(['No components met eig/artifact criteria for subject %s. ', ...
                        'Falling back to unconstrained eigenvalue ranking.'], subjects{subj});
@@ -743,10 +754,15 @@ for subj = 1:nSubj
         hard_metrics = struct( ...
             'n_search', nSearch, ...
             'n_finite_metrics', sum(finite_metrics), ...
-            'n_pass_eig', sum(finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval)), ...
+            'n_pass_eig', sum(pass_eig_gate), ...
+            'n_pass_gamma', sum(pass_gamma_gate), ...
+            'n_pass_single_peak_pf', sum(pass_single_peak_gate), ...
             'n_artifact_flagged', sum(artifact_flags), ...
             'n_unknown_high_risk', sum(unknown_proxy_vec), ...
             'n_pass_all_raw', sum(hard_eligible_raw), ...
+            'n_occipital_class', sum(occipital_class_mask), ...
+            'n_single_peak_mode', sum(single_peak_mode_mask), ...
+            'n_force_include_occipital', sum(force_include_occipital_mask), ...
             'n_excluded_dominant_outlier', sum(dominant_outlier_mask), ...
             'top_fail_idx', top_fail_idx, ...
             'top_fail_eig', top_fail_eig, ...
@@ -754,8 +770,12 @@ for subj = 1:nSubj
             'top_fail_ratio', top_fail_ratio, ...
             'top_fail_gamma', top_fail_gamma, ...
             'top_fail_pass_eig', top_fail_pass_eig, ...
+            'top_fail_pass_gamma', (~isnan(top_fail_idx) && pass_gamma_gate(top_fail_idx)), ...
             'top_fail_artifact', top_fail_artifact, ...
             'thr_eig', adaptive_thr.min_eigval, ...
+            'thr_gamma_log', min_gamma_log_hard, ...
+            'thr_gamma_pct', 100 * min_gamma_increase_hard, ...
+            'thr_single_peak_pf', min_peak_form_single_hard, ...
             'thr_corr', adaptive_thr.min_corr, ...
             'thr_front_leak', adaptive_thr.max_frontleak, ...
             'thr_temp_leak', adaptive_thr.max_templeak, ...
@@ -808,6 +828,11 @@ for subj = 1:nSubj
     candidate_table.score = searchScores;
     candidate_table.score_base = searchScores;
     candidate_table.score_final = searchScores;
+    candidate_table.pass_eig_gate = pass_eig_gate;
+    candidate_table.pass_gamma_gate = pass_gamma_gate;
+    candidate_table.pass_single_peak_pf_gate = pass_single_peak_gate;
+    candidate_table.single_peak_mode = single_peak_mode_mask;
+    candidate_table.force_include_occipital = force_include_occipital_mask;
     candidate_table.consistency_bonus = zeros(nSearch, 1);
     candidate_table.artifact_flag = artifact_flags;
     candidate_table.hard_reject = hard_reject_flags;
@@ -844,6 +869,9 @@ for subj = 1:nSubj
     candidate_table.crosswin_id = nan(nSearch, 1);
     candidate_table.crosswin_match_conf = nan(nSearch, 1);
     candidate_table.thr_min_eigval = repmat(adaptive_thr.min_eigval, nSearch, 1);
+    candidate_table.thr_min_gamma_log = repmat(min_gamma_log_hard, nSearch, 1);
+    candidate_table.thr_min_gamma_pct = repmat(100 * min_gamma_increase_hard, nSearch, 1);
+    candidate_table.thr_min_single_peak_pf = repmat(min_peak_form_single_hard, nSearch, 1);
     candidate_table.thr_occ_class = repmat(adaptive_thr.occ_class_thr, nSearch, 1);
     candidate_table.thr_emg_class = repmat(adaptive_thr.emg_class_thr, nSearch, 1);
     candidate_table.thr_occ_margin = repmat(adaptive_thr.min_occ_margin, nSearch, 1);
@@ -851,7 +879,7 @@ for subj = 1:nSubj
         searchTopos, searchMeanPrSpectrum, corr_vec, ratio_vec, condlock_vec, ...
         lineharm_vec, hf_slope_vec, leak_vec, temp_leak_vec, eval_raw_vec);
 
-    combined_idx = find(hard_eligible & isfinite(searchScores));
+    combined_idx = find((hard_eligible | force_include_occipital_mask) & isfinite(searchScores));
     if isempty(combined_idx)
         msg = sprintf(['No artifact-screened finite components available for subject %s. ', ...
             'Falling back to single best component (unconstrained ranking).'], subjects{subj});
@@ -1833,7 +1861,7 @@ for subj = 1:nSubj
     legend(bh, condLabels, 'FontSize', 10, 'Location', 'best');
     set(gca, 'FontSize', 11); xlim([30 90]);  box on;
 
-    saveas(fig, fullfile(fig_save_dir_subj, sprintf('GCP_eeg_GED_subj%s.png', subjects{subj})));
+    saveas(fig, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_subj%s.png', subjects{subj})));
     warning_log_by_subj{subj} = warning_log_subj;
     toc
 end % subject loop
