@@ -77,8 +77,13 @@ outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for dominant-out
 outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
 outlier_min_rest = 0;               % minimum non-top eligible components for dominant-outlier exclusion (0 = no minimum)
 exclude_flat_topomap = true;        % remove spatially flat/one-color topographies
-flat_topo_mad_ratio_thr = 0.24;     % stricter flat-map guard: MAD relative to maxabs
-flat_topo_iqr_ratio_thr = 0.32;     % stricter flat-map guard: IQR relative to maxabs
+flat_topo_mad_ratio_thr = 0.18;     % relaxed flat-map guard: MAD relative to maxabs
+flat_topo_iqr_ratio_thr = 0.24;     % relaxed flat-map guard: IQR relative to maxabs
+flat_topo_span_ratio_thr = 0.25;    % relaxed flat-map guard: span relative to maxabs
+flat_topo_std_ratio_thr = 0.08;     % relaxed flat-map guard: STD relative to maxabs
+peak_bonus_weight = 0.35;           % positive score term for clear 1-2 peak spectra
+peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
+peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
 
 random_seed = 13;                    % reproducible randomization
 
@@ -514,6 +519,9 @@ for subj = 1:nSubj
         isfinite(eval_raw_vec) & isfinite(leak_vec) & isfinite(temp_leak_vec) & ...
         isfinite(lineharm_vec) & isfinite(stationarity_vec) & isfinite(burst_vec) & ...
         isfinite(hf_slope_vec) & isfinite(condlock_vec);
+    [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
+        searchMeanPrSpectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
+        detrend_in_log, detrend_flat_edges, peak_min_prom_frac, peak_min_distance_hz);
     occipital_evidence = 0.40 * normalize_robust(corr_vec) + ...
         0.30 * normalize_robust(ratio_vec) + ...
         0.30 * normalize_robust(condlock_vec);
@@ -545,7 +553,9 @@ for subj = 1:nSubj
     hard_eligible_raw = finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval);
     flat_topomap_mask = false(nSearch, 1);
     if exclude_flat_topomap
-        flat_topomap_mask = detect_flat_topomap_outliers(searchTopos, flat_topo_mad_ratio_thr, flat_topo_iqr_ratio_thr);
+        flat_topomap_mask = detect_flat_topomap_outliers( ...
+            searchTopos, flat_topo_mad_ratio_thr, flat_topo_iqr_ratio_thr, ...
+            flat_topo_span_ratio_thr, flat_topo_std_ratio_thr);
     end
     fail_front_leak = finite_metrics & (leak_vec > adaptive_thr.max_frontleak);
     fail_temp_leak = finite_metrics & (temp_leak_vec > adaptive_thr.max_templeak);
@@ -559,6 +569,16 @@ for subj = 1:nSubj
     occ_minus_emg = occipital_evidence - emg_artifact_score;
     fail_occ_margin = finite_metrics & (emg_artifact_score >= adaptive_thr.emg_class_thr) & ...
         (occ_minus_emg < adaptive_thr.min_occ_margin);
+    peak_rescue_mask = false(nSearch, 1);
+    if any(flat_topomap_mask)
+        non_flat_fail = fail_front_leak | fail_temp_leak | fail_corr | fail_lineharm | ...
+            fail_stationarity | fail_burst | fail_hf_slope | fail_condlock | fail_emg_score | ...
+            fail_occ_margin | unknown_proxy_vec;
+        peak_rescue_mask = flat_topomap_mask & finite_metrics & ~non_flat_fail & ...
+            (peak_bonus_vec >= peak_bonus_rescue_min) & (peak_count_vec >= peak_bonus_min_peaks) & ...
+            (occ_minus_emg >= adaptive_thr.min_occ_margin) & (corr_vec >= adaptive_thr.min_corr);
+        flat_topomap_mask(peak_rescue_mask) = false;
+    end
     artifact_flags = fail_front_leak | fail_temp_leak | fail_corr | fail_lineharm | ...
         fail_stationarity | fail_burst | fail_hf_slope | fail_condlock | fail_emg_score | ...
         fail_occ_margin | unknown_proxy_vec | flat_topomap_mask;
@@ -574,7 +594,8 @@ for subj = 1:nSubj
         'hf_slope', fail_hf_slope, ...
         'condlock', fail_condlock, ...
         'emg_score', fail_emg_score, ...
-        'occ_margin', fail_occ_margin);
+        'occ_margin', fail_occ_margin, ...
+        'peak_rescue', peak_rescue_mask);
     for ci = 1:nSearch
         if unknown_proxy_vec(ci)
             searchEmgClass{ci} = 'unclear';
@@ -614,7 +635,8 @@ for subj = 1:nSubj
     no_hard_threshold_match = ~any(hard_eligible_raw);
     hard_eligible = hard_eligible_raw & ~artifact_flags;
     hard_eligible(dominant_outlier_mask | flat_topomap_mask) = false;
-    searchScores = eval_raw_vec;
+    searchScores = eval_raw_vec + peak_bonus_weight * peak_bonus_vec;
+    searchScores(~finite_metrics) = -Inf;
     searchScores(~hard_eligible) = -Inf;
     if ~any(isfinite(searchScores))
         msg = sprintf(['No components met eig/artifact criteria for subject %s. ', ...
@@ -664,7 +686,8 @@ for subj = 1:nSubj
             'thr_emg_score', adaptive_thr.max_emg_score, ...
             'thr_occ_margin', adaptive_thr.min_occ_margin);
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_HARD_ELIGIBLE_COMPONENTS', msg, hard_metrics);
-        searchScores = eval_raw_vec;
+        searchScores = eval_raw_vec + peak_bonus_weight * peak_bonus_vec;
+        searchScores(~finite_metrics) = -Inf;
     end
     [bestScore, bestIdx] = max(searchScores);
     if isempty(bestIdx) || isnan(bestScore)
@@ -686,6 +709,8 @@ for subj = 1:nSubj
     candidate_table.burst_ratio = burst_vec;
     candidate_table.hf_slope = hf_slope_vec;
     candidate_table.cond_lock_rho = condlock_vec;
+    candidate_table.peak_clarity = peak_bonus_vec;
+    candidate_table.peak_count = peak_count_vec;
     candidate_table.occipital_evidence = occipital_evidence;
     candidate_table.emg_artifact_score = emg_artifact_score;
     candidate_table.emg_class = searchEmgClass;
@@ -705,6 +730,7 @@ for subj = 1:nSubj
     candidate_table.fail_condlock = rejection_flags.condlock;
     candidate_table.fail_emg_score = rejection_flags.emg_score;
     candidate_table.fail_occ_margin = rejection_flags.occ_margin;
+    candidate_table.peak_rescued_from_flat = rejection_flags.peak_rescue;
     candidate_table.hard_eligible_raw = hard_eligible_raw;
     candidate_table.dominant_outlier = dominant_outlier_mask;
     candidate_table.hard_eligible = hard_eligible;
@@ -722,7 +748,10 @@ for subj = 1:nSubj
             'fallback_idx', bestIdx));
         combined_idx = bestIdx;
     end
-    [~, combined_ord] = sort(evals_sorted(combined_idx), 'descend');
+    [~, combined_ord] = sort(searchScores(combined_idx), 'descend');
+    if ~any(isfinite(searchScores(combined_idx)))
+        [~, combined_ord] = sort(evals_sorted(combined_idx), 'descend');
+    end
     combined_idx = combined_idx(combined_ord);
     combined_idx = combined_idx(1:min(max_components_to_combine, numel(combined_idx)));
 
@@ -903,16 +932,11 @@ for subj = 1:nSubj
             catch
                 imagesc(topo_data.avg); caxis([-topo_clim_ci topo_clim_ci]); colorbar;
             end
-            w_show = NaN;
-            if ~isempty(selWeightsOrdered) && numel(selWeightsOrdered) >= si
-                w_show = selWeightsOrdered(si);
-            end
-            score_show = searchScores(comp_rank);
             g_log = searchGammaEvidence(comp_rank);
             g_pct = 100 * (exp(g_log) - 1);   % gamma amplification as % change from baseline
-            title(sprintf('C%d:\\lambda=%.2f,score=%.2f,w=%.3f,r=%.2f,ratio=%.2f,g=%.0f%%,E=%.2f,O=%.2f,%s', ...
-                comp_rank, evals_sorted(comp_rank), score_show, w_show, searchCorrs(comp_rank), ...
-                searchOccFrontRatio(comp_rank), g_pct, searchEmgArtifactScore(comp_rank), ...
+            title(sprintf('C%d:\\lambda=%.2f,r=%.2f,ratio=%.2f,g=%.0f%%,O=%.2f,%s', ...
+                comp_rank, evals_sorted(comp_rank), searchCorrs(comp_rank), ...
+                searchOccFrontRatio(comp_rank), g_pct, ...
                 searchOccipitalEvidence(comp_rank), searchEmgClass{comp_rank}), 'FontSize', 6);
         end
     end
@@ -1615,7 +1639,7 @@ end
 bench_method_labels = {'Raw', 'Top-Eig GED', 'Combined GED'};
 bench_method_colors = [0.2 0.2 0.2; 0.1 0.35 0.75; 0.85 0.55 0.10];
 for subj = 1:nSubj
-    fig_bench_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
+    fig_bench_subj = figure('Position', [0 0 1512/2 982], 'Color', 'w');
     sgtitle(sprintf('Component Comparison: Subject %s', subjects{subj}), ...
         'FontSize', 18, 'FontWeight', 'bold');
 
@@ -2840,6 +2864,8 @@ g_pct = 100 * (exp(gamma_vec) - 1);
 scatter(occ_evidence, emg_score, scatter_size, g_pct, 'filled'); hold on;
 xline(adaptive_thr.occ_class_thr, 'k--', 'LineWidth', 1.0);
 yline(adaptive_thr.emg_class_thr, 'k--', 'LineWidth', 1.0);
+xline(0, '-', 'Color', [0.45 0.45 0.45], 'LineWidth', 0.8);
+yline(0, '-', 'Color', [0.45 0.45 0.45], 'LineWidth', 0.8);
 idx_unknown = find(unknown_high_risk);
 if ~isempty(idx_unknown)
     scatter(occ_evidence(idx_unknown), emg_score(idx_unknown), 130, 'rx', 'LineWidth', 2.0);
@@ -2874,6 +2900,12 @@ x_absmax = max([x_absmax, abs(adaptive_thr.occ_class_thr), 0.1]);
 y_absmax = max([y_absmax, abs(adaptive_thr.emg_class_thr), 0.1]);
 xlim([-x_absmax x_absmax]);
 ylim([-y_absmax y_absmax]);
+for ci = 1:nComp
+    if isfinite(occ_evidence(ci)) && isfinite(emg_score(ci))
+        text(occ_evidence(ci) + 0.015 * x_absmax, emg_score(ci) + 0.015 * y_absmax, ...
+            sprintf('C%d', ci), 'FontSize', 7, 'Color', [0.15 0.15 0.15], 'Interpreter', 'none');
+    end
+end
 cb = colorbar;
 cb.Label.String = 'Gamma change [%]';
 xlabel('OccipitalEvidenceScore');
@@ -3000,11 +3032,62 @@ saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_summary_%s.png',
 close(figC);
 end
 
-function flat_mask = detect_flat_topomap_outliers(topo_mat, mad_ratio_thr, iqr_ratio_thr)
+function [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
+    mean_pr_spectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
+    detrend_in_log, detrend_flat_edges, peak_min_prom_frac, peak_min_distance_hz)
+nComp = size(mean_pr_spectrum, 1);
+peak_bonus_vec = zeros(nComp, 1);
+peak_count_vec = zeros(nComp, 1);
+if isempty(mean_pr_spectrum) || isempty(scan_freqs)
+    return;
+end
+freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
+for ci = 1:nComp
+    y = mean_pr_spectrum(ci, :);
+    if all(~isfinite(y))
+        continue;
+    end
+    y_dt = detrend_power_ratio(y, scan_freqs, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
+    y_band = y_dt(freq_mask);
+    x_band = scan_freqs(freq_mask);
+    valid = isfinite(y_band) & isfinite(x_band);
+    y_band = y_band(valid);
+    x_band = x_band(valid);
+    if numel(y_band) < 5
+        continue;
+    end
+    y_band = movmean(y_band, 3);
+    peak_scale = max(y_band) - median(y_band);
+    if ~isfinite(peak_scale) || peak_scale <= eps
+        continue;
+    end
+    min_prom = max(0, max(y_band) * peak_min_prom_frac);
+    [~, ~, ~, prom] = findpeaks(y_band, x_band, ...
+        'MinPeakProminence', min_prom, ...
+        'MinPeakDistance', peak_min_distance_hz);
+    if isempty(prom)
+        continue;
+    end
+    prom = sort(prom(:), 'descend');
+    n_keep = min(2, numel(prom));
+    peak_count_vec(ci) = n_keep;
+    prom_score = min(1, mean(prom(1:n_keep)) / max(peak_scale, eps));
+    count_score = n_keep / 2;
+    peak_bonus_vec(ci) = max(0, min(1, 0.65 * prom_score + 0.35 * count_score));
+end
+end
+
+function flat_mask = detect_flat_topomap_outliers(topo_mat, mad_ratio_thr, iqr_ratio_thr, span_ratio_thr, std_ratio_thr)
 nComp = size(topo_mat, 2);
 flat_mask = false(nComp, 1);
 if isempty(topo_mat)
     return;
+end
+if nargin < 4 || isempty(span_ratio_thr)
+    span_ratio_thr = 0.35;
+end
+if nargin < 5 || isempty(std_ratio_thr)
+    std_ratio_thr = 0.12;
 end
 for ci = 1:nComp
     topo_vec = topo_mat(:, ci);
@@ -3027,7 +3110,7 @@ for ci = 1:nComp
     std_ratio = std(topo_vec) / amp_max;
     if ~isfinite(std_ratio), std_ratio = 0; end
     flat_mask(ci) = (mad_ratio <= mad_ratio_thr) || (iqr_ratio <= iqr_ratio_thr) || ...
-        (span_ratio <= 0.35) || (std_ratio <= 0.12);
+        (span_ratio <= span_ratio_thr) || (std_ratio <= std_ratio_thr);
 end
 end
 
