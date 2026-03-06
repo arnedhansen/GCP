@@ -895,7 +895,7 @@ for subj = 1:nSubj
         subjects{subj}, nSelTopo);
     annotation(fig_post, 'textbox', [0.01 0.965 0.98 0.03], ...
         'String', title_post, 'EdgeColor', 'none', 'HorizontalAlignment', 'center', ...
-        'VerticalAlignment', 'middle', 'FontSize', 14, 'FontWeight', 'bold');
+        'VerticalAlignment', 'middle', 'FontSize', 18, 'FontWeight', 'bold');
     if nSelTopo == 0
         subplot(1, 1, 1);
         axis off;
@@ -2902,6 +2902,13 @@ x_lim_absmax = 1.10 * x_absmax;
 y_lim_absmax = 1.10 * y_absmax;
 xlim([-x_lim_absmax x_lim_absmax]);
 ylim([-y_lim_absmax y_lim_absmax]);
+% Light-green bracket highlighting the selected-component region:
+% occipital evidence >= threshold and EMG score <= threshold.
+bracket_color = [0.70 0.90 0.70];
+plot([adaptive_thr.occ_class_thr, x_lim_absmax], [adaptive_thr.emg_class_thr, adaptive_thr.emg_class_thr], ...
+    '-', 'Color', bracket_color, 'LineWidth', 2.2);
+plot([adaptive_thr.occ_class_thr, adaptive_thr.occ_class_thr], [-y_lim_absmax, adaptive_thr.emg_class_thr], ...
+    '-', 'Color', bracket_color, 'LineWidth', 2.2);
 for ci = 1:nComp
     if isfinite(occ_evidence(ci)) && isfinite(emg_score(ci))
         text(occ_evidence(ci) + 0.015 * x_lim_absmax, emg_score(ci) + 0.015 * y_lim_absmax, ...
@@ -2924,12 +2931,17 @@ sel_idx = sel_idx(so);
 [~, ro] = sort(eval_vec(rej_idx), 'descend');
 rej_idx = rej_idx(ro);
 
-% Top 10 selected components: topography (row 1) + spectrum (row 2)
-nShowSel = max(1, min(10, numel(sel_idx)));
+% Top 10 selected/rejected components in one figure:
+% row 1 = selected topographies, row 2 = selected spectra,
+% row 3 = rejected topographies, row 4 = rejected spectra.
+nCols = 10;
+nShowSel = min(nCols, numel(sel_idx));
+nShowRej = min(nCols, numel(rej_idx));
 figSel = figure('Position', [0 0 1512 982]);
-for k = 1:nShowSel
-    subplot(2, nShowSel, k);
-    if k <= numel(sel_idx)
+for k = 1:nCols
+    % Row 1: selected topographies
+    subplot(4, nCols, k);
+    if k <= nShowSel
         ci = sel_idx(k);
         topo_data = [];
         topo_data.label = topo_labels;
@@ -2953,10 +2965,11 @@ for k = 1:nShowSel
         axis off;
     end
 
-    subplot(2, nShowSel, nShowSel + k); hold on;
-    if k <= numel(sel_idx)
+    % Row 2: selected spectra
+    subplot(4, nCols, nCols + k); hold on;
+    if k <= nShowSel
         ci = sel_idx(k);
-        plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'k-', 'LineWidth', 1.4);
+        plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'k-', 'LineWidth', 1.3);
         yline(0, 'k--');
         xlabel('Hz'); ylabel('PR');
         title(sprintf('\\lambda=%.2f, g=%.0f%%', eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1)), 'FontSize', 8);
@@ -2964,17 +2977,10 @@ for k = 1:nShowSel
     else
         axis off;
     end
-end
-sgtitle(sprintf('Top 10 Selected Components: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-saveas(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_selected_%s.png', subject_id, win_name)));
-close(figSel);
 
-% Top 10 rejected components: topography (row 1) + spectrum (row 2)
-nShowRej = max(1, min(10, numel(rej_idx)));
-figRej = figure('Position', [0 0 1512 982]);
-for k = 1:nShowRej
-    subplot(2, nShowRej, k);
-    if k <= numel(rej_idx)
+    % Row 3: rejected topographies
+    subplot(4, nCols, 2 * nCols + k);
+    if k <= nShowRej
         ci = rej_idx(k);
         topo_data = [];
         topo_data.label = topo_labels;
@@ -2998,10 +3004,11 @@ for k = 1:nShowRej
         axis off;
     end
 
-    subplot(2, nShowRej, nShowRej + k); hold on;
-    if k <= numel(rej_idx)
+    % Row 4: rejected spectra
+    subplot(4, nCols, 3 * nCols + k); hold on;
+    if k <= nShowRej
         ci = rej_idx(k);
-        plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.4);
+        plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.3);
         yline(0, 'k--');
         xlabel('Hz'); ylabel('PR');
         title(sprintf('\\lambda=%.2f, g=%.0f%%', eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1)), 'FontSize', 8);
@@ -3010,11 +3017,12 @@ for k = 1:nShowRej
         axis off;
     end
 end
-sgtitle(sprintf('Top 10 Rejected Components: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-saveas(figRej, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_rejected_%s.png', subject_id, win_name)));
-close(figRej);
+sgtitle(sprintf('Top 10 Selected and Rejected Components: %s (%s)', subject_id, win_name), ...
+    'FontSize', 14, 'FontWeight', 'bold');
+saveas(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_selected_%s.png', subject_id, win_name)));
+close(figSel);
 
-figC = figure('Position', [0 0 1512 982]);
+figC = figure('Position', [0 0 756 982]);
 tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile;
 counts = [sum(hard_eligible), sum(artifact_flags), numel(eval_vec)];
