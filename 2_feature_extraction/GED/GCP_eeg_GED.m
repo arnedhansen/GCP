@@ -371,8 +371,6 @@ for subj = 1:nSubj
 
     % Covariances per window (for loop below)
     covStim_per_win = {covStim_full, covStim_early, covStim_late};
-    % covBase_reg: regularized once, shared by all three GEDs (full, early, late)
-    covBase_reg = (1-lambda)*covBase_full + lambda*mean(diag(covBase_full))*eye(nChans);
 
     % Run GED + component selection per window
     searchFilters_full  = [];
@@ -422,6 +420,9 @@ for subj = 1:nSubj
         covStim_w = covStim_per_win{w};
         lam_w = lambdas(w);
         covStim_reg = (1-lam_w)*covStim_w + lam_w*mean(diag(covStim_w))*eye(nChans);
+        % Window-matched GED default: regularize baseline with the same lambda
+        % used for the current stimulus window.
+        covBase_reg = (1-lam_w)*covBase_full + lam_w*mean(diag(covBase_full))*eye(nChans);
 
         [W_full, D_full] = eig(covStim_reg, covBase_reg);
         [evals_sorted, sortIdx] = sort(real(diag(D_full)), 'descend');
@@ -934,10 +935,9 @@ for subj = 1:nSubj
             end
             g_log = searchGammaEvidence(comp_rank);
             g_pct = 100 * (exp(g_log) - 1);   % gamma amplification as % change from baseline
-            title(sprintf('C%d:\\lambda=%.2f,r=%.2f,ratio=%.2f,g=%.0f%%,O=%.2f,%s', ...
+            title(sprintf('C%d:\\lambda=%.2f,r=%.2f,ratio=%.2f,g=%.0f%%', ...
                 comp_rank, evals_sorted(comp_rank), searchCorrs(comp_rank), ...
-                searchOccFrontRatio(comp_rank), g_pct, ...
-                searchOccipitalEvidence(comp_rank), searchEmgClass{comp_rank}), 'FontSize', 6);
+                searchOccFrontRatio(comp_rank), g_pct), 'FontSize', 6);
         end
     end
         saveas(fig_post, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_component_selection_subj%s_%s.png', subjects{subj}, win_names{w})));
@@ -2898,11 +2898,13 @@ else
 end
 x_absmax = max([x_absmax, abs(adaptive_thr.occ_class_thr), 0.1]);
 y_absmax = max([y_absmax, abs(adaptive_thr.emg_class_thr), 0.1]);
-xlim([-x_absmax x_absmax]);
-ylim([-y_absmax y_absmax]);
+x_lim_absmax = 1.10 * x_absmax;
+y_lim_absmax = 1.10 * y_absmax;
+xlim([-x_lim_absmax x_lim_absmax]);
+ylim([-y_lim_absmax y_lim_absmax]);
 for ci = 1:nComp
     if isfinite(occ_evidence(ci)) && isfinite(emg_score(ci))
-        text(occ_evidence(ci) + 0.015 * x_absmax, emg_score(ci) + 0.015 * y_absmax, ...
+        text(occ_evidence(ci) + 0.015 * x_lim_absmax, emg_score(ci) + 0.015 * y_lim_absmax, ...
             sprintf('C%d', ci), 'FontSize', 7, 'Color', [0.15 0.15 0.15], 'Interpreter', 'none');
     end
 end
@@ -2921,13 +2923,12 @@ rej_idx = find(artifact_flags);
 sel_idx = sel_idx(so);
 [~, ro] = sort(eval_vec(rej_idx), 'descend');
 rej_idx = rej_idx(ro);
-nShow = min(5, max(numel(sel_idx), numel(rej_idx)));
-if nShow < 1
-    nShow = 1;
-end
-figB = figure('Position', [0 0 1512 982]);
-for k = 1:nShow
-    subplot(4, nShow, k);
+
+% Top 10 selected components: topography (row 1) + spectrum (row 2)
+nShowSel = max(1, min(10, numel(sel_idx)));
+figSel = figure('Position', [0 0 1512 982]);
+for k = 1:nShowSel
+    subplot(2, nShowSel, k);
     if k <= numel(sel_idx)
         ci = sel_idx(k);
         topo_data = [];
@@ -2951,7 +2952,8 @@ for k = 1:nShow
     else
         axis off;
     end
-    subplot(4, nShow, nShow + k); hold on;
+
+    subplot(2, nShowSel, nShowSel + k); hold on;
     if k <= numel(sel_idx)
         ci = sel_idx(k);
         plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'k-', 'LineWidth', 1.4);
@@ -2962,7 +2964,16 @@ for k = 1:nShow
     else
         axis off;
     end
-    subplot(4, nShow, 2*nShow + k);
+end
+sgtitle(sprintf('Top 10 Selected Components: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
+saveas(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_selected_%s.png', subject_id, win_name)));
+close(figSel);
+
+% Top 10 rejected components: topography (row 1) + spectrum (row 2)
+nShowRej = max(1, min(10, numel(rej_idx)));
+figRej = figure('Position', [0 0 1512 982]);
+for k = 1:nShowRej
+    subplot(2, nShowRej, k);
     if k <= numel(rej_idx)
         ci = rej_idx(k);
         topo_data = [];
@@ -2986,7 +2997,8 @@ for k = 1:nShow
     else
         axis off;
     end
-    subplot(4, nShow, 3*nShow + k); hold on;
+
+    subplot(2, nShowRej, nShowRej + k); hold on;
     if k <= numel(rej_idx)
         ci = rej_idx(k);
         plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.4);
@@ -2998,9 +3010,9 @@ for k = 1:nShow
         axis off;
     end
 end
-sgtitle(sprintf('Selected vs Artifact-Rejected Components: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-saveas(figB, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_%s.png', subject_id, win_name)));
-close(figB);
+sgtitle(sprintf('Top 10 Rejected Components: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
+saveas(figRej, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_rejected_%s.png', subject_id, win_name)));
+close(figRej);
 
 figC = figure('Position', [0 0 1512 982]);
 tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
