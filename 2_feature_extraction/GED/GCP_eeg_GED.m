@@ -81,6 +81,8 @@ flat_topo_mad_ratio_thr = 0.18;     % relaxed flat-map guard: MAD relative to ma
 flat_topo_iqr_ratio_thr = 0.24;     % relaxed flat-map guard: IQR relative to maxabs
 flat_topo_span_ratio_thr = 0.25;    % relaxed flat-map guard: span relative to maxabs
 flat_topo_std_ratio_thr = 0.08;     % relaxed flat-map guard: STD relative to maxabs
+flat_topo_minority_frac_thr = 0.08; % one-color guard: minimum minority-sign channel fraction
+flat_topo_minority_amp_thr = 0.12;  % one-color guard: minimum minority-sign amplitude (p95/maxabs)
 peak_form_weight = 2.00;            % strongly prioritize shift-invariant gamma peak form during ranking
 peak_bonus_weight = 0.5;            % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
@@ -610,10 +612,12 @@ for subj = 1:nSubj
     searchEmgArtifactScore = emg_artifact_score;
     hard_eligible_raw = finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval);
     flat_topomap_mask = false(nSearch, 1);
+    one_color_topomap_mask = false(nSearch, 1);
     if exclude_flat_topomap
-        flat_topomap_mask = detect_flat_topomap_outliers( ...
+        [flat_topomap_mask, one_color_topomap_mask] = detect_flat_topomap_outliers( ...
             searchTopos, flat_topo_mad_ratio_thr, flat_topo_iqr_ratio_thr, ...
-            flat_topo_span_ratio_thr, flat_topo_std_ratio_thr);
+            flat_topo_span_ratio_thr, flat_topo_std_ratio_thr, ...
+            flat_topo_minority_frac_thr, flat_topo_minority_amp_thr);
     end
     fail_front_leak = finite_metrics & (leak_vec > adaptive_thr.max_frontleak);
     fail_temp_leak = finite_metrics & (temp_leak_vec > adaptive_thr.max_templeak);
@@ -635,7 +639,7 @@ for subj = 1:nSubj
         non_flat_fail = fail_front_leak | fail_temp_leak | fail_corr | fail_lineharm | ...
             fail_stationarity | fail_burst | fail_hf_slope | fail_condlock | fail_emg_score | ...
             fail_occ_margin | unknown_proxy_vec;
-        peak_rescue_mask = flat_topomap_mask & finite_metrics & ~non_flat_fail & ...
+        peak_rescue_mask = flat_topomap_mask & ~one_color_topomap_mask & finite_metrics & ~non_flat_fail & ...
             (peak_bonus_vec >= peak_bonus_rescue_min) & (peak_count_vec >= peak_bonus_min_peaks) & ...
             (occ_minus_emg >= adaptive_thr.min_occ_margin) & (corr_vec >= adaptive_thr.min_corr);
         flat_topomap_mask(peak_rescue_mask) = false;
@@ -658,6 +662,7 @@ for subj = 1:nSubj
     rejection_flags = struct( ...
         'unknown_proxy', unknown_proxy_vec, ...
         'flat_topomap', flat_topomap_mask, ...
+        'one_color_topomap', one_color_topomap_mask, ...
         'front_leak', fail_front_leak, ...
         'temp_leak', fail_temp_leak, ...
         'corr', fail_corr, ...
@@ -810,6 +815,7 @@ for subj = 1:nSubj
     candidate_table.reject_reason = compute_primary_rejection_reason(rejection_flags);
     candidate_table.fail_unknown_proxy = rejection_flags.unknown_proxy;
     candidate_table.fail_flat_topomap = rejection_flags.flat_topomap;
+    candidate_table.fail_one_color_topomap = rejection_flags.one_color_topomap;
     candidate_table.fail_front_leak = rejection_flags.front_leak;
     candidate_table.fail_temp_leak = rejection_flags.temp_leak;
     candidate_table.fail_corr = rejection_flags.corr;
@@ -3352,7 +3358,7 @@ ylabel('Count');
 title('Component counts');
 box on;
 nexttile;
-reason_names = {'unknown_proxy', 'flat_topomap', 'front_leak', 'temp_leak', 'corr', ...
+reason_names = {'unknown_proxy', 'one_color_topomap', 'flat_topomap', 'front_leak', 'temp_leak', 'corr', ...
     'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin'};
 reason_counts = zeros(1, numel(reason_names));
 for ri = 1:numel(reason_names)
@@ -4013,9 +4019,10 @@ for ii = 1:numel(id_vec)
 end
 end
 
-function flat_mask = detect_flat_topomap_outliers(topo_mat, mad_ratio_thr, iqr_ratio_thr, span_ratio_thr, std_ratio_thr)
+function [flat_mask, one_color_mask] = detect_flat_topomap_outliers(topo_mat, mad_ratio_thr, iqr_ratio_thr, span_ratio_thr, std_ratio_thr, minority_frac_thr, minority_amp_thr)
 nComp = size(topo_mat, 2);
 flat_mask = false(nComp, 1);
+one_color_mask = false(nComp, 1);
 if isempty(topo_mat)
     return;
 end
@@ -4024,6 +4031,12 @@ if nargin < 4 || isempty(span_ratio_thr)
 end
 if nargin < 5 || isempty(std_ratio_thr)
     std_ratio_thr = 0.12;
+end
+if nargin < 6 || isempty(minority_frac_thr)
+    minority_frac_thr = 0.08;
+end
+if nargin < 7 || isempty(minority_amp_thr)
+    minority_amp_thr = 0.12;
 end
 for ci = 1:nComp
     topo_vec = topo_mat(:, ci);
@@ -4045,8 +4058,25 @@ for ci = 1:nComp
     if ~isfinite(span_ratio), span_ratio = 0; end
     std_ratio = std(topo_vec) / amp_max;
     if ~isfinite(std_ratio), std_ratio = 0; end
+    pos_mask = topo_vec > 0;
+    neg_mask = topo_vec < 0;
+    pos_frac = mean(pos_mask);
+    neg_frac = mean(neg_mask);
+    minority_frac = min(pos_frac, neg_frac);
+    if pos_frac <= neg_frac
+        minority_vals = topo_vec(pos_mask);
+    else
+        minority_vals = topo_vec(neg_mask);
+    end
+    if isempty(minority_vals)
+        minority_amp_ratio = 0;
+    else
+        minority_amp_ratio = prctile(abs(minority_vals), 95) / amp_max;
+        if ~isfinite(minority_amp_ratio), minority_amp_ratio = 0; end
+    end
+    one_color_mask(ci) = (minority_frac <= minority_frac_thr) && (minority_amp_ratio <= minority_amp_thr);
     flat_mask(ci) = (mad_ratio <= mad_ratio_thr) || (iqr_ratio <= iqr_ratio_thr) || ...
-        (span_ratio <= span_ratio_thr) || (std_ratio <= std_ratio_thr);
+        (span_ratio <= span_ratio_thr) || (std_ratio <= std_ratio_thr) || one_color_mask(ci);
 end
 end
 
@@ -4126,7 +4156,7 @@ end
 end
 
 function reasons = compute_primary_rejection_reason(rejection_flags)
-reason_order = {'unknown_proxy', 'flat_topomap', 'front_leak', 'temp_leak', 'corr', ...
+reason_order = {'unknown_proxy', 'one_color_topomap', 'flat_topomap', 'front_leak', 'temp_leak', 'corr', ...
     'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin'};
 nComp = numel(rejection_flags.unknown_proxy);
 reasons = repmat({'pass'}, nComp, 1);
