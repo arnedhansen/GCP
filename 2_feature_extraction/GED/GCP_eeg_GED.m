@@ -81,9 +81,21 @@ flat_topo_mad_ratio_thr = 0.18;     % relaxed flat-map guard: MAD relative to ma
 flat_topo_iqr_ratio_thr = 0.24;     % relaxed flat-map guard: IQR relative to maxabs
 flat_topo_span_ratio_thr = 0.25;    % relaxed flat-map guard: span relative to maxabs
 flat_topo_std_ratio_thr = 0.08;     % relaxed flat-map guard: STD relative to maxabs
-peak_bonus_weight = 0.35;           % positive score term for clear 1-2 peak spectra
+peak_form_weight = 1.25;            % dominant positive score term for shift-invariant gamma peak form
+peak_bonus_weight = 0.00;           % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
 peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
+peak_form_shift_max_hz = 25;        % max template-shift alignment range for shift-invariant matching
+peak_form_single_widths = [3 5 7 9];
+peak_form_double_separations = [8 12 16 20];
+peak_form_double_widths = [3 4 5 6];
+peak_form_min_trough_depth = 0.10;  % minimum trough depth for double-peak plausibility
+peak_form_min_similarity = 0.20;    % floor similarity before positive score is assigned
+peak_form_smooth_n = 3;             % moving-average smoothing for template scoring
+peak_form_enable_selfcheck = true;  % synthetic shift-invariance diagnostic
+peak_form_selfcheck_centers = [40 50 60 70 80];
+peak_form_selfcheck_width_hz = 5;
+peak_form_selfcheck_tol = 0.03;
 hard_leak_severity_mult = 1.15;     % leak must exceed adaptive threshold by this factor for hard reject
 hard_emg_severity_mult = 1.10;      % EMG score must exceed adaptive threshold by this factor for hard reject
 crosswin_w_topo = 0.50;             % cross-window matching weight for topography similarity
@@ -94,6 +106,18 @@ crosswin_consistency_min = 0.65;    % minimum mean confidence to treat a cross-w
 crosswin_consistency_bonus = 0.12;  % additive score bonus for stable occipital-like cross-window groups
 
 random_seed = 13;                    % reproducible randomization
+
+if peak_form_enable_selfcheck
+    [peak_form_shift_ok, peak_form_shift_stats] = validate_peak_form_shift_invariance( ...
+        scan_freqs, analysis_freq_range, peak_form_shift_max_hz, peak_form_single_widths, ...
+        peak_form_double_widths, peak_form_double_separations, peak_form_min_trough_depth, ...
+        peak_form_min_similarity, peak_form_smooth_n, peak_form_selfcheck_centers, ...
+        peak_form_selfcheck_width_hz, peak_form_selfcheck_tol);
+    if ~peak_form_shift_ok
+        warning('Peak-form shift-invariance check indicates center-frequency bias (max spread %.3f).', ...
+            peak_form_shift_stats.single_spread);
+    end
+end
 
 % Run mode: 'full' = full pipeline; 'component_check' = GED + component selection only (Phase 1)
 run_mode = 'full';
@@ -551,6 +575,11 @@ for subj = 1:nSubj
     [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
         detrend_in_log, detrend_flat_edges, peak_min_prom_frac, peak_min_distance_hz);
+    [peak_form_score_vec, peak_form_mode_vec, peak_form_diag] = compute_peak_form_template_score_from_spectra( ...
+        searchMeanPrSpectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
+        detrend_in_log, detrend_flat_edges, peak_form_shift_max_hz, peak_form_single_widths, ...
+        peak_form_double_widths, peak_form_double_separations, peak_form_min_trough_depth, ...
+        peak_form_min_similarity, peak_form_smooth_n);
     occipital_evidence = 0.40 * normalize_robust(corr_vec) + ...
         0.30 * normalize_robust(ratio_vec) + ...
         0.30 * normalize_robust(condlock_vec);
@@ -682,7 +711,7 @@ for subj = 1:nSubj
     no_hard_threshold_match = ~any(hard_eligible_raw);
     hard_eligible = hard_eligible_raw & ~artifact_flags;
     hard_eligible(dominant_outlier_mask | flat_topomap_mask) = false;
-    searchScores = eval_raw_vec + peak_bonus_weight * peak_bonus_vec;
+    searchScores = eval_raw_vec + peak_form_weight * peak_form_score_vec + peak_bonus_weight * peak_bonus_vec;
     searchScores(~finite_metrics) = -Inf;
     searchScores(~hard_eligible) = -Inf;
     if ~any(isfinite(searchScores))
@@ -733,7 +762,7 @@ for subj = 1:nSubj
             'thr_emg_score', adaptive_thr.max_emg_score, ...
             'thr_occ_margin', adaptive_thr.min_occ_margin);
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_HARD_ELIGIBLE_COMPONENTS', msg, hard_metrics);
-        searchScores = eval_raw_vec + peak_bonus_weight * peak_bonus_vec;
+        searchScores = eval_raw_vec + peak_form_weight * peak_form_score_vec + peak_bonus_weight * peak_bonus_vec;
         searchScores(~finite_metrics) = -Inf;
     end
     [bestScore, bestIdx] = max(searchScores);
@@ -758,6 +787,15 @@ for subj = 1:nSubj
     candidate_table.cond_lock_rho = condlock_vec;
     candidate_table.peak_clarity = peak_bonus_vec;
     candidate_table.peak_count = peak_count_vec;
+    candidate_table.peak_form_score = peak_form_score_vec;
+    candidate_table.peak_form_mode = peak_form_mode_vec;
+    candidate_table.peak_form_best_single_similarity = peak_form_diag.best_single_similarity;
+    candidate_table.peak_form_best_double_similarity = peak_form_diag.best_double_similarity;
+    candidate_table.peak_form_similarity_raw = peak_form_diag.best_similarity_raw;
+    candidate_table.peak_form_best_shift_hz = peak_form_diag.best_shift_hz;
+    candidate_table.peak_form_best_width_hz = peak_form_diag.best_width_hz;
+    candidate_table.peak_form_best_separation_hz = peak_form_diag.best_separation_hz;
+    candidate_table.peak_form_trough_depth = peak_form_diag.best_trough_depth;
     candidate_table.occipital_evidence = occipital_evidence;
     candidate_table.emg_artifact_score = emg_artifact_score;
     candidate_table.emg_class = searchEmgClass;
@@ -1206,19 +1244,22 @@ for subj = 1:nSubj
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(crosswin_id_full)), gamma_vec_full, ...
         occipital_evidence_full, emg_artifact_score_full, searchEmgClass_full, unknown_proxy_full, ...
         candidate_table_full.hard_eligible, hard_reject_full, soft_warn_full, rejection_flags_full, ...
-        adaptive_thr_full, cfg_topo, all_topo_labels{subj}, crosswin_id_full);
+        adaptive_thr_full, cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
+        candidate_table_full.peak_form_mode, crosswin_id_full);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(crosswin_id_early)), gamma_vec_early, ...
         occipital_evidence_early, emg_artifact_score_early, searchEmgClass_early, unknown_proxy_early, ...
         candidate_table_early.hard_eligible, hard_reject_early, soft_warn_early, rejection_flags_early, ...
-        adaptive_thr_early, cfg_topo, all_topo_labels{subj}, crosswin_id_early);
+        adaptive_thr_early, cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
+        candidate_table_early.peak_form_mode, crosswin_id_early);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(crosswin_id_late)), gamma_vec_late, ...
         occipital_evidence_late, emg_artifact_score_late, searchEmgClass_late, unknown_proxy_late, ...
         candidate_table_late.hard_eligible, hard_reject_late, soft_warn_late, rejection_flags_late, ...
-        adaptive_thr_late, cfg_topo, all_topo_labels{subj}, crosswin_id_late);
+        adaptive_thr_late, cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
+        candidate_table_late.peak_form_mode, crosswin_id_late);
 
     if strcmpi(run_mode, 'component_check')
         warning_log_by_subj{subj} = warning_log_subj;
@@ -3124,7 +3165,8 @@ end
 
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
     searchMeanPrSpectrum, eval_vec, gamma_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
-    hard_eligible, hard_reject_flags, soft_warn_flags, rejection_flags, adaptive_thr, cfg_topo, topo_labels, crosswin_id)
+    hard_eligible, hard_reject_flags, soft_warn_flags, rejection_flags, adaptive_thr, cfg_topo, topo_labels, ...
+    peak_form_score, peak_form_mode, crosswin_id)
 nComp = numel(eval_vec);
 if nComp < 1
     return;
@@ -3202,7 +3244,7 @@ xlabel('OccipitalEvidenceScore');
 ylabel('EMGArtifactScore');
 title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
 box on;
-saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_scatter_%s.png', subject_id, win_name)));
+saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_scatter_%s.png', subject_id, win_name)));
 close(figA);
 
 sel_idx = find(hard_eligible);
@@ -3258,7 +3300,12 @@ for k = 1:nCols
         plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'k-', 'LineWidth', 1.3);
         yline(0, 'k--');
         xlabel('Hz'); ylabel('PR');
-        title(sprintf('\\lambda=%.2f, g=%.0f%%', eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1)), 'FontSize', 8);
+        pf_mode = 'none';
+        if ~isempty(peak_form_mode) && numel(peak_form_mode) >= ci && ~isempty(peak_form_mode{ci})
+            pf_mode = peak_form_mode{ci};
+        end
+        title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f (%s)', ...
+            eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci), pf_mode), 'FontSize', 8);
         box on;
     else
         axis off;
@@ -3302,7 +3349,12 @@ for k = 1:nCols
         plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.3);
         yline(0, 'k--');
         xlabel('Hz'); ylabel('PR');
-        title(sprintf('\\lambda=%.2f, g=%.0f%%', eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1)), 'FontSize', 8);
+        pf_mode = 'none';
+        if ~isempty(peak_form_mode) && numel(peak_form_mode) >= ci && ~isempty(peak_form_mode{ci})
+            pf_mode = peak_form_mode{ci};
+        end
+        title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f (%s)', ...
+            eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci), pf_mode), 'FontSize', 8);
         box on;
     else
         axis off;
@@ -3310,7 +3362,7 @@ for k = 1:nCols
 end
 sgtitle(sprintf('Top 10 Selected and Rejected Components: %s (%s)', subject_id, win_name), ...
     'FontSize', 14, 'FontWeight', 'bold');
-saveas(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_selected_%s.png', subject_id, win_name)));
+saveas(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected_%s.png', subject_id, win_name)));
 close(figSel);
 
 figC = figure('Position', [0 0 756 982]);
@@ -3339,7 +3391,7 @@ ylabel('Rejected components');
 title('Rejection reasons (criterion-level)');
 box on;
 sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_summary_%s.png', subject_id, win_name)));
+saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_summary_%s.png', subject_id, win_name)));
 close(figC);
 end
 
@@ -3386,6 +3438,306 @@ for ci = 1:nComp
     count_score = n_keep / 2;
     peak_bonus_vec(ci) = max(0, min(1, 0.65 * prom_score + 0.35 * count_score));
 end
+end
+
+function [peak_form_score_vec, peak_form_mode_vec, diag] = compute_peak_form_template_score_from_spectra( ...
+    mean_pr_spectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
+    detrend_in_log, detrend_flat_edges, shift_max_hz, single_widths_hz, double_widths_hz, ...
+    double_separations_hz, min_trough_depth, min_similarity, smooth_n)
+nComp = size(mean_pr_spectrum, 1);
+peak_form_score_vec = zeros(nComp, 1);
+peak_form_mode_vec = repmat({'none'}, nComp, 1);
+diag = struct( ...
+    'best_single_similarity', nan(nComp, 1), ...
+    'best_double_similarity', nan(nComp, 1), ...
+    'best_similarity_raw', nan(nComp, 1), ...
+    'best_shift_hz', nan(nComp, 1), ...
+    'best_width_hz', nan(nComp, 1), ...
+    'best_separation_hz', nan(nComp, 1), ...
+    'best_trough_depth', nan(nComp, 1));
+if isempty(mean_pr_spectrum) || isempty(scan_freqs)
+    return;
+end
+freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
+if ~any(freq_mask)
+    return;
+end
+smooth_n = max(1, round(smooth_n));
+for ci = 1:nComp
+    y = mean_pr_spectrum(ci, :);
+    if all(~isfinite(y))
+        continue;
+    end
+    y_dt = detrend_power_ratio(y, scan_freqs, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
+    x_band = scan_freqs(freq_mask);
+    y_band = y_dt(freq_mask);
+    valid = isfinite(x_band) & isfinite(y_band);
+    x_band = x_band(valid);
+    y_band = y_band(valid);
+    if numel(y_band) < 7
+        continue;
+    end
+    y_band = movmean(y_band, smooth_n);
+    y_norm = normalize_positive_shape(y_band);
+    if isempty(y_norm)
+        continue;
+    end
+
+    [single_best, single_meta] = evaluate_single_template_bank(y_norm, x_band, single_widths_hz, shift_max_hz);
+    [double_best, double_meta] = evaluate_double_template_bank( ...
+        y_norm, y_band, x_band, double_widths_hz, double_separations_hz, shift_max_hz, min_trough_depth);
+
+    diag.best_single_similarity(ci) = single_best;
+    diag.best_double_similarity(ci) = double_best;
+
+    mode_raw = 'single';
+    best_raw = single_best;
+    best_shift = single_meta.shift_hz;
+    best_width = single_meta.width_hz;
+    best_sep = NaN;
+    best_trough = NaN;
+    best_centers = single_meta.centers_hz;
+
+    if double_best > best_raw
+        mode_raw = 'double';
+        best_raw = double_best;
+        best_shift = double_meta.shift_hz;
+        best_width = double_meta.width_hz;
+        best_sep = double_meta.sep_hz;
+        best_trough = double_meta.trough_depth;
+        best_centers = double_meta.centers_hz;
+    end
+
+    % Penalize template matches that are forced to band edges.
+    edge_margin_hz = 2;
+    if ~isempty(best_centers) && any(best_centers <= (analysis_freq_range(1) + edge_margin_hz) | ...
+            best_centers >= (analysis_freq_range(2) - edge_margin_hz))
+        best_raw = 0.85 * best_raw;
+    end
+
+    % Penalize EMG-like monotonic high-frequency rise in the upper gamma band.
+    hf_mask = x_band >= max(70, analysis_freq_range(2) - 15);
+    if sum(hf_mask) >= 5
+        hf_idx = find(hf_mask);
+        hf_rho = corr((1:numel(hf_idx))', y_band(hf_idx)', 'rows', 'complete', 'type', 'Spearman');
+        if isfinite(hf_rho) && hf_rho > 0.70
+            best_raw = best_raw * max(0.65, 1 - 0.30 * (hf_rho - 0.70) / 0.30);
+        end
+    end
+
+    diag.best_similarity_raw(ci) = best_raw;
+    diag.best_shift_hz(ci) = best_shift;
+    diag.best_width_hz(ci) = best_width;
+    diag.best_separation_hz(ci) = best_sep;
+    diag.best_trough_depth(ci) = best_trough;
+
+    if ~isfinite(best_raw) || best_raw <= min_similarity
+        peak_form_score_vec(ci) = 0;
+        peak_form_mode_vec{ci} = 'none';
+    else
+        peak_form_score_vec(ci) = max(0, min(1, (best_raw - min_similarity) / max(1 - min_similarity, eps)));
+        peak_form_mode_vec{ci} = mode_raw;
+    end
+end
+end
+
+function [best_sim, meta] = evaluate_single_template_bank(y_norm, x_band, widths_hz, shift_max_hz)
+best_sim = 0;
+meta = struct('shift_hz', NaN, 'width_hz', NaN, 'centers_hz', []);
+if isempty(widths_hz)
+    return;
+end
+x_mid = mean(x_band);
+for wi = 1:numel(widths_hz)
+    w = widths_hz(wi);
+    if ~isfinite(w) || w <= 0
+        continue;
+    end
+    shift_vals = candidate_shift_values_hz(x_band, shift_max_hz);
+    for si = 1:numel(shift_vals)
+        shift_hz = shift_vals(si);
+        center_hz = x_mid + shift_hz;
+        tpl = gaussian_template(x_band, center_hz, w);
+        sim = safe_template_similarity(y_norm, tpl);
+        if sim > best_sim
+            best_sim = sim;
+            meta.shift_hz = shift_hz;
+            meta.width_hz = w;
+            meta.centers_hz = center_hz;
+        end
+    end
+end
+end
+
+function [best_sim, meta] = evaluate_double_template_bank(y_norm, y_band, x_band, widths_hz, separations_hz, shift_max_hz, min_trough_depth)
+best_sim = 0;
+meta = struct('shift_hz', NaN, 'width_hz', NaN, 'sep_hz', NaN, 'trough_depth', NaN, 'centers_hz', []);
+if isempty(widths_hz) || isempty(separations_hz)
+    return;
+end
+x_mid = mean(x_band);
+shift_vals = candidate_shift_values_hz(x_band, shift_max_hz);
+for wi = 1:numel(widths_hz)
+    w = widths_hz(wi);
+    if ~isfinite(w) || w <= 0
+        continue;
+    end
+    for di = 1:numel(separations_hz)
+        sep = separations_hz(di);
+        if ~isfinite(sep) || sep <= 0
+            continue;
+        end
+        for si = 1:numel(shift_vals)
+            shift_hz = shift_vals(si);
+            c1 = x_mid + shift_hz - sep / 2;
+            c2 = x_mid + shift_hz + sep / 2;
+            tpl = gaussian_template(x_band, c1, w) + gaussian_template(x_band, c2, w);
+            sim = safe_template_similarity(y_norm, tpl);
+            trough_depth = estimate_trough_depth(y_band, x_band, c1, c2);
+            trough_scale = min(1, max(0, trough_depth) / max(min_trough_depth, eps));
+            sim_adj = sim * trough_scale;
+            if sim_adj > best_sim
+                best_sim = sim_adj;
+                meta.shift_hz = shift_hz;
+                meta.width_hz = w;
+                meta.sep_hz = sep;
+                meta.trough_depth = trough_depth;
+                meta.centers_hz = [c1 c2];
+            end
+        end
+    end
+end
+end
+
+function shifts = candidate_shift_values_hz(x_band, shift_max_hz)
+if numel(x_band) >= 2
+    df = median(diff(x_band));
+else
+    df = 1;
+end
+if ~isfinite(df) || df <= 0
+    df = 1;
+end
+shift_max_hz = max(0, shift_max_hz);
+shifts = -shift_max_hz:df:shift_max_hz;
+if isempty(shifts)
+    shifts = 0;
+end
+end
+
+function depth = estimate_trough_depth(y_band, x_band, c1, c2)
+depth = 0;
+if ~(isfinite(c1) && isfinite(c2))
+    return;
+end
+if c1 > c2
+    tmp = c1;
+    c1 = c2;
+    c2 = tmp;
+end
+[~, i1] = min(abs(x_band - c1));
+[~, i2] = min(abs(x_band - c2));
+if i1 == i2
+    return;
+end
+idx_lo = min(i1, i2);
+idx_hi = max(i1, i2);
+y_pos = max(y_band(:), 0);
+p1 = y_pos(i1);
+p2 = y_pos(i2);
+if idx_hi - idx_lo < 2 || ~isfinite(p1) || ~isfinite(p2)
+    return;
+end
+valley = min(y_pos(idx_lo:idx_hi));
+peak_ref = max(min(p1, p2), eps);
+depth = max(0, min(1, 1 - valley / peak_ref));
+end
+
+function y_norm = normalize_positive_shape(y)
+y_norm = [];
+if isempty(y)
+    return;
+end
+y = y(:);
+y = y - median(y(isfinite(y)));
+y(~isfinite(y)) = 0;
+y = max(y, 0);
+y_mag = norm(y);
+if ~isfinite(y_mag) || y_mag <= eps
+    return;
+end
+y_norm = y / y_mag;
+end
+
+function sim = safe_template_similarity(y_norm, tpl)
+sim = 0;
+if isempty(y_norm) || isempty(tpl)
+    return;
+end
+tpl = tpl(:);
+tpl = max(tpl, 0);
+tpl_mag = norm(tpl);
+if ~isfinite(tpl_mag) || tpl_mag <= eps
+    return;
+end
+tpl = tpl / tpl_mag;
+if numel(tpl) ~= numel(y_norm)
+    return;
+end
+sim = y_norm(:)' * tpl(:);
+if ~isfinite(sim)
+    sim = 0;
+end
+sim = max(0, min(1, sim));
+end
+
+function g = gaussian_template(x, mu, sigma)
+if ~isfinite(mu) || ~isfinite(sigma) || sigma <= 0
+    g = zeros(size(x));
+    return;
+end
+g = exp(-0.5 * ((x - mu) ./ sigma).^2);
+end
+
+function [ok, stats] = validate_peak_form_shift_invariance( ...
+    scan_freqs, analysis_freq_range, shift_max_hz, single_widths_hz, double_widths_hz, ...
+    double_separations_hz, min_trough_depth, min_similarity, smooth_n, centers_hz, width_hz, spread_tol)
+stats = struct( ...
+    'single_scores', nan(numel(centers_hz), 1), ...
+    'double_scores', nan(numel(centers_hz), 1), ...
+    'single_spread', inf, ...
+    'double_spread', inf);
+ok = true;
+if isempty(scan_freqs) || isempty(centers_hz)
+    return;
+end
+analysis_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
+x_band = scan_freqs(analysis_mask);
+if isempty(x_band)
+    return;
+end
+single_specs = nan(numel(centers_hz), numel(scan_freqs));
+double_specs = nan(numel(centers_hz), numel(scan_freqs));
+for ci = 1:numel(centers_hz)
+    c = centers_hz(ci);
+    single_specs(ci, :) = gaussian_template(scan_freqs, c, width_hz);
+    sep_hz = 12;
+    c1 = c - sep_hz / 2;
+    c2 = c + sep_hz / 2;
+    double_specs(ci, :) = gaussian_template(scan_freqs, c1, width_hz) + gaussian_template(scan_freqs, c2, width_hz);
+end
+[single_scores, ~] = compute_peak_form_template_score_from_spectra( ...
+    single_specs, scan_freqs, analysis_freq_range, 0, 0, false, false, shift_max_hz, ...
+    single_widths_hz, double_widths_hz, double_separations_hz, min_trough_depth, min_similarity, smooth_n);
+[double_scores, ~] = compute_peak_form_template_score_from_spectra( ...
+    double_specs, scan_freqs, analysis_freq_range, 0, 0, false, false, shift_max_hz, ...
+    single_widths_hz, double_widths_hz, double_separations_hz, min_trough_depth, min_similarity, smooth_n);
+stats.single_scores = single_scores;
+stats.double_scores = double_scores;
+stats.single_spread = max(single_scores) - min(single_scores);
+stats.double_spread = max(double_scores) - min(double_scores);
+ok = isfinite(stats.single_spread) && isfinite(stats.double_spread) && ...
+    (stats.single_spread <= spread_tol) && (stats.double_spread <= spread_tol);
 end
 
 function signature = build_component_signature_block(searchTopos, searchMeanPrSpectrum, corr_vec, ratio_vec, ...
