@@ -25,7 +25,6 @@ baseline_window = [-1.5, -0.25];
 full_window = [0, 2.0];
 early_window = [0, 0.6];
 late_window = [1.0, 2.0];
-stimulus_window = full_window; % kept for backward compatibility with existing code paths
 
 % Gamma frequency range
 gamma_range = [30, 90];
@@ -66,29 +65,25 @@ max_stationarity_cv_hard = 1.20;    % artifact guard: trialwise gamma instabilit
 max_burst_ratio_hard = 0.35;        % artifact guard: burst-dominated trials ratio
 max_hf_slope_hard = -0.15;          % artifact guard: EMG-like high-frequency slope
 min_condlock_rho_hard = 0.05;       % plausibility guard: weak condition locking
+max_emg_score_hard = 0.85;          % adaptive guard anchor: very high EMG score
+adaptive_class_quantile = 60;       % adaptive class split percentile (occ/eMG scores)
+adaptive_artifact_mad_mult = 1.25;  % adaptive artifact bound scale (MAD units)
+adaptive_min_eig_floor = 0.75;      % adaptive lower floor for GED eigenvalue gate
+adaptive_occ_margin_floor = 0.05;   % adaptive floor for occ-vs-EMG separation margin
 max_components_to_combine = 10;     % top-K cap for combined GED branch
 artifact_proxy_max_trials = 24;     % speed cap for proxy estimation per component/window
-% Backward-compatible threshold placeholders (not used in main selection logic).
-min_occfront_ratio = 0;
-min_gamma_hard = 0;
 exclude_dominant_outlier = true;    % remove dominant top outlier (lambda1/lambda2 + MAD)
 outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for dominant-outlier detection
 outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
 outlier_min_rest = 0;               % minimum non-top eligible components for dominant-outlier exclusion (0 = no minimum)
 exclude_flat_topomap = true;        % remove spatially flat/one-color topographies
-flat_topo_mad_ratio_thr = 0.20;     % stricter flat-map guard: MAD relative to maxabs
-flat_topo_iqr_ratio_thr = 0.28;     % stricter flat-map guard: IQR relative to maxabs
-threshold_inspection_targets = [1 3 5]; % retained for backwards-compatible diagnostics
+flat_topo_mad_ratio_thr = 0.24;     % stricter flat-map guard: MAD relative to maxabs
+flat_topo_iqr_ratio_thr = 0.32;     % stricter flat-map guard: IQR relative to maxabs
 
 random_seed = 13;                    % reproducible randomization
 
 % Run mode: 'full' = full pipeline; 'component_check' = GED + component selection only (Phase 1)
 run_mode = 'full';
-
-% Sensitivity analysis settings
-sensitivity_enable = false;
-sensitivity_scale = [0.8 1.0 1.2]; % +/-20% for threshold sweeps
-sensitivity_poly_orders = [];
 
 % Three-way component selection config (ordered for plotting/metrics):
 % raw -> top component -> combined artifact-screened weighted GED
@@ -114,7 +109,6 @@ detrend_in_log = false;            % linear-domain detrending
 detrend_flat_edges = false;        % no edge-flattening ramp
 peak_min_prom_frac = 0.15;         % MinPeakProminence as fraction of current-spectrum max
 peak_min_distance_hz = 5;          % MinPeakDistance in Hz
-sensitivity_poly_orders = unique(max(1, round(poly_order * sensitivity_scale)));
 centroid_freq_range = [40 80];
 centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
@@ -193,11 +187,9 @@ all_top5_topos         = cell(1, nSubj);
 all_simulated_templates = cell(1, nSubj);
 all_selected_comp_indices_multi = cell(1, nSubj);
 all_selected_comp_weights = cell(1, nSubj);
-all_component_selection_stats = cell(1, nSubj); % full window; kept for backward compat
 all_component_selection_stats_full  = cell(1, nSubj);
 all_component_selection_stats_early = cell(1, nSubj);
 all_component_selection_stats_late  = cell(1, nSubj);
-all_threshold_inspection = cell(1, nSubj);
 warning_log_by_subj = cell(nSubj, 1);
 
 all_trial_powratio_bench = cell(nBenchmarkMethods, 4, nSubj);
@@ -206,7 +198,6 @@ all_trial_powratio_bench_late  = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_dt_bench = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_dt_bench_early = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_dt_bench_late  = cell(nBenchmarkMethods, 4, nSubj);
-all_trial_powratio_components = cell(4, nSubj); % full window [component x trial x frequency]; kept for backward compat
 all_trial_powratio_components_full  = cell(4, nSubj);
 all_trial_powratio_components_early = cell(4, nSubj);
 all_trial_powratio_components_late  = cell(4, nSubj);
@@ -216,10 +207,6 @@ benchmark_metric_separation_slope = nan(nBenchmarkMethods, nSubj);
 benchmark_metric_separation_delta = nan(nBenchmarkMethods, nSubj);
 benchmark_metric_reliability_trialcv = nan(nBenchmarkMethods, 4, nSubj);
 benchmark_metric_reliability_subjspread = nan(nBenchmarkMethods, 4);
-sensitivity_results = table();
-sensitivity_results_full  = table();
-sensitivity_results_early = table();
-sensitivity_results_late  = table();
 simulation_validation_results = struct();
 primary_slope_stats = struct();
 primary_delta_stats = struct();
@@ -535,30 +522,72 @@ for subj = 1:nSubj
         0.20 * normalize_robust(lineharm_vec) + ...
         0.15 * normalize_robust(stationarity_vec) + ...
         0.15 * normalize_robust(max(hf_slope_vec, 0));
+    default_thresholds = struct( ...
+        'min_eigval', min_eigval_hard, ...
+        'max_frontleak', max_frontleak_hard, ...
+        'max_templeak', max_templeak_hard, ...
+        'min_corr', min_corr_hard, ...
+        'max_lineharm', max_lineharm_ratio_hard, ...
+        'max_stationarity', max_stationarity_cv_hard, ...
+        'max_burst_ratio', max_burst_ratio_hard, ...
+        'max_hf_slope', max_hf_slope_hard, ...
+        'min_condlock', min_condlock_rho_hard, ...
+        'max_emg_score', max_emg_score_hard, ...
+        'class_quantile', adaptive_class_quantile, ...
+        'artifact_mad_mult', adaptive_artifact_mad_mult, ...
+        'min_eig_floor', adaptive_min_eig_floor, ...
+        'occ_margin_floor', adaptive_occ_margin_floor);
+    adaptive_thr = build_adaptive_component_thresholds( ...
+        eval_raw_vec, corr_vec, leak_vec, temp_leak_vec, lineharm_vec, stationarity_vec, ...
+        burst_vec, hf_slope_vec, condlock_vec, occipital_evidence, emg_artifact_score, default_thresholds);
     searchOccipitalEvidence = occipital_evidence;
     searchEmgArtifactScore = emg_artifact_score;
-    hard_eligible_raw = finite_metrics & (eval_raw_vec >= min_eigval_hard);
+    hard_eligible_raw = finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval);
     flat_topomap_mask = false(nSearch, 1);
     if exclude_flat_topomap
         flat_topomap_mask = detect_flat_topomap_outliers(searchTopos, flat_topo_mad_ratio_thr, flat_topo_iqr_ratio_thr);
     end
-    artifact_flags = (finite_metrics & ( ...
-        (leak_vec > max_frontleak_hard) | ...
-        (temp_leak_vec > max_templeak_hard) | ...
-        (corr_vec < min_corr_hard) | ...
-        (lineharm_vec > max_lineharm_ratio_hard) | ...
-        (stationarity_vec > max_stationarity_cv_hard) | ...
-        (burst_vec > max_burst_ratio_hard) | ...
-        (hf_slope_vec > max_hf_slope_hard) | ...
-        (condlock_vec < min_condlock_rho_hard))) | unknown_proxy_vec | flat_topomap_mask;
+    fail_front_leak = finite_metrics & (leak_vec > adaptive_thr.max_frontleak);
+    fail_temp_leak = finite_metrics & (temp_leak_vec > adaptive_thr.max_templeak);
+    fail_corr = finite_metrics & (corr_vec < adaptive_thr.min_corr);
+    fail_lineharm = finite_metrics & (lineharm_vec > adaptive_thr.max_lineharm);
+    fail_stationarity = finite_metrics & (stationarity_vec > adaptive_thr.max_stationarity);
+    fail_burst = finite_metrics & (burst_vec > adaptive_thr.max_burst_ratio);
+    fail_hf_slope = finite_metrics & (hf_slope_vec > adaptive_thr.max_hf_slope);
+    fail_condlock = finite_metrics & (condlock_vec < adaptive_thr.min_condlock);
+    fail_emg_score = finite_metrics & (emg_artifact_score > adaptive_thr.max_emg_score);
+    occ_minus_emg = occipital_evidence - emg_artifact_score;
+    fail_occ_margin = finite_metrics & (emg_artifact_score >= adaptive_thr.emg_class_thr) & ...
+        (occ_minus_emg < adaptive_thr.min_occ_margin);
+    artifact_flags = fail_front_leak | fail_temp_leak | fail_corr | fail_lineharm | ...
+        fail_stationarity | fail_burst | fail_hf_slope | fail_condlock | fail_emg_score | ...
+        fail_occ_margin | unknown_proxy_vec | flat_topomap_mask;
+    rejection_flags = struct( ...
+        'unknown_proxy', unknown_proxy_vec, ...
+        'flat_topomap', flat_topomap_mask, ...
+        'front_leak', fail_front_leak, ...
+        'temp_leak', fail_temp_leak, ...
+        'corr', fail_corr, ...
+        'lineharm', fail_lineharm, ...
+        'stationarity', fail_stationarity, ...
+        'burst', fail_burst, ...
+        'hf_slope', fail_hf_slope, ...
+        'condlock', fail_condlock, ...
+        'emg_score', fail_emg_score, ...
+        'occ_margin', fail_occ_margin);
     for ci = 1:nSearch
         if unknown_proxy_vec(ci)
             searchEmgClass{ci} = 'unclear';
-        elseif (occipital_evidence(ci) >= 0.6) && (emg_artifact_score(ci) < 0.5)
+        elseif (occipital_evidence(ci) >= adaptive_thr.occ_class_thr) && ...
+                (emg_artifact_score(ci) < adaptive_thr.emg_class_thr) && ...
+                (occ_minus_emg(ci) >= adaptive_thr.min_occ_margin)
             searchEmgClass{ci} = 'occipital';
-        elseif (occipital_evidence(ci) < 0.6) && (emg_artifact_score(ci) >= 0.5)
+        elseif (occipital_evidence(ci) < adaptive_thr.occ_class_thr) && ...
+                (emg_artifact_score(ci) >= adaptive_thr.emg_class_thr) && ...
+                (-occ_minus_emg(ci) >= adaptive_thr.min_occ_margin)
             searchEmgClass{ci} = 'EMG';
-        elseif (occipital_evidence(ci) >= 0.6) && (emg_artifact_score(ci) >= 0.5)
+        elseif (occipital_evidence(ci) >= adaptive_thr.occ_class_thr) && ...
+                (emg_artifact_score(ci) >= adaptive_thr.emg_class_thr)
             searchEmgClass{ci} = 'mixed';
         else
             searchEmgClass{ci} = 'unclear';
@@ -582,20 +611,8 @@ for subj = 1:nSubj
                        'lambda2', evals_sorted(min(2, numel(evals_sorted))), 'lambda1_lambda2_ratio', ratio12_val));
         end
     end
-    % User-directed override: occipital components are retained even
-    % when hard artifact thresholds are exceeded.
-    force_include_occipital = strcmp(searchEmgClass, 'occipital') & hard_eligible_raw & ...
-        ~dominant_outlier_mask & ~flat_topomap_mask;
-    artifact_flags(force_include_occipital) = false;
-    if w == 1
-        all_threshold_inspection{subj} = compute_threshold_inspection( ...
-            eval_raw_vec, corr_vec, ratio_vec, gamma_vec, ...
-            min_eigval_hard, min_corr_hard, 0, 0, ...
-            threshold_inspection_targets, nSearch);
-    end
     no_hard_threshold_match = ~any(hard_eligible_raw);
     hard_eligible = hard_eligible_raw & ~artifact_flags;
-    hard_eligible = hard_eligible | force_include_occipital;
     hard_eligible(dominant_outlier_mask | flat_topomap_mask) = false;
     searchScores = eval_raw_vec;
     searchScores(~hard_eligible) = -Inf;
@@ -617,13 +634,13 @@ for subj = 1:nSubj
             top_fail_corr = corr_vec(top_fail_idx);
             top_fail_ratio = ratio_vec(top_fail_idx);
             top_fail_gamma = gamma_vec(top_fail_idx);
-            top_fail_pass_eig = top_fail_eig >= min_eigval_hard;
+            top_fail_pass_eig = top_fail_eig >= adaptive_thr.min_eigval;
             top_fail_artifact = artifact_flags(top_fail_idx);
         end
         hard_metrics = struct( ...
             'n_search', nSearch, ...
             'n_finite_metrics', sum(finite_metrics), ...
-            'n_pass_eig', sum(finite_metrics & (eval_raw_vec >= min_eigval_hard)), ...
+            'n_pass_eig', sum(finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval)), ...
             'n_artifact_flagged', sum(artifact_flags), ...
             'n_unknown_high_risk', sum(unknown_proxy_vec), ...
             'n_pass_all_raw', sum(hard_eligible_raw), ...
@@ -635,15 +652,17 @@ for subj = 1:nSubj
             'top_fail_gamma', top_fail_gamma, ...
             'top_fail_pass_eig', top_fail_pass_eig, ...
             'top_fail_artifact', top_fail_artifact, ...
-            'thr_eig', min_eigval_hard, ...
-            'thr_corr', min_corr_hard, ...
-            'thr_front_leak', max_frontleak_hard, ...
-            'thr_temp_leak', max_templeak_hard, ...
-            'thr_lineharm', max_lineharm_ratio_hard, ...
-            'thr_stationarity', max_stationarity_cv_hard, ...
-            'thr_burst_ratio', max_burst_ratio_hard, ...
-            'thr_hf_slope', max_hf_slope_hard, ...
-            'thr_condlock', min_condlock_rho_hard);
+            'thr_eig', adaptive_thr.min_eigval, ...
+            'thr_corr', adaptive_thr.min_corr, ...
+            'thr_front_leak', adaptive_thr.max_frontleak, ...
+            'thr_temp_leak', adaptive_thr.max_templeak, ...
+            'thr_lineharm', adaptive_thr.max_lineharm, ...
+            'thr_stationarity', adaptive_thr.max_stationarity, ...
+            'thr_burst_ratio', adaptive_thr.max_burst_ratio, ...
+            'thr_hf_slope', adaptive_thr.max_hf_slope, ...
+            'thr_condlock', adaptive_thr.min_condlock, ...
+            'thr_emg_score', adaptive_thr.max_emg_score, ...
+            'thr_occ_margin', adaptive_thr.min_occ_margin);
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_HARD_ELIGIBLE_COMPONENTS', msg, hard_metrics);
         searchScores = eval_raw_vec;
     end
@@ -673,9 +692,26 @@ for subj = 1:nSubj
     candidate_table.unknown_high_risk = unknown_proxy_vec;
     candidate_table.score = searchScores;
     candidate_table.artifact_flag = artifact_flags;
+    candidate_table.reject_reason = compute_primary_rejection_reason(rejection_flags);
+    candidate_table.fail_unknown_proxy = rejection_flags.unknown_proxy;
+    candidate_table.fail_flat_topomap = rejection_flags.flat_topomap;
+    candidate_table.fail_front_leak = rejection_flags.front_leak;
+    candidate_table.fail_temp_leak = rejection_flags.temp_leak;
+    candidate_table.fail_corr = rejection_flags.corr;
+    candidate_table.fail_lineharm = rejection_flags.lineharm;
+    candidate_table.fail_stationarity = rejection_flags.stationarity;
+    candidate_table.fail_burst = rejection_flags.burst;
+    candidate_table.fail_hf_slope = rejection_flags.hf_slope;
+    candidate_table.fail_condlock = rejection_flags.condlock;
+    candidate_table.fail_emg_score = rejection_flags.emg_score;
+    candidate_table.fail_occ_margin = rejection_flags.occ_margin;
     candidate_table.hard_eligible_raw = hard_eligible_raw;
     candidate_table.dominant_outlier = dominant_outlier_mask;
     candidate_table.hard_eligible = hard_eligible;
+    candidate_table.thr_min_eigval = repmat(adaptive_thr.min_eigval, nSearch, 1);
+    candidate_table.thr_occ_class = repmat(adaptive_thr.occ_class_thr, nSearch, 1);
+    candidate_table.thr_emg_class = repmat(adaptive_thr.emg_class_thr, nSearch, 1);
+    candidate_table.thr_occ_margin = repmat(adaptive_thr.min_occ_margin, nSearch, 1);
 
     combined_idx = find(hard_eligible & isfinite(searchScores));
     if isempty(combined_idx)
@@ -793,9 +829,10 @@ for subj = 1:nSubj
             'occipital_evidence', occipital_evidence, ...
             'emg_class', {searchEmgClass}, ...
             'unknown_high_risk', unknown_proxy_vec, ...
+            'adaptive_thresholds', adaptive_thr, ...
+            'rejection_flags', rejection_flags, ...
             'no_hard_threshold_match', no_hard_threshold_match);
         if w == 1
-            all_component_selection_stats{subj} = comp_sel_struct;
             all_component_selection_stats_full{subj} = comp_sel_struct;
         elseif w == 2
             all_component_selection_stats_early{subj} = comp_sel_struct;
@@ -884,7 +921,8 @@ for subj = 1:nSubj
         plot_emg_exclusion_diagnostics( ...
             fig_save_dir_emg_exclusion, subjects{subj}, win_names{w}, scan_freqs, searchTopos, ...
             searchMeanPrSpectrum, evals_sorted(1:nSearch), gamma_vec, occipital_evidence, emg_artifact_score, ...
-            searchEmgClass, unknown_proxy_vec, hard_eligible, artifact_flags, cfg_topo, all_topo_labels{subj});
+            searchEmgClass, unknown_proxy_vec, hard_eligible, artifact_flags, rejection_flags, ...
+            adaptive_thr, cfg_topo, all_topo_labels{subj});
     end
 
     if strcmpi(run_mode, 'component_check')
@@ -1060,7 +1098,6 @@ for subj = 1:nSubj
         powratio_components_early_analysis = powratio_components_early(:, :, analysis_freq_mask_detrend);
         powratio_components_late_analysis = powratio_components_late(:, :, analysis_freq_mask_detrend);
 
-        all_trial_powratio_components{cond, subj} = powratio_components_analysis;          % full; backward compat
         all_trial_powratio_components_full{cond, subj}  = powratio_components_analysis;
         all_trial_powratio_components_early{cond, subj} = powratio_components_early_analysis;
         all_trial_powratio_components_late{cond, subj}  = powratio_components_late_analysis;
@@ -1461,7 +1498,6 @@ end % subject loop
 
 warning_log = vertcat(warning_log_by_subj{:});
 print_subject_warning_summary(warning_log);
-print_threshold_inspection_summary(subjects, all_threshold_inspection, threshold_inspection_targets);
 
 if strcmpi(run_mode, 'component_check')
     clc
@@ -2512,273 +2548,6 @@ end
 
 saveas(fig_det, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_detection_rate.png'));
 
-%% ====================================================================
-%  SENSITIVITY ANALYSIS (thresholds and detrending order)
-%  ====================================================================
-if sensitivity_enable
-    sens_win_names = {'full', 'early', 'late'};
-    sens_comp_stats = {all_component_selection_stats_full, all_component_selection_stats_early, all_component_selection_stats_late};
-    sens_comp_cubes = {all_trial_powratio_components_full, all_trial_powratio_components_early, all_trial_powratio_components_late};
-
-    for win_idx = 1:3
-        wname = sens_win_names{win_idx};
-        subj_stats_source = sens_comp_stats{win_idx};
-        comp_cube_source = sens_comp_cubes{win_idx};
-
-        fprintf('\n============================================================\n');
-        fprintf('Sensitivity analysis (%s window): threshold robustness\n', wname);
-        fprintf('============================================================\n');
-
-        base_cfg = struct( ...
-        'minEigThr', min_eigval_hard, ...
-        'minCorrThr', min_corr_hard, ...
-        'minOccFrontRatioThr', min_occfront_ratio, ...
-        'minGammaThr', min_gamma_hard, ...
-        'outlierRatioThr', outlier_ratio_thr, ...
-        'outlierMadMult', outlier_mad_mult, ...
-        'polyOrder', poly_order, ...
-        'peakMinPromFrac', peak_min_prom_frac, ...
-        'peakMinDistanceHz', peak_min_distance_hz);
-
-    cfg_list = struct('sweepParam', {}, 'sweepScale', {}, ...
-        'minEigThr', {}, 'minCorrThr', {}, 'minOccFrontRatioThr', {}, 'minGammaThr', {}, ...
-        'outlierRatioThr', {}, 'outlierMadMult', {}, 'polyOrder', {}, ...
-        'peakMinPromFrac', {}, 'peakMinDistanceHz', {});
-    cfg_list(1).sweepParam = 'default';
-    cfg_list(1).sweepScale = 1.0;
-    cfg_list(1).minEigThr = base_cfg.minEigThr;
-    cfg_list(1).minCorrThr = base_cfg.minCorrThr;
-    cfg_list(1).minOccFrontRatioThr = base_cfg.minOccFrontRatioThr;
-    cfg_list(1).minGammaThr = base_cfg.minGammaThr;
-    cfg_list(1).outlierRatioThr = base_cfg.outlierRatioThr;
-    cfg_list(1).outlierMadMult = base_cfg.outlierMadMult;
-    cfg_list(1).polyOrder = base_cfg.polyOrder;
-    cfg_list(1).peakMinPromFrac = base_cfg.peakMinPromFrac;
-    cfg_list(1).peakMinDistanceHz = base_cfg.peakMinDistanceHz;
-
-    sweep_params = {'minEigThr', 'minCorrThr', 'minOccFrontRatioThr', 'minGammaThr', ...
-        'outlierRatioThr', 'outlierMadMult', 'peakMinPromFrac', 'peakMinDistanceHz'};
-    for pi = 1:numel(sweep_params)
-        pname = sweep_params{pi};
-        for si = 1:numel(sensitivity_scale)
-            sc = sensitivity_scale(si);
-            if abs(sc - 1) < 1e-12
-                continue;
-            end
-            cfg_i = base_cfg;
-            cfg_i.(pname) = base_cfg.(pname) * sc;
-            cfg_list(end + 1).sweepParam = pname; %#ok<AGROW>
-            cfg_list(end).sweepScale = sc;
-            cfg_list(end).minEigThr = cfg_i.minEigThr;
-            cfg_list(end).minCorrThr = cfg_i.minCorrThr;
-            cfg_list(end).minOccFrontRatioThr = cfg_i.minOccFrontRatioThr;
-            cfg_list(end).minGammaThr = cfg_i.minGammaThr;
-            cfg_list(end).outlierRatioThr = cfg_i.outlierRatioThr;
-            cfg_list(end).outlierMadMult = cfg_i.outlierMadMult;
-            cfg_list(end).polyOrder = cfg_i.polyOrder;
-            cfg_list(end).peakMinPromFrac = cfg_i.peakMinPromFrac;
-            cfg_list(end).peakMinDistanceHz = cfg_i.peakMinDistanceHz;
-        end
-    end
-    for ip = 1:numel(sensitivity_poly_orders)
-        po = sensitivity_poly_orders(ip);
-        if po == poly_order
-            continue;
-        end
-        cfg_i = base_cfg;
-        cfg_i.polyOrder = po;
-        cfg_list(end + 1).sweepParam = 'polyOrder'; %#ok<AGROW>
-        cfg_list(end).sweepScale = po / max(poly_order, eps);
-        cfg_list(end).minEigThr = cfg_i.minEigThr;
-        cfg_list(end).minCorrThr = cfg_i.minCorrThr;
-        cfg_list(end).minOccFrontRatioThr = cfg_i.minOccFrontRatioThr;
-        cfg_list(end).minGammaThr = cfg_i.minGammaThr;
-        cfg_list(end).outlierRatioThr = cfg_i.outlierRatioThr;
-        cfg_list(end).outlierMadMult = cfg_i.outlierMadMult;
-        cfg_list(end).polyOrder = cfg_i.polyOrder;
-        cfg_list(end).peakMinPromFrac = cfg_i.peakMinPromFrac;
-        cfg_list(end).peakMinDistanceHz = cfg_i.peakMinDistanceHz;
-    end
-
-        fprintf('Evaluating %d sensitivity configurations (%s window).\n', numel(cfg_list), wname);
-        sens_rows = [];
-        sens_sweep_param = cell(0, 1);
-        sens_sweep_scale = [];
-        for cfg_id = 1:numel(cfg_list)
-            cfg_cur = cfg_list(cfg_id);
-
-            slope_cfg = nan(1, nSubj);
-            delta_cfg = nan(1, nSubj);
-
-            for subj = 1:nSubj
-                subj_stats = subj_stats_source{subj};
-            if isempty(subj_stats) || ~isfield(subj_stats, 'candidate_table')
-                continue;
-            end
-            cand = subj_stats.candidate_table;
-            eig_vec = cand.eigenvalue(:);
-            corr_vec = cand.corr(:);
-            ratio_vec = cand.ratio(:);
-            gamma_vec = cand.gamma(:);
-            nComp = numel(eig_vec);
-            finite_metrics = isfinite(eig_vec) & isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec);
-
-            hard_eligible_raw_cfg = finite_metrics & ...
-                (eig_vec >= cfg_cur.minEigThr) & ...
-                (corr_vec >= cfg_cur.minCorrThr) & ...
-                (ratio_vec >= cfg_cur.minOccFrontRatioThr) & ...
-                (gamma_vec >= cfg_cur.minGammaThr);
-
-            hard_eligible_cfg = hard_eligible_raw_cfg;
-            if exclude_dominant_outlier
-                [hard_eligible_cfg, ~] = exclude_dominant_top_outlier( ...
-                    eig_vec, hard_eligible_raw_cfg, cfg_cur.outlierRatioThr, cfg_cur.outlierMadMult, outlier_min_rest);
-            end
-
-            sel_idx = find(hard_eligible_cfg & isfinite(eig_vec));
-            if isempty(sel_idx)
-                finite_idx = find(finite_metrics & isfinite(eig_vec));
-                if isempty(finite_idx)
-                    continue;
-                end
-                [~, fin_ord] = sort(eig_vec(finite_idx), 'descend');
-                sel_idx = finite_idx(fin_ord(1));
-            end
-            [~, sel_ord] = sort(eig_vec(sel_idx), 'descend');
-            sel_idx = sel_idx(sel_ord);
-
-            sel_w = eig_vec(sel_idx)';
-            sel_w(~isfinite(sel_w) | sel_w <= 0) = 0;
-            if sum(sel_w) <= 0
-                sel_w = ones(1, numel(sel_idx));
-            end
-            sel_w = sel_w / sum(sel_w);
-
-            cond_medians = nan(4, 1);
-            for cond = 1:4
-                comp_cube = comp_cube_source{cond, subj};
-                if isempty(comp_cube)
-                    continue;
-                end
-                nTrl = size(comp_cube, 2);
-                trl_peaks = nan(nTrl, 1);
-                for trl = 1:nTrl
-                    pr_comp = squeeze(comp_cube(1:nComp, trl, :));
-                    if isempty(pr_comp)
-                        continue;
-                    end
-                    if isvector(pr_comp)
-                        pr_comp = pr_comp(:)';
-                    end
-                    if size(pr_comp, 2) ~= nFreqs
-                        pr_comp = pr_comp';
-                    end
-                    pr_sel = pr_comp(sel_idx, :);
-                    if isempty(pr_sel)
-                        continue;
-                    end
-
-                    num = nansum(pr_sel .* sel_w(:), 1);
-                    den = nansum((~isnan(pr_sel)) .* sel_w(:), 1);
-                    pr = num ./ den;
-                    if all(~isfinite(pr))
-                        continue;
-                    end
-                    pr_dt = detrend_power_ratio(pr, scan_freqs, cfg_cur.polyOrder, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
-                    pr_dt_smooth = movmean(pr_dt, 5);
-
-                    mprom = max(0, max(pr_dt_smooth) * cfg_cur.peakMinPromFrac);
-                    [pks, locs] = findpeaks(pr_dt_smooth, scan_freqs, ...
-                        'MinPeakProminence', mprom, ...
-                        'MinPeakDistance', cfg_cur.peakMinDistanceHz);
-                    if ~isempty(pks)
-                        [~, best_pk] = max(pks);
-                        trl_peaks(trl) = locs(best_pk);
-                    end
-                end
-                cond_medians(cond) = median(trl_peaks(~isnan(trl_peaks)));
-            end
-
-            vx = ~isnan(cond_medians);
-            if sum(vx) >= 2
-                p_fit = polyfit(find(vx), cond_medians(vx)', 1);
-                slope_cfg(subj) = p_fit(1);
-            end
-            if ~isnan(cond_medians(1)) && ~isnan(cond_medians(4))
-                delta_cfg(subj) = cond_medians(4) - cond_medians(1);
-            end
-        end
-
-        slope_stats_cfg = compute_one_sample_stats(slope_cfg);
-        delta_stats_cfg = compute_one_sample_stats(delta_cfg);
-        sens_sweep_param{end + 1, 1} = cfg_cur.sweepParam; %#ok<AGROW>
-        sens_sweep_scale(end + 1, 1) = cfg_cur.sweepScale; %#ok<AGROW>
-        sens_rows = [sens_rows; ...
-            cfg_id, ...
-            cfg_cur.minEigThr, cfg_cur.minCorrThr, cfg_cur.minOccFrontRatioThr, cfg_cur.minGammaThr, ...
-            cfg_cur.outlierRatioThr, cfg_cur.outlierMadMult, cfg_cur.polyOrder, ...
-            cfg_cur.peakMinPromFrac, cfg_cur.peakMinDistanceHz, ...
-            slope_stats_cfg.n, slope_stats_cfg.mean, slope_stats_cfg.p, slope_stats_cfg.ci_low, slope_stats_cfg.ci_high, slope_stats_cfg.cohens_d, ...
-            delta_stats_cfg.n, delta_stats_cfg.mean, delta_stats_cfg.p, delta_stats_cfg.ci_low, delta_stats_cfg.ci_high, delta_stats_cfg.cohens_d]; %#ok<AGROW>
-        end
-
-        if isempty(sens_rows)
-            fprintf('Sensitivity analysis (%s window) skipped: no valid outputs.\n', wname);
-            sens_results_win = table();
-        else
-        sens_results_win = array2table(sens_rows, 'VariableNames', ...
-            {'cfgID', 'minEigThr', 'minCorrThr', 'minOccFrontRatioThr', 'minGammaThr', ...
-            'outlierRatioThr', 'outlierMadMult', 'polyOrder', 'peakMinPromFrac', 'peakMinDistanceHz', ...
-            'nSlope', 'meanSlope', 'pSlope', 'ciSlopeLow', 'ciSlopeHigh', 'dSlope', ...
-            'nDelta', 'meanDelta', 'pDelta', 'ciDeltaLow', 'ciDeltaHigh', 'dDelta'});
-            sens_results_win.sweepParam = string(sens_sweep_param);
-            sens_results_win.sweepScale = sens_sweep_scale;
-            sens_results_win.sigSlope = sens_results_win.pSlope < 0.05;
-            sens_results_win.sigDelta = sens_results_win.pDelta < 0.05;
-
-            fprintf('Sensitivity (%s): %d/%d significant slope, %d/%d delta (p<0.05)\n', ...
-                wname, sum(sens_results_win.sigSlope), height(sens_results_win), ...
-                sum(sens_results_win.sigDelta), height(sens_results_win));
-
-            [~, sort_delta_idx] = sort(sens_results_win.pDelta, 'ascend');
-            n_show = min(10, height(sens_results_win));
-            disp(sens_results_win(sort_delta_idx(1:n_show), :));
-
-            fig_sens = figure('Position', [0 0 1512 982], 'Color', 'w');
-            tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
-            nexttile; hold on;
-            scatter(sens_results_win.cfgID, sens_results_win.meanSlope, 120, ...
-                sens_results_win.pSlope, 'filled');
-            yline(0, 'k--', 'LineWidth', 1.0);
-            cb1 = colorbar; cb1.Label.String = 'p-value (slope)';
-            xlabel('Configuration ID');
-            ylabel('Mean slope [Hz/condition]');
-            title(sprintf('Sensitivity (%s): slope', wname));
-            box on;
-
-            nexttile; hold on;
-            scatter(sens_results_win.cfgID, sens_results_win.meanDelta, 120, ...
-                sens_results_win.pDelta, 'filled');
-            yline(0, 'k--', 'LineWidth', 1.0);
-            cb2 = colorbar; cb2.Label.String = 'p-value (delta)';
-            xlabel('Configuration ID');
-            ylabel('Mean \Delta(100%-25%) [Hz]');
-            title(sprintf('Sensitivity (%s): delta', wname));
-            box on;
-            saveas(fig_sens, fullfile(fig_save_dir_ged, sprintf('GCP_eeg_GED_sensitivity_summary_%s.png', wname)));
-        end
-
-        if win_idx == 1
-            sensitivity_results = sens_results_win;
-            sensitivity_results_full = sens_results_win;
-        elseif win_idx == 2
-            sensitivity_results_early = sens_results_win;
-        else
-            sensitivity_results_late = sens_results_win;
-        end
-    end
-end
-
 if simulation_validation_enable
     fprintf('\n============================================================\n');
     fprintf('Ground-truth simulation validation (no CV)\n');
@@ -2808,8 +2577,8 @@ save(save_path, ...
     'all_topos', 'all_topos_early', 'all_topos_late', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
-    'all_component_selection_stats', 'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', 'warning_log', ...
-    'all_trial_powratio_bench', 'all_trial_powratio_dt_bench', 'all_trial_powratio_components', ...
+    'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', 'warning_log', ...
+    'all_trial_powratio_bench', 'all_trial_powratio_dt_bench', ...
     'all_trial_powratio_components_full', 'all_trial_powratio_components_early', 'all_trial_powratio_components_late', ...
     'all_trial_powratio_bench_early', 'all_trial_powratio_bench_late', ...
     'all_trial_powratio_dt_bench_early', 'all_trial_powratio_dt_bench_late', ...
@@ -2817,8 +2586,7 @@ save(save_path, ...
     'benchmark_metric_detectability', 'benchmark_metric_prominence', ...
     'benchmark_metric_separation_slope', 'benchmark_metric_separation_delta', ...
     'benchmark_metric_reliability_trialcv', 'benchmark_metric_reliability_subjspread', ...
-    'primary_slope_stats', 'primary_delta_stats', 'sensitivity_results', ...
-    'sensitivity_results_full', 'sensitivity_results_early', 'sensitivity_results_late', ...
+    'primary_slope_stats', 'primary_delta_stats', ...
     'simulation_validation_results', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
@@ -3060,7 +2828,7 @@ end
 
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
     searchMeanPrSpectrum, eval_vec, gamma_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
-    hard_eligible, artifact_flags, cfg_topo, topo_labels)
+    hard_eligible, artifact_flags, rejection_flags, adaptive_thr, cfg_topo, topo_labels)
 nComp = numel(eval_vec);
 if nComp < 1
     return;
@@ -3070,8 +2838,8 @@ figA = figure('Position', [0 0 1512 982]);
 scatter_size = 60 + 80 * max(eval_vec - min(eval_vec), 0) / max(max(eval_vec) - min(eval_vec), eps);
 g_pct = 100 * (exp(gamma_vec) - 1);
 scatter(occ_evidence, emg_score, scatter_size, g_pct, 'filled'); hold on;
-xline(0.6, 'k--', 'LineWidth', 1.0);
-yline(0.5, 'k--', 'LineWidth', 1.0);
+xline(adaptive_thr.occ_class_thr, 'k--', 'LineWidth', 1.0);
+yline(adaptive_thr.emg_class_thr, 'k--', 'LineWidth', 1.0);
 idx_unknown = find(unknown_high_risk);
 if ~isempty(idx_unknown)
     scatter(occ_evidence(idx_unknown), emg_score(idx_unknown), 130, 'rx', 'LineWidth', 2.0);
@@ -3102,8 +2870,8 @@ if isempty(y_vals)
 else
     y_absmax = max(abs(y_vals));
 end
-x_absmax = max([x_absmax, abs(0.6), 0.1]);
-y_absmax = max([y_absmax, abs(0.5), 0.1]);
+x_absmax = max([x_absmax, abs(adaptive_thr.occ_class_thr), 0.1]);
+y_absmax = max([y_absmax, abs(adaptive_thr.emg_class_thr), 0.1]);
 xlim([-x_absmax x_absmax]);
 ylim([-y_absmax y_absmax]);
 cb = colorbar;
@@ -3202,13 +2970,30 @@ sgtitle(sprintf('Selected vs Artifact-Rejected Components: %s (%s)', subject_id,
 saveas(figB, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_topo_spectra_%s.png', subject_id, win_name)));
 close(figB);
 
-figC = figure('Position', [0 0 756 982]);
+figC = figure('Position', [0 0 1512 982]);
+tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
+nexttile;
 counts = [sum(hard_eligible), sum(artifact_flags), numel(eval_vec)];
 cats = {'Selected', 'ArtifactFlagged', 'Candidates'};
 bar(counts, 0.6, 'FaceColor', [0.3 0.4 0.7]); hold on;
 set(gca, 'XTick', 1:numel(cats), 'XTickLabel', cats, 'XTickLabelRotation', 20);
 ylabel('Count');
 title('Component counts');
+box on;
+nexttile;
+reason_names = {'unknown_proxy', 'flat_topomap', 'front_leak', 'temp_leak', 'corr', ...
+    'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin'};
+reason_counts = zeros(1, numel(reason_names));
+for ri = 1:numel(reason_names)
+    rname = reason_names{ri};
+    if isfield(rejection_flags, rname)
+        reason_counts(ri) = sum(artifact_flags & rejection_flags.(rname));
+    end
+end
+bar(reason_counts, 0.65, 'FaceColor', [0.72 0.40 0.30]); hold on;
+set(gca, 'XTick', 1:numel(reason_names), 'XTickLabel', reason_names, 'XTickLabelRotation', 35);
+ylabel('Rejected components');
+title('Rejection reasons (criterion-level)');
 box on;
 sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
 saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_EMG_summary_%s.png', subject_id, win_name)));
@@ -3239,7 +3024,101 @@ for ci = 1:nComp
     if ~isfinite(mad_ratio), mad_ratio = 0; end
     if ~isfinite(iqr_ratio), iqr_ratio = 0; end
     if ~isfinite(span_ratio), span_ratio = 0; end
-    flat_mask(ci) = (mad_ratio <= mad_ratio_thr) || (iqr_ratio <= iqr_ratio_thr) || (span_ratio <= 0.25);
+    std_ratio = std(topo_vec) / amp_max;
+    if ~isfinite(std_ratio), std_ratio = 0; end
+    flat_mask(ci) = (mad_ratio <= mad_ratio_thr) || (iqr_ratio <= iqr_ratio_thr) || ...
+        (span_ratio <= 0.35) || (std_ratio <= 0.12);
+end
+end
+
+function thr = build_adaptive_component_thresholds(eval_raw_vec, corr_vec, leak_vec, temp_leak_vec, ...
+    lineharm_vec, stationarity_vec, burst_vec, hf_slope_vec, condlock_vec, occ_evidence, emg_score, defaults)
+thr = struct();
+thr.min_eigval = min(defaults.min_eigval, max(defaults.min_eig_floor, robust_percentile(eval_raw_vec, 35, defaults.min_eigval)));
+thr.max_frontleak = max(defaults.max_frontleak, robust_upper_bound(leak_vec, defaults.max_frontleak, defaults.artifact_mad_mult));
+thr.max_templeak = max(defaults.max_templeak, robust_upper_bound(temp_leak_vec, defaults.max_templeak, defaults.artifact_mad_mult));
+thr.min_corr = min(defaults.min_corr, robust_lower_bound(corr_vec, defaults.min_corr, defaults.artifact_mad_mult));
+thr.max_lineharm = max(defaults.max_lineharm, robust_upper_bound(lineharm_vec, defaults.max_lineharm, defaults.artifact_mad_mult));
+thr.max_stationarity = max(defaults.max_stationarity, robust_upper_bound(stationarity_vec, defaults.max_stationarity, defaults.artifact_mad_mult));
+thr.max_burst_ratio = max(defaults.max_burst_ratio, robust_upper_bound(burst_vec, defaults.max_burst_ratio, defaults.artifact_mad_mult));
+thr.max_hf_slope = max(defaults.max_hf_slope, robust_upper_bound(hf_slope_vec, defaults.max_hf_slope, defaults.artifact_mad_mult));
+thr.min_condlock = min(defaults.min_condlock, robust_lower_bound(condlock_vec, defaults.min_condlock, defaults.artifact_mad_mult));
+thr.occ_class_thr = robust_percentile(occ_evidence, defaults.class_quantile, 0.6);
+thr.emg_class_thr = robust_percentile(emg_score, defaults.class_quantile, 0.5);
+thr.max_emg_score = max(defaults.max_emg_score, robust_upper_bound(emg_score, defaults.max_emg_score, defaults.artifact_mad_mult));
+occ_minus_emg = occ_evidence(:) - emg_score(:);
+margin_mad = robust_mad(occ_minus_emg);
+thr.min_occ_margin = max(defaults.occ_margin_floor, 0.30 * margin_mad);
+end
+
+function val = robust_upper_bound(x, default_val, mad_mult)
+x = x(:);
+x = x(isfinite(x));
+if isempty(x)
+    val = default_val;
+    return;
+end
+val = median(x) + mad_mult * robust_mad(x);
+if ~isfinite(val)
+    val = default_val;
+end
+end
+
+function val = robust_lower_bound(x, default_val, mad_mult)
+x = x(:);
+x = x(isfinite(x));
+if isempty(x)
+    val = default_val;
+    return;
+end
+val = median(x) - mad_mult * robust_mad(x);
+if ~isfinite(val)
+    val = default_val;
+end
+end
+
+function val = robust_percentile(x, pctl, default_val)
+x = x(:);
+x = x(isfinite(x));
+if isempty(x)
+    val = default_val;
+    return;
+end
+val = prctile(x, pctl);
+if ~isfinite(val)
+    val = default_val;
+end
+end
+
+function m = robust_mad(x)
+x = x(:);
+x = x(isfinite(x));
+if isempty(x)
+    m = 0;
+    return;
+end
+m = mad(x, 1);
+if ~isfinite(m) || m <= eps
+    m = std(x);
+end
+if ~isfinite(m) || m <= eps
+    m = 0;
+end
+end
+
+function reasons = compute_primary_rejection_reason(rejection_flags)
+reason_order = {'unknown_proxy', 'flat_topomap', 'front_leak', 'temp_leak', 'corr', ...
+    'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin'};
+nComp = numel(rejection_flags.unknown_proxy);
+reasons = repmat({'pass'}, nComp, 1);
+for ci = 1:nComp
+    for ri = 1:numel(reason_order)
+        rname = reason_order{ri};
+        if isfield(rejection_flags, rname) && rejection_flags.(rname)(ci)
+            reasons{ci} = rname;
+            break;
+        end
+    end
 end
 end
 
@@ -3624,175 +3503,6 @@ end
 
 p_adj(sort_idx) = q_sorted;
 p_adj = reshape(p_adj, size(p_raw));
-end
-
-function inspection = compute_threshold_inspection(eig_vec, corr_vec, ratio_vec, gamma_vec, ...
-    thr_eig, thr_corr, thr_ratio, thr_gamma, target_counts, n_search)
-inspection = struct();
-inspection.n_search = n_search;
-inspection.target_counts = target_counts(:)';
-inspection.thr_default = [thr_eig, thr_corr, thr_ratio, thr_gamma];
-inspection.base_pass_count = sum(isfinite(eig_vec) & isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec) & ...
-    eig_vec >= thr_eig & corr_vec >= thr_corr & ratio_vec >= thr_ratio & gamma_vec >= thr_gamma);
-
-finite_mask = isfinite(eig_vec) & isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec);
-inspection.n_finite_metrics = sum(finite_mask);
-
-scale_cap_eig = eig_vec ./ max(thr_eig, eps);
-scale_cap_corr = corr_vec ./ max(thr_corr, eps);
-scale_cap_ratio = ratio_vec ./ max(thr_ratio, eps);
-scale_cap_gamma = gamma_vec ./ max(thr_gamma, eps);
-
-component_scale_cap = min([scale_cap_eig(:), scale_cap_corr(:), scale_cap_ratio(:), scale_cap_gamma(:)], [], 2);
-component_scale_cap(~finite_mask(:)) = -Inf;
-component_scale_cap(component_scale_cap < 0) = -Inf;
-
-valid_caps = component_scale_cap(isfinite(component_scale_cap));
-valid_caps = valid_caps(valid_caps >= 0);
-if isempty(valid_caps)
-    max_scale_any = NaN;
-else
-    max_scale_any = max(valid_caps);
-end
-inspection.max_feasible_scale = max_scale_any;
-inspection.max_pass_at_zero = sum(finite_mask & eig_vec >= 0 & corr_vec >= 0 & ratio_vec >= 0 & gamma_vec >= 0);
-
-n_targets = numel(target_counts);
-inspection.results = repmat(struct( ...
-    'target_count', NaN, ...
-    'joint_achievable', false, ...
-    'joint_required_scale', NaN, ...
-    'required_thr_eig', NaN, ...
-    'required_thr_corr', NaN, ...
-    'required_thr_ratio', NaN, ...
-    'required_thr_gamma', NaN, ...
-    'pass_count_at_required_scale', NaN, ...
-    'by_criterion', struct()), 1, n_targets);
-
-caps_sorted = sort(valid_caps, 'descend');
-for ti = 1:n_targets
-    k_target = target_counts(ti);
-    inspection.results(ti).target_count = k_target;
-    if k_target <= 0
-        inspection.results(ti).joint_achievable = true;
-        inspection.results(ti).joint_required_scale = 1;
-        inspection.results(ti).required_thr_eig = thr_eig;
-        inspection.results(ti).required_thr_corr = thr_corr;
-        inspection.results(ti).required_thr_ratio = thr_ratio;
-        inspection.results(ti).required_thr_gamma = thr_gamma;
-        inspection.results(ti).pass_count_at_required_scale = inspection.base_pass_count;
-    else
-        if numel(caps_sorted) >= k_target
-            req_scale = caps_sorted(k_target);
-            req_scale = min(req_scale, 1);
-            req_scale = max(req_scale, 0);
-            pass_at_scale = sum(finite_mask & ...
-                eig_vec >= (thr_eig * req_scale) & ...
-                corr_vec >= (thr_corr * req_scale) & ...
-                ratio_vec >= (thr_ratio * req_scale) & ...
-                gamma_vec >= (thr_gamma * req_scale));
-
-            inspection.results(ti).joint_achievable = pass_at_scale >= k_target;
-            inspection.results(ti).joint_required_scale = req_scale;
-            inspection.results(ti).required_thr_eig = thr_eig * req_scale;
-            inspection.results(ti).required_thr_corr = thr_corr * req_scale;
-            inspection.results(ti).required_thr_ratio = thr_ratio * req_scale;
-            inspection.results(ti).required_thr_gamma = thr_gamma * req_scale;
-            inspection.results(ti).pass_count_at_required_scale = pass_at_scale;
-        end
-    end
-
-    by_criterion = struct();
-    by_criterion.eig = compute_single_criterion_min_threshold( ...
-        eig_vec, finite_mask & corr_vec >= thr_corr & ratio_vec >= thr_ratio & gamma_vec >= thr_gamma, ...
-        thr_eig, k_target);
-    by_criterion.corr = compute_single_criterion_min_threshold( ...
-        corr_vec, finite_mask & eig_vec >= thr_eig & ratio_vec >= thr_ratio & gamma_vec >= thr_gamma, ...
-        thr_corr, k_target);
-    by_criterion.ratio = compute_single_criterion_min_threshold( ...
-        ratio_vec, finite_mask & eig_vec >= thr_eig & corr_vec >= thr_corr & gamma_vec >= thr_gamma, ...
-        thr_ratio, k_target);
-    by_criterion.gamma = compute_single_criterion_min_threshold( ...
-        gamma_vec, finite_mask & eig_vec >= thr_eig & corr_vec >= thr_corr & ratio_vec >= thr_ratio, ...
-        thr_gamma, k_target);
-    inspection.results(ti).by_criterion = by_criterion;
-end
-end
-
-function print_threshold_inspection_summary(subjects, all_threshold_inspection, target_counts)
-fprintf('\n============================================================\n');
-fprintf('Threshold-inspection summary (hard-gate only)\n');
-fprintf('============================================================\n');
-fprintf(['For each subject, "scale" is the maximum common multiplier applied to all hard thresholds ', ...
-         '(eig/corr/ratio/gamma) that still yields at least K valid components.\n']);
-fprintf(['Criterion-specific minimums are also reported: each threshold is relaxed alone while ', ...
-         'all other thresholds remain fixed.\n']);
-fprintf('Current thresholds correspond to scale=1.000; lower scale means relaxed thresholds.\n');
-
-if isempty(all_threshold_inspection)
-    fprintf('No threshold-inspection results available.\n');
-    return;
-end
-
-for subj = 1:numel(subjects)
-    ins = all_threshold_inspection{subj};
-    if isempty(ins)
-        fprintf('  %s: no inspection data\n', subjects{subj});
-        continue;
-    end
-    fprintf('  %s: basePass=%d/%d finite=%d\n', ...
-        subjects{subj}, ins.base_pass_count, ins.n_search, ins.n_finite_metrics);
-    for ti = 1:numel(target_counts)
-        r = ins.results(ti);
-        if r.joint_achievable
-            fprintf(['    K=%d -> scale=%.3f | eig>=%.3f, corr>=%.3f, ratio>=%.3f, gamma>=%.3f ', ...
-                     '(pass=%d)\n'], ...
-                r.target_count, r.joint_required_scale, r.required_thr_eig, r.required_thr_corr, ...
-                r.required_thr_ratio, r.required_thr_gamma, r.pass_count_at_required_scale);
-        else
-            fprintf('    K=%d -> not achievable within finite candidates (max nonnegative-pass=%d)\n', ...
-                r.target_count, ins.max_pass_at_zero);
-        end
-        c = r.by_criterion;
-        fprintf('      min-by-criterion: eig>=%.3f (%s), corr>=%.3f (%s), ratio>=%.3f (%s), gamma>=%.3f (%s)\n', ...
-            c.eig.required_threshold, logical_str(c.eig.achievable), ...
-            c.corr.required_threshold, logical_str(c.corr.achievable), ...
-            c.ratio.required_threshold, logical_str(c.ratio.achievable), ...
-            c.gamma.required_threshold, logical_str(c.gamma.achievable));
-    end
-end
-end
-
-function out = compute_single_criterion_min_threshold(metric_vec, base_mask, default_thr, k_target)
-out = struct('achievable', false, 'required_threshold', NaN, 'pass_count', 0, 'pool_count', 0);
-if k_target <= 0
-    out.achievable = true;
-    out.required_threshold = default_thr;
-    out.pass_count = sum(base_mask & metric_vec >= default_thr);
-    out.pool_count = sum(base_mask);
-    return;
-end
-
-pool_vals = metric_vec(base_mask);
-pool_vals = pool_vals(isfinite(pool_vals));
-out.pool_count = numel(pool_vals);
-if numel(pool_vals) < k_target
-    return;
-end
-
-pool_sorted = sort(pool_vals, 'descend');
-kth_val = pool_sorted(k_target);
-out.required_threshold = min(default_thr, kth_val);
-out.pass_count = sum(base_mask & metric_vec >= out.required_threshold);
-out.achievable = out.pass_count >= k_target;
-end
-
-function txt = logical_str(tf)
-if tf
-    txt = 'ok';
-else
-    txt = 'NA';
-end
 end
 
 function stats = compute_one_sample_stats(x)
