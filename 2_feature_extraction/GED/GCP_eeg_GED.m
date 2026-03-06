@@ -557,6 +557,10 @@ for subj = 1:nSubj
             searchEmgClass{ci} = 'unclear';
         end
     end
+    % User-directed override: likely occipital components are retained even
+    % when hard artifact thresholds are exceeded.
+    force_include_occipital = strcmp(searchEmgClass, 'likely_occipital') & hard_eligible_raw;
+    artifact_flags(force_include_occipital) = false;
     if w == 1
         all_threshold_inspection{subj} = compute_threshold_inspection( ...
             eval_raw_vec, corr_vec, ratio_vec, gamma_vec, ...
@@ -583,6 +587,7 @@ for subj = 1:nSubj
         end
     end
     hard_eligible = hard_eligible & ~artifact_flags;
+    hard_eligible = hard_eligible | force_include_occipital;
     searchScores = eval_raw_vec;
     searchScores(~hard_eligible) = -Inf;
     if ~any(isfinite(searchScores))
@@ -3053,7 +3058,7 @@ xlabel('OccipitalEvidenceScore');
 ylabel('EMGArtifactScore');
 title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
 grid on; box on;
-saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_EMG_diagA_scatter_subj%s_%s.png', subject_id, win_name)));
+saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_EMG_scatter_subj%s_%s.png', subject_id, win_name)));
 close(figA);
 
 sel_idx = find(hard_eligible);
@@ -3128,7 +3133,7 @@ for k = 1:nShow
     end
 end
 sgtitle(sprintf('Selected vs Artifact-Rejected Components: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-saveas(figB, fullfile(save_dir, sprintf('GCP_eeg_GED_EMG_diagB_topo_spectra_subj%s_%s.png', subject_id, win_name)));
+saveas(figB, fullfile(save_dir, sprintf('GCP_eeg_GED_EMG_topo_spectra_subj%s_%s.png', subject_id, win_name)));
 close(figB);
 
 figC = figure('Position', [0 0 1512 982]);
@@ -3148,7 +3153,7 @@ ylabel('Rate [%]');
 title('Component rates');
 box on;
 sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_EMG_diagC_summary_subj%s_%s.png', subject_id, win_name)));
+saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_EMG_summary_subj%s_%s.png', subject_id, win_name)));
 close(figC);
 end
 
