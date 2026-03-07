@@ -90,12 +90,12 @@ peak_form_weight = 3.00;            % strongly prioritize shift-invariant gamma 
 peak_bonus_weight = 0.5;            % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
 peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
-peak_form_shift_max_hz = 25;        % max template-shift alignment range for shift-invariant matching
+peak_form_shift_max_hz = 10;        % max template-shift alignment range for shift-invariant matching
 peak_form_single_widths = [3 5 7 9];
 peak_form_double_separations = [8 12 16 20];
 peak_form_double_widths = [3 4 5 6];
 peak_form_min_trough_depth = 0.10;  % minimum trough depth for double-peak plausibility
-peak_form_min_similarity = 0.20;    % floor similarity before positive score is assigned
+peak_form_min_similarity = 0.50;    % floor similarity before positive score is assigned
 peak_form_smooth_n = 3;             % moving-average smoothing for template scoring
 peak_form_enable_selfcheck = true;  % synthetic shift-invariance diagnostic
 peak_form_selfcheck_centers = [40 50 60 70 80];
@@ -727,9 +727,10 @@ for subj = 1:nSubj
     hard_eligible(dominant_outlier_mask | flat_topomap_mask) = false;
     occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
     force_include_occipital_mask = include_occipital_label_override & hard_eligible_raw & occipital_class_mask;
+    selection_pool_mask = (hard_eligible | force_include_occipital_mask) & occipital_class_mask;
     searchScores = eval_raw_vec + peak_form_weight * peak_form_score_vec + peak_bonus_weight * peak_bonus_vec;
     searchScores(~finite_metrics) = -Inf;
-    searchScores(~(hard_eligible | force_include_occipital_mask)) = -Inf;
+    searchScores(~selection_pool_mask) = -Inf;
     if ~any(isfinite(searchScores))
         msg = sprintf(['No components met eig/artifact criteria for subject %s. ', ...
                        'Falling back to unconstrained eigenvalue ranking.'], subjects{subj});
@@ -879,47 +880,62 @@ for subj = 1:nSubj
         searchTopos, searchMeanPrSpectrum, corr_vec, ratio_vec, condlock_vec, ...
         lineharm_vec, hf_slope_vec, leak_vec, temp_leak_vec, eval_raw_vec);
 
-    combined_idx = find((hard_eligible | force_include_occipital_mask) & isfinite(searchScores));
+    combined_idx = find(selection_pool_mask & isfinite(searchScores));
     if isempty(combined_idx)
-        msg = sprintf(['No artifact-screened finite components available for subject %s. ', ...
-            'Falling back to single best component (unconstrained ranking).'], subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_HARD_COMPONENTS', msg, ...
-            struct('n_hard_eligible', sum(hard_eligible), 'n_finite_scores', sum(isfinite(searchScores)), ...
-            'fallback_idx', bestIdx));
-        combined_idx = bestIdx;
+        msg = sprintf(['No occipital-labeled artifact-screened finite components available for subject %s. ', ...
+            'This window will be marked as NaN for downstream metrics.'], subjects{subj});
+        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCCIPITAL_COMPONENTS', msg, ...
+            struct('n_hard_eligible', sum(hard_eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
+            'n_finite_scores', sum(isfinite(searchScores)), 'fallback_idx', bestIdx));
     end
-    [~, combined_ord] = sort(searchScores(combined_idx), 'descend');
-    if ~any(isfinite(searchScores(combined_idx)))
-        [~, combined_ord] = sort(evals_sorted(combined_idx), 'descend');
-    end
-    combined_idx = combined_idx(combined_ord);
-    combined_idx = combined_idx(1:min(max_components_to_combine, numel(combined_idx)));
+    if isempty(combined_idx)
+        combined_weights = [];
+    else
+        [~, combined_ord] = sort(searchScores(combined_idx), 'descend');
+        if ~any(isfinite(searchScores(combined_idx)))
+            [~, combined_ord] = sort(evals_sorted(combined_idx), 'descend');
+        end
+        combined_idx = combined_idx(combined_ord);
+        combined_idx = combined_idx(1:min(max_components_to_combine, numel(combined_idx)));
 
-    combined_weights = evals_sorted(combined_idx)';
-    combined_weights(~isfinite(combined_weights) | combined_weights <= 0) = 0;
-    if sum(combined_weights) <= 0
-        combined_weights = ones(1, numel(combined_idx));
+        combined_weights = evals_sorted(combined_idx)';
+        combined_weights(~isfinite(combined_weights) | combined_weights <= 0) = 0;
+        if sum(combined_weights) <= 0
+            combined_weights = ones(1, numel(combined_idx));
+        end
+        combined_weights = combined_weights / sum(combined_weights);
     end
-    combined_weights = combined_weights / sum(combined_weights);
 
     selected_idx = combined_idx;
     selected_weights = combined_weights;
 
-    bestIdx = selected_idx(1);
-    bestScore = searchScores(bestIdx);
-    bestCorr = searchCorrs(bestIdx);
-    bestOcc = searchOccStrength(bestIdx);
-    bestFront = searchFrontStrength(bestIdx);
-    bestRatio = searchOccFrontRatio(bestIdx);
-    bestGamma = searchGammaEvidence(bestIdx);
-    bestLeak = searchFrontLeak(bestIdx);
+    if isempty(selected_idx)
+        bestIdx = NaN;
+        bestScore = NaN;
+        bestCorr = NaN;
+        bestOcc = NaN;
+        bestFront = NaN;
+        bestRatio = NaN;
+        bestGamma = NaN;
+        bestLeak = NaN;
+        topo_temp = nan(nChans, 1);
+    else
+        bestIdx = selected_idx(1);
+        bestScore = searchScores(bestIdx);
+        bestCorr = searchCorrs(bestIdx);
+        bestOcc = searchOccStrength(bestIdx);
+        bestFront = searchFrontStrength(bestIdx);
+        bestRatio = searchOccFrontRatio(bestIdx);
+        bestGamma = searchGammaEvidence(bestIdx);
+        bestLeak = searchFrontLeak(bestIdx);
 
-        topComp = searchFilters(:, bestIdx);
-        if numel(selected_idx) > 1
-            topo_temp = searchTopos(:, selected_idx) * selected_weights(:);
-        else
-            topo_temp = covStim_reg * topComp;
-        end
+            topComp = searchFilters(:, bestIdx);
+            if numel(selected_idx) > 1
+                topo_temp = searchTopos(:, selected_idx) * selected_weights(:);
+            else
+                topo_temp = covStim_reg * topComp;
+            end
+    end
 
     finite_scores = find(isfinite(searchScores));
     if isempty(finite_scores)
@@ -1023,10 +1039,16 @@ for subj = 1:nSubj
         if w == 1
             all_topos{subj}       = topo_temp;
             all_topo_labels{subj} = dataEEG_c25.label;
-            all_eigenvalues(subj) = evals_sorted(bestIdx);
-            all_selected_comp_idx(subj)  = bestIdx;
+            if isempty(selected_idx) || ~isfinite(bestIdx)
+                all_eigenvalues(subj) = NaN;
+                all_selected_comp_idx(subj)  = NaN;
+                all_selected_comp_eval(subj) = NaN;
+            else
+                all_eigenvalues(subj) = evals_sorted(bestIdx);
+                all_selected_comp_idx(subj)  = bestIdx;
+                all_selected_comp_eval(subj) = evals_sorted(bestIdx);
+            end
             all_selected_comp_corr(subj) = bestCorr;
-            all_selected_comp_eval(subj) = evals_sorted(bestIdx);
             all_top5_corrs(:, subj) = storeCorrsFixed;
             all_top5_evals(:, subj) = storeEvalsFixed;
             all_top5_topos{subj} = storeTopos;
@@ -1100,16 +1122,13 @@ for subj = 1:nSubj
             group_consistent_map, group_occipital_map, crosswin_consistency_bonus, max_components_to_combine);
 
     if isempty(selected_idx_full)
-        selected_idx_full = 1;
-        w_combined_full = 1;
+        w_combined_full = [];
     end
     if isempty(selected_idx_early)
-        selected_idx_early = 1;
-        w_combined_early = 1;
+        w_combined_early = [];
     end
     if isempty(selected_idx_late)
-        selected_idx_late = 1;
-        w_combined_late = 1;
+        w_combined_late = [];
     end
 
     W_combined_full = searchFilters_full(:, selected_idx_full);
@@ -1130,14 +1149,29 @@ for subj = 1:nSubj
     all_topos_late{subj} = topo_temp_late;
     all_selected_comp_indices_multi{subj} = selected_idx_full;
     all_selected_comp_weights{subj} = w_combined_full(:)';
-    all_selected_comp_idx(subj) = selected_idx_full(1);
-    all_selected_comp_corr(subj) = searchCorrs_full(selected_idx_full(1));
-    all_selected_comp_eval(subj) = evals_sorted_full(selected_idx_full(1));
-    all_eigenvalues(subj) = evals_sorted_full(selected_idx_full(1));
-
-    sel_id_full = crosswin_id_full(selected_idx_full(1));
-    sel_id_early = crosswin_id_early(selected_idx_early(1));
-    sel_id_late = crosswin_id_late(selected_idx_late(1));
+    if isempty(selected_idx_full)
+        all_selected_comp_idx(subj) = NaN;
+        all_selected_comp_corr(subj) = NaN;
+        all_selected_comp_eval(subj) = NaN;
+        all_eigenvalues(subj) = NaN;
+        sel_id_full = NaN;
+    else
+        all_selected_comp_idx(subj) = selected_idx_full(1);
+        all_selected_comp_corr(subj) = searchCorrs_full(selected_idx_full(1));
+        all_selected_comp_eval(subj) = evals_sorted_full(selected_idx_full(1));
+        all_eigenvalues(subj) = evals_sorted_full(selected_idx_full(1));
+        sel_id_full = crosswin_id_full(selected_idx_full(1));
+    end
+    if isempty(selected_idx_early)
+        sel_id_early = NaN;
+    else
+        sel_id_early = crosswin_id_early(selected_idx_early(1));
+    end
+    if isempty(selected_idx_late)
+        sel_id_late = NaN;
+    else
+        sel_id_late = crosswin_id_late(selected_idx_late(1));
+    end
     sanity_report = struct( ...
         'subject', subjects{subj}, ...
         'selected_id_full', sel_id_full, ...
@@ -1232,17 +1266,14 @@ for subj = 1:nSubj
     adequate_full = false;
     adequate_early = false;
     adequate_late = false;
-    if ~isempty(all_component_selection_stats_full{subj}) && isfield(all_component_selection_stats_full{subj}, 'candidate_table')
-        ct_full = all_component_selection_stats_full{subj}.candidate_table;
-        adequate_full = any(ct_full.hard_eligible | ct_full.force_include_occipital);
+    if ~isempty(all_component_selection_stats_full{subj}) && isfield(all_component_selection_stats_full{subj}, 'selected_idx')
+        adequate_full = ~isempty(all_component_selection_stats_full{subj}.selected_idx);
     end
-    if ~isempty(all_component_selection_stats_early{subj}) && isfield(all_component_selection_stats_early{subj}, 'candidate_table')
-        ct_early = all_component_selection_stats_early{subj}.candidate_table;
-        adequate_early = any(ct_early.hard_eligible | ct_early.force_include_occipital);
+    if ~isempty(all_component_selection_stats_early{subj}) && isfield(all_component_selection_stats_early{subj}, 'selected_idx')
+        adequate_early = ~isempty(all_component_selection_stats_early{subj}.selected_idx);
     end
-    if ~isempty(all_component_selection_stats_late{subj}) && isfield(all_component_selection_stats_late{subj}, 'candidate_table')
-        ct_late = all_component_selection_stats_late{subj}.candidate_table;
-        adequate_late = any(ct_late.hard_eligible | ct_late.force_include_occipital);
+    if ~isempty(all_component_selection_stats_late{subj}) && isfield(all_component_selection_stats_late{subj}, 'selected_idx')
+        adequate_late = ~isempty(all_component_selection_stats_late{subj}.selected_idx);
     end
     if ~adequate_full
         msg = sprintf(['Subject %s excluded for FULL window downstream metrics: ', ...
@@ -3197,18 +3228,18 @@ cmap = max(min(cmap, 1), 0);
 end
 
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
-    searchMeanPrSpectrum, eval_vec, gamma_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
+    searchMeanPrSpectrum, eigval_vec, gamma_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
     hard_eligible, hard_reject_flags, soft_warn_flags, rejection_flags, ...
     front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec, ...
     adaptive_thr, cfg_topo, topo_labels, ...
     peak_form_score, peak_form_mode, crosswin_id)
-nComp = numel(eval_vec);
+nComp = numel(eigval_vec);
 if nComp < 1
     return;
 end
 
 figA = figure('Position', [0 0 1512 982]);
-scatter_size = 60 + 80 * max(eval_vec - min(eval_vec), 0) / max(max(eval_vec) - min(eval_vec), eps);
+scatter_size = 60 + 80 * max(eigval_vec - min(eigval_vec), 0) / max(max(eigval_vec) - min(eigval_vec), eps);
 g_pct = 100 * (exp(gamma_vec) - 1);
 scatter(occ_evidence, emg_score, scatter_size, g_pct, 'filled', ...
     'MarkerEdgeColor', 'k', 'LineWidth', 0.8); hold on;
@@ -3279,11 +3310,12 @@ box on;
 save_figure_png(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_scatter_%s.png', subject_id, win_name)));
 close(figA);
 
-sel_idx = find(hard_eligible);
+    occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), emg_class(:));
+    sel_idx = find(hard_eligible & occipital_class_mask);
 rej_idx = find(hard_reject_flags);
-[~, so] = sort(eval_vec(sel_idx), 'descend');
+[~, so] = sort(eigval_vec(sel_idx), 'descend');
 sel_idx = sel_idx(so);
-[~, ro] = sort(eval_vec(rej_idx), 'descend');
+[~, ro] = sort(eigval_vec(rej_idx), 'descend');
 rej_idx = rej_idx(ro);
 
 % Top 10 selected/rejected components in one figure:
@@ -3354,7 +3386,7 @@ for k = 1:nCols
         end
         xlabel('Hz'); ylabel('PR');
         title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
-            eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
+            eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
         box on;
     else
         axis off;
@@ -3420,7 +3452,7 @@ for k = 1:nCols
         end
         xlabel('Hz'); ylabel('PR');
         title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
-            eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
+            eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
         box on;
     else
         axis off;
@@ -3442,7 +3474,7 @@ close(figSel);
 figC = figure('Position', [0 0 756 982]);
 tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile;
-counts = [sum(hard_eligible), sum(logical(soft_warn_flags)), sum(logical(hard_reject_flags)), numel(eval_vec)];
+counts = [numel(sel_idx), sum(logical(soft_warn_flags)), sum(logical(hard_reject_flags)), numel(eval_vec)];
 cats = {'Selected', 'SoftWarn', 'HardRejected', 'Candidates'};
 bar(counts, 0.6, 'FaceColor', [0.3 0.4 0.7]); hold on;
 set(gca, 'XTick', 1:numel(cats), 'XTickLabel', cats, 'XTickLabelRotation', 20);
@@ -3528,7 +3560,9 @@ diag = struct( ...
     'best_shift_hz', nan(nComp, 1), ...
     'best_width_hz', nan(nComp, 1), ...
     'best_separation_hz', nan(nComp, 1), ...
-    'best_trough_depth', nan(nComp, 1));
+    'best_trough_depth', nan(nComp, 1), ...
+    'roughness_ratio', nan(nComp, 1), ...
+    'roughness_penalty', nan(nComp, 1));
 if isempty(mean_pr_spectrum) || isempty(scan_freqs)
     return;
 end
@@ -3599,11 +3633,42 @@ for ci = 1:nComp
         end
     end
 
+    % Penalize rough/noisy spectra that can spuriously match broad templates.
+    roughness_ratio = NaN;
+    roughness_pen = 1;
+    dy = diff(y_band);
+    if ~isempty(dy)
+        amp_scale = prctile(y_band, 75) - prctile(y_band, 25);
+        if ~isfinite(amp_scale) || amp_scale <= eps
+            y_finite = y_band(isfinite(y_band));
+            if isempty(y_finite)
+                amp_scale = NaN;
+            else
+                amp_scale = std(y_finite);
+            end
+        end
+        if ~isfinite(amp_scale) || amp_scale <= eps
+            amp_scale = 1;
+        end
+        roughness_ratio = robust_mad(dy) / amp_scale;
+        rough_ref = 0.35;
+        rough_span = 0.80;
+        rough_pen_floor = 0.55;
+        rough_pen_max_loss = 0.45;
+        if isfinite(roughness_ratio) && roughness_ratio > rough_ref
+            loss_frac = min(1, (roughness_ratio - rough_ref) / rough_span);
+            roughness_pen = max(rough_pen_floor, 1 - rough_pen_max_loss * loss_frac);
+            best_raw = best_raw * roughness_pen;
+        end
+    end
+
     diag.best_similarity_raw(ci) = best_raw;
     diag.best_shift_hz(ci) = best_shift;
     diag.best_width_hz(ci) = best_width;
     diag.best_separation_hz(ci) = best_sep;
     diag.best_trough_depth(ci) = best_trough;
+    diag.roughness_ratio(ci) = roughness_ratio;
+    diag.roughness_penalty(ci) = roughness_pen;
 
     if ~isfinite(best_raw) || best_raw <= min_similarity
         peak_form_score_vec(ci) = 0;
@@ -4057,6 +4122,10 @@ eligible_mask = candidate_table.hard_eligible;
 if isfield(candidate_table, 'force_include_occipital')
     eligible_mask = eligible_mask | logical(candidate_table.force_include_occipital);
 end
+if isfield(candidate_table, 'emg_class')
+    occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), candidate_table.emg_class(:));
+    eligible_mask = eligible_mask & occipital_class_mask;
+end
 score_final = candidate_table.score_base;
 bonus_vec = zeros(nComp, 1);
 for ci = 1:nComp
@@ -4073,13 +4142,7 @@ end
 score_final = score_final + bonus_vec;
 eligible = find(eligible_mask & isfinite(score_final));
 if isempty(eligible)
-    finite_idx = find(isfinite(candidate_table.score_base));
-    if isempty(finite_idx)
-        selected_idx = 1;
-    else
-        [~, ord_fallback] = sort(candidate_table.score_base(finite_idx), 'descend');
-        selected_idx = finite_idx(ord_fallback(1));
-    end
+    selected_idx = [];
 else
     [~, ord] = sort(score_final(eligible), 'descend');
     selected_idx = eligible(ord);
@@ -4594,7 +4657,7 @@ for wi = 1:numel(warning_log)
                 m.top_fail_corr, m.thr_corr, ...
                 m.top_fail_ratio, m.top_fail_gamma, m.top_fail_artifact);
         end
-    elseif strcmp(w.code, 'NO_HARD_COMPONENTS') || strcmp(w.code, 'TOO_FEW_HARD_COMPONENTS')
+    elseif strcmp(w.code, 'NO_OCCIPITAL_COMPONENTS') || strcmp(w.code, 'TOO_FEW_HARD_COMPONENTS')
         m = w.metrics;
         if isfield(m, 'n_valid_components')
             fprintf('     combined-selection diagnostics: valid=%d, minRequired=%d\n', ...
