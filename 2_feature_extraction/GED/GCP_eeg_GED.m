@@ -1295,6 +1295,9 @@ for subj = 1:nSubj
     cfg_topo.zlim      = 'maxabs';
     cfg_topo.colormap  = '*RdBu';
     cfg_topo.figure    = 'gcf';
+    pf_diag_cfg = struct('poly_order', poly_order, 'edge_exclude_n', detrend_edge_exclude_n, ...
+        'in_log', detrend_in_log, 'flat_edges', detrend_flat_edges, ...
+        'analysis_freq_range', analysis_freq_range, 'smooth_n', peak_form_smooth_n);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(crosswin_id_full)), gamma_vec_full, ...
@@ -1305,7 +1308,7 @@ for subj = 1:nSubj
         candidate_table_full.lineharm_ratio, candidate_table_full.hf_slope, ...
         adaptive_thr_full, cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
         candidate_table_full.peak_form_mode, crosswin_id_full, ...
-        selected_idx_full, get_candidate_table_fallback_idx(candidate_table_full));
+        selected_idx_full, get_candidate_table_fallback_idx(candidate_table_full), pf_diag_cfg);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(crosswin_id_early)), gamma_vec_early, ...
@@ -1316,7 +1319,7 @@ for subj = 1:nSubj
         candidate_table_early.lineharm_ratio, candidate_table_early.hf_slope, ...
         adaptive_thr_early, cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
         candidate_table_early.peak_form_mode, crosswin_id_early, ...
-        selected_idx_early, get_candidate_table_fallback_idx(candidate_table_early));
+        selected_idx_early, get_candidate_table_fallback_idx(candidate_table_early), pf_diag_cfg);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(crosswin_id_late)), gamma_vec_late, ...
@@ -1327,7 +1330,7 @@ for subj = 1:nSubj
         candidate_table_late.lineharm_ratio, candidate_table_late.hf_slope, ...
         adaptive_thr_late, cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
         candidate_table_late.peak_form_mode, crosswin_id_late, ...
-        selected_idx_late, get_candidate_table_fallback_idx(candidate_table_late));
+        selected_idx_late, get_candidate_table_fallback_idx(candidate_table_late), pf_diag_cfg);
 
     adequate_full = false;
     adequate_early = false;
@@ -3260,11 +3263,15 @@ function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_fre
     hard_eligible, force_include_occipital, hard_reject_flags, soft_warn_flags, rejection_flags, ...
     front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec, ...
     adaptive_thr, cfg_topo, topo_labels, ...
-    peak_form_score, peak_form_mode, crosswin_id, selected_idx, fallback_selected_idx)
+    peak_form_score, peak_form_mode, crosswin_id, selected_idx, fallback_selected_idx, pf_diag_cfg)
 nComp = numel(eigval_vec);
 if nComp < 1
     return;
 end
+if nargin < 31 || isempty(pf_diag_cfg)
+    pf_diag_cfg = [];
+end
+has_pf_diag = ~isempty(pf_diag_cfg) && isstruct(pf_diag_cfg);
 
 figA = figure('Position', [0 0 1512 982]);
 scatter_size = 60 + 80 * max(eigval_vec - min(eigval_vec), 0) / max(max(eigval_vec) - min(eigval_vec), eps);
@@ -3399,13 +3406,28 @@ for k = 1:nCols
     if k <= nShowSel
         ci = sel_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        plot(scan_freqs, spec_data, 'k-', 'LineWidth', 1.3);
+        h_raw = plot(scan_freqs, spec_data, 'k-', 'LineWidth', 1.3);
         yline(0, 'k--');
+        h_dt = [];
+        if has_pf_diag
+            [dt_x, dt_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
+            if ~isempty(dt_y)
+                yyaxis right;
+                h_dt = plot(dt_x, dt_y, '-', 'Color', [0.20 0.55 0.85], 'LineWidth', 1.0);
+                ylabel('norm');
+                set(gca, 'YColor', [0.20 0.55 0.85]);
+                yyaxis left;
+            end
+        end
         spec_min = min(spec_data(isfinite(spec_data)));
         spec_max = max(spec_data(isfinite(spec_data)));
         if isfinite(spec_min) && isfinite(spec_max) && spec_min ~= spec_max
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
+        end
+        if k == 1 && ~isempty(h_dt)
+            legend([h_raw, h_dt], {'raw PR', 'detrend+norm'}, ...
+                'FontSize', 5, 'Location', 'northeast', 'Box', 'off');
         end
         info_lines = { ...
             sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
@@ -3470,13 +3492,28 @@ for k = 1:nCols
     if k <= nShowRej
         ci = rej_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        plot(scan_freqs, spec_data, 'r-', 'LineWidth', 1.3);
+        h_raw_r = plot(scan_freqs, spec_data, 'r-', 'LineWidth', 1.3);
         yline(0, 'k--');
+        h_dt_r = [];
+        if has_pf_diag
+            [dt_x, dt_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
+            if ~isempty(dt_y)
+                yyaxis right;
+                h_dt_r = plot(dt_x, dt_y, '-', 'Color', [0.20 0.55 0.85], 'LineWidth', 1.0);
+                ylabel('norm');
+                set(gca, 'YColor', [0.20 0.55 0.85]);
+                yyaxis left;
+            end
+        end
         spec_min = min(spec_data(isfinite(spec_data)));
         spec_max = max(spec_data(isfinite(spec_data)));
         if isfinite(spec_min) && isfinite(spec_max) && spec_min ~= spec_max
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
+        end
+        if k == 1 && ~isempty(h_dt_r)
+            legend([h_raw_r, h_dt_r], {'raw PR', 'detrend+norm'}, ...
+                'FontSize', 5, 'Location', 'northeast', 'Box', 'off');
         end
         info_lines = { ...
             sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
@@ -3557,6 +3594,32 @@ box on;
 sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
 save_figure_png(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_summary_%s.png', subject_id, win_name)));
 close(figC);
+end
+
+function [dt_x, dt_y] = compute_pf_diag_trace(spec_data, scan_freqs, cfg)
+dt_x = [];
+dt_y = [];
+if isempty(spec_data) || all(~isfinite(spec_data))
+    return;
+end
+y_dt = detrend_power_ratio(spec_data, scan_freqs, cfg.poly_order, cfg.edge_exclude_n, cfg.in_log, cfg.flat_edges);
+freq_mask = scan_freqs >= cfg.analysis_freq_range(1) & scan_freqs <= cfg.analysis_freq_range(2);
+if ~any(freq_mask)
+    return;
+end
+dt_x = scan_freqs(freq_mask);
+y_band = y_dt(freq_mask);
+valid = isfinite(dt_x) & isfinite(y_band);
+dt_x = dt_x(valid);
+y_band = y_band(valid);
+if numel(y_band) < 7
+    return;
+end
+y_band = movmean(y_band, max(1, round(cfg.smooth_n)));
+dt_y = normalize_positive_shape(y_band);
+if isempty(dt_y)
+    dt_x = [];
+end
 end
 
 function [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
