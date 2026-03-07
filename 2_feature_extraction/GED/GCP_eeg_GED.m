@@ -1,17 +1,76 @@
-%% GCP Trial-Level GED
+%% GCP Trial-Level Gamma Peak Frequency via Generalized Eigendecomposition (GED)
 %
-% Uses the same spatial filter approach as GCP_eeg_GED_subjects.m, with the
-% key difference that peak detection is performed on individual trials
-% rather than on condition-averaged spectra.
+% Extracts trial-level gamma-band (30-90 Hz) peak frequencies from EEG data
+% recorded during a visual grating task with four contrast conditions
+% (25%, 50%, 75%, 100%). Generalized eigendecomposition is used to derive
+% spatial filters that maximise the stimulus-vs-baseline gamma power ratio,
+% replacing conventional channel-level analyses with a component-space
+% approach that improves the signal-to-noise ratio of narrow-band
+% gamma oscillations.
 %
-% Pipeline:
-%   Phase 1 — Pool all conditions; broadband GED; derive common spatial filter.
-%   Phase 2 — Per condition and trial: narrowband scan (30–90 Hz), power ratio,
-%             polynomial detrending, peak detection. Single-peak model per trial.
-%   Component comparison — Three branches: raw channel-space reference,
-%             top GED component, and combined artifact-screened GED components.
-%   Output — Mean and median peak frequency per condition per subject;
-%             centroid metric; detectability, separation, reliability metrics.
+% Pipeline overview
+% -----------------
+% Phase 1 — Broadband GED and component selection (per subject)
+%   1. Pool trials across all four conditions.
+%   2. Bandpass-filter the continuous data into the broadband gamma range
+%      (30-90 Hz, FIR) and compute per-trial covariance matrices for three
+%      stimulus windows (full 0-2 s, early 0-0.6 s, late 1-2 s) and a
+%      shared pre-stimulus baseline (-1.5 to -0.25 s).
+%   3. Average covariance matrices across trials and apply Tikhonov
+%      regularisation (lambda = 0.05).
+%   4. Solve the generalised eigenvalue problem S_stim * w = lambda * S_base * w
+%      separately for each time window, yielding up to 20 candidate
+%      spatial filters ranked by eigenvalue.
+%   5. For each candidate, compute the forward-model topography and score it
+%      against a simulated signed occipital template (Gaussian-weighted
+%      posterior positive lobe, frontal negative lobe).
+%   6. Classify components as occipital, EMG, mixed, or unclear using a
+%      two-dimensional adaptive scoring system (occipital evidence vs.
+%      EMG artifact score).
+%   7. Apply hard selection gates: minimum eigenvalue, minimum gamma
+%      increase (>= 10%), single-peak spectral form score (shift-invariant
+%      Gaussian template matching, >= 0.45).
+%   8. Apply artifact rejection gates: frontal/temporal leakage, line-
+%      harmonic dominance, trial-wise stationarity, burst ratio,
+%      high-frequency spectral slope (EMG proxy), condition locking.
+%      Adaptive thresholds are derived from the per-subject component
+%      distribution (robust median +/- MAD).
+%   9. Exclude dominant eigenvalue outliers (lambda1/lambda2 ratio + MAD).
+%  10. Combine eligible occipital-classified components into an eigenvalue-
+%      weighted spatial filter; apply cross-window consistency matching
+%      (full <-> early <-> late) and award a score bonus for components
+%      that are stable across windows.
+%
+% Phase 2 — Trial-level narrowband scanning (per subject, condition, trial)
+%   1. Sweep a 3-Hz-wide FIR bandpass filter across 10-110 Hz in 1-Hz
+%      steps. For each frequency, compute the trial-level power ratio
+%      (stimulus / baseline) in component space using three benchmark
+%      methods: (a) raw posterior-ROI channel average, (b) top-eigenvalue
+%      GED component, (c) combined artifact-screened weighted GED.
+%   2. Trim the power-ratio spectrum to the 30-90 Hz analysis band after
+%      fitting a quadratic polynomial trend on the full 10-110 Hz support
+%      and subtracting it (detrending).
+%   3. Detect peaks on each detrended trial spectrum:
+%        - Single peak: tallest prominent peak in 30-90 Hz.
+%        - Dual peaks: tallest peaks below and above 50 Hz.
+%        - Spectral centroid: positive-mass centroid in 40-80 Hz.
+%
+% Outputs
+% -------
+%   - Per-condition, per-subject: mean/median single-peak frequency,
+%     dual-peak frequencies, centroid frequency, peak detection rates.
+%   - Three-way benchmark comparison: detectability, prominence,
+%     trial-level reliability (CV), condition separation (linear slope
+%     across contrast levels, delta 100%-25%).
+%   - Grand-average detrended power spectra and condition-separation
+%     statistics (one-sample t-test on subject-level slopes/deltas).
+%   - Simulation validation: ground-truth sensitivity, specificity,
+%     and localisation error across SNR, depth, overlap, and artifact
+%     parameter sweeps.
+%   - Trial-level GLMM: GammaFrequency ~ Condition + (1|subjectID).
+%   - Diagnostic figures per subject (topographies, spectra, heatmaps,
+%     EMG exclusion scatter, selected/rejected component panels) and
+%     group-level summary dashboards.
 
 %% Setup
 startup
@@ -48,7 +107,7 @@ lambda = 0.05;              % full window [0, 2 s]
 lambda_full  = lambda;        % full window [0, 2 s]
 lambda_early = lambda;        % early window [0, 0.6 s] — stronger regularization (fewer samples)
 lambda_late  = lambda;       % late window [1, 2 s] — moderate (1 s of data)
-ged_search_n = 30;          % search first N GED components
+ged_search_n = 20;          % search first N GED components
 template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.20;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
@@ -3625,14 +3684,16 @@ for ci = 1:nComp
     % Check peak dominance: penalize if no clear dominant peak
     [pks, locs] = findpeaks(y_band, 'MinPeakProminence', 0.10 * max(y_band));
     if numel(pks) > 1
-        [max_pk, ~] = max(pks);
-        second_pks = pks(pks < max_pk);
-        if ~isempty(second_pks)
-            dominance_ratio = max_pk / max(second_pks);
-            if dominance_ratio < 1.67
-                dominance_pen = 0.70 + 0.30 * min(1, (dominance_ratio - 1) / 0.67);
-                best_raw = best_raw * dominance_pen;
-            end
+        pks_sorted = sort(pks, 'descend');
+        dominance_ratio = pks_sorted(1) / max(pks_sorted(2), eps);
+        if dominance_ratio < 2.5
+            dominance_pen = 0.45 + 0.55 * min(1, (dominance_ratio - 1) / 1.5);
+            best_raw = best_raw * dominance_pen;
+        end
+        if numel(pks) >= 3
+            n_secondary = numel(pks) - 1;
+            multi_peak_pen = max(0.55, 1 - 0.12 * (n_secondary - 1));
+            best_raw = best_raw * multi_peak_pen;
         end
     elseif isempty(pks)
         best_raw = best_raw * 0.40;
