@@ -3682,17 +3682,17 @@ for ci = 1:nComp
     end
 
     % Check peak dominance: penalize if no clear dominant peak
-    [pks, locs] = findpeaks(y_band, 'MinPeakProminence', 0.10 * max(y_band));
+    [pks, locs] = findpeaks(y_band, 'MinPeakProminence', 0.20 * max(y_band));
     if numel(pks) > 1
         pks_sorted = sort(pks, 'descend');
         dominance_ratio = pks_sorted(1) / max(pks_sorted(2), eps);
-        if dominance_ratio < 2.5
-            dominance_pen = 0.45 + 0.55 * min(1, (dominance_ratio - 1) / 1.5);
+        if dominance_ratio < 2.0
+            dominance_pen = 0.55 + 0.45 * min(1, (dominance_ratio - 1) / 1.0);
             best_raw = best_raw * dominance_pen;
         end
         if numel(pks) >= 3
             n_secondary = numel(pks) - 1;
-            multi_peak_pen = max(0.55, 1 - 0.12 * (n_secondary - 1));
+            multi_peak_pen = max(0.65, 1 - 0.08 * (n_secondary - 1));
             best_raw = best_raw * multi_peak_pen;
         end
     elseif isempty(pks)
