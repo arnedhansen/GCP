@@ -862,7 +862,7 @@ for subj = 1:nSubj
     fallback_occipital_idx = NaN;
     if isempty(combined_idx)
         fallback_gamma_log_thr = log(1 + 0.10);
-        fallback_occipital_mask = occipital_class_mask & finite_metrics & ~selection_pool_mask & ...
+        fallback_occipital_mask = occipital_class_mask & ~selection_pool_mask & ...
             (eval_raw_vec >= 1) & (gamma_vec >= fallback_gamma_log_thr);
         fallback_candidates = find(fallback_occipital_mask);
         if ~isempty(fallback_candidates)
