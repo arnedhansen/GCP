@@ -3710,18 +3710,21 @@ for ci = 1:nComp
     end
 
     % Penalize rough/noisy spectra that can spuriously match broad templates.
+    % Scale-invariant: normalize to unit range so absolute amplitude does not bias the ratio.
     roughness_ratio = NaN;
     roughness_pen = 1;
-    dy = diff(y_band);
-    if ~isempty(dy)
-        amp_scale = prctile(y_band, 75) - prctile(y_band, 25);
+    y_finite = y_band(isfinite(y_band));
+    if numel(y_finite) >= 3
+        y_range = max(y_finite) - min(y_finite);
+        if y_range > eps
+            y_scaled = y_band / y_range;
+        else
+            y_scaled = y_band;
+        end
+        dy = diff(y_scaled);
+        amp_scale = prctile(y_scaled, 75) - prctile(y_scaled, 25);
         if ~isfinite(amp_scale) || amp_scale <= eps
-            y_finite = y_band(isfinite(y_band));
-            if isempty(y_finite)
-                amp_scale = NaN;
-            else
-                amp_scale = std(y_finite);
-            end
+            amp_scale = std(y_scaled(isfinite(y_scaled)));
         end
         if ~isfinite(amp_scale) || amp_scale <= eps
             amp_scale = 1;
