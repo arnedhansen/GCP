@@ -61,7 +61,7 @@ min_gamma_increase_hard = 0.05;     % hard minimum gamma increase (>= 5% vs base
 include_occipital_label_override = true; % force-include occipital-labeled comps after eig+gamma core gates
 min_peak_form_single_hard = 0.45;   % hard minimum PF score with single-peak mode (allows good peaks with minor roughness)
 occipital_pf_lenient_override = true;      % for occipital-labeled components with very strong PF, relax non-critical gates
-occipital_pf_lenient_min = 0.75;           % PF score threshold for permissive occipital override ("very good PF")
+occipital_pf_lenient_min = 0.6;            % PF score threshold for permissive occipital override ("very good PF")
 occipital_pf_lenient_eig_mult = 0.85;      % relaxed eig gate: adaptive min_eigval * multiplier
 occipital_pf_lenient_gamma_mult = 0.60;    % relaxed gamma gate: min_gamma_log_hard * multiplier
 max_frontleak_hard = 1.25;          % artifact guard: frontal leakage (front/occ)
@@ -834,7 +834,6 @@ for subj = 1:nSubj
     candidate_table.soft_warn_condlock = soft_warn_flags.condlock;
     candidate_table.soft_warn_emg_score = soft_warn_flags.emg_score;
     candidate_table.soft_warn_occ_margin = soft_warn_flags.occ_margin;
-    candidate_table.peak_rescued_from_flat = rejection_flags.peak_rescue;
     candidate_table.hard_eligible_raw = hard_eligible_raw;
     candidate_table.dominant_outlier = dominant_outlier_mask;
     candidate_table.hard_eligible = hard_eligible;
