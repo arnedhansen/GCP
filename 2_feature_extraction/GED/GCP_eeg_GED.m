@@ -3276,8 +3276,15 @@ for k = 1:nCols
     subplot(4, nCols, nCols + k); hold on;
     if k <= nShowSel
         ci = sel_idx(k);
-        plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'k-', 'LineWidth', 1.3);
+        spec_data = searchMeanPrSpectrum(ci, :);
+        plot(scan_freqs, spec_data, 'k-', 'LineWidth', 1.3);
         yline(0, 'k--');
+        spec_min = min(spec_data(isfinite(spec_data)));
+        spec_max = max(spec_data(isfinite(spec_data)));
+        if isfinite(spec_min) && isfinite(spec_max) && spec_min ~= spec_max
+            spec_range = spec_max - spec_min;
+            ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
+        end
         info_lines = { ...
             sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
             sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
@@ -3340,8 +3347,15 @@ for k = 1:nCols
     subplot(4, nCols, 3 * nCols + k); hold on;
     if k <= nShowRej
         ci = rej_idx(k);
-        plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.3);
+        spec_data = searchMeanPrSpectrum(ci, :);
+        plot(scan_freqs, spec_data, 'r-', 'LineWidth', 1.3);
         yline(0, 'k--');
+        spec_min = min(spec_data(isfinite(spec_data)));
+        spec_max = max(spec_data(isfinite(spec_data)));
+        if isfinite(spec_min) && isfinite(spec_max) && spec_min ~= spec_max
+            spec_range = spec_max - spec_min;
+            ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
+        end
         info_lines = { ...
             sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
             sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
