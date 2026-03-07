@@ -3500,7 +3500,7 @@ close(figSel);
 figC = figure('Position', [0 0 756 982]);
 tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile;
-counts = [numel(sel_idx), sum(logical(soft_warn_flags)), sum(logical(hard_reject_flags)), numel(eval_vec)];
+counts = [numel(sel_idx), sum(logical(soft_warn_flags)), sum(logical(hard_reject_flags)), numel(eigval_vec)];
 cats = {'Selected', 'SoftWarn', 'HardRejected', 'Candidates'};
 bar(counts, 0.6, 'FaceColor', [0.3 0.4 0.7]); hold on;
 set(gca, 'XTick', 1:numel(cats), 'XTickLabel', cats, 'XTickLabelRotation', 20);
