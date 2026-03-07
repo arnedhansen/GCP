@@ -61,7 +61,7 @@ min_gamma_increase_hard = 0.05;     % hard minimum gamma increase (>= 5% vs base
 include_occipital_label_override = true; % force-include occipital-labeled comps after eig+gamma core gates
 min_peak_form_single_hard = 0.65;   % hard minimum PF score with single-peak mode (applies to all components)
 occipital_pf_lenient_override = true;      % for occipital-labeled components with very strong PF, relax non-critical gates
-occipital_pf_lenient_min = 0.82;           % PF score threshold for permissive occipital override ("very good PF")
+occipital_pf_lenient_min = 0.75;           % PF score threshold for permissive occipital override ("very good PF")
 occipital_pf_lenient_eig_mult = 0.85;      % relaxed eig gate: adaptive min_eigval * multiplier
 occipital_pf_lenient_gamma_mult = 0.60;    % relaxed gamma gate: min_gamma_log_hard * multiplier
 max_frontleak_hard = 1.25;          % artifact guard: frontal leakage (front/occ)
