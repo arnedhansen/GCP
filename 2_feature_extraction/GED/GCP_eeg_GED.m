@@ -79,13 +79,13 @@ exclude_dominant_outlier = true;    % remove dominant top outlier (lambda1/lambd
 outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for dominant-outlier detection
 outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
 outlier_min_rest = 0;               % minimum non-top eligible components for dominant-outlier exclusion (0 = no minimum)
-exclude_flat_topomap = true;        % remove spatially flat/one-color topographies
-flat_topo_mad_ratio_thr = 0.16;     % relaxed flat-map guard: MAD relative to maxabs
-flat_topo_iqr_ratio_thr = 0.22;     % relaxed flat-map guard: IQR relative to maxabs
-flat_topo_span_ratio_thr = 0.23;    % relaxed flat-map guard: span relative to maxabs
-flat_topo_std_ratio_thr = 0.07;     % relaxed flat-map guard: STD relative to maxabs
-flat_topo_minority_frac_thr = 0.07; % one-color guard: minimum minority-sign channel fraction
-flat_topo_minority_amp_thr = 0.10;  % one-color guard: minimum minority-sign amplitude (p95/maxabs)
+exclude_flat_topomap = false;       % remove spatially flat/one-color topographies
+flat_topo_mad_ratio_thr = 0.16;     % very relaxed flat-map guard: MAD relative to maxabs
+flat_topo_iqr_ratio_thr = 0.22;     % very relaxed flat-map guard: IQR relative to maxabs
+flat_topo_span_ratio_thr = 0.23;    % very relaxed flat-map guard: span relative to maxabs
+flat_topo_std_ratio_thr = 0.03;     % very relaxed flat-map guard: STD relative to maxabs
+flat_topo_minority_frac_thr = 0.02; % very relaxed one-color guard: minimum minority-sign channel fraction
+flat_topo_minority_amp_thr = 0.04;  % very relaxed one-color guard: minimum minority-sign amplitude (p95/maxabs)
 peak_form_weight = 3.00;            % strongly prioritize shift-invariant gamma peak form during ranking
 peak_bonus_weight = 0.5;            % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
@@ -1229,6 +1229,46 @@ for subj = 1:nSubj
         adaptive_thr_late, cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
         candidate_table_late.peak_form_mode, crosswin_id_late);
 
+    adequate_full = false;
+    adequate_early = false;
+    adequate_late = false;
+    if ~isempty(all_component_selection_stats_full{subj}) && isfield(all_component_selection_stats_full{subj}, 'candidate_table')
+        ct_full = all_component_selection_stats_full{subj}.candidate_table;
+        adequate_full = any(ct_full.hard_eligible | ct_full.force_include_occipital);
+    end
+    if ~isempty(all_component_selection_stats_early{subj}) && isfield(all_component_selection_stats_early{subj}, 'candidate_table')
+        ct_early = all_component_selection_stats_early{subj}.candidate_table;
+        adequate_early = any(ct_early.hard_eligible | ct_early.force_include_occipital);
+    end
+    if ~isempty(all_component_selection_stats_late{subj}) && isfield(all_component_selection_stats_late{subj}, 'candidate_table')
+        ct_late = all_component_selection_stats_late{subj}.candidate_table;
+        adequate_late = any(ct_late.hard_eligible | ct_late.force_include_occipital);
+    end
+    if ~adequate_full
+        msg = sprintf(['Subject %s excluded for FULL window downstream metrics: ', ...
+            'no adequate GED components. FULL-window condition metrics set to NaN.'], subjects{subj});
+        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, ...
+            'WINDOW_EXCLUDED_NO_ADEQUATE_COMPONENTS', msg, struct('window', 'full'));
+        all_selected_comp_idx(subj) = NaN;
+        all_selected_comp_corr(subj) = NaN;
+        all_selected_comp_eval(subj) = NaN;
+        all_eigenvalues(subj) = NaN;
+        all_selected_comp_indices_multi{subj} = NaN;
+        all_selected_comp_weights{subj} = NaN;
+    end
+    if ~adequate_early
+        msg = sprintf(['Subject %s excluded for EARLY window downstream metrics: ', ...
+            'no adequate GED components. EARLY-window condition metrics set to NaN.'], subjects{subj});
+        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, ...
+            'WINDOW_EXCLUDED_NO_ADEQUATE_COMPONENTS', msg, struct('window', 'early'));
+    end
+    if ~adequate_late
+        msg = sprintf(['Subject %s excluded for LATE window downstream metrics: ', ...
+            'no adequate GED components. LATE-window condition metrics set to NaN.'], subjects{subj});
+        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, ...
+            'WINDOW_EXCLUDED_NO_ADEQUATE_COMPONENTS', msg, struct('window', 'late'));
+    end
+
     if strcmpi(run_mode, 'component_check')
         warning_log_by_subj{subj} = warning_log_subj;
         toc
@@ -1245,16 +1285,25 @@ for subj = 1:nSubj
             w_comb = w_combined_full;
             W_t = W_top_full;
             sel_idx = selected_idx_full;
+            window_adequate = adequate_full;
         elseif wi == 2
             W_comb = W_combined_early;
             w_comb = w_combined_early;
             W_t = W_top_early;
             sel_idx = selected_idx_early;
+            window_adequate = adequate_early;
         else
             W_comb = W_combined_late;
             w_comb = w_combined_late;
             W_t = W_top_late;
             sel_idx = selected_idx_late;
+            window_adequate = adequate_late;
+        end
+        if ~window_adequate
+            W_comb = zeros(nChans, 0);
+            w_comb = [];
+            W_t = zeros(nChans, 0);
+            sel_idx = [];
         end
         if isempty(W_comb)
             msg = sprintf('No selected combined filters for subject %s (%s window).', subjects{subj}, win_names{wi});
@@ -1289,13 +1338,6 @@ for subj = 1:nSubj
             selected_idx_late_norm = sel_idx;
         end
     end
-    % Require at least full-window filters
-    if isempty(W_combined_full)
-        msg = sprintf('No selected combined filters for subject %s (full window).', subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'EMPTY_W_COMBINED', msg, struct());
-        error(msg);
-    end
-
     % Per-window filters struct for Phase 2
     filters = struct('full', struct(), 'early', struct(), 'late', struct());
     filters.full.searchFilters = searchFilters_full;
@@ -1357,41 +1399,47 @@ for subj = 1:nSubj
                 x_early = x_nb(:, idx_early);
                 x_late = x_nb(:, idx_late);
 
-                nSearch_full = size(filters.full.searchFilters, 2);
-                comp_base_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_base;
-                pow_base_all_full = mean(comp_base_all_full.^2, 2);
-                ratio_all_full = nan(nSearch_full, 1);
-                comp_stim_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_full;
-                pow_stim_all_full = mean(comp_stim_all_full.^2, 2);
-                valid_all_full = isfinite(pow_stim_all_full) & isfinite(pow_base_all_full) & (pow_base_all_full > 0);
-                ratio_all_full(valid_all_full) = pow_stim_all_full(valid_all_full) ./ pow_base_all_full(valid_all_full);
-                powratio_components(:, trl, fi) = ratio_all_full;
-                powratio_methods_full(:, trl, fi) = compute_method_ratios_from_components( ...
-                    ratio_all_full, x_full, x_base, raw_w, filters.full.W_top, filters.full.W_combined, filters.full.selected_idx, filters.full.w_combined, nBenchmarkMethods);
+                if adequate_full
+                    nSearch_full = size(filters.full.searchFilters, 2);
+                    comp_base_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_base;
+                    pow_base_all_full = mean(comp_base_all_full.^2, 2);
+                    ratio_all_full = nan(nSearch_full, 1);
+                    comp_stim_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_full;
+                    pow_stim_all_full = mean(comp_stim_all_full.^2, 2);
+                    valid_all_full = isfinite(pow_stim_all_full) & isfinite(pow_base_all_full) & (pow_base_all_full > 0);
+                    ratio_all_full(valid_all_full) = pow_stim_all_full(valid_all_full) ./ pow_base_all_full(valid_all_full);
+                    powratio_components(:, trl, fi) = ratio_all_full;
+                    powratio_methods_full(:, trl, fi) = compute_method_ratios_from_components( ...
+                        ratio_all_full, x_full, x_base, raw_w, filters.full.W_top, filters.full.W_combined, filters.full.selected_idx, filters.full.w_combined, nBenchmarkMethods);
+                end
 
-                nSearch_early = size(filters.early.searchFilters, 2);
-                comp_base_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_base;
-                pow_base_all_early = mean(comp_base_all_early.^2, 2);
-                ratio_all_early = nan(nSearch_early, 1);
-                comp_stim_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_early;
-                pow_stim_all_early = mean(comp_stim_all_early.^2, 2);
-                valid_all_early = isfinite(pow_stim_all_early) & isfinite(pow_base_all_early) & (pow_base_all_early > 0);
-                ratio_all_early(valid_all_early) = pow_stim_all_early(valid_all_early) ./ pow_base_all_early(valid_all_early);
-                powratio_components_early(1:nSearch_early, trl, fi) = ratio_all_early;
-                powratio_methods_early(:, trl, fi) = compute_method_ratios_from_components( ...
-                    ratio_all_early, x_early, x_base, raw_w, filters.early.W_top, filters.early.W_combined, filters.early.selected_idx, filters.early.w_combined, nBenchmarkMethods);
+                if adequate_early
+                    nSearch_early = size(filters.early.searchFilters, 2);
+                    comp_base_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_base;
+                    pow_base_all_early = mean(comp_base_all_early.^2, 2);
+                    ratio_all_early = nan(nSearch_early, 1);
+                    comp_stim_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_early;
+                    pow_stim_all_early = mean(comp_stim_all_early.^2, 2);
+                    valid_all_early = isfinite(pow_stim_all_early) & isfinite(pow_base_all_early) & (pow_base_all_early > 0);
+                    ratio_all_early(valid_all_early) = pow_stim_all_early(valid_all_early) ./ pow_base_all_early(valid_all_early);
+                    powratio_components_early(1:nSearch_early, trl, fi) = ratio_all_early;
+                    powratio_methods_early(:, trl, fi) = compute_method_ratios_from_components( ...
+                        ratio_all_early, x_early, x_base, raw_w, filters.early.W_top, filters.early.W_combined, filters.early.selected_idx, filters.early.w_combined, nBenchmarkMethods);
+                end
 
-                nSearch_late = size(filters.late.searchFilters, 2);
-                comp_base_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_base;
-                pow_base_all_late = mean(comp_base_all_late.^2, 2);
-                ratio_all_late = nan(nSearch_late, 1);
-                comp_stim_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_late;
-                pow_stim_all_late = mean(comp_stim_all_late.^2, 2);
-                valid_all_late = isfinite(pow_stim_all_late) & isfinite(pow_base_all_late) & (pow_base_all_late > 0);
-                ratio_all_late(valid_all_late) = pow_stim_all_late(valid_all_late) ./ pow_base_all_late(valid_all_late);
-                powratio_components_late(1:nSearch_late, trl, fi) = ratio_all_late;
-                powratio_methods_late(:, trl, fi) = compute_method_ratios_from_components( ...
-                    ratio_all_late, x_late, x_base, raw_w, filters.late.W_top, filters.late.W_combined, filters.late.selected_idx, filters.late.w_combined, nBenchmarkMethods);
+                if adequate_late
+                    nSearch_late = size(filters.late.searchFilters, 2);
+                    comp_base_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_base;
+                    pow_base_all_late = mean(comp_base_all_late.^2, 2);
+                    ratio_all_late = nan(nSearch_late, 1);
+                    comp_stim_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_late;
+                    pow_stim_all_late = mean(comp_stim_all_late.^2, 2);
+                    valid_all_late = isfinite(pow_stim_all_late) & isfinite(pow_base_all_late) & (pow_base_all_late > 0);
+                    ratio_all_late(valid_all_late) = pow_stim_all_late(valid_all_late) ./ pow_base_all_late(valid_all_late);
+                    powratio_components_late(1:nSearch_late, trl, fi) = ratio_all_late;
+                    powratio_methods_late(:, trl, fi) = compute_method_ratios_from_components( ...
+                        ratio_all_late, x_late, x_base, raw_w, filters.late.W_top, filters.late.W_combined, filters.late.selected_idx, filters.late.w_combined, nBenchmarkMethods);
+                end
             end
             clear dat_nb
         end
@@ -1795,7 +1843,7 @@ for subj = 1:nSubj
     legend(bh, condLabels, 'FontSize', 10, 'Location', 'best');
     set(gca, 'FontSize', 11); xlim([30 90]);  box on;
 
-    saveas(fig, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_subj%s.png', subjects{subj})));
+    save_figure_png(fig, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_subj%s.png', subjects{subj})));
     warning_log_by_subj{subj} = warning_log_subj;
     toc
 end % subject loop
@@ -2023,7 +2071,7 @@ for subj = 1:nSubj
     title('Condition separation');
      box on;
 
-    saveas(fig_bench_subj, fullfile(fig_save_dir_component_comparison, sprintf('GCP_eeg_GED_component_comparison_subj%s.png', subjects{subj})));
+save_figure_png(fig_bench_subj, fullfile(fig_save_dir_component_comparison, sprintf('GCP_eeg_GED_component_comparison_subj%s.png', subjects{subj})));
 end
 
 %% ====================================================================
@@ -2085,7 +2133,7 @@ xlim([0.3 4.7]);
 ylim(centroid_freq_range); 
 ylabel('Centroid Frequency [Hz]');
 title('All trials pooled', 'FontSize', 14, 'FontWeight', 'bold');
-saveas(fig_cent, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_centroid_summary.png'));
+save_figure_png(fig_cent, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_centroid_summary.png'));
 
 %% ====================================================================
 %  GRAND-AVERAGE COMPONENT COMPARISON
@@ -2195,7 +2243,7 @@ text(0.02, 0.96, sprintf('Combined slope=%.2f\nCombined \\Delta=%.2f Hz', ...
 title('Condition separation');
  box on;
 
-saveas(fig_bench_group, fullfile(fig_save_dir_component_comparison, 'GCP_eeg_GED_component_comparison_grandaverage.png'));
+save_figure_png(fig_bench_group, fullfile(fig_save_dir_component_comparison, 'GCP_eeg_GED_component_comparison_grandaverage.png'));
 
 %% ====================================================================
 %  STANDALONE CONDITION-SEPARATION METRICS (combined GED)
@@ -2263,7 +2311,7 @@ set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED'}, ...
 ylabel('\Delta median (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
 title('Median Frequency Shift (100% - 25%)', 'FontSize', 20, 'FontWeight', 'bold');
 
-saveas(fig_cond_slope, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_slope.png'));
+save_figure_png(fig_cond_slope, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_slope.png'));
 
 %% Mean gamma frequency shift bar plot
 close all
@@ -2284,7 +2332,7 @@ xlabel('Subject', 'FontSize', 18, 'FontWeight', 'bold');
 ylabel('\Delta mean frequency shift (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
 title('Gamma Frequency Shift', 'FontSize', 20, 'FontWeight', 'bold');
 set(gca, 'FontSize', 14, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
-saveas(fig_cond_shift_bar, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bar_GammaFreq.png'));
+save_figure_png(fig_cond_shift_bar, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bar_GammaFreq.png'));
 
 %% ====================================================================
 %  SUMMARY DASHBOARD (backprojected combined-component data)
@@ -2301,17 +2349,27 @@ summary_metrics = { ...
     squeeze(benchmark_metric_prominence(3, :, :)), ...
     squeeze(benchmark_metric_reliability_trialcv(3, :, :)), ...
     all_trial_median_centroid, ...
-    all_trial_gamma_power};
+    (all_trial_gamma_power - 1) * 100};
 summary_names = {'Single median [Hz]', 'Low median [Hz]', 'High median [Hz]', ...
     'H-L separation [Hz]', 'Prominence', 'Trial CV', ...
-    'Centroid median [Hz]', 'Gamma Power over Conditions'};
+    'Centroid median [Hz]', 'Gamma Power'};
 
 for mi = 1:numel(summary_metrics)
     subplot(2, 4, mi); hold on;
     dat = summary_metrics{mi};
-    mu = nanmean(dat, 2);
-    sem = nanstd(dat, [], 2) ./ sqrt(sum(~isnan(dat), 2));
-    med = nanmedian(dat, 2);
+    dat_plot = dat;
+    % Figure-only outlier exclusion per metric and condition (subject-level).
+    for c = 1:4
+        cond_vals = dat_plot(c, :);
+        valid_idx = find(isfinite(cond_vals));
+        if numel(valid_idx) >= 4
+            outlier_cond = isoutlier(cond_vals(valid_idx), 'median');
+            dat_plot(c, valid_idx(outlier_cond)) = NaN;
+        end
+    end
+    mu = nanmean(dat_plot, 2);
+    sem = nanstd(dat_plot, [], 2) ./ sqrt(sum(~isnan(dat_plot), 2));
+    med = nanmedian(dat_plot, 2);
     for c = 1:4
         bar(c, mu(c), 0.6, 'FaceColor', colors(c,:), 'EdgeColor', 'k', 'FaceAlpha', 0.7);
     end
@@ -2319,8 +2377,8 @@ for mi = 1:numel(summary_metrics)
     scatter(1:4, med, 28, 'kd', 'filled');
     for s = 1:nSubj
         for c = 1:4
-            if ~isnan(dat(c, s))
-                scatter(c + (rand - 0.5) * 0.18, dat(c, s), 20, [0.5 0.5 0.5], ...
+            if ~isnan(dat_plot(c, s))
+                scatter(c + (rand - 0.5) * 0.18, dat_plot(c, s), 20, [0.5 0.5 0.5], ...
                     'filled', ...
                     'MarkerFaceAlpha', 0.5, ...
                     'MarkerEdgeColor', [1 1 1], ...    % white ring
@@ -2345,10 +2403,10 @@ for mi = 1:numel(summary_metrics)
     elseif mi == 7
         ylim([50 60]);
     elseif mi == 8
-        ylim([0 15]);
+        ylim([-15 40]);
     end
 end
-saveas(fig_summary, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary.png'));
+save_figure_png(fig_summary, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak (subject-level median, summary-style)
@@ -2389,7 +2447,7 @@ set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 16, 'Box', 'off');
 ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency over Conditions', 'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_box1, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaFreq.png'));
+save_figure_png(fig_box1, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaFreq.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak with subject trajectories + ID labels
@@ -2449,7 +2507,7 @@ ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency over Conditions (Subject Trajectories)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_box1_traj, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaFreq_IDs.png'));
+save_figure_png(fig_box1_traj, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaFreq_IDs.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak (stats-style boxplot, non-baselined freq)
@@ -2492,7 +2550,7 @@ xlim([0.5 4.5]);
 ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency', 'FontSize', 30, 'FontWeight', 'bold');
 
-saveas(fig_box1_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaFreq_statsStyle.png'));
+save_figure_png(fig_box1_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaFreq_statsStyle.png'));
 
 %% ====================================================================
 %  MAIN FIGURE: Gamma frequency over contrast (mean+-SEM + trajectories)
@@ -2532,7 +2590,7 @@ text(0.02, 0.98, sprintf('Linear trend (subject slope): p=%.4f, d=%.2f', ...
     primary_slope_stats.p, primary_slope_stats.cohens_d), ...
     'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
     'FontSize', 14, 'FontWeight', 'bold');
-saveas(fig_main_gamma, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq.png'));
+save_figure_png(fig_main_gamma, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq.png'));
 
 %% ====================================================================
 %  MAIN FIGURE: Gamma frequency over contrast by time window
@@ -2575,7 +2633,7 @@ xlim([0.5 1.5]);
 set(gca, 'XTick', 1, 'XTickLabel', {'Late-Early'}, 'Box', 'off', 'FontSize', 12);
 ylabel('\Delta Gamma Frequency [Hz]');
 title('Subject Shift', 'FontWeight', 'bold');
-saveas(fig_main_gamma_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq_timeSplit.png'));
+save_figure_png(fig_main_gamma_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq_timeSplit.png'));
 
 %% ====================================================================
 %  POWER INCREASE FIGURE: gamma-band power ratio over conditions
@@ -2629,7 +2687,7 @@ set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
 xlim([0.5 4.5]);
 ylabel('Gamma Power Change from Baseline [%]');
 title('Gamma Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
-saveas(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaPower_statsStyle.png'));
+save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaPower_statsStyle.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak all trials pooled — raincloud
@@ -2676,7 +2734,7 @@ ylabel('Peak Gamma Frequency [Hz]');
 title('Single Peak: All Trials (pooled across subjects)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
-saveas(fig_trl1, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_alltrials_GammaFreq.png'));
+save_figure_png(fig_trl1, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_alltrials_GammaFreq.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Mean detrended power spectrum
@@ -2751,7 +2809,7 @@ if any(valid_handles)
     legend(grand_line_handles(valid_handles), condLabels(valid_handles), ...
         'Location', 'best', 'FontSize', 15);
 end
-saveas(fig_grand_psd, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_grand_average_power_spectrum.png'));
+save_figure_png(fig_grand_psd, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_grand_average_power_spectrum.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: All-subjects subplot (mean trial spectra)
@@ -2809,7 +2867,7 @@ for s = 1:nSubj
         end
     end
 end
-saveas(fig_all, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_all_subjects.png'));
+save_figure_png(fig_all, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_all_subjects.png'));
 
 %% ====================================================================
 %  DETECTION RATE FIGURE (single + dual peaks)
@@ -2850,7 +2908,7 @@ for di = 1:3
     title(det_labels{di}, 'FontSize', 16, 'FontWeight', 'bold');
 end
 
-saveas(fig_det, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_detection_rate.png'));
+save_figure_png(fig_det, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_detection_rate.png'));
 
 if simulation_validation_enable
     fprintf('\n============================================================\n');
@@ -3218,7 +3276,7 @@ xlabel('OccipitalScore', 'FontSize', 14);
 ylabel('EMGArtifactScore', 'FontSize', 14);
 title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), 'FontSize', 16, 'FontWeight', 'bold');
 box on;
-saveas(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_scatter_%s.png', subject_id, win_name)));
+save_figure_png(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_scatter_%s.png', subject_id, win_name)));
 close(figA);
 
 sel_idx = find(hard_eligible);
@@ -3257,7 +3315,7 @@ for k = 1:nCols
             imagesc(topo_data.avg(:)); axis tight;
             caxis([-topo_clim_ci topo_clim_ci]);
         end
-        ttl = sprintf('Sel C%d (%s)', ci, emg_class{ci});
+        ttl = sprintf('C%d (%s)', ci, emg_class{ci});
         title(ttl, 'FontSize', 8, 'Interpreter', 'none');
     else
         axis off;
@@ -3269,6 +3327,31 @@ for k = 1:nCols
         ci = sel_idx(k);
         plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'k-', 'LineWidth', 1.3);
         yline(0, 'k--');
+        info_lines = { ...
+            sprintf('flat_topomap: %d', double(rejection_flags.flat_topomap(ci))), ...
+            sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
+            sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
+            sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
+            sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
+        info_viol = [ ...
+            rejection_flags.flat_topomap(ci), ...
+            rejection_flags.lineharm(ci), ...
+            rejection_flags.hf_slope(ci), ...
+            rejection_flags.front_leak(ci), ...
+            rejection_flags.temp_leak(ci)];
+        y0 = 1.52;
+        dy = 0.11;
+        for li = 1:numel(info_lines)
+            if info_viol(li)
+                txt_col = [0.82 0.10 0.10];
+            else
+                txt_col = [0.10 0.10 0.10];
+            end
+            text(0.02, y0 - (li - 1) * dy, info_lines{li}, ...
+                'Units', 'normalized', 'Clipping', 'off', ...
+                'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
+                'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
+        end
         xlabel('Hz'); ylabel('PR');
         title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
             eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
@@ -3298,7 +3381,7 @@ for k = 1:nCols
             imagesc(topo_data.avg(:)); axis tight;
             caxis([-topo_clim_ci topo_clim_ci]);
         end
-        ttl = sprintf('Rej C%d (%s)', ci, emg_class{ci});
+        ttl = sprintf('C%d (%s)', ci, emg_class{ci});
         title(ttl, 'FontSize', 8, 'Interpreter', 'none');
     else
         axis off;
@@ -3310,18 +3393,31 @@ for k = 1:nCols
         ci = rej_idx(k);
         plot(scan_freqs, searchMeanPrSpectrum(ci, :), 'r-', 'LineWidth', 1.3);
         yline(0, 'k--');
-        info_txt = sprintf(['flat_topomap: %d\n' ...
-                            'lineharm: %.2f\n' ...
-                            'hf_slope: %.2f\n' ...
-                            'front_leak: %.2f\n' ...
-                            'temp_leak: %.2f'], ...
-                            double(rejection_flags.flat_topomap(ci)), ...
-                            lineharm_vec(ci), hf_slope_vec(ci), ...
-                            front_leak_vec(ci), temp_leak_vec(ci));
-        text(0.02, 1.34, info_txt, 'Units', 'normalized', 'Clipping', 'off', ...
-            'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', 'FontSize', 6.5, ...
-            'Interpreter', 'none', 'BackgroundColor', [1 1 1], 'EdgeColor', [0.75 0.75 0.75], ...
-            'Margin', 1);
+        info_lines = { ...
+            sprintf('flat_topomap: %d', double(rejection_flags.flat_topomap(ci))), ...
+            sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
+            sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
+            sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
+            sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
+        info_viol = [ ...
+            rejection_flags.flat_topomap(ci), ...
+            rejection_flags.lineharm(ci), ...
+            rejection_flags.hf_slope(ci), ...
+            rejection_flags.front_leak(ci), ...
+            rejection_flags.temp_leak(ci)];
+        y0 = 1.52;
+        dy = 0.11;
+        for li = 1:numel(info_lines)
+            if info_viol(li)
+                txt_col = [0.82 0.10 0.10];
+            else
+                txt_col = [0.10 0.10 0.10];
+            end
+            text(0.02, y0 - (li - 1) * dy, info_lines{li}, ...
+                'Units', 'normalized', 'Clipping', 'off', ...
+                'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
+                'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
+        end
         xlabel('Hz'); ylabel('PR');
         title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
             eval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
@@ -3330,9 +3426,17 @@ for k = 1:nCols
         axis off;
     end
 end
+annotation(figSel, 'textbox', [0.002 0.56 0.022 0.34], ...
+    'String', 'Selected Components', 'EdgeColor', 'none', ...
+    'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+    'FontWeight', 'bold', 'FontSize', 15, 'Rotation', 90);
+annotation(figSel, 'textbox', [0.002 0.09 0.022 0.34], ...
+    'String', 'Rejected Components', 'EdgeColor', 'none', ...
+    'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+    'FontWeight', 'bold', 'FontSize', 15, 'Rotation', 90);
 sgtitle(sprintf('Top 10 Selected and Rejected Components: %s (%s)', subject_id, win_name), ...
     'FontSize', 14, 'FontWeight', 'bold');
-saveas(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected_%s.png', subject_id, win_name)));
+save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected_%s.png', subject_id, win_name)));
 close(figSel);
 
 figC = figure('Position', [0 0 756 982]);
@@ -3361,7 +3465,7 @@ ylabel('Rejected components');
 title('Rejection reasons (criterion-level)');
 box on;
 sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-saveas(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_summary_%s.png', subject_id, win_name)));
+save_figure_png(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_summary_%s.png', subject_id, win_name)));
 close(figC);
 end
 
@@ -4587,6 +4691,22 @@ end
 x_pad = [fliplr(x(1:pad)), x, fliplr(x(end-pad+1:end))];
 y_pad = movmean(x_pad, win);
 y = y_pad(pad+1:end-pad);
+end
+
+function save_figure_png(fig_handle, out_path)
+if nargin < 1 || isempty(fig_handle) || ~ishandle(fig_handle)
+    return;
+end
+if nargin < 2 || isempty(out_path)
+    return;
+end
+drawnow;
+pause(0.05);
+try
+    exportgraphics(fig_handle, out_path, 'Resolution', 300);
+catch
+    saveas(fig_handle, out_path);
+end
 end
 
 function y = smooth_reflective_edges(x, freqs, core_band, core_win, edge_win)
