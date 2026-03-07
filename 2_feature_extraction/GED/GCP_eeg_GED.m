@@ -855,9 +855,14 @@ for subj = 1:nSubj
     candidate_table.peak_form_best_double_similarity = peak_form_diag.best_double_similarity;
     candidate_table.peak_form_similarity_raw = peak_form_diag.best_similarity_raw;
     candidate_table.peak_form_best_shift_hz = peak_form_diag.best_shift_hz;
+    candidate_table.peak_form_best_center_hz = peak_form_diag.best_center_hz;
     candidate_table.peak_form_best_width_hz = peak_form_diag.best_width_hz;
     candidate_table.peak_form_best_separation_hz = peak_form_diag.best_separation_hz;
     candidate_table.peak_form_trough_depth = peak_form_diag.best_trough_depth;
+    candidate_table.peak_form_similarity_pre_penalty = peak_form_diag.pre_penalty_similarity;
+    candidate_table.peak_form_total_penalty_raw = peak_form_diag.total_penalty_raw;
+    candidate_table.peak_form_total_penalty_used = peak_form_diag.total_penalty_used;
+    candidate_table.peak_form_dominant_penalty = peak_form_diag.dominant_penalty_tag;
     candidate_table.occipital_evidence = occipital_evidence;
     candidate_table.emg_artifact_score = emg_artifact_score;
     candidate_table.emg_class = searchEmgClass;
@@ -1307,7 +1312,8 @@ for subj = 1:nSubj
         candidate_table_full.front_leak, candidate_table_full.temp_leak, ...
         candidate_table_full.lineharm_ratio, candidate_table_full.hf_slope, ...
         adaptive_thr_full, cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
-        candidate_table_full.peak_form_mode, crosswin_id_full, ...
+        candidate_table_full.peak_form_mode, candidate_table_full.peak_form_best_center_hz, ...
+        candidate_table_full.peak_form_dominant_penalty, crosswin_id_full, ...
         selected_idx_full, get_candidate_table_fallback_idx(candidate_table_full), pf_diag_cfg);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
@@ -1318,7 +1324,8 @@ for subj = 1:nSubj
         candidate_table_early.front_leak, candidate_table_early.temp_leak, ...
         candidate_table_early.lineharm_ratio, candidate_table_early.hf_slope, ...
         adaptive_thr_early, cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
-        candidate_table_early.peak_form_mode, crosswin_id_early, ...
+        candidate_table_early.peak_form_mode, candidate_table_early.peak_form_best_center_hz, ...
+        candidate_table_early.peak_form_dominant_penalty, crosswin_id_early, ...
         selected_idx_early, get_candidate_table_fallback_idx(candidate_table_early), pf_diag_cfg);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
@@ -1329,7 +1336,8 @@ for subj = 1:nSubj
         candidate_table_late.front_leak, candidate_table_late.temp_leak, ...
         candidate_table_late.lineharm_ratio, candidate_table_late.hf_slope, ...
         adaptive_thr_late, cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
-        candidate_table_late.peak_form_mode, crosswin_id_late, ...
+        candidate_table_late.peak_form_mode, candidate_table_late.peak_form_best_center_hz, ...
+        candidate_table_late.peak_form_dominant_penalty, crosswin_id_late, ...
         selected_idx_late, get_candidate_table_fallback_idx(candidate_table_late), pf_diag_cfg);
 
     adequate_full = false;
@@ -1942,7 +1950,16 @@ for subj = 1:nSubj
     toc
 end % subject loop
 
-warning_log = vertcat(warning_log_by_subj{:});
+warning_log_cells = warning_log_by_subj;
+for subj = 1:numel(warning_log_cells)
+    warning_log_cells{subj} = warning_log_cells{subj}(:);
+end
+warning_log_cells = warning_log_cells(~cellfun(@isempty, warning_log_cells));
+if isempty(warning_log_cells)
+    warning_log = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
+else
+    warning_log = vertcat(warning_log_cells{:});
+end
 print_subject_warning_summary(warning_log);
 
 %% ====================================================================
@@ -3263,12 +3280,13 @@ function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_fre
     hard_eligible, force_include_occipital, hard_reject_flags, soft_warn_flags, rejection_flags, ...
     front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec, ...
     adaptive_thr, cfg_topo, topo_labels, ...
-    peak_form_score, peak_form_mode, crosswin_id, selected_idx, fallback_selected_idx, pf_diag_cfg)
+    peak_form_score, peak_form_mode, peak_form_best_center_hz, peak_form_dominant_penalty, ...
+    crosswin_id, selected_idx, fallback_selected_idx, pf_diag_cfg)
 nComp = numel(eigval_vec);
 if nComp < 1
     return;
 end
-if nargin < 31 || isempty(pf_diag_cfg)
+if nargin < 32 || isempty(pf_diag_cfg)
     pf_diag_cfg = [];
 end
 has_pf_diag = ~isempty(pf_diag_cfg) && isstruct(pf_diag_cfg);
@@ -3437,18 +3455,23 @@ for k = 1:nCols
             legend([h_raw, h_dt, h_norm], {'raw PR', 'detrended', 'normalized'}, ...
                 'FontSize', 5, 'Location', 'northeast', 'Box', 'off');
         end
+        pf_mode_ci = safe_cellstr_at(peak_form_mode, ci, 'none');
+        pf_pen_ci = safe_cellstr_at(peak_form_dominant_penalty, ci, 'none');
         info_lines = { ...
             sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
             sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
             sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
-            sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
+            sprintf('temp_leak: %.2f', temp_leak_vec(ci)), ...
+            sprintf('pf_mode: %s', pf_mode_ci), ...
+            sprintf('pf_ctr: %.1f', peak_form_best_center_hz(ci)), ...
+            sprintf('pf_pen: %s', pf_pen_ci)};
         info_viol = [ ...
             rejection_flags.lineharm(ci), ...
             rejection_flags.hf_slope(ci), ...
             rejection_flags.front_leak(ci), ...
             rejection_flags.temp_leak(ci)];
-        y0 = 1.52;
-        dy = 0.11;
+        y0 = 1.58;
+        dy = 0.085;
         for li = 1:numel(info_lines)
             if info_viol(li)
                 txt_col = [0.82 0.10 0.10];
@@ -3531,18 +3554,23 @@ for k = 1:nCols
             legend([h_raw_r, h_dt_r, h_norm_r], {'raw PR', 'detrended', 'normalized'}, ...
                 'FontSize', 5, 'Location', 'northeast', 'Box', 'off');
         end
+        pf_mode_ci = safe_cellstr_at(peak_form_mode, ci, 'none');
+        pf_pen_ci = safe_cellstr_at(peak_form_dominant_penalty, ci, 'none');
         info_lines = { ...
             sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
             sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
             sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
-            sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
+            sprintf('temp_leak: %.2f', temp_leak_vec(ci)), ...
+            sprintf('pf_mode: %s', pf_mode_ci), ...
+            sprintf('pf_ctr: %.1f', peak_form_best_center_hz(ci)), ...
+            sprintf('pf_pen: %s', pf_pen_ci)};
         info_viol = [ ...
             rejection_flags.lineharm(ci), ...
             rejection_flags.hf_slope(ci), ...
             rejection_flags.front_leak(ci), ...
             rejection_flags.temp_leak(ci)];
-        y0 = 1.52;
-        dy = 0.11;
+        y0 = 1.58;
+        dy = 0.085;
         for li = 1:numel(info_lines)
             if info_viol(li)
                 txt_col = [0.82 0.10 0.10];
@@ -3610,6 +3638,25 @@ box on;
 sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
 save_figure_png(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_summary_%s.png', subject_id, win_name)));
 close(figC);
+end
+
+function v = safe_cellstr_at(c, idx, fallback)
+if nargin < 3 || isempty(fallback)
+    fallback = '';
+end
+v = fallback;
+if isempty(c) || ~iscell(c) || idx < 1 || idx > numel(c)
+    return;
+end
+ci = c{idx};
+if ischar(ci)
+    v = ci;
+elseif isstring(ci) && isscalar(ci)
+    v = char(ci);
+end
+if isempty(v)
+    v = fallback;
+end
 end
 
 function [dt_x, dt_y, norm_y] = compute_pf_diag_trace(spec_data, scan_freqs, cfg)
@@ -3699,12 +3746,20 @@ diag = struct( ...
     'best_single_similarity', nan(nComp, 1), ...
     'best_double_similarity', nan(nComp, 1), ...
     'best_similarity_raw', nan(nComp, 1), ...
+    'pre_penalty_similarity', nan(nComp, 1), ...
+    'total_penalty_raw', nan(nComp, 1), ...
+    'total_penalty_used', nan(nComp, 1), ...
+    'edge_penalty', nan(nComp, 1), ...
+    'dominance_penalty', nan(nComp, 1), ...
+    'hf_rise_penalty', nan(nComp, 1), ...
     'best_shift_hz', nan(nComp, 1), ...
+    'best_center_hz', nan(nComp, 1), ...
     'best_width_hz', nan(nComp, 1), ...
     'best_separation_hz', nan(nComp, 1), ...
     'best_trough_depth', nan(nComp, 1), ...
     'roughness_ratio', nan(nComp, 1), ...
-    'roughness_penalty', nan(nComp, 1));
+    'roughness_penalty', nan(nComp, 1), ...
+    'dominant_penalty_tag', repmat({'none'}, nComp, 1));
 if isempty(mean_pr_spectrum) || isempty(scan_freqs)
     return;
 end
@@ -3741,16 +3796,16 @@ for ci = 1:nComp
     diag.best_double_similarity(ci) = double_best;
 
     mode_raw = 'single';
-    best_raw = single_best;
+    best_pre_penalty = single_best;
     best_shift = single_meta.shift_hz;
     best_width = single_meta.width_hz;
     best_sep = NaN;
     best_trough = NaN;
     best_centers = single_meta.centers_hz;
 
-    if double_best > best_raw
+    if double_best > best_pre_penalty
         mode_raw = 'double';
-        best_raw = double_best;
+        best_pre_penalty = double_best;
         best_shift = double_meta.shift_hz;
         best_width = double_meta.width_hz;
         best_sep = double_meta.sep_hz;
@@ -3759,37 +3814,39 @@ for ci = 1:nComp
     end
 
     % Penalize template matches that are forced to band edges.
+    edge_pen = 1;
     edge_margin_hz = 2;
     if ~isempty(best_centers) && any(best_centers <= (analysis_freq_range(1) + edge_margin_hz) | ...
             best_centers >= (analysis_freq_range(2) - edge_margin_hz))
-        best_raw = 0.85 * best_raw;
+        edge_pen = 0.85;
     end
 
     % Check peak dominance: penalize if no clear dominant peak
-    [pks, locs] = findpeaks(y_band, 'MinPeakProminence', 0.20 * max(y_band));
+    dominance_pen = 1;
+    [pks, ~] = findpeaks(y_band, 'MinPeakProminence', 0.20 * max(y_band));
     if numel(pks) > 1
         pks_sorted = sort(pks, 'descend');
         dominance_ratio = pks_sorted(1) / max(pks_sorted(2), eps);
         if dominance_ratio < 2.0
-            dominance_pen = 0.55 + 0.45 * min(1, (dominance_ratio - 1) / 1.0);
-            best_raw = best_raw * dominance_pen;
+            dominance_pen = dominance_pen * (0.55 + 0.45 * min(1, (dominance_ratio - 1) / 1.0));
         end
         if numel(pks) >= 3
             n_secondary = numel(pks) - 1;
             multi_peak_pen = max(0.65, 1 - 0.08 * (n_secondary - 1));
-            best_raw = best_raw * multi_peak_pen;
+            dominance_pen = dominance_pen * multi_peak_pen;
         end
     elseif isempty(pks)
-        best_raw = best_raw * 0.40;
+        dominance_pen = dominance_pen * 0.40;
     end
 
     % Penalize EMG-like monotonic high-frequency rise in the upper gamma band.
+    hf_pen = 1;
     hf_mask = x_band >= max(70, analysis_freq_range(2) - 15);
     if sum(hf_mask) >= 5
         hf_idx = find(hf_mask);
         hf_rho = corr((1:numel(hf_idx))', y_band(hf_idx)', 'rows', 'complete', 'type', 'Spearman');
         if isfinite(hf_rho) && hf_rho > 0.70
-            best_raw = best_raw * max(0.65, 1 - 0.30 * (hf_rho - 0.70) / 0.30);
+            hf_pen = max(0.65, 1 - 0.30 * (hf_rho - 0.70) / 0.30);
         end
     end
 
@@ -3821,23 +3878,55 @@ for ci = 1:nComp
         if isfinite(roughness_ratio) && roughness_ratio > rough_ref
             loss_frac = min(1, (roughness_ratio - rough_ref) / rough_span);
             roughness_pen = max(rough_pen_floor, 1 - rough_pen_max_loss * loss_frac);
-            best_raw = best_raw * roughness_pen;
         end
     end
 
+    penalty_raw = edge_pen * dominance_pen * hf_pen * roughness_pen;
+    penalty_floor = 0.35;
+    penalty_used = max(penalty_floor, penalty_raw);
+    best_raw = best_pre_penalty * penalty_used;
+
+    penalty_names = {'edge', 'dominance', 'hf_rise', 'roughness'};
+    penalty_vals = [edge_pen, dominance_pen, hf_pen, roughness_pen];
+    [worst_pen, worst_idx] = min(penalty_vals);
+    if isfinite(worst_pen) && (worst_pen < 0.999)
+        dominant_penalty_tag = penalty_names{worst_idx};
+    else
+        dominant_penalty_tag = 'none';
+    end
+
     diag.best_similarity_raw(ci) = best_raw;
+    diag.pre_penalty_similarity(ci) = best_pre_penalty;
+    diag.total_penalty_raw(ci) = penalty_raw;
+    diag.total_penalty_used(ci) = penalty_used;
+    diag.edge_penalty(ci) = edge_pen;
+    diag.dominance_penalty(ci) = dominance_pen;
+    diag.hf_rise_penalty(ci) = hf_pen;
     diag.best_shift_hz(ci) = best_shift;
+    if ~isempty(best_centers) && all(isfinite(best_centers))
+        diag.best_center_hz(ci) = mean(best_centers);
+    end
     diag.best_width_hz(ci) = best_width;
     diag.best_separation_hz(ci) = best_sep;
     diag.best_trough_depth(ci) = best_trough;
     diag.roughness_ratio(ci) = roughness_ratio;
     diag.roughness_penalty(ci) = roughness_pen;
+    diag.dominant_penalty_tag{ci} = dominant_penalty_tag;
 
-    if ~isfinite(best_raw) || best_raw <= min_similarity
+    if ~isfinite(best_raw)
         peak_form_score_vec(ci) = 0;
         peak_form_mode_vec{ci} = 'none';
     else
-        peak_form_score_vec(ci) = max(0, min(1, (best_raw - min_similarity) / max(1 - min_similarity, eps)));
+        % Smooth transfer avoids score collapse to exactly zero below min_similarity.
+        if best_raw <= min_similarity
+            below = min_similarity - best_raw;
+            score_tail = exp(-4 * below / max(min_similarity, eps));
+            score_mapped = 0.20 * score_tail;
+        else
+            score_high = (best_raw - min_similarity) / max(1 - min_similarity, eps);
+            score_mapped = 0.20 + 0.80 * score_high;
+        end
+        peak_form_score_vec(ci) = max(0, min(1, score_mapped));
         peak_form_mode_vec{ci} = mode_raw;
     end
 end
@@ -3850,6 +3939,8 @@ if isempty(widths_hz)
     return;
 end
 x_mid = mean(x_band);
+x_min = min(x_band);
+x_max = max(x_band);
 for wi = 1:numel(widths_hz)
     w = widths_hz(wi);
     if ~isfinite(w) || w <= 0
@@ -3859,6 +3950,9 @@ for wi = 1:numel(widths_hz)
     for si = 1:numel(shift_vals)
         shift_hz = shift_vals(si);
         center_hz = x_mid + shift_hz;
+        if ~isfinite(center_hz) || center_hz < x_min || center_hz > x_max
+            continue;
+        end
         tpl = gaussian_template(x_band, center_hz, w);
         sim = safe_template_similarity(y_norm, tpl);
         if sim > best_sim
@@ -3878,6 +3972,8 @@ if isempty(widths_hz) || isempty(separations_hz)
     return;
 end
 x_mid = mean(x_band);
+x_min = min(x_band);
+x_max = max(x_band);
 shift_vals = candidate_shift_values_hz(x_band, shift_max_hz);
 for wi = 1:numel(widths_hz)
     w = widths_hz(wi);
@@ -3893,6 +3989,9 @@ for wi = 1:numel(widths_hz)
             shift_hz = shift_vals(si);
             c1 = x_mid + shift_hz - sep / 2;
             c2 = x_mid + shift_hz + sep / 2;
+            if ~isfinite(c1) || ~isfinite(c2) || c1 < x_min || c2 > x_max
+                continue;
+            end
             tpl = gaussian_template(x_band, c1, w) + gaussian_template(x_band, c2, w);
             sim = safe_template_similarity(y_norm, tpl);
             trough_depth = estimate_trough_depth(y_band, x_band, c1, c2);
@@ -3921,6 +4020,7 @@ if ~isfinite(df) || df <= 0
     df = 1;
 end
 shift_max_hz = max(0, shift_max_hz);
+shift_max_hz = max(shift_max_hz, max(abs(x_band - mean(x_band))));
 shifts = -shift_max_hz:df:shift_max_hz;
 if isempty(shifts)
     shifts = 0;
@@ -4742,7 +4842,7 @@ entry = struct('subject', subject_id, 'code', code, 'message', message, 'metrics
 if isempty(warning_log)
     warning_log = entry;
 else
-    warning_log(end+1) = entry;
+    warning_log(end+1, 1) = entry;
 end
 end
 
