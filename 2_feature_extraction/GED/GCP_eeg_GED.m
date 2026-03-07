@@ -100,6 +100,10 @@ peak_form_selfcheck_width_hz = 5;
 peak_form_selfcheck_tol = 0.03;
 hard_leak_severity_mult = 1.15;     % leak must exceed adaptive threshold by this factor for hard reject
 hard_emg_severity_mult = 1.10;      % EMG score must exceed adaptive threshold by this factor for hard reject
+occipital_pf_extreme_lineharm = 5.0;      % only reject occipital PF>=0.6 if lineharm exceeds this extreme threshold
+occipital_pf_extreme_hf_slope = 2.0;      % only reject occipital PF>=0.6 if hf_slope exceeds this extreme threshold
+occipital_pf_extreme_front_leak = 10.0;   % only reject occipital PF>=0.6 if front_leak exceeds this extreme threshold
+occipital_pf_extreme_temp_leak = 10.0;    % only reject occipital PF>=0.6 if temp_leak exceeds this extreme threshold
 crosswin_w_topo = 0.50;             % cross-window matching weight for topography similarity
 crosswin_w_spec = 0.35;             % cross-window matching weight for spectrum similarity
 crosswin_w_feat = 0.15;             % cross-window matching weight for scalar-feature similarity
@@ -604,6 +608,10 @@ for subj = 1:nSubj
     severe_front_leak = finite_metrics & (leak_vec > adaptive_thr.max_frontleak * hard_leak_severity_mult);
     severe_temp_leak = finite_metrics & (temp_leak_vec > adaptive_thr.max_templeak * hard_leak_severity_mult);
     severe_emg_score = finite_metrics & (emg_artifact_score > adaptive_thr.max_emg_score * hard_emg_severity_mult);
+    extreme_lineharm = finite_metrics & (lineharm_vec > occipital_pf_extreme_lineharm);
+    extreme_hf_slope = finite_metrics & (hf_slope_vec > occipital_pf_extreme_hf_slope);
+    extreme_front_leak = finite_metrics & (leak_vec > occipital_pf_extreme_front_leak);
+    extreme_temp_leak = finite_metrics & (temp_leak_vec > occipital_pf_extreme_temp_leak);
     occ_minus_emg = occipital_evidence - emg_artifact_score;
     fail_occ_margin = finite_metrics & (emg_artifact_score >= adaptive_thr.emg_class_thr) & ...
         (occ_minus_emg < adaptive_thr.min_occ_margin);
@@ -691,7 +699,7 @@ for subj = 1:nSubj
     lenient_occipital_pf_mask = occipital_pf_lenient_override & occipital_class_mask & very_good_pf_mask & ...
         pass_lenient_eig_gate & pass_lenient_gamma_gate & ...
         ~unknown_proxy_vec & ~dominant_outlier_mask & ...
-        ~severe_front_leak & ~severe_temp_leak & ~severe_emg_score;
+        ~extreme_lineharm & ~extreme_hf_slope & ~extreme_front_leak & ~extreme_temp_leak & ~severe_emg_score;
     force_include_occipital_mask = ...
         (include_occipital_label_override & hard_eligible_raw & occipital_class_mask) | ...
         lenient_occipital_pf_mask;
