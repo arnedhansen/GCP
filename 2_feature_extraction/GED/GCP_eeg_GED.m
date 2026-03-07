@@ -860,6 +860,7 @@ for subj = 1:nSubj
 
     combined_idx = find(selection_pool_mask & isfinite(searchScores));
     fallback_occipital_idx = NaN;
+    fallback_selected_mask = false(nSearch, 1);
     if isempty(combined_idx)
         fallback_gamma_log_thr = log(1 + 0.10);
         fallback_occipital_mask = occipital_class_mask & ~selection_pool_mask & ...
@@ -868,6 +869,7 @@ for subj = 1:nSubj
         if ~isempty(fallback_candidates)
             [~, fallback_ord] = sort(eval_raw_vec(fallback_candidates), 'descend');
             fallback_occipital_idx = fallback_candidates(fallback_ord(1));
+            fallback_selected_mask(fallback_occipital_idx) = true;
             combined_idx = fallback_occipital_idx;
             searchScores(fallback_occipital_idx) = eval_raw_vec(fallback_occipital_idx) + ...
                 peak_form_weight * peak_form_score_vec(fallback_occipital_idx) + ...
@@ -912,6 +914,10 @@ for subj = 1:nSubj
             combined_weights = 1;
         end
     end
+    candidate_table.fallback_selected = fallback_selected_mask;
+    candidate_table.score_base = searchScores;
+    candidate_table.score_final = searchScores;
+    candidate_table.score = searchScores;
 
     selected_idx = combined_idx;
     selected_weights = combined_weights;
@@ -1240,7 +1246,7 @@ for subj = 1:nSubj
         candidate_table_full.lineharm_ratio, candidate_table_full.hf_slope, ...
         adaptive_thr_full, cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
         candidate_table_full.peak_form_mode, crosswin_id_full, ...
-        selected_idx_full, all_component_selection_stats_full{subj}.fallback_selected_idx);
+        selected_idx_full, get_candidate_table_fallback_idx(candidate_table_full));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(crosswin_id_early)), gamma_vec_early, ...
@@ -1251,7 +1257,7 @@ for subj = 1:nSubj
         candidate_table_early.lineharm_ratio, candidate_table_early.hf_slope, ...
         adaptive_thr_early, cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
         candidate_table_early.peak_form_mode, crosswin_id_early, ...
-        selected_idx_early, all_component_selection_stats_early{subj}.fallback_selected_idx);
+        selected_idx_early, get_candidate_table_fallback_idx(candidate_table_early));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(crosswin_id_late)), gamma_vec_late, ...
@@ -1262,7 +1268,7 @@ for subj = 1:nSubj
         candidate_table_late.lineharm_ratio, candidate_table_late.hf_slope, ...
         adaptive_thr_late, cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
         candidate_table_late.peak_form_mode, crosswin_id_late, ...
-        selected_idx_late, all_component_selection_stats_late{subj}.fallback_selected_idx);
+        selected_idx_late, get_candidate_table_fallback_idx(candidate_table_late));
 
     adequate_full = false;
     adequate_early = false;
@@ -4121,6 +4127,16 @@ for ii = 1:numel(all_ids)
 end
 end
 
+function fallback_idx = get_candidate_table_fallback_idx(candidate_table)
+fallback_idx = NaN;
+if isfield(candidate_table, 'fallback_selected')
+    idx = find(logical(candidate_table.fallback_selected), 1, 'first');
+    if ~isempty(idx)
+        fallback_idx = idx;
+    end
+end
+end
+
 function [candidate_table, selected_idx, selected_weights] = apply_crosswindow_consistency_bonus( ...
     candidate_table, crosswin_id, group_consistent_map, group_occipital_map, bonus_val, max_components_to_combine)
 nComp = numel(candidate_table.comp_idx);
@@ -4130,6 +4146,9 @@ end
 eligible_mask = candidate_table.hard_eligible;
 if isfield(candidate_table, 'force_include_occipital')
     eligible_mask = eligible_mask | logical(candidate_table.force_include_occipital);
+end
+if isfield(candidate_table, 'fallback_selected')
+    eligible_mask = eligible_mask | logical(candidate_table.fallback_selected);
 end
 if isfield(candidate_table, 'emg_class')
     occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), candidate_table.emg_class(:));
