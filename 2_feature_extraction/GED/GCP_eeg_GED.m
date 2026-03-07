@@ -3409,13 +3409,21 @@ for k = 1:nCols
         h_raw = plot(scan_freqs, spec_data, 'k-', 'LineWidth', 1.3);
         yline(0, 'k--');
         h_dt = [];
+        h_norm = [];
         if has_pf_diag
-            [dt_x, dt_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
+            [dt_x, dt_y, norm_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
             if ~isempty(dt_y)
                 yyaxis right;
                 h_dt = plot(dt_x, dt_y, '-', 'Color', [0.20 0.55 0.85], 'LineWidth', 1.0);
-                ylabel('norm');
-                set(gca, 'YColor', [0.20 0.55 0.85]);
+                h_norm = plot(dt_x, norm_y, '-', 'Color', [0.12 0.70 0.30], 'LineWidth', 1.0);
+                proc_min = min([dt_y(:); norm_y(:)]);
+                proc_max = max([dt_y(:); norm_y(:)]);
+                if isfinite(proc_min) && isfinite(proc_max) && proc_min ~= proc_max
+                    proc_rng = proc_max - proc_min;
+                    ylim([proc_min - 0.10 * proc_rng, proc_max + 0.10 * proc_rng]);
+                end
+                ylabel('PF proc');
+                set(gca, 'YColor', [0.25 0.25 0.25]);
                 yyaxis left;
             end
         end
@@ -3425,8 +3433,8 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        if k == 1 && ~isempty(h_dt)
-            legend([h_raw, h_dt], {'raw PR', 'detrend+norm'}, ...
+        if k == 1 && ~isempty(h_dt) && ~isempty(h_norm)
+            legend([h_raw, h_dt, h_norm], {'raw PR', 'detrended', 'normalized'}, ...
                 'FontSize', 5, 'Location', 'northeast', 'Box', 'off');
         end
         info_lines = { ...
@@ -3495,13 +3503,21 @@ for k = 1:nCols
         h_raw_r = plot(scan_freqs, spec_data, 'r-', 'LineWidth', 1.3);
         yline(0, 'k--');
         h_dt_r = [];
+        h_norm_r = [];
         if has_pf_diag
-            [dt_x, dt_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
+            [dt_x, dt_y, norm_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
             if ~isempty(dt_y)
                 yyaxis right;
                 h_dt_r = plot(dt_x, dt_y, '-', 'Color', [0.20 0.55 0.85], 'LineWidth', 1.0);
-                ylabel('norm');
-                set(gca, 'YColor', [0.20 0.55 0.85]);
+                h_norm_r = plot(dt_x, norm_y, '-', 'Color', [0.12 0.70 0.30], 'LineWidth', 1.0);
+                proc_min = min([dt_y(:); norm_y(:)]);
+                proc_max = max([dt_y(:); norm_y(:)]);
+                if isfinite(proc_min) && isfinite(proc_max) && proc_min ~= proc_max
+                    proc_rng = proc_max - proc_min;
+                    ylim([proc_min - 0.10 * proc_rng, proc_max + 0.10 * proc_rng]);
+                end
+                ylabel('PF proc');
+                set(gca, 'YColor', [0.25 0.25 0.25]);
                 yyaxis left;
             end
         end
@@ -3511,8 +3527,8 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        if k == 1 && ~isempty(h_dt_r)
-            legend([h_raw_r, h_dt_r], {'raw PR', 'detrend+norm'}, ...
+        if k == 1 && ~isempty(h_dt_r) && ~isempty(h_norm_r)
+            legend([h_raw_r, h_dt_r, h_norm_r], {'raw PR', 'detrended', 'normalized'}, ...
                 'FontSize', 5, 'Location', 'northeast', 'Box', 'off');
         end
         info_lines = { ...
@@ -3596,9 +3612,10 @@ save_figure_png(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_summary_%s.
 close(figC);
 end
 
-function [dt_x, dt_y] = compute_pf_diag_trace(spec_data, scan_freqs, cfg)
+function [dt_x, dt_y, norm_y] = compute_pf_diag_trace(spec_data, scan_freqs, cfg)
 dt_x = [];
 dt_y = [];
+norm_y = [];
 if isempty(spec_data) || all(~isfinite(spec_data))
     return;
 end
@@ -3616,7 +3633,11 @@ if numel(y_band) < 7
     return;
 end
 y_band = movmean(y_band, max(1, round(cfg.smooth_n)));
-dt_y = normalize_positive_shape(y_band);
+dt_y = y_band;
+norm_y = normalize_positive_shape(y_band);
+if isempty(norm_y)
+    norm_y = zeros(size(dt_y));
+end
 if isempty(dt_y)
     dt_x = [];
 end
