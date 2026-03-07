@@ -60,6 +60,10 @@ min_eigval_hard = 1.0;              % hard minimum GED eigenvalue (lambda > 1)
 min_gamma_increase_hard = 0.05;     % hard minimum gamma increase (>= 5% vs baseline)
 include_occipital_label_override = true; % force-include occipital-labeled comps after eig+gamma core gates
 min_peak_form_single_hard = 0.65;   % hard minimum PF score with single-peak mode (applies to all components)
+occipital_pf_lenient_override = true;      % for occipital-labeled components with very strong PF, relax non-critical gates
+occipital_pf_lenient_min = 0.82;           % PF score threshold for permissive occipital override ("very good PF")
+occipital_pf_lenient_eig_mult = 0.85;      % relaxed eig gate: adaptive min_eigval * multiplier
+occipital_pf_lenient_gamma_mult = 0.60;    % relaxed gamma gate: min_gamma_log_hard * multiplier
 max_frontleak_hard = 1.25;          % artifact guard: frontal leakage (front/occ)
 max_templeak_hard = 1.35;           % artifact guard: temporal leakage (temp/occ)
 min_corr_hard = -0.10;              % artifact guard: strongly anti-template components
@@ -726,7 +730,24 @@ for subj = 1:nSubj
     hard_eligible = hard_eligible_raw & ~artifact_flags;
     hard_eligible(dominant_outlier_mask | flat_topomap_mask) = false;
     occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
-    force_include_occipital_mask = include_occipital_label_override & hard_eligible_raw & occipital_class_mask;
+    very_good_pf_mask = finite_metrics & (peak_form_score_vec >= occipital_pf_lenient_min);
+    pass_lenient_eig_gate = finite_metrics & ...
+        (eval_raw_vec >= max(eps, occipital_pf_lenient_eig_mult * adaptive_thr.min_eigval));
+    if min_gamma_log_hard >= 0
+        pass_lenient_gamma_gate = finite_metrics & ...
+            (gamma_vec >= occipital_pf_lenient_gamma_mult * min_gamma_log_hard);
+    else
+        % Keep lenient gamma gate mathematically permissive when baseline threshold is negative.
+        pass_lenient_gamma_gate = finite_metrics & ...
+            (gamma_vec >= min_gamma_log_hard / max(eps, occipital_pf_lenient_gamma_mult));
+    end
+    lenient_occipital_pf_mask = occipital_pf_lenient_override & occipital_class_mask & very_good_pf_mask & ...
+        pass_lenient_eig_gate & pass_lenient_gamma_gate & ...
+        ~unknown_proxy_vec & ~flat_topomap_mask & ~dominant_outlier_mask & ...
+        ~fail_lineharm & ~fail_hf_slope & ~severe_front_leak & ~severe_temp_leak & ~severe_emg_score;
+    force_include_occipital_mask = ...
+        (include_occipital_label_override & hard_eligible_raw & occipital_class_mask) | ...
+        lenient_occipital_pf_mask;
     selection_pool_mask = (hard_eligible | force_include_occipital_mask) & occipital_class_mask;
     searchScores = eval_raw_vec + peak_form_weight * peak_form_score_vec + peak_bonus_weight * peak_bonus_vec;
     searchScores(~finite_metrics) = -Inf;
@@ -763,6 +784,7 @@ for subj = 1:nSubj
             'n_pass_all_raw', sum(hard_eligible_raw), ...
             'n_occipital_class', sum(occipital_class_mask), ...
             'n_single_peak_mode', sum(single_peak_mode_mask), ...
+            'n_lenient_occipital_pf', sum(lenient_occipital_pf_mask), ...
             'n_force_include_occipital', sum(force_include_occipital_mask), ...
             'n_excluded_dominant_outlier', sum(dominant_outlier_mask), ...
             'top_fail_idx', top_fail_idx, ...
@@ -833,6 +855,10 @@ for subj = 1:nSubj
     candidate_table.pass_gamma_gate = pass_gamma_gate;
     candidate_table.pass_single_peak_pf_gate = pass_single_peak_gate;
     candidate_table.single_peak_mode = single_peak_mode_mask;
+    candidate_table.very_good_pf = very_good_pf_mask;
+    candidate_table.pass_lenient_eig_gate = pass_lenient_eig_gate;
+    candidate_table.pass_lenient_gamma_gate = pass_lenient_gamma_gate;
+    candidate_table.lenient_occipital_pf = lenient_occipital_pf_mask;
     candidate_table.force_include_occipital = force_include_occipital_mask;
     candidate_table.consistency_bonus = zeros(nSearch, 1);
     candidate_table.artifact_flag = artifact_flags;
