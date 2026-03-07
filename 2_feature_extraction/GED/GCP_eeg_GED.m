@@ -3378,10 +3378,10 @@ sel_idx = sel_idx(so);
 [~, ro] = sort(eigval_vec(rej_idx), 'descend');
 rej_idx = rej_idx(ro);
 
-% Top 10 selected/rejected components in one figure:
+% Top selected/rejected components in one figure (max 5 per row):
 % row 1 = selected topographies, row 2 = selected spectra,
 % row 3 = rejected topographies, row 4 = rejected spectra.
-nCols = 10;
+nCols = 5;
 nShowSel = min(nCols, numel(sel_idx));
 nShowRej = min(nCols, numel(rej_idx));
 figSel = figure('Position', [0 0 1512 982]);
@@ -3432,8 +3432,10 @@ for k = 1:nCols
             [dt_x, dt_y, norm_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
             if ~isempty(dt_y)
                 yyaxis right;
-                h_dt = plot(dt_x, dt_y, '-', 'Color', [0.20 0.55 0.85], 'LineWidth', 1.0);
-                h_norm = plot(dt_x, norm_y, '-', 'Color', [0.12 0.70 0.30], 'LineWidth', 1.0);
+                h_dt = plot(dt_x, dt_y, '-', 'Color', [0.85 0.20 0.20], 'LineWidth', 1.0);
+                h_norm = plot(dt_x, norm_y, '-', 'Color', [0.15 0.45 0.90], 'LineWidth', 1.0);
+                apply_line_alpha_safe(h_dt, 0.70);
+                apply_line_alpha_safe(h_norm, 0.70);
                 proc_min = min([dt_y(:); norm_y(:)]);
                 proc_max = max([dt_y(:); norm_y(:)]);
                 if isfinite(proc_min) && isfinite(proc_max) && proc_min ~= proc_max
@@ -3452,27 +3454,22 @@ for k = 1:nCols
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
         if k == 1 && ~isempty(h_dt) && ~isempty(h_norm)
-            legend([h_raw, h_dt, h_norm], {'raw PR', 'detrended', 'normalized'}, ...
-                'FontSize', 5, 'Location', 'northeast', 'Box', 'off');
+            lgd = legend([h_raw, h_dt, h_norm], {'raw PR', 'detrended', 'normalized'}, ...
+                'FontSize', 4.5, 'Location', 'northwest', 'Box', 'off', 'AutoUpdate', 'off');
+            lgd.ItemTokenSize = [8, 6];
         end
-        pf_mode_ci = safe_cellstr_at(peak_form_mode, ci, 'none');
-        pf_pen_ci = safe_cellstr_at(peak_form_dominant_penalty, ci, 'none');
         info_lines = { ...
             sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
             sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
             sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
-            sprintf('temp_leak: %.2f', temp_leak_vec(ci)), ...
-            sprintf('pf_mode: %s', pf_mode_ci), ...
-            sprintf('pf_ctr: %.1f', peak_form_best_center_hz(ci)), ...
-            sprintf('pf_pen: %s', pf_pen_ci)};
+            sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
         info_viol = [ ...
             rejection_flags.lineharm(ci), ...
             rejection_flags.hf_slope(ci), ...
             rejection_flags.front_leak(ci), ...
-            rejection_flags.temp_leak(ci), ...
-            false, false, false];
-        y0 = 1.58;
-        dy = 0.085;
+            rejection_flags.temp_leak(ci)];
+        y0 = 1.52;
+        dy = 0.11;
         for li = 1:numel(info_lines)
             if info_viol(li)
                 txt_col = [0.82 0.10 0.10];
@@ -3486,7 +3483,7 @@ for k = 1:nCols
         end
         xlabel('Hz'); ylabel('PR');
         title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
-            eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
+            eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 7);
         box on;
     else
         axis off;
@@ -3524,7 +3521,7 @@ for k = 1:nCols
     if k <= nShowRej
         ci = rej_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        h_raw_r = plot(scan_freqs, spec_data, 'r-', 'LineWidth', 1.3);
+        h_raw_r = plot(scan_freqs, spec_data, 'k-', 'LineWidth', 1.3);
         yline(0, 'k--');
         h_dt_r = [];
         h_norm_r = [];
@@ -3532,8 +3529,10 @@ for k = 1:nCols
             [dt_x, dt_y, norm_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
             if ~isempty(dt_y)
                 yyaxis right;
-                h_dt_r = plot(dt_x, dt_y, '-', 'Color', [0.20 0.55 0.85], 'LineWidth', 1.0);
-                h_norm_r = plot(dt_x, norm_y, '-', 'Color', [0.12 0.70 0.30], 'LineWidth', 1.0);
+                h_dt_r = plot(dt_x, dt_y, '-', 'Color', [0.85 0.20 0.20], 'LineWidth', 1.0);
+                h_norm_r = plot(dt_x, norm_y, '-', 'Color', [0.15 0.45 0.90], 'LineWidth', 1.0);
+                apply_line_alpha_safe(h_dt_r, 0.70);
+                apply_line_alpha_safe(h_norm_r, 0.70);
                 proc_min = min([dt_y(:); norm_y(:)]);
                 proc_max = max([dt_y(:); norm_y(:)]);
                 if isfinite(proc_min) && isfinite(proc_max) && proc_min ~= proc_max
@@ -3551,28 +3550,19 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        if k == 1 && ~isempty(h_dt_r) && ~isempty(h_norm_r)
-            legend([h_raw_r, h_dt_r, h_norm_r], {'raw PR', 'detrended', 'normalized'}, ...
-                'FontSize', 5, 'Location', 'northeast', 'Box', 'off');
-        end
-        pf_mode_ci = safe_cellstr_at(peak_form_mode, ci, 'none');
-        pf_pen_ci = safe_cellstr_at(peak_form_dominant_penalty, ci, 'none');
+        % Legend shown only once in selected row first panel.
         info_lines = { ...
             sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
             sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
             sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
-            sprintf('temp_leak: %.2f', temp_leak_vec(ci)), ...
-            sprintf('pf_mode: %s', pf_mode_ci), ...
-            sprintf('pf_ctr: %.1f', peak_form_best_center_hz(ci)), ...
-            sprintf('pf_pen: %s', pf_pen_ci)};
+            sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
         info_viol = [ ...
             rejection_flags.lineharm(ci), ...
             rejection_flags.hf_slope(ci), ...
             rejection_flags.front_leak(ci), ...
-            rejection_flags.temp_leak(ci), ...
-            false, false, false];
-        y0 = 1.58;
-        dy = 0.085;
+            rejection_flags.temp_leak(ci)];
+        y0 = 1.52;
+        dy = 0.11;
         for li = 1:numel(info_lines)
             if info_viol(li)
                 txt_col = [0.82 0.10 0.10];
@@ -3586,7 +3576,7 @@ for k = 1:nCols
         end
         xlabel('Hz'); ylabel('PR');
         title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
-            eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 8);
+            eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 7);
         box on;
     else
         axis off;
@@ -3607,7 +3597,7 @@ annotation(figSel, 'textbox', [0.010 0.09 0.040 0.34], ...
     'String', 'Rejected Components', 'EdgeColor', 'none', ...
     'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
     'FontWeight', 'bold', 'FontSize', 14, 'Rotation', 90, 'FitBoxToText', 'off');
-sgtitle(sprintf('Top 10 Selected and Rejected Components: %s (%s)', subject_id, win_name), ...
+sgtitle(sprintf('Top 5 Selected and Rejected Components: %s (%s)', subject_id, win_name), ...
     'FontSize', 14, 'FontWeight', 'bold');
 save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected_%s.png', subject_id, win_name)));
 close(figSel);
@@ -3658,6 +3648,28 @@ elseif isstring(ci) && isscalar(ci)
 end
 if isempty(v)
     v = fallback;
+end
+end
+
+function apply_line_alpha_safe(h, alpha_val)
+if nargin < 2 || isempty(alpha_val) || ~isfinite(alpha_val)
+    alpha_val = 1;
+end
+alpha_val = max(0, min(1, alpha_val));
+if isempty(h) || ~isgraphics(h, 'line')
+    return;
+end
+rgb = get(h, 'Color');
+if numel(rgb) < 3
+    return;
+end
+rgb = rgb(1:3);
+try
+    set(h, 'Color', [rgb alpha_val]); % works on newer MATLAB releases
+catch
+    % Fallback for releases without line alpha support: blend toward white.
+    rgb_faded = rgb * alpha_val + (1 - alpha_val) * [1 1 1];
+    set(h, 'Color', rgb_faded);
 end
 end
 
