@@ -57,7 +57,7 @@ viz_interp_k = 6;                   % nearest neighbors for channel interpolatio
 viz_nonocc_outlier_mult = 1.00;     % non-occipital outlier threshold multiplier (vs posterior pctl)
 viz_topo_prctile = 99.9;            % robust percentile for color scaling
 min_eigval_hard = 1.0;              % hard minimum GED eigenvalue (lambda > 1)
-min_gamma_increase_hard = 0.05;     % hard minimum gamma increase (>= 5% vs baseline)
+min_gamma_increase_hard = 0.10;     % hard minimum gamma increase (>= 10% vs baseline)
 include_occipital_label_override = true; % force-include occipital-labeled comps after eig+gamma core gates
 min_peak_form_single_hard = 0.45;   % hard minimum PF score with single-peak mode (allows good peaks with minor roughness)
 occipital_pf_lenient_override = true;      % for occipital-labeled components with very strong PF, relax non-critical gates
@@ -859,12 +859,37 @@ for subj = 1:nSubj
         lineharm_vec, hf_slope_vec, leak_vec, temp_leak_vec, eval_raw_vec);
 
     combined_idx = find(selection_pool_mask & isfinite(searchScores));
+    fallback_occipital_idx = NaN;
     if isempty(combined_idx)
-        msg = sprintf(['No occipital-labeled artifact-screened finite components available for subject %s. ', ...
-            'This window will be marked as NaN for downstream metrics.'], subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCCIPITAL_COMPONENTS', msg, ...
-            struct('n_hard_eligible', sum(hard_eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
-            'n_finite_scores', sum(isfinite(searchScores)), 'fallback_idx', bestIdx));
+        fallback_gamma_log_thr = log(1 + 0.10);
+        fallback_occipital_mask = occipital_class_mask & finite_metrics & ~selection_pool_mask & ...
+            (eval_raw_vec >= 1) & (gamma_vec >= fallback_gamma_log_thr);
+        fallback_candidates = find(fallback_occipital_mask);
+        if ~isempty(fallback_candidates)
+            [~, fallback_ord] = sort(eval_raw_vec(fallback_candidates), 'descend');
+            fallback_occipital_idx = fallback_candidates(fallback_ord(1));
+            combined_idx = fallback_occipital_idx;
+            searchScores(fallback_occipital_idx) = eval_raw_vec(fallback_occipital_idx) + ...
+                peak_form_weight * peak_form_score_vec(fallback_occipital_idx) + ...
+                peak_bonus_weight * peak_bonus_vec(fallback_occipital_idx);
+            msg = sprintf(['No regular occipital components available for subject %s. ', ...
+                'Using fallback occipital component C%d (eig=%.3f, gamma=%.1f%%).'], ...
+                subjects{subj}, fallback_occipital_idx, eval_raw_vec(fallback_occipital_idx), ...
+                100 * (exp(gamma_vec(fallback_occipital_idx)) - 1));
+            warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'FALLBACK_OCCIPITAL_COMPONENT_USED', msg, ...
+                struct('fallback_idx', fallback_occipital_idx, ...
+                'fallback_eig', eval_raw_vec(fallback_occipital_idx), ...
+                'fallback_gamma_pct', 100 * (exp(gamma_vec(fallback_occipital_idx)) - 1), ...
+                'fallback_min_eig', 1, 'fallback_min_gamma_pct', 10));
+        else
+            msg = sprintf(['No occipital-labeled artifact-screened finite components available for subject %s, ', ...
+                'and no fallback occipital component passed eig>=1 and gamma>=10%%. ', ...
+                'This window will be marked as NaN for downstream metrics.'], subjects{subj});
+            warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCCIPITAL_COMPONENTS', msg, ...
+                struct('n_hard_eligible', sum(hard_eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
+                'n_finite_scores', sum(isfinite(searchScores)), 'fallback_idx', bestIdx, ...
+                'n_fallback_candidates', numel(fallback_candidates)));
+        end
     end
     if isempty(combined_idx)
         combined_weights = [];
@@ -882,6 +907,10 @@ for subj = 1:nSubj
             combined_weights = ones(1, numel(combined_idx));
         end
         combined_weights = combined_weights / sum(combined_weights);
+        if isfinite(fallback_occipital_idx)
+            combined_idx = fallback_occipital_idx;
+            combined_weights = 1;
+        end
     end
 
     selected_idx = combined_idx;
