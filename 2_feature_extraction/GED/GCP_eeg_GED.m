@@ -1647,6 +1647,7 @@ for subj = 1:nSubj
             pr_dt_full = detrend_power_ratio(pr_full, scan_freqs_detrend, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
             pr_dt = pr_dt_full(analysis_freq_mask_detrend);
             pr_dt_smooth = movmean(pr_dt, 5);
+            pr_dt_smooth = apply_soft_edge_attenuation(pr_dt_smooth, scan_freqs, [30 90], [40 80], 0.01, 4.0, 3.0);
 
             % Stripe-center metric: spectral centroid of positive detrended mass in 40-80 Hz.
             pr_dt_band = pr_dt_smooth(centroid_band_mask);
@@ -2056,6 +2057,7 @@ for mi = 1:nBenchmarkMethods
             peak_prom = nan(nTrl, 1);
             for trl = 1:nTrl
                 y = movmean(pr_dt(trl, :), 5);
+                y = apply_soft_edge_attenuation(y, scan_freqs, [30 90], [40 80], 0.01, 4.0, 3.0);
                 if all(isnan(y))
                     continue;
                 end
@@ -3369,6 +3371,7 @@ for trl = 1:nTrl
     pr_dt_full = detrend_power_ratio(pr_full, scan_freqs_full, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
     pr_dt = pr_dt_full(analysis_mask);
     pr_dt_smooth = movmean(pr_dt, 5);
+    pr_dt_smooth = apply_soft_edge_attenuation(pr_dt_smooth, scan_freqs_analysis, [30 90], [40 80], 0.01, 4.0, 3.0);
     mprom = max(0, max(pr_dt_smooth) * peak_min_prom_frac);
     [pks, locs] = findpeaks(pr_dt_smooth, scan_freqs_analysis, ...
         'MinPeakProminence', mprom, ...
@@ -3400,6 +3403,7 @@ for trl = 1:nTrl
     pr_dt_full = detrend_power_ratio(pr_full, scan_freqs_full, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
     pr_dt = pr_dt_full(analysis_mask);
     pr_dt_smooth = movmean(pr_dt, 5);
+    pr_dt_smooth = apply_soft_edge_attenuation(pr_dt_smooth, scan_freqs_analysis, [30 90], [40 80], 0.01, 4.0, 3.0);
 
     mprom = max(0, max(pr_dt_smooth) * peak_min_prom_frac);
     [pks, locs, ~, prom] = findpeaks(pr_dt_smooth, scan_freqs_analysis, ...
@@ -3991,6 +3995,7 @@ if numel(y_band) < 7
     return;
 end
 y_band = movmean(y_band, max(1, round(cfg.smooth_n)));
+y_band = apply_soft_edge_attenuation(y_band, dt_x, [30 90], [40 80], 0.01, 4.0, 3.0);
 dt_y = y_band;
 norm_y = normalize_positive_shape(y_band);
 if isempty(norm_y)
@@ -4026,6 +4031,7 @@ for ci = 1:nComp
         continue;
     end
     y_band = movmean(y_band, 3);
+    y_band = apply_soft_edge_attenuation(y_band, x_band, [30 90], [40 80], 0.01, 4.0, 3.0);
     peak_scale = max(y_band) - median(y_band);
     if ~isfinite(peak_scale) || peak_scale <= eps
         continue;
@@ -4094,6 +4100,7 @@ for ci = 1:nComp
         continue;
     end
     y_band = movmean(y_band, smooth_n);
+    y_band = apply_soft_edge_attenuation(y_band, x_band, [30 90], [40 80], 0.01, 4.0, 3.0);
     y_norm = normalize_positive_shape(y_band);
     if isempty(y_norm)
         continue;
@@ -5355,7 +5362,7 @@ y_dt = detrend_poly_stable(y_fit, x, ord, edge_exclude_n, flat_edges);
 % - keep 40-80 Hz largely unchanged
 % - attenuate 30-40 and 80-90 progressively
 % - drive <30 and >90 close to zero (not exactly zero)
-y_dt = apply_soft_edge_attenuation(y_dt, x, [30 90], [40 80], 0.03, 2.0, 4.0);
+y_dt = apply_soft_edge_attenuation(y_dt, x, [30 90], [40 80], 0.01, 4.0, 3.0);
 end
 
 function y_out = apply_soft_edge_attenuation(y_in, x, outer_band, core_band, edge_floor, shoulder_pow, outside_decay_hz)
