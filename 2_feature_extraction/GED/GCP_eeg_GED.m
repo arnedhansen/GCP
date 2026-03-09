@@ -115,16 +115,14 @@ viz_suppress_nonocc_outliers = false;  % visualization-only suppression/interpol
 viz_interp_k = 6;                   % nearest neighbors for channel interpolation
 viz_nonocc_outlier_mult = 1.00;     % non-occipital outlier threshold multiplier (vs posterior pctl)
 viz_topo_prctile = 99.9;            % robust percentile for color scaling
-min_eigval_hard = 1.0;              % hard minimum GED eigenvalue (lambda > 1)
-min_gamma_increase_hard = 0.10;     % hard minimum gamma increase (>= 10% vs baseline)
-include_occipital_label_override = true; % force-include occipital-labeled comps after eig+gamma core gates
+min_eigval_hard = 1.1;              % hard minimum GED eigenvalue (lambda >= 1.1)
+include_occipital_label_override = true; % force-include occipital-labeled comps after eig+PF core gates
 min_peak_form_single_hard = 0.45;   % hard minimum PF score for dominant-peak quality gate
 max_minor_peaks_hard = 2;           % allow at most this many minor peaks for PF gate
 max_minor_peak_rel_hard = 0.60;     % largest minor peak must stay below this fraction of dominant peak
 occipital_pf_lenient_override = true;      % for occipital-labeled components with very strong PF, relax non-critical gates
-occipital_pf_lenient_min = 0.6;            % PF score threshold for permissive occipital override ("very good PF")
+occipital_pf_lenient_min = 0.7;            % PF score threshold for permissive occipital override ("very good PF")
 occipital_pf_lenient_eig_mult = 0.85;      % relaxed eig gate: adaptive min_eigval * multiplier
-occipital_pf_lenient_gamma_mult = 1.00;    % lenient path keeps strict gamma floor (no gamma relaxation)
 max_frontleak_hard = 1.25;          % artifact guard: frontal leakage (front/occ)
 max_templeak_hard = 1.35;           % artifact guard: temporal leakage (temp/occ)
 min_corr_hard = -0.10;              % artifact guard: strongly anti-template components
@@ -238,7 +236,6 @@ if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_comparison, 'dir'), mkdir(fig_save_dir_component_comparison); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
 comp_sel_save_dir = fig_save_dir_component_selection;
-min_gamma_log_hard = log(1 + min_gamma_increase_hard);
 
 %% Preallocate storage
 all_trial_powratio     = cell(4, nSubj);
@@ -491,7 +488,6 @@ for subj = 1:nSubj
     searchCorrs_full = []; searchCorrs_early = []; searchCorrs_late = [];
     searchTopos_full = []; searchTopos_early = []; searchTopos_late = [];
     searchMeanPrSpectrum_full = []; searchMeanPrSpectrum_early = []; searchMeanPrSpectrum_late = [];
-    gamma_vec_full = []; gamma_vec_early = []; gamma_vec_late = [];
     occipital_evidence_full = []; occipital_evidence_early = []; occipital_evidence_late = [];
     emg_artifact_score_full = []; emg_artifact_score_early = []; emg_artifact_score_late = [];
     searchEmgClass_full = {}; searchEmgClass_early = {}; searchEmgClass_late = {};
@@ -555,7 +551,6 @@ for subj = 1:nSubj
         searchOccStrength = nan(nSearch, 1);
         searchFrontStrength = nan(nSearch, 1);
         searchOccFrontRatio = nan(nSearch, 1);
-        searchGammaEvidence = nan(nSearch, 1);
         searchFrontLeak = nan(nSearch, 1);
         searchTempStrength = nan(nSearch, 1);
         searchTempLeak = nan(nSearch, 1);
@@ -590,9 +585,6 @@ for subj = 1:nSubj
         end
         temp_strength = mean(abs(topo_ci(temp_idx)));
         temp_leak_ci = temp_strength / max(occ_strength, eps);
-        % Pooled gamma evidence (all conditions combined).
-        gamma_ev_ci = log( max((w_ci' * covStim_reg * w_ci), eps) / ...
-                           max((w_ci' * covBase_reg * w_ci), eps) );
         % Lightweight artifact proxies from trial-level component spectra.
         proxy_ci = estimate_component_artifact_proxies( ...
             w_ci, dat_per_cond, stim_windows{w}, baseline_window, scan_freqs, scan_width, artifact_proxy_max_trials);
@@ -603,7 +595,6 @@ for subj = 1:nSubj
         searchOccStrength(ci) = occ_strength;
         searchFrontStrength(ci) = front_strength;
         searchOccFrontRatio(ci) = ratio_ci;
-        searchGammaEvidence(ci) = gamma_ev_ci;
         searchFrontLeak(ci) = front_leak_ci;
         searchTempStrength(ci) = temp_strength;
         searchTempLeak(ci) = temp_leak_ci;
@@ -617,10 +608,9 @@ for subj = 1:nSubj
     end
     W_top = searchFilters(:, 1);
 
-    % Candidate metrics (selection = eig + gamma core gates + explicit artifact rejection).
+    % Candidate metrics (selection = eig + PF core gates + explicit artifact rejection).
     corr_vec = searchCorrs;
     ratio_vec = searchOccFrontRatio;
-    gamma_vec = searchGammaEvidence;
     eval_raw_vec = evals_sorted(1:nSearch);
     eval_vec = log(max(eval_raw_vec, eps));
     leak_vec = searchFrontLeak;
@@ -634,7 +624,7 @@ for subj = 1:nSubj
     % Non-finite proxy values are explicitly marked as unknown/high-risk.
     unknown_proxy_vec = unknown_proxy_vec | ~isfinite(lineharm_vec) | ~isfinite(stationarity_vec) | ...
         ~isfinite(burst_vec) | ~isfinite(hf_slope_vec) | ~isfinite(condlock_vec);
-    finite_metrics = isfinite(corr_vec) & isfinite(ratio_vec) & isfinite(gamma_vec) & ...
+    finite_metrics = isfinite(corr_vec) & isfinite(ratio_vec) & ...
         isfinite(eval_raw_vec) & isfinite(leak_vec) & isfinite(temp_leak_vec) & ...
         isfinite(lineharm_vec) & isfinite(stationarity_vec) & isfinite(burst_vec) & ...
         isfinite(hf_slope_vec) & isfinite(condlock_vec);
@@ -675,12 +665,11 @@ for subj = 1:nSubj
         eval_raw_vec, corr_vec, leak_vec, temp_leak_vec, lineharm_vec, stationarity_vec, ...
         burst_vec, hf_slope_vec, condlock_vec, occipital_evidence, emg_artifact_score, default_thresholds);
     pass_eig_gate = finite_metrics & (eval_raw_vec >= adaptive_thr.min_eigval);
-    pass_gamma_gate = finite_metrics & (gamma_vec >= min_gamma_log_hard);
     single_peak_mode_mask = peak_form_diag.minor_peak_count <= max_minor_peaks_hard;
     pass_single_peak_gate = finite_metrics & (peak_form_score_vec >= min_peak_form_single_hard) & ...
         (peak_form_diag.minor_peak_count <= max_minor_peaks_hard) & ...
         (peak_form_diag.minor_peak_relmax <= max_minor_peak_rel_hard);
-    hard_eligible_raw = pass_eig_gate & pass_gamma_gate & pass_single_peak_gate;
+    hard_eligible_raw = pass_eig_gate & pass_single_peak_gate;
     fail_front_leak = finite_metrics & (leak_vec > adaptive_thr.max_frontleak);
     fail_temp_leak = finite_metrics & (temp_leak_vec > adaptive_thr.max_templeak);
     fail_corr = finite_metrics & (corr_vec < adaptive_thr.min_corr);
@@ -773,16 +762,8 @@ for subj = 1:nSubj
     very_good_pf_mask = finite_metrics & (peak_form_score_vec >= occipital_pf_lenient_min);
     pass_lenient_eig_gate = finite_metrics & ...
         (eval_raw_vec >= max(eps, occipital_pf_lenient_eig_mult * adaptive_thr.min_eigval));
-    if min_gamma_log_hard >= 0
-        pass_lenient_gamma_gate = finite_metrics & ...
-            (gamma_vec >= occipital_pf_lenient_gamma_mult * min_gamma_log_hard);
-    else
-        % Keep lenient gamma gate mathematically permissive when baseline threshold is negative.
-        pass_lenient_gamma_gate = finite_metrics & ...
-            (gamma_vec >= min_gamma_log_hard / max(eps, occipital_pf_lenient_gamma_mult));
-    end
     lenient_occipital_pf_mask = occipital_pf_lenient_override & occipital_class_mask & very_good_pf_mask & ...
-        pass_lenient_eig_gate & pass_lenient_gamma_gate & ...
+        pass_lenient_eig_gate & ...
         ~unknown_proxy_vec & ~dominant_outlier_mask & ...
         ~extreme_lineharm & ~extreme_hf_slope & ~extreme_front_leak & ~extreme_temp_leak & ~severe_emg_score;
     force_include_occipital_mask = ...
@@ -799,7 +780,6 @@ for subj = 1:nSubj
         top_fail_eig = NaN;
         top_fail_corr = NaN;
         top_fail_ratio = NaN;
-        top_fail_gamma = NaN;
         top_fail_pass_eig = false;
         top_fail_artifact = false;
         finite_idx = find(finite_metrics);
@@ -809,7 +789,6 @@ for subj = 1:nSubj
             top_fail_eig = evals_sorted(top_fail_idx);
             top_fail_corr = corr_vec(top_fail_idx);
             top_fail_ratio = ratio_vec(top_fail_idx);
-            top_fail_gamma = gamma_vec(top_fail_idx);
             top_fail_pass_eig = top_fail_eig >= adaptive_thr.min_eigval;
             top_fail_artifact = artifact_flags(top_fail_idx);
         end
@@ -817,7 +796,6 @@ for subj = 1:nSubj
             'n_search', nSearch, ...
             'n_finite_metrics', sum(finite_metrics), ...
             'n_pass_eig', sum(pass_eig_gate), ...
-            'n_pass_gamma', sum(pass_gamma_gate), ...
             'n_pass_single_peak_pf', sum(pass_single_peak_gate), ...
             'n_artifact_flagged', sum(artifact_flags), ...
             'n_unknown_high_risk', sum(unknown_proxy_vec), ...
@@ -831,13 +809,9 @@ for subj = 1:nSubj
             'top_fail_eig', top_fail_eig, ...
             'top_fail_corr', top_fail_corr, ...
             'top_fail_ratio', top_fail_ratio, ...
-            'top_fail_gamma', top_fail_gamma, ...
             'top_fail_pass_eig', top_fail_pass_eig, ...
-            'top_fail_pass_gamma', (~isnan(top_fail_idx) && pass_gamma_gate(top_fail_idx)), ...
             'top_fail_artifact', top_fail_artifact, ...
             'thr_eig', adaptive_thr.min_eigval, ...
-            'thr_gamma_log', min_gamma_log_hard, ...
-            'thr_gamma_pct', 100 * min_gamma_increase_hard, ...
             'thr_single_peak_pf', min_peak_form_single_hard, ...
             'thr_corr', adaptive_thr.min_corr, ...
             'thr_front_leak', adaptive_thr.max_frontleak, ...
@@ -864,7 +838,6 @@ for subj = 1:nSubj
     candidate_table.eigenvalue = evals_sorted(1:nSearch);
     candidate_table.log_eigenvalue = eval_vec;
     candidate_table.corr = corr_vec;
-    candidate_table.gamma = gamma_vec;
     candidate_table.ratio = ratio_vec;
     candidate_table.front_leak = leak_vec;
     candidate_table.temp_leak = temp_leak_vec;
@@ -905,12 +878,10 @@ for subj = 1:nSubj
     candidate_table.score_base = searchScores;
     candidate_table.score_final = searchScores;
     candidate_table.pass_eig_gate = pass_eig_gate;
-    candidate_table.pass_gamma_gate = pass_gamma_gate;
     candidate_table.pass_single_peak_pf_gate = pass_single_peak_gate;
     candidate_table.single_peak_mode = single_peak_mode_mask;
     candidate_table.very_good_pf = very_good_pf_mask;
     candidate_table.pass_lenient_eig_gate = pass_lenient_eig_gate;
-    candidate_table.pass_lenient_gamma_gate = pass_lenient_gamma_gate;
     candidate_table.lenient_occipital_pf = lenient_occipital_pf_mask;
     candidate_table.force_include_occipital = force_include_occipital_mask;
     candidate_table.consistency_bonus = zeros(nSearch, 1);
@@ -946,8 +917,6 @@ for subj = 1:nSubj
     candidate_table.crosswin_id = nan(nSearch, 1);
     candidate_table.crosswin_match_conf = nan(nSearch, 1);
     candidate_table.thr_min_eigval = repmat(adaptive_thr.min_eigval, nSearch, 1);
-    candidate_table.thr_min_gamma_log = repmat(min_gamma_log_hard, nSearch, 1);
-    candidate_table.thr_min_gamma_pct = repmat(100 * min_gamma_increase_hard, nSearch, 1);
     candidate_table.thr_min_single_peak_pf = repmat(min_peak_form_single_hard, nSearch, 1);
     candidate_table.thr_max_minor_peaks = repmat(max_minor_peaks_hard, nSearch, 1);
     candidate_table.thr_max_minor_peak_rel = repmat(max_minor_peak_rel_hard, nSearch, 1);
@@ -962,10 +931,9 @@ for subj = 1:nSubj
     fallback_occipital_idx = NaN;
     fallback_selected_mask = false(nSearch, 1);
     if isempty(combined_idx)
-        fallback_gamma_log_thr = log(1 + 0.10);
         fallback_occipital_mask = occipital_class_mask & ~selection_pool_mask & ...
             (peak_form_score_vec >= occipital_pf_lenient_min) & ...
-            (eval_raw_vec >= 1) & (gamma_vec >= fallback_gamma_log_thr);
+            (eval_raw_vec >= min_eigval_hard);
         fallback_candidates = find(fallback_occipital_mask);
         if ~isempty(fallback_candidates)
             [~, fallback_ord] = sort(eval_raw_vec(fallback_candidates), 'descend');
@@ -976,20 +944,19 @@ for subj = 1:nSubj
                 peak_form_weight * peak_form_score_vec(fallback_occipital_idx) + ...
                 peak_bonus_weight * peak_bonus_vec(fallback_occipital_idx);
             msg = sprintf(['No regular occipital components available for subject %s. ', ...
-                'Using fallback occipital component C%d (eig=%.3f, gamma=%.1f%%).'], ...
-                subjects{subj}, fallback_occipital_idx, eval_raw_vec(fallback_occipital_idx), ...
-                100 * (exp(gamma_vec(fallback_occipital_idx)) - 1));
+                'Using fallback occipital component C%d (eig=%.3f).'], ...
+                subjects{subj}, fallback_occipital_idx, eval_raw_vec(fallback_occipital_idx));
             warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'FALLBACK_OCCIPITAL_COMPONENT_USED', msg, ...
                 struct('fallback_idx', fallback_occipital_idx, ...
                 'fallback_eig', eval_raw_vec(fallback_occipital_idx), ...
-                'fallback_gamma_pct', 100 * (exp(gamma_vec(fallback_occipital_idx)) - 1), ...
                 'fallback_pf', peak_form_score_vec(fallback_occipital_idx), ...
                 'fallback_min_pf', occipital_pf_lenient_min, ...
-                'fallback_min_eig', 1, 'fallback_min_gamma_pct', 10));
+                'fallback_min_eig', min_eigval_hard));
         else
             msg = sprintf(['No occipital-labeled artifact-screened finite components available for subject %s, ', ...
-                'and no fallback occipital component passed PF>=%.2f, eig>=1, and gamma>=10%%. ', ...
-                'This window will be marked as NaN for downstream metrics.'], subjects{subj}, occipital_pf_lenient_min);
+                'and no fallback occipital component passed PF>=%.2f and eig>=%.1f. ', ...
+                'This window will be marked as NaN for downstream metrics.'], ...
+                subjects{subj}, occipital_pf_lenient_min, min_eigval_hard);
             warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCCIPITAL_COMPONENTS', msg, ...
                 struct('n_hard_eligible', sum(hard_eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
                 'n_finite_scores', sum(isfinite(searchScores)), 'fallback_idx', bestIdx, ...
@@ -1033,7 +1000,6 @@ for subj = 1:nSubj
         bestOcc = NaN;
         bestFront = NaN;
         bestRatio = NaN;
-        bestGamma = NaN;
         bestLeak = NaN;
         topo_temp = nan(nChans, 1);
     else
@@ -1043,7 +1009,6 @@ for subj = 1:nSubj
         bestOcc = searchOccStrength(bestIdx);
         bestFront = searchFrontStrength(bestIdx);
         bestRatio = searchOccFrontRatio(bestIdx);
-        bestGamma = searchGammaEvidence(bestIdx);
         bestLeak = searchFrontLeak(bestIdx);
 
             topComp = searchFilters(:, bestIdx);
@@ -1085,7 +1050,6 @@ for subj = 1:nSubj
             searchCorrs_full = searchCorrs;
             searchTopos_full = searchTopos;
             searchMeanPrSpectrum_full = searchMeanPrSpectrum;
-            gamma_vec_full = gamma_vec;
             occipital_evidence_full = occipital_evidence;
             emg_artifact_score_full = emg_artifact_score;
             searchEmgClass_full = searchEmgClass;
@@ -1107,7 +1071,6 @@ for subj = 1:nSubj
             searchCorrs_early = searchCorrs;
             searchTopos_early = searchTopos;
             searchMeanPrSpectrum_early = searchMeanPrSpectrum;
-            gamma_vec_early = gamma_vec;
             occipital_evidence_early = occipital_evidence;
             emg_artifact_score_early = emg_artifact_score;
             searchEmgClass_early = searchEmgClass;
@@ -1129,7 +1092,6 @@ for subj = 1:nSubj
             searchCorrs_late = searchCorrs;
             searchTopos_late = searchTopos;
             searchMeanPrSpectrum_late = searchMeanPrSpectrum;
-            gamma_vec_late = gamma_vec;
             occipital_evidence_late = occipital_evidence;
             emg_artifact_score_late = emg_artifact_score;
             searchEmgClass_late = searchEmgClass;
@@ -1178,7 +1140,6 @@ for subj = 1:nSubj
             'best_score', bestScore, ...
             'best_corr', bestCorr, ...
             'best_ratio', bestRatio, ...
-            'best_gamma', bestGamma, ...
             'best_front', bestFront, ...
             'best_occ', bestOcc, ...
             'best_leak', bestLeak, ...
@@ -1352,7 +1313,7 @@ for subj = 1:nSubj
     cfg_topo.figure    = 'gcf';
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
-        searchMeanPrSpectrum_full, evals_sorted_full(1:numel(crosswin_id_full)), gamma_vec_full, ...
+        searchMeanPrSpectrum_full, evals_sorted_full(1:numel(crosswin_id_full)), ...
         occipital_evidence_full, emg_artifact_score_full, searchEmgClass_full, unknown_proxy_full, ...
         candidate_table_full.hard_eligible, candidate_table_full.force_include_occipital, ...
         hard_reject_full, soft_warn_full, rejection_flags_full, ...
@@ -1364,7 +1325,7 @@ for subj = 1:nSubj
         selected_idx_full, get_candidate_table_fallback_idx(candidate_table_full));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
-        searchMeanPrSpectrum_early, evals_sorted_early(1:numel(crosswin_id_early)), gamma_vec_early, ...
+        searchMeanPrSpectrum_early, evals_sorted_early(1:numel(crosswin_id_early)), ...
         occipital_evidence_early, emg_artifact_score_early, searchEmgClass_early, unknown_proxy_early, ...
         candidate_table_early.hard_eligible, candidate_table_early.force_include_occipital, ...
         hard_reject_early, soft_warn_early, rejection_flags_early, ...
@@ -1376,7 +1337,7 @@ for subj = 1:nSubj
         selected_idx_early, get_candidate_table_fallback_idx(candidate_table_early));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
-        searchMeanPrSpectrum_late, evals_sorted_late(1:numel(crosswin_id_late)), gamma_vec_late, ...
+        searchMeanPrSpectrum_late, evals_sorted_late(1:numel(crosswin_id_late)), ...
         occipital_evidence_late, emg_artifact_score_late, searchEmgClass_late, unknown_proxy_late, ...
         candidate_table_late.hard_eligible, candidate_table_late.force_include_occipital, ...
         hard_reject_late, soft_warn_late, rejection_flags_late, ...
@@ -1978,10 +1939,19 @@ for subj = 1:nSubj
     cfg_topo.highlightcolor     = {[0 0 0]};
 
     subplot(3, 4, 9);
-    if ~isempty(all_topos{subj})
+    if ~isempty(searchTopos_full) && ~isempty(selected_idx_full)
         topo_data = [];
-        topo_data.label  = all_topo_labels{subj};
-        topo_plot_common = all_topos{subj};
+        topo_data.label  = dataEEG_c25.label;
+        w_plot_common = w_combined_full(:);
+        if numel(w_plot_common) ~= numel(selected_idx_full) || ~any(isfinite(w_plot_common))
+            w_plot_common = ones(numel(selected_idx_full), 1);
+        end
+        w_plot_common(~isfinite(w_plot_common) | w_plot_common <= 0) = 0;
+        if sum(w_plot_common) <= 0
+            w_plot_common = ones(numel(selected_idx_full), 1);
+        end
+        w_plot_common = w_plot_common / sum(w_plot_common);
+        topo_plot_common = searchTopos_full(:, selected_idx_full) * w_plot_common;
         if viz_suppress_nonocc_outliers && ~isempty(nonocc_idx)
             post_abs = abs(topo_plot_common(post_idx));
             post_abs = post_abs(isfinite(post_abs));
@@ -2044,7 +2014,7 @@ for subj = 1:nSubj
         catch
             imagesc(topo_data.avg); caxis([-topo_clim_common topo_clim_common]); colorbar;
         end
-        n_sel_show = numel(all_selected_comp_indices_multi{subj});
+        n_sel_show = numel(selected_idx_full);
         title(sprintf('Weighted GED (%d comps, \\lambda=%.2f)', n_sel_show, all_eigenvalues(subj)), 'FontSize', 11);
     end
 
@@ -3693,30 +3663,8 @@ out.n_fail = sum(strcmpi(labels, 'fail'));
 out.pf_median = median(scores(isfinite(scores)));
 end
 
-function cmap = emg_white_yellow_orange_red_colormap(n, white_until_frac)
-if nargin < 1 || isempty(n)
-    n = 256;
-end
-if nargin < 2 || isempty(white_until_frac)
-    white_until_frac = 0.05;
-end
-white_until_frac = max(0, min(white_until_frac, 0.95));
-anchors = [ ...
-    1.00 1.00 1.00; ...
-    1.00 1.00 1.00; ...
-    1.00 1.00 0.65; ...
-    1.00 0.65 0.20; ...
-    0.78 0.00 0.00];
-pos_yellow = white_until_frac + (1 - white_until_frac) * 0.25;
-pos_orange = white_until_frac + (1 - white_until_frac) * 0.65;
-anchor_pos = [0.00, white_until_frac, pos_yellow, pos_orange, 1.00];
-xi = linspace(0, 1, n);
-cmap = interp1(anchor_pos, anchors, xi, 'linear');
-cmap = max(min(cmap, 1), 0);
-end
-
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
-    searchMeanPrSpectrum, eigval_vec, gamma_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
+    searchMeanPrSpectrum, eigval_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
     hard_eligible, force_include_occipital, hard_reject_flags, soft_warn_flags, rejection_flags, ...
     front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec, ...
     adaptive_thr, cfg_topo, topo_labels, ...
@@ -3728,8 +3676,7 @@ if nComp < 1
 end
 figA = figure('Position', [0 0 1512 982]);
 scatter_size = 60 + 80 * max(eigval_vec - min(eigval_vec), 0) / max(max(eigval_vec) - min(eigval_vec), eps);
-g_pct = 100 * (exp(gamma_vec) - 1);
-scatter(occ_evidence, emg_score, scatter_size, g_pct, 'filled', ...
+scatter(occ_evidence, emg_score, scatter_size, [0.30 0.30 0.30], 'filled', ...
     'MarkerEdgeColor', 'k', 'LineWidth', 0.8); hold on;
 xline(adaptive_thr.occ_class_thr, 'k--', 'LineWidth', 1.0);
 yline(adaptive_thr.emg_class_thr, 'k--', 'LineWidth', 1.0);
@@ -3739,21 +3686,6 @@ idx_unknown = find(unknown_high_risk);
 if ~isempty(idx_unknown)
     scatter(occ_evidence(idx_unknown), emg_score(idx_unknown), 130, 'rx', 'LineWidth', 2.0);
 end
-g_finite = g_pct(isfinite(g_pct));
-if isempty(g_finite)
-    g_upper = 10;
-else
-    g_upper = prctile(g_finite, 95);
-    if ~isfinite(g_upper) || g_upper < 10
-        g_upper = max(10, max(g_finite));
-    end
-end
-if ~isfinite(g_upper) || g_upper <= 0
-    g_upper = 10;
-end
-white_until_frac = min(5 / g_upper, 0.95);
-colormap(gca, emg_white_yellow_orange_red_colormap(256, white_until_frac));
-caxis([0 g_upper]);
 x_vals = occ_evidence(isfinite(occ_evidence));
 y_vals = emg_score(isfinite(emg_score));
 if isempty(x_vals)
@@ -3786,10 +3718,6 @@ for ci = 1:nComp
             lbl, 'FontSize', 9, 'Color', [0.15 0.15 0.15], 'Interpreter', 'none');
     end
 end
-cb = colorbar;
-cb.Label.String = 'Gamma change [%]';
-cb.FontSize = 13;
-cb.Label.FontSize = 14;
 set(gca, 'FontSize', 13, 'LineWidth', 1.0);
 xlabel('OccipitalScore', 'FontSize', 14);
 ylabel('EMGArtifactScore', 'FontSize', 14);
@@ -3799,7 +3727,7 @@ save_figure_png(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_scatter_%s.
 close(figA);
 
 selected_mask = false(nComp, 1);
-if nargin >= 28 && ~isempty(selected_idx)
+if nargin >= 29 && ~isempty(selected_idx)
     selected_idx = unique(selected_idx(:));
     selected_idx = selected_idx(isfinite(selected_idx));
     selected_idx = selected_idx(selected_idx >= 1 & selected_idx <= nComp);
@@ -3859,7 +3787,7 @@ for k = 1:nCols
     if k <= nShowSel
         ci = sel_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        h_raw = plot(scan_freqs, spec_data, '-', 'Color', [0.85 0.10 0.10], 'LineWidth', 1.4);
+        h_raw = plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
         spec_min = min(spec_data(isfinite(spec_data)));
         spec_max = max(spec_data(isfinite(spec_data)));
@@ -3892,8 +3820,8 @@ for k = 1:nCols
         end
         format_power_change_percent_axis(gca);
         xlabel('Hz'); ylabel('Power Change [%]');
-        title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
-            eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 7);
+        title(sprintf('\\lambda=%.2f, PF=%.2f', ...
+            eigval_vec(ci), peak_form_score(ci)), 'FontSize', 7);
         box on;
     else
         axis off;
@@ -3931,7 +3859,7 @@ for k = 1:nCols
     if k <= nShowRej
         ci = rej_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        h_raw_r = plot(scan_freqs, spec_data, '-', 'Color', [0.85 0.10 0.10], 'LineWidth', 1.4);
+        h_raw_r = plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
         spec_min = min(spec_data(isfinite(spec_data)));
         spec_max = max(spec_data(isfinite(spec_data)));
@@ -3965,8 +3893,8 @@ for k = 1:nCols
         end
         format_power_change_percent_axis(gca);
         xlabel('Hz'); ylabel('Power Change [%]');
-        title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
-            eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 7);
+        title(sprintf('\\lambda=%.2f, PF=%.2f', ...
+            eigval_vec(ci), peak_form_score(ci)), 'FontSize', 7);
         box on;
     else
         axis off;
@@ -5351,10 +5279,10 @@ for wi = 1:numel(warning_log)
             m.n_unknown_high_risk, m.n_pass_all_raw, m.n_excluded_dominant_outlier);
         if isfield(m, 'top_fail_idx') && isfinite(m.top_fail_idx)
             fprintf(['     top failing component: C%d | eig=%.3f (thr=%.3f, pass=%d), ', ...
-                     'corr=%.3f (thr=%.3f), ratio=%.3f, gamma=%.3f, artifact=%d\n'], ...
+                     'corr=%.3f (thr=%.3f), ratio=%.3f, artifact=%d\n'], ...
                 m.top_fail_idx, m.top_fail_eig, m.thr_eig, m.top_fail_pass_eig, ...
                 m.top_fail_corr, m.thr_corr, ...
-                m.top_fail_ratio, m.top_fail_gamma, m.top_fail_artifact);
+                m.top_fail_ratio, m.top_fail_artifact);
         end
     elseif strcmp(w.code, 'NO_OCCIPITAL_COMPONENTS') || strcmp(w.code, 'TOO_FEW_HARD_COMPONENTS')
         m = w.metrics;
