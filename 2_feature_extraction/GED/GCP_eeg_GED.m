@@ -124,7 +124,7 @@ max_minor_peak_rel_hard = 0.60;     % largest minor peak must stay below this fr
 occipital_pf_lenient_override = true;      % for occipital-labeled components with very strong PF, relax non-critical gates
 occipital_pf_lenient_min = 0.6;            % PF score threshold for permissive occipital override ("very good PF")
 occipital_pf_lenient_eig_mult = 0.85;      % relaxed eig gate: adaptive min_eigval * multiplier
-occipital_pf_lenient_gamma_mult = 0.60;    % relaxed gamma gate: min_gamma_log_hard * multiplier
+occipital_pf_lenient_gamma_mult = 1.00;    % lenient path keeps strict gamma floor (no gamma relaxation)
 max_frontleak_hard = 1.25;          % artifact guard: frontal leakage (front/occ)
 max_templeak_hard = 1.35;           % artifact guard: temporal leakage (temp/occ)
 min_corr_hard = -0.10;              % artifact guard: strongly anti-template components
@@ -887,6 +887,7 @@ for subj = 1:nSubj
     candidate_table.peak_form_trough_depth = peak_form_diag.best_trough_depth;
     candidate_table.peak_form_minor_peak_count = peak_form_diag.minor_peak_count;
     candidate_table.peak_form_minor_peak_relmax = peak_form_diag.minor_peak_relmax;
+    candidate_table.peak_form_minor_peak_prom_relmax = peak_form_diag.minor_peak_prom_relmax;
     candidate_table.peak_form_edge_ratio = peak_form_diag.edge_ratio;
     candidate_table.peak_form_edge_run = peak_form_diag.edge_run_score;
     candidate_table.peak_form_edge_artifact_flag = peak_form_diag.edge_artifact_flag;
@@ -3894,7 +3895,8 @@ for k = 1:nCols
                 'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
                 'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
         end
-        xlabel('Hz'); ylabel('PR');
+        format_power_change_percent_axis(gca);
+        xlabel('Hz'); ylabel('Power Change [%]');
         title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
             eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 7);
         box on;
@@ -3966,7 +3968,8 @@ for k = 1:nCols
                 'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
                 'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
         end
-        xlabel('Hz'); ylabel('PR');
+        format_power_change_percent_axis(gca);
+        xlabel('Hz'); ylabel('Power Change [%]');
         title(sprintf('\\lambda=%.2f, g=%.0f%%, PF=%.2f', ...
             eigval_vec(ci), 100 * (exp(gamma_vec(ci)) - 1), peak_form_score(ci)), 'FontSize', 7);
         box on;
@@ -4041,6 +4044,19 @@ end
 if isempty(v)
     v = fallback;
 end
+end
+
+function format_power_change_percent_axis(axh)
+if nargin < 1 || isempty(axh) || ~isgraphics(axh, 'axes')
+    axh = gca;
+end
+yt = get(axh, 'YTick');
+if isempty(yt)
+    return;
+end
+yt_pct = 100 * yt;
+yt_lbl = arrayfun(@(v) sprintf('%g', v), yt_pct, 'UniformOutput', false);
+set(axh, 'YTickLabel', yt_lbl);
 end
 
 function [edge_ratio, edge_run_score, edge_artifact_flag] = compute_edge_artifact_indicators(y_resid, x_band, analysis_freq_range)
@@ -4147,6 +4163,7 @@ diag = struct( ...
     'best_trough_depth', nan(nComp, 1), ...
     'minor_peak_count', nan(nComp, 1), ...
     'minor_peak_relmax', nan(nComp, 1), ...
+    'minor_peak_prom_relmax', nan(nComp, 1), ...
     'edge_ratio', nan(nComp, 1), ...
     'edge_run_score', nan(nComp, 1), ...
     'edge_artifact_flag', false(nComp, 1), ...
@@ -4232,11 +4249,14 @@ for ci = 1:nComp
     minor_idx = setdiff(1:numel(pks), dom_idx);
     minor_count = numel(minor_idx);
     minor_relmax = 0;
+    minor_prom_relmax = 0;
     if ~isempty(minor_idx)
         minor_relmax = max(pks(minor_idx)) / max(dom_amp, eps);
+        minor_prom_relmax = max(prom(minor_idx)) / max(dom_prom, eps);
     end
     diag.minor_peak_count(ci) = minor_count;
     diag.minor_peak_relmax(ci) = minor_relmax;
+    diag.minor_peak_prom_relmax(ci) = minor_prom_relmax;
 
     width_low = peak_width_min_hz;
     width_high = peak_width_max_hz;
@@ -4281,9 +4301,20 @@ for ci = 1:nComp
 
     minor_pen = 1;
     if minor_count > 0
-        minor_pen = minor_pen * max(0.35, 1 - 0.16 * max(minor_count - 1, 0));
-        if minor_relmax > 0.55
-            minor_pen = minor_pen * max(0.25, 1 - 1.10 * (minor_relmax - 0.55));
+        % Mild crowding penalty only when many minors exist; avoid punishing
+        % small shoulders around a physiologic dominant gamma peak.
+        if minor_count >= 3
+            minor_pen = minor_pen * max(0.85, 1 - 0.05 * (minor_count - 2));
+        end
+
+        % Strong penalty only when a secondary peak is truly prominent
+        % relative to the dominant peak (C11/C14-like multi-peak pattern).
+        strong_minor_rel_start = 0.62;
+        strong_minor_rel_full = 0.90;
+        if isfinite(minor_prom_relmax) && minor_prom_relmax > strong_minor_rel_start
+            rel_span = max(strong_minor_rel_full - strong_minor_rel_start, eps);
+            rel_frac = min(1, (minor_prom_relmax - strong_minor_rel_start) / rel_span);
+            minor_pen = minor_pen * max(0.40, 1 - 0.60 * rel_frac);
         end
     end
 
