@@ -4121,7 +4121,9 @@ for ci = 1:nComp
     best_trough = NaN;
     best_centers = single_meta.centers_hz;
 
-    if double_best > best_pre_penalty
+    % Avoid mode flips on negligible single-vs-double similarity differences.
+    mode_switch_margin = 0.02;
+    if double_best > (best_pre_penalty + mode_switch_margin)
         mode_raw = 'double';
         best_pre_penalty = double_best;
         best_shift = double_meta.shift_hz;
@@ -4139,14 +4141,19 @@ for ci = 1:nComp
         edge_pen = 0.85;
     end
 
-    % Check peak dominance: penalize if no clear dominant peak.
-    % MinPeakProminence must be nonnegative even when detrended values are <=0.
+    % Check peak dominance on a nonnegative baseline-shifted trace.
+    % This prevents invalid negative-ratio behavior when detrended spectra are mostly below zero.
     dominance_pen = 1;
-    max_y_band = max(y_band);
-    if ~isfinite(max_y_band)
-        max_y_band = 0;
+    y_dom = y_band;
+    y_dom = y_dom - median(y_dom(isfinite(y_dom)));
+    y_dom(~isfinite(y_dom)) = 0;
+    y_dom = max(y_dom, 0);
+    max_y_dom = max(y_dom);
+    if ~isfinite(max_y_dom) || max_y_dom <= eps
+        pks = [];
+    else
+        [pks, ~] = findpeaks(y_dom, 'MinPeakProminence', 0.20 * max_y_dom);
     end
-    [pks, ~] = findpeaks(y_band, 'MinPeakProminence', max(0, 0.20 * max_y_band));
     if numel(pks) > 1
         pks_sorted = sort(pks, 'descend');
         dominance_ratio = pks_sorted(1) / max(pks_sorted(2), eps);
@@ -4158,8 +4165,6 @@ for ci = 1:nComp
             multi_peak_pen = max(0.65, 1 - 0.08 * (n_secondary - 1));
             dominance_pen = dominance_pen * multi_peak_pen;
         end
-    elseif isempty(pks)
-        dominance_pen = dominance_pen * 0.40;
     end
 
     % Penalize EMG-like monotonic high-frequency rise in the upper gamma band.
