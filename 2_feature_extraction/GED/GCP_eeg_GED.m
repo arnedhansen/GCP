@@ -200,9 +200,9 @@ simulation_artifact_levels = [0.0 0.25 0.5];
 
 % Detrending parameters for power-ratio spectrum
 poly_order = 2;                    % use linear-domain quadratic detrending (legacy-compatible)
-detrend_edge_exclude_n = 0;        % fit on full 10-110 Hz support before trimming to 30-90 Hz
+detrend_edge_exclude_n = 5;        % exclude edge bins from polynomial fit to reduce boundary artifacts
 detrend_in_log = false;            % linear-domain detrending
-detrend_flat_edges = false;        % no edge-flattening ramp
+detrend_flat_edges = true;         % force residual to zero at edges to reduce PF edge bias
 peak_min_prom_frac = 0.15;         % MinPeakProminence as fraction of current-spectrum max
 peak_min_distance_hz = 5;          % MinPeakDistance in Hz
 centroid_freq_range = [40 80];
@@ -253,6 +253,18 @@ all_trial_mean_single_early   = nan(4, nSubj);
 all_trial_median_single_early = nan(4, nSubj);
 all_trial_mean_single_late    = nan(4, nSubj);
 all_trial_median_single_late  = nan(4, nSubj);
+all_trial_median_low_early    = nan(4, nSubj);
+all_trial_median_low_late     = nan(4, nSubj);
+all_trial_median_high_early   = nan(4, nSubj);
+all_trial_median_high_late    = nan(4, nSubj);
+all_trial_median_gap_early    = nan(4, nSubj);
+all_trial_median_gap_late     = nan(4, nSubj);
+all_trial_median_centroid_early = nan(4, nSubj);
+all_trial_median_centroid_late  = nan(4, nSubj);
+all_trial_prominence_early    = nan(4, nSubj);
+all_trial_prominence_late     = nan(4, nSubj);
+all_trial_trialcv_early       = nan(4, nSubj);
+all_trial_trialcv_late        = nan(4, nSubj);
 all_trial_mean_centroid   = nan(4, nSubj);
 all_trial_median_centroid = nan(4, nSubj);
 
@@ -928,6 +940,7 @@ for subj = 1:nSubj
     if isempty(combined_idx)
         fallback_gamma_log_thr = log(1 + 0.10);
         fallback_occipital_mask = occipital_class_mask & ~selection_pool_mask & ...
+            (peak_form_score_vec >= occipital_pf_lenient_min) & ...
             (eval_raw_vec >= 1) & (gamma_vec >= fallback_gamma_log_thr);
         fallback_candidates = find(fallback_occipital_mask);
         if ~isempty(fallback_candidates)
@@ -946,15 +959,18 @@ for subj = 1:nSubj
                 struct('fallback_idx', fallback_occipital_idx, ...
                 'fallback_eig', eval_raw_vec(fallback_occipital_idx), ...
                 'fallback_gamma_pct', 100 * (exp(gamma_vec(fallback_occipital_idx)) - 1), ...
+                'fallback_pf', peak_form_score_vec(fallback_occipital_idx), ...
+                'fallback_min_pf', occipital_pf_lenient_min, ...
                 'fallback_min_eig', 1, 'fallback_min_gamma_pct', 10));
         else
             msg = sprintf(['No occipital-labeled artifact-screened finite components available for subject %s, ', ...
-                'and no fallback occipital component passed eig>=1 and gamma>=10%%. ', ...
-                'This window will be marked as NaN for downstream metrics.'], subjects{subj});
+                'and no fallback occipital component passed PF>=%.2f, eig>=1, and gamma>=10%%. ', ...
+                'This window will be marked as NaN for downstream metrics.'], subjects{subj}, occipital_pf_lenient_min);
             warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCCIPITAL_COMPONENTS', msg, ...
                 struct('n_hard_eligible', sum(hard_eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
                 'n_finite_scores', sum(isfinite(searchScores)), 'fallback_idx', bestIdx, ...
-                'n_fallback_candidates', numel(fallback_candidates)));
+                'n_fallback_candidates', numel(fallback_candidates), ...
+                'fallback_min_pf', occipital_pf_lenient_min));
         end
     end
     if isempty(combined_idx)
@@ -1722,6 +1738,68 @@ for subj = 1:nSubj
         all_trial_mean_single_late(cond, subj) = mean(trl_peaks_single_late(valid_s_late));
         all_trial_median_single_late(cond, subj) = median(trl_peaks_single_late(valid_s_late));
         all_trial_detrate_single_late(cond, subj) = sum(valid_s_late) / nTrl;
+
+        % Time-split dual-peak, centroid, prominence, and reliability summaries.
+        [~, trl_peaks_low_early, trl_peaks_high_early, trl_centroid_early, trl_peak_prom_early] = ...
+            compute_trial_peak_metrics_from_powratio_fullscan( ...
+            powratio_trials_early_fullscan, scan_freqs_detrend, analysis_freq_mask_detrend, ...
+            centroid_band_mask, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges, ...
+            peak_min_prom_frac, peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min);
+        [~, trl_peaks_low_late, trl_peaks_high_late, trl_centroid_late, trl_peak_prom_late] = ...
+            compute_trial_peak_metrics_from_powratio_fullscan( ...
+            powratio_trials_late_fullscan, scan_freqs_detrend, analysis_freq_mask_detrend, ...
+            centroid_band_mask, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges, ...
+            peak_min_prom_frac, peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min);
+
+        valid_lo_early = ~isnan(trl_peaks_low_early);
+        valid_hi_early = ~isnan(trl_peaks_high_early);
+        if any(valid_lo_early)
+            all_trial_median_low_early(cond, subj) = median(trl_peaks_low_early(valid_lo_early));
+        end
+        if any(valid_hi_early)
+            all_trial_median_high_early(cond, subj) = median(trl_peaks_high_early(valid_hi_early));
+        end
+        valid_gap_early = valid_lo_early & valid_hi_early;
+        if any(valid_gap_early)
+            all_trial_median_gap_early(cond, subj) = median(trl_peaks_high_early(valid_gap_early) - trl_peaks_low_early(valid_gap_early));
+        end
+        valid_cent_early = isfinite(trl_centroid_early);
+        if any(valid_cent_early)
+            all_trial_median_centroid_early(cond, subj) = median(trl_centroid_early(valid_cent_early));
+        end
+        valid_prom_early = isfinite(trl_peak_prom_early);
+        if any(valid_prom_early)
+            all_trial_prominence_early(cond, subj) = mean(trl_peak_prom_early(valid_prom_early));
+        end
+        if sum(valid_s_early) >= 2
+            vf_early = trl_peaks_single_early(valid_s_early);
+            all_trial_trialcv_early(cond, subj) = std(vf_early) / abs(mean(vf_early));
+        end
+
+        valid_lo_late = ~isnan(trl_peaks_low_late);
+        valid_hi_late = ~isnan(trl_peaks_high_late);
+        if any(valid_lo_late)
+            all_trial_median_low_late(cond, subj) = median(trl_peaks_low_late(valid_lo_late));
+        end
+        if any(valid_hi_late)
+            all_trial_median_high_late(cond, subj) = median(trl_peaks_high_late(valid_hi_late));
+        end
+        valid_gap_late = valid_lo_late & valid_hi_late;
+        if any(valid_gap_late)
+            all_trial_median_gap_late(cond, subj) = median(trl_peaks_high_late(valid_gap_late) - trl_peaks_low_late(valid_gap_late));
+        end
+        valid_cent_late = isfinite(trl_centroid_late);
+        if any(valid_cent_late)
+            all_trial_median_centroid_late(cond, subj) = median(trl_centroid_late(valid_cent_late));
+        end
+        valid_prom_late = isfinite(trl_peak_prom_late);
+        if any(valid_prom_late)
+            all_trial_prominence_late(cond, subj) = mean(trl_peak_prom_late(valid_prom_late));
+        end
+        if sum(valid_s_late) >= 2
+            vf_late = trl_peaks_single_late(valid_s_late);
+            all_trial_trialcv_late(cond, subj) = std(vf_late) / abs(mean(vf_late));
+        end
 
     end % condition loop
 
@@ -2507,7 +2585,110 @@ for mi = 1:numel(summary_metrics)
         ylim([-15 40]);
     end
 end
-save_figure_png(fig_summary, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary.png'));
+apply_dynamic_summary_ylims();
+save_figure_png(fig_summary, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary_full.png'));
+
+fig_summary_early = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle('GED Trials Summary Dashboard (component selection backprojected, early window)', ...
+    'FontSize', 16, 'FontWeight', 'bold');
+summary_metrics_early = { ...
+    all_trial_median_single_early, ...
+    all_trial_median_low_early, ...
+    all_trial_median_high_early, ...
+    all_trial_median_gap_early, ...
+    all_trial_prominence_early, ...
+    all_trial_trialcv_early, ...
+    all_trial_median_centroid_early, ...
+    (all_trial_gamma_power_early - 1) * 100};
+for mi = 1:numel(summary_metrics_early)
+    subplot(2, 4, mi); hold on;
+    dat = summary_metrics_early{mi};
+    dat_plot = dat;
+    for c = 1:4
+        cond_vals = dat_plot(c, :);
+        valid_idx = find(isfinite(cond_vals));
+        if numel(valid_idx) >= 4
+            outlier_cond = isoutlier(cond_vals(valid_idx), 'median');
+            dat_plot(c, valid_idx(outlier_cond)) = NaN;
+        end
+    end
+    mu = nanmean(dat_plot, 2);
+    sem = nanstd(dat_plot, [], 2) ./ sqrt(sum(~isnan(dat_plot), 2));
+    med = nanmedian(dat_plot, 2);
+    for c = 1:4
+        bar(c, mu(c), 0.6, 'FaceColor', colors(c,:), 'EdgeColor', 'k', 'FaceAlpha', 0.7);
+    end
+    errorbar(1:4, mu, sem, 'k', 'LineStyle', 'none', 'LineWidth', 1.1, 'CapSize', 5);
+    scatter(1:4, med, 28, 'kd', 'filled');
+    for s = 1:nSubj
+        for c = 1:4
+            if ~isnan(dat_plot(c, s))
+                scatter(c + (rand - 0.5) * 0.18, dat_plot(c, s), 20, [0.5 0.5 0.5], ...
+                    'filled', ...
+                    'MarkerFaceAlpha', 0.5, ...
+                    'MarkerEdgeColor', [1 1 1], ...
+                    'LineWidth', 0.5, ...
+                    'MarkerEdgeAlpha', 0.9);
+            end
+        end
+    end
+    set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 9);
+    title(summary_names{mi}, 'FontSize', 10, 'FontWeight', 'bold');
+    box on;
+end
+apply_dynamic_summary_ylims();
+save_figure_png(fig_summary_early, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary_early.png'));
+
+fig_summary_late = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle('GED Trials Summary Dashboard (component selection backprojected, late window)', ...
+    'FontSize', 16, 'FontWeight', 'bold');
+summary_metrics_late = { ...
+    all_trial_median_single_late, ...
+    all_trial_median_low_late, ...
+    all_trial_median_high_late, ...
+    all_trial_median_gap_late, ...
+    all_trial_prominence_late, ...
+    all_trial_trialcv_late, ...
+    all_trial_median_centroid_late, ...
+    (all_trial_gamma_power_late - 1) * 100};
+for mi = 1:numel(summary_metrics_late)
+    subplot(2, 4, mi); hold on;
+    dat = summary_metrics_late{mi};
+    dat_plot = dat;
+    for c = 1:4
+        cond_vals = dat_plot(c, :);
+        valid_idx = find(isfinite(cond_vals));
+        if numel(valid_idx) >= 4
+            outlier_cond = isoutlier(cond_vals(valid_idx), 'median');
+            dat_plot(c, valid_idx(outlier_cond)) = NaN;
+        end
+    end
+    mu = nanmean(dat_plot, 2);
+    sem = nanstd(dat_plot, [], 2) ./ sqrt(sum(~isnan(dat_plot), 2));
+    med = nanmedian(dat_plot, 2);
+    for c = 1:4
+        bar(c, mu(c), 0.6, 'FaceColor', colors(c,:), 'EdgeColor', 'k', 'FaceAlpha', 0.7);
+    end
+    errorbar(1:4, mu, sem, 'k', 'LineStyle', 'none', 'LineWidth', 1.1, 'CapSize', 5);
+    scatter(1:4, med, 28, 'kd', 'filled');
+    for s = 1:nSubj
+        for c = 1:4
+            if ~isnan(dat_plot(c, s))
+                scatter(c + (rand - 0.5) * 0.18, dat_plot(c, s), 20, [0.5 0.5 0.5], ...
+                    'filled', ...
+                    'MarkerFaceAlpha', 0.5, ...
+                    'MarkerEdgeColor', [1 1 1], ...
+                    'LineWidth', 0.5, ...
+                    'MarkerEdgeAlpha', 0.9);
+            end
+        end
+    end
+    set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 9);
+    title(summary_names{mi}, 'FontSize', 10, 'FontWeight', 'bold');
+    box on;
+end
+apply_dynamic_summary_ylims();
+save_figure_png(fig_summary_late, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary_late.png'));
 
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak (subject-level median, summary-style)
@@ -3034,6 +3215,12 @@ save(save_path, ...
     'all_trial_mean_high', 'all_trial_median_high', 'all_trial_median_gap', ...
     'all_trial_mean_single_early', 'all_trial_median_single_early', ...
     'all_trial_mean_single_late', 'all_trial_median_single_late', ...
+    'all_trial_median_low_early', 'all_trial_median_low_late', ...
+    'all_trial_median_high_early', 'all_trial_median_high_late', ...
+    'all_trial_median_gap_early', 'all_trial_median_gap_late', ...
+    'all_trial_median_centroid_early', 'all_trial_median_centroid_late', ...
+    'all_trial_prominence_early', 'all_trial_prominence_late', ...
+    'all_trial_trialcv_early', 'all_trial_trialcv_late', ...
     'all_trial_mean_centroid', 'all_trial_median_centroid', ...
     'all_trial_detrate_single', 'all_trial_detrate_low', 'all_trial_detrate_high', 'all_trial_detrate_single_early', 'all_trial_detrate_single_late', ...
     'all_trial_detrate_centroid', 'all_trial_gamma_power', 'all_trial_gamma_power_early', 'all_trial_gamma_power_late', ...
@@ -3190,6 +3377,116 @@ for trl = 1:nTrl
         [~, best_pk] = max(pks);
         trl_peaks_single(trl) = locs(best_pk);
     end
+end
+end
+
+function [trl_peaks_single, trl_peaks_low, trl_peaks_high, trl_centroid, trl_peak_prom] = ...
+    compute_trial_peak_metrics_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, ...
+    centroid_band_mask, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges, ...
+    peak_min_prom_frac, peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min)
+nTrl = size(powratio_trials_fullscan, 1);
+trl_peaks_single = nan(nTrl, 1);
+trl_peaks_low = nan(nTrl, 1);
+trl_peaks_high = nan(nTrl, 1);
+trl_centroid = nan(nTrl, 1);
+trl_peak_prom = nan(nTrl, 1);
+scan_freqs_analysis = scan_freqs_full(analysis_mask);
+freq_band = scan_freqs_full(centroid_band_mask);
+for trl = 1:nTrl
+    pr_full = powratio_trials_fullscan(trl, :);
+    if all(~isfinite(pr_full))
+        continue;
+    end
+    pr_dt_full = detrend_power_ratio(pr_full, scan_freqs_full, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
+    pr_dt = pr_dt_full(analysis_mask);
+    pr_dt_smooth = movmean(pr_dt, 5);
+
+    mprom = max(0, max(pr_dt_smooth) * peak_min_prom_frac);
+    [pks, locs, ~, prom] = findpeaks(pr_dt_smooth, scan_freqs_analysis, ...
+        'MinPeakProminence', mprom, ...
+        'MinPeakDistance', peak_min_distance_hz);
+    if ~isempty(pks)
+        [~, best_pk] = max(pks);
+        trl_peaks_single(trl) = locs(best_pk);
+        trl_peak_prom(trl) = prom(best_pk);
+    end
+
+    [pks_all, locs_all] = findpeaks(pr_dt_smooth, scan_freqs_analysis, ...
+        'MinPeakDistance', peak_min_distance_hz);
+    pos_mask = pks_all > 0;
+    pks_pos  = pks_all(pos_mask);
+    locs_pos = locs_all(pos_mask);
+    in_lo = locs_pos >= 30 & locs_pos <= 49;
+    in_hi = locs_pos >= 50 & locs_pos <= 90;
+    if any(in_lo)
+        [~, bi] = max(pks_pos(in_lo));
+        tmp = locs_pos(in_lo);
+        trl_peaks_low(trl) = tmp(bi);
+    end
+    if any(in_hi)
+        [~, bi] = max(pks_pos(in_hi));
+        tmp = locs_pos(in_hi);
+        trl_peaks_high(trl) = tmp(bi);
+    end
+
+    pr_dt_band = pr_dt_full(centroid_band_mask);
+    w_pos = max(pr_dt_band, 0);
+    pos_mass = sum(w_pos);
+    total_abs_mass = sum(abs(pr_dt_band));
+    if pos_mass > 0 && max(pr_dt_band) >= centroid_min_peak && ...
+            (pos_mass / max(total_abs_mass, eps)) >= centroid_posfrac_min
+        trl_centroid(trl) = sum(freq_band .* w_pos) / pos_mass;
+    end
+end
+end
+
+function apply_dynamic_summary_ylims()
+ax = findall(gcf, 'Type', 'axes');
+for ai = 1:numel(ax)
+    this_ax = ax(ai);
+    if numel(this_ax.XTick) ~= 4
+        continue;
+    end
+    y_vals = [];
+    ch = this_ax.Children;
+    for ci = 1:numel(ch)
+        if isprop(ch(ci), 'YData')
+            yd = ch(ci).YData;
+            y_vals = [y_vals; yd(:)]; %#ok<AGROW>
+        end
+    end
+    y_vals = y_vals(isfinite(y_vals));
+    if isempty(y_vals)
+        continue;
+    end
+    q05 = prctile(y_vals, 5);
+    q95 = prctile(y_vals, 95);
+    if ~isfinite(q05) || ~isfinite(q95)
+        continue;
+    end
+    if q95 <= q05
+        y_min = min(y_vals);
+        y_max = max(y_vals);
+    else
+        pad = 0.12 * (q95 - q05);
+        y_min = q05 - pad;
+        y_max = q95 + pad;
+    end
+    if ~isfinite(y_min) || ~isfinite(y_max) || y_max <= y_min
+        continue;
+    end
+    title_str = lower(char(this_ax.Title.String));
+    if contains(title_str, 'prominence')
+        y_min = max(0, min(y_min, 0));
+        y_max = max(y_max, 0.6);
+    elseif contains(title_str, 'trial cv')
+        y_min = max(0, min(y_min, 0));
+        y_max = max(y_max, 0.15);
+    elseif contains(title_str, 'gamma power')
+        y_min = min(y_min, 0);
+        y_max = max(y_max, 0);
+    end
+    ylim(this_ax, [y_min y_max]);
 end
 end
 
