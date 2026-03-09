@@ -4132,9 +4132,15 @@ for ci = 1:nComp
         edge_pen = 0.85;
     end
 
-    % Check peak dominance: penalize if no clear dominant peak
+    % Check peak dominance: penalize if no clear dominant peak.
+    % Guard MinPeakProminence against negative/non-finite values.
     dominance_pen = 1;
-    [pks, ~] = findpeaks(y_band, 'MinPeakProminence', 0.20 * max(y_band));
+    max_y_band = max(y_band);
+    if ~isfinite(max_y_band)
+        max_y_band = 0;
+    end
+    min_prom_dom = max(0, 0.20 * max_y_band);
+    [pks, ~] = findpeaks(y_band, 'MinPeakProminence', min_prom_dom);
     if numel(pks) > 1
         pks_sorted = sort(pks, 'descend');
         dominance_ratio = pks_sorted(1) / max(pks_sorted(2), eps);
