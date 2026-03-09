@@ -87,6 +87,7 @@ late_window = [1.0, 2.0];
 
 % Gamma frequency range
 gamma_range = [30, 90];
+gamma_peak_power_halfwidth_hz = 2.5;
 
 % Narrowband scanning parameters
 % Detrending fit is computed on a wider band, then trimmed to analysis band.
@@ -1624,19 +1625,6 @@ for subj = 1:nSubj
         all_trial_powratio{cond, subj} = powratio_trials_full;
         all_trial_powratio_early{cond, subj} = powratio_trials_early;
         all_trial_powratio_late{cond, subj} = powratio_trials_late;
-        if ~isempty(powratio_trials_full)
-            trl_gamma_power_full = mean(powratio_trials_full, 2, 'omitnan');
-            all_trial_gamma_power(cond, subj) = mean(trl_gamma_power_full, 'omitnan');
-        end
-        if ~isempty(powratio_trials_early)
-            trl_gamma_power_early = mean(powratio_trials_early, 2, 'omitnan');
-            all_trial_gamma_power_early(cond, subj) = mean(trl_gamma_power_early, 'omitnan');
-        end
-        if ~isempty(powratio_trials_late)
-            trl_gamma_power_late = mean(powratio_trials_late, 2, 'omitnan');
-            all_trial_gamma_power_late(cond, subj) = mean(trl_gamma_power_late, 'omitnan');
-        end
-
         %% Per-trial peak detection
         trl_peaks_single = nan(nTrl, 1);
         trl_peaks_low    = nan(nTrl, 1);
@@ -1755,6 +1743,14 @@ for subj = 1:nSubj
         all_trial_mean_single_late(cond, subj) = mean(trl_peaks_single_late(valid_s_late));
         all_trial_median_single_late(cond, subj) = median(trl_peaks_single_late(valid_s_late));
         all_trial_detrate_single_late(cond, subj) = sum(valid_s_late) / nTrl;
+
+        % Peak-centered gamma power: mean stim/base ratio within peak +/- 2.5 Hz.
+        [~, all_trial_gamma_power(cond, subj)] = compute_peak_centered_gamma_power( ...
+            powratio_trials_full, scan_freqs, trl_peaks_single, gamma_peak_power_halfwidth_hz);
+        [~, all_trial_gamma_power_early(cond, subj)] = compute_peak_centered_gamma_power( ...
+            powratio_trials_early, scan_freqs, trl_peaks_single_early, gamma_peak_power_halfwidth_hz);
+        [~, all_trial_gamma_power_late(cond, subj)] = compute_peak_centered_gamma_power( ...
+            powratio_trials_late, scan_freqs, trl_peaks_single_late, gamma_peak_power_halfwidth_hz);
 
         % Time-split dual-peak, centroid, prominence, and reliability summaries.
         [~, trl_peaks_low_early, trl_peaks_high_early, trl_centroid_early, trl_peak_prom_early] = ...
@@ -3418,6 +3414,42 @@ for trl = 1:nTrl
         [~, best_pk] = max(pks);
         trl_peaks_single(trl) = locs(best_pk);
     end
+end
+end
+
+function [trial_gamma_power, mean_gamma_power] = compute_peak_centered_gamma_power(powratio_trials, scan_freqs_analysis, trl_peaks_single, halfwidth_hz)
+if isempty(powratio_trials) || isempty(scan_freqs_analysis) || isempty(trl_peaks_single)
+    trial_gamma_power = [];
+    mean_gamma_power = nan;
+    return;
+end
+
+if isvector(powratio_trials)
+    powratio_trials = reshape(powratio_trials, 1, []);
+end
+
+nTrl = min(size(powratio_trials, 1), numel(trl_peaks_single));
+trial_gamma_power = nan(nTrl, 1);
+freq_axis = scan_freqs_analysis(:)';
+for trl = 1:nTrl
+    peak_hz = trl_peaks_single(trl);
+    if ~isfinite(peak_hz)
+        continue;
+    end
+    band_mask = isfinite(freq_axis) & abs(freq_axis - peak_hz) <= halfwidth_hz;
+    if ~any(band_mask)
+        continue;
+    end
+    row_vals = powratio_trials(trl, :);
+    if numel(row_vals) ~= numel(freq_axis)
+        continue;
+    end
+    trial_gamma_power(trl) = mean(row_vals(band_mask), 'omitnan');
+end
+
+mean_gamma_power = mean(trial_gamma_power, 'omitnan');
+if ~isfinite(mean_gamma_power)
+    mean_gamma_power = nan;
 end
 end
 
