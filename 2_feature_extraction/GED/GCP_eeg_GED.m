@@ -29,7 +29,7 @@
 %      EMG artifact score).
 %   7. Apply hard selection gates: minimum eigenvalue, minimum gamma
 %      increase (>= 10%), and dominant-peak spectral form quality
-%      (hybrid log-raw peak-shape scoring, >= 0.45).
+%      (raw-spectrum dominant-peak scoring, >= 0.45).
 %   8. Apply artifact rejection gates: frontal/temporal leakage, line-
 %      harmonic dominance, trial-wise stationarity, burst ratio,
 %      high-frequency spectral slope (EMG proxy), condition locking.
@@ -155,7 +155,6 @@ peak_form_double_widths = [3 4 5 6];
 peak_form_min_trough_depth = 0.10;  % minimum trough depth for double-peak plausibility
 peak_form_min_similarity = 0.50;    % floor similarity before positive score is assigned
 peak_form_smooth_n = 3;             % moving-average smoothing for template scoring
-peak_form_baseline_win_hz = 11;     % local baseline window for log-raw PF trace
 peak_form_prom_abs_floor = 0.002;   % robust absolute prominence floor for PF peak detection
 peak_form_peak_width_min_hz = 2.0;  % reject ultra-narrow micro-peaks
 peak_form_peak_width_max_hz = 20.0; % reject ultra-broad plateaus
@@ -646,7 +645,7 @@ for subj = 1:nSubj
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
         detrend_in_log, detrend_flat_edges, peak_form_shift_max_hz, peak_form_single_widths, ...
         peak_form_double_widths, peak_form_double_separations, peak_form_min_trough_depth, ...
-        peak_form_min_similarity, peak_form_smooth_n, peak_form_baseline_win_hz, ...
+        peak_form_min_similarity, peak_form_smooth_n, ...
         peak_form_prom_abs_floor, peak_form_peak_width_min_hz, peak_form_peak_width_max_hz, ...
         peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, peak_form_edge_run_soft, peak_form_edge_run_hard);
     occipital_evidence = 0.40 * normalize_robust(corr_vec) + ...
@@ -1350,10 +1349,6 @@ for subj = 1:nSubj
     cfg_topo.zlim      = 'maxabs';
     cfg_topo.colormap  = '*RdBu';
     cfg_topo.figure    = 'gcf';
-    pf_diag_cfg = struct('poly_order', poly_order, 'edge_exclude_n', detrend_edge_exclude_n, ...
-        'in_log', detrend_in_log, 'flat_edges', detrend_flat_edges, ...
-        'analysis_freq_range', analysis_freq_range, 'smooth_n', peak_form_smooth_n, ...
-        'baseline_win_hz', peak_form_baseline_win_hz);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(crosswin_id_full)), gamma_vec_full, ...
@@ -1365,7 +1360,7 @@ for subj = 1:nSubj
         adaptive_thr_full, cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
         candidate_table_full.peak_form_mode, candidate_table_full.peak_form_best_center_hz, ...
         candidate_table_full.peak_form_dominant_penalty, crosswin_id_full, ...
-        selected_idx_full, get_candidate_table_fallback_idx(candidate_table_full), pf_diag_cfg);
+        selected_idx_full, get_candidate_table_fallback_idx(candidate_table_full));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(crosswin_id_early)), gamma_vec_early, ...
@@ -1377,7 +1372,7 @@ for subj = 1:nSubj
         adaptive_thr_early, cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
         candidate_table_early.peak_form_mode, candidate_table_early.peak_form_best_center_hz, ...
         candidate_table_early.peak_form_dominant_penalty, crosswin_id_early, ...
-        selected_idx_early, get_candidate_table_fallback_idx(candidate_table_early), pf_diag_cfg);
+        selected_idx_early, get_candidate_table_fallback_idx(candidate_table_early));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(crosswin_id_late)), gamma_vec_late, ...
@@ -1389,7 +1384,7 @@ for subj = 1:nSubj
         adaptive_thr_late, cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
         candidate_table_late.peak_form_mode, candidate_table_late.peak_form_best_center_hz, ...
         candidate_table_late.peak_form_dominant_penalty, crosswin_id_late, ...
-        selected_idx_late, get_candidate_table_fallback_idx(candidate_table_late), pf_diag_cfg);
+        selected_idx_late, get_candidate_table_fallback_idx(candidate_table_late));
 
     adequate_full = false;
     adequate_early = false;
@@ -1679,7 +1674,8 @@ for subj = 1:nSubj
             pr_full = powratio_trials_fullscan(trl, :);
             if all(isnan(pr_full)), continue; end
 
-            pr_proc = compute_lograw_baseline_subtracted(pr_full, scan_freqs_detrend, analysis_freq_range, peak_form_smooth_n, peak_form_baseline_win_hz);
+            pr_proc = pr_full(analysis_freq_mask_detrend);
+            pr_proc = movmean(pr_proc, max(1, round(peak_form_smooth_n)), 'omitnan');
             valid = isfinite(pr_proc) & isfinite(scan_freqs);
             pr_proc = pr_proc(valid);
             freq_use = scan_freqs(valid);
@@ -1769,12 +1765,10 @@ for subj = 1:nSubj
 
         % Time-split single-peak summaries.
         trl_peaks_single_early = detect_single_peaks_from_powratio_fullscan( ...
-            powratio_trials_early_fullscan, scan_freqs_detrend, analysis_freq_mask_detrend, poly_order, detrend_edge_exclude_n, ...
-            detrend_in_log, detrend_flat_edges, peak_form_smooth_n, peak_form_baseline_win_hz, ...
+            powratio_trials_early_fullscan, scan_freqs_detrend, analysis_freq_mask_detrend, peak_form_smooth_n, ...
             peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz);
         trl_peaks_single_late = detect_single_peaks_from_powratio_fullscan( ...
-            powratio_trials_late_fullscan, scan_freqs_detrend, analysis_freq_mask_detrend, poly_order, detrend_edge_exclude_n, ...
-            detrend_in_log, detrend_flat_edges, peak_form_smooth_n, peak_form_baseline_win_hz, ...
+            powratio_trials_late_fullscan, scan_freqs_detrend, analysis_freq_mask_detrend, peak_form_smooth_n, ...
             peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz);
         all_trial_peaks_single_early{cond, subj} = trl_peaks_single_early;
         all_trial_peaks_single_late{cond, subj} = trl_peaks_single_late;
@@ -1793,14 +1787,12 @@ for subj = 1:nSubj
         [~, trl_peaks_low_early, trl_peaks_high_early, trl_centroid_early, trl_peak_prom_early] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_early_fullscan, scan_freqs_detrend, analysis_freq_mask_detrend, ...
-            centroid_band_mask, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges, ...
-            peak_form_smooth_n, peak_form_baseline_win_hz, peak_min_prom_frac, peak_min_prom_abs, ...
+            centroid_band_mask, peak_form_smooth_n, peak_min_prom_frac, peak_min_prom_abs, ...
             peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min);
         [~, trl_peaks_low_late, trl_peaks_high_late, trl_centroid_late, trl_peak_prom_late] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_late_fullscan, scan_freqs_detrend, analysis_freq_mask_detrend, ...
-            centroid_band_mask, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges, ...
-            peak_form_smooth_n, peak_form_baseline_win_hz, peak_min_prom_frac, peak_min_prom_abs, ...
+            centroid_band_mask, peak_form_smooth_n, peak_min_prom_frac, peak_min_prom_abs, ...
             peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min);
 
         valid_lo_early = ~isnan(trl_peaks_low_early);
@@ -3410,7 +3402,7 @@ if ~isempty(W_combined)
 end
 end
 
-function trl_peaks_single = detect_single_peaks_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges, smooth_n, baseline_win_hz, peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz)
+function trl_peaks_single = detect_single_peaks_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, smooth_n, peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz)
 nTrl = size(powratio_trials_fullscan, 1);
 trl_peaks_single = nan(nTrl, 1);
 scan_freqs_analysis = scan_freqs_full(analysis_mask);
@@ -3419,7 +3411,8 @@ for trl = 1:nTrl
     if all(~isfinite(pr_full))
         continue;
     end
-    pr_proc = compute_lograw_baseline_subtracted(pr_full, scan_freqs_full, [30 90], smooth_n, baseline_win_hz);
+    pr_proc = pr_full(analysis_mask);
+    pr_proc = movmean(pr_proc, max(1, round(smooth_n)), 'omitnan');
     pr_proc = pr_proc(:)';
     valid = isfinite(pr_proc) & isfinite(scan_freqs_analysis);
     pr_proc = pr_proc(valid);
@@ -3448,8 +3441,7 @@ end
 
 function [trl_peaks_single, trl_peaks_low, trl_peaks_high, trl_centroid, trl_peak_prom] = ...
     compute_trial_peak_metrics_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, ...
-    centroid_band_mask, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges, ...
-    smooth_n, baseline_win_hz, peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min)
+    centroid_band_mask, smooth_n, peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min)
 nTrl = size(powratio_trials_fullscan, 1);
 trl_peaks_single = nan(nTrl, 1);
 trl_peaks_low = nan(nTrl, 1);
@@ -3463,7 +3455,8 @@ for trl = 1:nTrl
     if all(~isfinite(pr_full))
         continue;
     end
-    pr_proc = compute_lograw_baseline_subtracted(pr_full, scan_freqs_full, [30 90], smooth_n, baseline_win_hz);
+    pr_proc = pr_full(analysis_mask);
+    pr_proc = movmean(pr_proc, max(1, round(smooth_n)), 'omitnan');
     pr_proc = pr_proc(:)';
     valid = isfinite(pr_proc) & isfinite(scan_freqs_analysis);
     pr_proc = pr_proc(valid);
@@ -3507,7 +3500,7 @@ for trl = 1:nTrl
         trl_peaks_high(trl) = tmp(bi);
     end
 
-    pr_proc_full = compute_lograw_baseline_subtracted(pr_full, scan_freqs_full, [min(scan_freqs_full) max(scan_freqs_full)], smooth_n, baseline_win_hz);
+    pr_proc_full = movmean(pr_full, max(1, round(smooth_n)), 'omitnan');
     pr_proc_band = pr_proc_full(centroid_band_mask);
     w_pos = max(pr_proc_band, 0);
     pos_mass = sum(w_pos);
@@ -3727,16 +3720,11 @@ function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_fre
     front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec, ...
     adaptive_thr, cfg_topo, topo_labels, ...
     peak_form_score, peak_form_mode, peak_form_best_center_hz, peak_form_dominant_penalty, ...
-    crosswin_id, selected_idx, fallback_selected_idx, pf_diag_cfg)
+    crosswin_id, selected_idx, fallback_selected_idx)
 nComp = numel(eigval_vec);
 if nComp < 1
     return;
 end
-if nargin < 32 || isempty(pf_diag_cfg)
-    pf_diag_cfg = [];
-end
-has_pf_diag = ~isempty(pf_diag_cfg) && isstruct(pf_diag_cfg);
-
 figA = figure('Position', [0 0 1512 982]);
 scatter_size = 60 + 80 * max(eigval_vec - min(eigval_vec), 0) / max(max(eigval_vec) - min(eigval_vec), eps);
 g_pct = 100 * (exp(gamma_vec) - 1);
@@ -3870,36 +3858,17 @@ for k = 1:nCols
     if k <= nShowSel
         ci = sel_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        h_raw = plot(scan_freqs, spec_data, 'k-', 'LineWidth', 1.3);
+        h_raw = plot(scan_freqs, spec_data, '-', 'Color', [0.85 0.10 0.10], 'LineWidth', 1.4);
         yline(0, 'k--');
-        h_proc = [];
-        if has_pf_diag
-            [dt_x, proc_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
-            if ~isempty(proc_y)
-                yyaxis right;
-                h_proc = plot(dt_x, proc_y, '--', 'Color', [0.85 0.20 0.20], 'LineWidth', 1.2);
-                apply_line_alpha_safe(h_proc, 0.85);
-                proc_min = min(proc_y(:));
-                proc_max = max(proc_y(:));
-                if isfinite(proc_min) && isfinite(proc_max) && proc_min ~= proc_max
-                    proc_rng = proc_max - proc_min;
-                    ylim([proc_min - 0.10 * proc_rng, proc_max + 0.10 * proc_rng]);
-                end
-                ylabel('log-raw residual');
-                set(gca, 'YColor', [0.85 0.20 0.20]);
-                yyaxis left;
-            end
-        end
         spec_min = min(spec_data(isfinite(spec_data)));
         spec_max = max(spec_data(isfinite(spec_data)));
         if isfinite(spec_min) && isfinite(spec_max) && spec_min ~= spec_max
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        if k == 1 && ~isempty(h_proc)
-            yyaxis left;
-            lgd = legend([h_raw, h_proc], {'raw PR', 'log-raw (smooth-baseline)'}, ...
-                'FontSize', 4.5, 'Location', 'northwest', 'Box', 'off', 'AutoUpdate', 'off');
+        if k == 1
+            lgd = legend(h_raw, {'raw PR'}, ...
+                'FontSize', 5.0, 'Location', 'northwest', 'Box', 'off', 'AutoUpdate', 'off');
             lgd.ItemTokenSize = [8, 6];
         end
         info_lines = { ...
@@ -3965,26 +3934,8 @@ for k = 1:nCols
     if k <= nShowRej
         ci = rej_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        h_raw_r = plot(scan_freqs, spec_data, 'k-', 'LineWidth', 1.3);
+        h_raw_r = plot(scan_freqs, spec_data, '-', 'Color', [0.85 0.10 0.10], 'LineWidth', 1.4);
         yline(0, 'k--');
-        h_proc_r = [];
-        if has_pf_diag
-            [dt_x, proc_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
-            if ~isempty(proc_y)
-                yyaxis right;
-                h_proc_r = plot(dt_x, proc_y, '--', 'Color', [0.85 0.20 0.20], 'LineWidth', 1.2);
-                apply_line_alpha_safe(h_proc_r, 0.85);
-                proc_min = min(proc_y(:));
-                proc_max = max(proc_y(:));
-                if isfinite(proc_min) && isfinite(proc_max) && proc_min ~= proc_max
-                    proc_rng = proc_max - proc_min;
-                    ylim([proc_min - 0.10 * proc_rng, proc_max + 0.10 * proc_rng]);
-                end
-                ylabel('log-raw residual');
-                set(gca, 'YColor', [0.85 0.20 0.20]);
-                yyaxis left;
-            end
-        end
         spec_min = min(spec_data(isfinite(spec_data)));
         spec_max = max(spec_data(isfinite(spec_data)));
         if isfinite(spec_min) && isfinite(spec_max) && spec_min ~= spec_max
@@ -4092,71 +4043,6 @@ if isempty(v)
 end
 end
 
-function apply_line_alpha_safe(h, alpha_val)
-if nargin < 2 || isempty(alpha_val) || ~isfinite(alpha_val)
-    alpha_val = 1;
-end
-alpha_val = max(0, min(1, alpha_val));
-if isempty(h) || ~isgraphics(h, 'line')
-    return;
-end
-rgb = get(h, 'Color');
-if numel(rgb) < 3
-    return;
-end
-rgb = rgb(1:3);
-try
-    set(h, 'Color', [rgb alpha_val]); % works on newer MATLAB releases
-catch
-    % Fallback for releases without line alpha support: blend toward white.
-    rgb_faded = rgb * alpha_val + (1 - alpha_val) * [1 1 1];
-    set(h, 'Color', rgb_faded);
-end
-end
-
-function y_proc = compute_lograw_baseline_subtracted(y_raw, scan_freqs, analysis_freq_range, smooth_n, baseline_win_hz)
-y_proc = [];
-if nargin < 4 || isempty(smooth_n)
-    smooth_n = 3;
-end
-if nargin < 5 || isempty(baseline_win_hz)
-    baseline_win_hz = 11;
-end
-if isempty(y_raw) || isempty(scan_freqs) || numel(y_raw) ~= numel(scan_freqs)
-    return;
-end
-freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
-if ~any(freq_mask)
-    return;
-end
-x_band = scan_freqs(freq_mask);
-y_band = y_raw(freq_mask);
-valid = isfinite(x_band) & isfinite(y_band);
-if sum(valid) < 7
-    return;
-end
-y_safe = y_band;
-y_safe(~valid) = NaN;
-y_log = log(max(y_safe, eps));
-y_smooth = movmean(y_log, max(1, round(smooth_n)), 'omitnan');
-x_valid = x_band(valid);
-if numel(x_valid) >= 2
-    df = median(diff(x_valid));
-else
-    df = 1;
-end
-if ~isfinite(df) || df <= 0
-    df = 1;
-end
-baseline_bins = max(5, round(baseline_win_hz / df));
-if mod(baseline_bins, 2) == 0
-    baseline_bins = baseline_bins + 1;
-end
-y_baseline = movmedian(y_smooth, baseline_bins, 'omitnan');
-y_proc = y_smooth - y_baseline;
-y_proc(~valid) = NaN;
-end
-
 function [edge_ratio, edge_run_score, edge_artifact_flag] = compute_edge_artifact_indicators(y_resid, x_band, analysis_freq_range)
 edge_ratio = NaN;
 edge_run_score = NaN;
@@ -4187,31 +4073,6 @@ end
 edge_run_score = max(left_run, right_run);
 edge_artifact_flag = isfinite(edge_ratio) && (edge_ratio > 1.75) && ...
     isfinite(edge_run_score) && (edge_run_score > 0.06);
-end
-
-function [dt_x, proc_y] = compute_pf_diag_trace(spec_data, scan_freqs, cfg)
-dt_x = [];
-proc_y = [];
-if isempty(spec_data) || all(~isfinite(spec_data))
-    return;
-end
-freq_mask = scan_freqs >= cfg.analysis_freq_range(1) & scan_freqs <= cfg.analysis_freq_range(2);
-if ~any(freq_mask)
-    return;
-end
-dt_x = scan_freqs(freq_mask);
-y_band = compute_lograw_baseline_subtracted( ...
-    spec_data, scan_freqs, cfg.analysis_freq_range, cfg.smooth_n, cfg.baseline_win_hz);
-valid = isfinite(dt_x) & isfinite(y_band);
-dt_x = dt_x(valid);
-y_band = y_band(valid);
-if numel(y_band) < 7
-    return;
-end
-proc_y = y_band;
-if isempty(proc_y)
-    dt_x = [];
-end
 end
 
 function [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
@@ -4263,7 +4124,7 @@ end
 function [peak_form_score_vec, peak_form_mode_vec, diag] = compute_peak_form_template_score_from_spectra( ...
     mean_pr_spectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
     detrend_in_log, detrend_flat_edges, shift_max_hz, single_widths_hz, double_widths_hz, ...
-    double_separations_hz, min_trough_depth, min_similarity, smooth_n, baseline_win_hz, ...
+    double_separations_hz, min_trough_depth, min_similarity, smooth_n, ...
     prom_abs_floor, peak_width_min_hz, peak_width_max_hz, edge_ratio_soft, edge_ratio_hard, ...
     edge_run_soft, edge_run_hard)
 nComp = size(mean_pr_spectrum, 1);
@@ -4306,14 +4167,13 @@ for ci = 1:nComp
         continue;
     end
     x_band = scan_freqs(freq_mask);
-    y_proc = compute_lograw_baseline_subtracted(y, scan_freqs, analysis_freq_range, smooth_n, baseline_win_hz);
-    y_resid_full = detrend_power_ratio(y, scan_freqs, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
+    y_proc = y(freq_mask);
+    y_proc = movmean(y_proc, smooth_n, 'omitnan');
     y_band = y_proc;
-    y_resid = y_resid_full(freq_mask);
     valid = isfinite(x_band) & isfinite(y_band);
     x_band = x_band(valid);
     y_band = y_band(valid);
-    y_resid = y_resid(valid);
+    y_resid = y_band;
     if numel(y_band) < 7
         continue;
     end
@@ -4723,11 +4583,11 @@ end
 [single_scores, ~] = compute_peak_form_template_score_from_spectra( ...
     single_specs, scan_freqs, analysis_freq_range, 0, 0, false, false, shift_max_hz, ...
     single_widths_hz, double_widths_hz, double_separations_hz, min_trough_depth, min_similarity, smooth_n, ...
-    11, 0.02, 2.0, 20.0, 1.25, 1.75, 0.025, 0.060);
+    0.02, 2.0, 20.0, 1.25, 1.75, 0.025, 0.060);
 [double_scores, ~] = compute_peak_form_template_score_from_spectra( ...
     double_specs, scan_freqs, analysis_freq_range, 0, 0, false, false, shift_max_hz, ...
     single_widths_hz, double_widths_hz, double_separations_hz, min_trough_depth, min_similarity, smooth_n, ...
-    11, 0.02, 2.0, 20.0, 1.25, 1.75, 0.025, 0.060);
+    0.02, 2.0, 20.0, 1.25, 1.75, 0.025, 0.060);
 stats.single_scores = single_scores;
 stats.double_scores = double_scores;
 stats.single_spread = max(single_scores) - min(single_scores);
