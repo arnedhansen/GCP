@@ -1347,6 +1347,17 @@ for subj = 1:nSubj
         candidate_table_late.peak_form_mode, candidate_table_late.peak_form_best_center_hz, ...
         candidate_table_late.peak_form_dominant_penalty, crosswin_id_late, ...
         selected_idx_late, get_candidate_table_fallback_idx(candidate_table_late));
+    plot_combined_topo_spectra_windows( ...
+        fig_save_dir_emg_exclusion, subjects{subj}, scan_freqs, cfg_topo, all_topo_labels{subj}, ...
+        searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
+        searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
+        searchTopos_late, searchMeanPrSpectrum_late, selected_idx_late, w_combined_late, ...
+        analysis_freq_range, detrend_in_log, detrend_flat_edges, ...
+        peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
+        peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
+        peak_form_smooth_n, peak_form_prom_abs_floor, peak_form_peak_width_min_hz, ...
+        peak_form_peak_width_max_hz, peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, ...
+        peak_form_edge_run_soft, peak_form_edge_run_hard);
 
     adequate_full = false;
     adequate_early = false;
@@ -3948,6 +3959,166 @@ box on;
 sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
 save_figure_png(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_summary_%s.png', subject_id, win_name)));
 close(figC);
+end
+
+function plot_combined_topo_spectra_windows(save_dir, subject_id, scan_freqs, cfg_topo, topo_labels, ...
+    searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
+    searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
+    searchTopos_late, searchMeanPrSpectrum_late, selected_idx_late, w_combined_late, ...
+    analysis_freq_range, detrend_in_log, detrend_flat_edges, ...
+    peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
+    peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
+    peak_form_smooth_n, peak_form_prom_abs_floor, peak_form_peak_width_min_hz, ...
+    peak_form_peak_width_max_hz, peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, ...
+    peak_form_edge_run_soft, peak_form_edge_run_hard)
+
+fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+win_names = {'full', 'early', 'late'};
+all_topos = {searchTopos_full, searchTopos_early, searchTopos_late};
+all_specs = {searchMeanPrSpectrum_full, searchMeanPrSpectrum_early, searchMeanPrSpectrum_late};
+all_idx = {selected_idx_full, selected_idx_early, selected_idx_late};
+all_w = {w_combined_full, w_combined_early, w_combined_late};
+
+for wi = 1:3
+    subplot(2, 3, wi);
+    topo_mat = all_topos{wi};
+    spec_mat = all_specs{wi};
+    sel_idx = all_idx{wi};
+    sel_w = all_w{wi};
+    [sel_idx, sel_w] = sanitize_selected_components(sel_idx, sel_w, size(spec_mat, 1));
+    if isempty(sel_idx) || isempty(topo_mat)
+        axis off;
+        text(0.5, 0.5, sprintf('No combined components (%s)', upper(win_names{wi})), ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+            'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+    else
+        topo_vec = topo_mat(:, sel_idx) * sel_w(:);
+        topo_data = [];
+        topo_data.label = topo_labels;
+        topo_data.avg = topo_vec;
+        topo_data.dimord = 'chan';
+        topo_vals = topo_vec(isfinite(topo_vec));
+        topo_clim = max(abs(topo_vals));
+        if ~isfinite(topo_clim) || topo_clim <= 0
+            topo_clim = 1;
+        end
+        cfg_ci = cfg_topo;
+        cfg_ci.zlim = [-topo_clim topo_clim];
+        try
+            ft_topoplotER(cfg_ci, topo_data);
+        catch
+            imagesc(topo_vec(:)); axis tight;
+            caxis([-topo_clim topo_clim]); colorbar;
+        end
+        title(sprintf('Combined Topography (%s, n=%d)', upper(win_names{wi}), numel(sel_idx)), ...
+            'FontSize', 11, 'Interpreter', 'none');
+    end
+    set(gca, 'FontSize', 10);
+
+    subplot(2, 3, wi + 3); hold on;
+    if isempty(sel_idx) || isempty(spec_mat)
+        axis off;
+        text(0.5, 0.5, sprintf('No combined spectrum (%s)', upper(win_names{wi})), ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+            'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+        continue;
+    end
+    spec_vec = sel_w(:)' * spec_mat(sel_idx, :);
+    plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0);
+    yline(0, 'k--', 'LineWidth', 0.8);
+    xlim([analysis_freq_range(1) analysis_freq_range(2)]);
+    spec_finite = spec_vec(isfinite(spec_vec));
+    if ~isempty(spec_finite)
+        sp_min = min(spec_finite);
+        sp_max = max(spec_finite);
+        if isfinite(sp_min) && isfinite(sp_max) && sp_min < sp_max
+            sp_range = sp_max - sp_min;
+            ylim([sp_min - 0.12 * sp_range, sp_max + 0.20 * sp_range]);
+        end
+    end
+    format_power_change_percent_axis(gca);
+    xlabel('Hz'); ylabel('Power Change [%]');
+    box on;
+
+    [pf_score, pf_mode, pf_center_hz, pf_penalty] = compute_combined_peak_form_metrics( ...
+        spec_vec, scan_freqs, analysis_freq_range, detrend_in_log, detrend_flat_edges, ...
+        peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
+        peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
+        peak_form_smooth_n, peak_form_prom_abs_floor, peak_form_peak_width_min_hz, ...
+        peak_form_peak_width_max_hz, peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, ...
+        peak_form_edge_run_soft, peak_form_edge_run_hard);
+    text(0.02, 0.98, sprintf('PF=%.2f | mode=%s | center=%.1f Hz | penalty=%s', ...
+        pf_score, pf_mode, pf_center_hz, pf_penalty), ...
+        'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
+        'FontSize', 9, 'Interpreter', 'none', 'Color', [0.1 0.1 0.1]);
+    title(sprintf('Combined Spectrum (%s)', upper(win_names{wi})), ...
+        'FontSize', 11, 'Interpreter', 'none');
+    set(gca, 'FontSize', 10);
+end
+
+sgtitle(sprintf('Combined GED Components: %s', subject_id), ...
+    'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_combined.png', subject_id)));
+close(fig);
+end
+
+function [sel_idx, sel_w] = sanitize_selected_components(sel_idx, sel_w, nComp)
+if nargin < 3 || isempty(nComp) || ~isfinite(nComp)
+    nComp = 0;
+end
+sel_idx = sel_idx(:);
+sel_idx = sel_idx(isfinite(sel_idx));
+sel_idx = round(sel_idx);
+sel_idx = sel_idx(sel_idx >= 1 & sel_idx <= nComp);
+if isempty(sel_idx)
+    sel_w = [];
+    return;
+end
+if isempty(sel_w) || numel(sel_w) ~= numel(sel_idx)
+    sel_w = ones(numel(sel_idx), 1);
+else
+    sel_w = sel_w(:);
+end
+sel_w(~isfinite(sel_w) | sel_w <= 0) = 0;
+if sum(sel_w) <= 0
+    sel_w = ones(numel(sel_idx), 1);
+end
+sel_w = sel_w / sum(sel_w);
+end
+
+function [pf_score, pf_mode, pf_center_hz, pf_penalty] = compute_combined_peak_form_metrics( ...
+    spec_vec, scan_freqs, analysis_freq_range, detrend_in_log, detrend_flat_edges, ...
+    peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
+    peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
+    peak_form_smooth_n, peak_form_prom_abs_floor, peak_form_peak_width_min_hz, ...
+    peak_form_peak_width_max_hz, peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, ...
+    peak_form_edge_run_soft, peak_form_edge_run_hard)
+pf_score = NaN;
+pf_mode = 'none';
+pf_center_hz = NaN;
+pf_penalty = 'none';
+if isempty(spec_vec) || isempty(scan_freqs) || numel(spec_vec) ~= numel(scan_freqs)
+    return;
+end
+try
+    [pf_score_vec, pf_mode_vec, pf_diag] = compute_peak_form_template_score_from_spectra( ...
+        spec_vec(:)', scan_freqs, analysis_freq_range, ...
+        detrend_in_log, detrend_flat_edges, peak_form_shift_max_hz, ...
+        peak_form_single_widths, peak_form_double_widths, peak_form_double_separations, ...
+        peak_form_min_trough_depth, peak_form_min_similarity, peak_form_smooth_n, ...
+        peak_form_prom_abs_floor, peak_form_peak_width_min_hz, peak_form_peak_width_max_hz, ...
+        peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, peak_form_edge_run_soft, peak_form_edge_run_hard);
+    pf_score = pf_score_vec(1);
+    pf_mode = safe_cellstr_at(pf_mode_vec, 1, 'none');
+    if isfield(pf_diag, 'best_center_hz') && ~isempty(pf_diag.best_center_hz)
+        pf_center_hz = pf_diag.best_center_hz(1);
+    end
+    if isfield(pf_diag, 'dominant_penalty_tag') && ~isempty(pf_diag.dominant_penalty_tag)
+        pf_penalty = safe_cellstr_at(pf_diag.dominant_penalty_tag, 1, 'none');
+    end
+catch
+    % Keep fallback NaN/"none" values when PF metrics cannot be estimated.
+end
 end
 
 function v = safe_cellstr_at(c, idx, fallback)
