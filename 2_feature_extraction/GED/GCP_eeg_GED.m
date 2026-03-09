@@ -156,7 +156,7 @@ peak_form_min_trough_depth = 0.10;  % minimum trough depth for double-peak plaus
 peak_form_min_similarity = 0.50;    % floor similarity before positive score is assigned
 peak_form_smooth_n = 3;             % moving-average smoothing for template scoring
 peak_form_baseline_win_hz = 11;     % local baseline window for log-raw PF trace
-peak_form_prom_abs_floor = 0.02;    % robust absolute prominence floor for PF peak detection
+peak_form_prom_abs_floor = 0.002;   % robust absolute prominence floor for PF peak detection
 peak_form_peak_width_min_hz = 2.0;  % reject ultra-narrow micro-peaks
 peak_form_peak_width_max_hz = 20.0; % reject ultra-broad plateaus
 peak_form_edge_ratio_soft = 1.25;   % soft edge-artifact warning threshold
@@ -3876,21 +3876,18 @@ for k = 1:nCols
         if has_pf_diag
             [dt_x, proc_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
             if ~isempty(proc_y)
+                yyaxis right;
                 h_proc = plot(dt_x, proc_y, '--', 'Color', [0.85 0.20 0.20], 'LineWidth', 1.2);
                 apply_line_alpha_safe(h_proc, 0.85);
                 proc_min = min(proc_y(:));
                 proc_max = max(proc_y(:));
                 if isfinite(proc_min) && isfinite(proc_max) && proc_min ~= proc_max
                     proc_rng = proc_max - proc_min;
-                    mixed_min = min([spec_data(:); proc_y(:)]);
-                    mixed_max = max([spec_data(:); proc_y(:)]);
-                    if isfinite(mixed_min) && isfinite(mixed_max) && mixed_min ~= mixed_max
-                        mixed_rng = mixed_max - mixed_min;
-                        ylim([mixed_min - 0.10 * mixed_rng, mixed_max + 0.10 * mixed_rng]);
-                    else
-                        ylim([proc_min - 0.10 * proc_rng, proc_max + 0.10 * proc_rng]);
-                    end
+                    ylim([proc_min - 0.10 * proc_rng, proc_max + 0.10 * proc_rng]);
                 end
+                ylabel('log-raw residual');
+                set(gca, 'YColor', [0.85 0.20 0.20]);
+                yyaxis left;
             end
         end
         spec_min = min(spec_data(isfinite(spec_data)));
@@ -3900,6 +3897,7 @@ for k = 1:nCols
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
         if k == 1 && ~isempty(h_proc)
+            yyaxis left;
             lgd = legend([h_raw, h_proc], {'raw PR', 'log-raw (smooth-baseline)'}, ...
                 'FontSize', 4.5, 'Location', 'northwest', 'Box', 'off', 'AutoUpdate', 'off');
             lgd.ItemTokenSize = [8, 6];
@@ -3973,21 +3971,18 @@ for k = 1:nCols
         if has_pf_diag
             [dt_x, proc_y] = compute_pf_diag_trace(spec_data, scan_freqs, pf_diag_cfg);
             if ~isempty(proc_y)
+                yyaxis right;
                 h_proc_r = plot(dt_x, proc_y, '--', 'Color', [0.85 0.20 0.20], 'LineWidth', 1.2);
                 apply_line_alpha_safe(h_proc_r, 0.85);
                 proc_min = min(proc_y(:));
                 proc_max = max(proc_y(:));
                 if isfinite(proc_min) && isfinite(proc_max) && proc_min ~= proc_max
                     proc_rng = proc_max - proc_min;
-                    mixed_min = min([spec_data(:); proc_y(:)]);
-                    mixed_max = max([spec_data(:); proc_y(:)]);
-                    if isfinite(mixed_min) && isfinite(mixed_max) && mixed_min ~= mixed_max
-                        mixed_rng = mixed_max - mixed_min;
-                        ylim([mixed_min - 0.10 * mixed_rng, mixed_max + 0.10 * mixed_rng]);
-                    else
-                        ylim([proc_min - 0.10 * proc_rng, proc_max + 0.10 * proc_rng]);
-                    end
+                    ylim([proc_min - 0.10 * proc_rng, proc_max + 0.10 * proc_rng]);
                 end
+                ylabel('log-raw residual');
+                set(gca, 'YColor', [0.85 0.20 0.20]);
+                yyaxis left;
             end
         end
         spec_min = min(spec_data(isfinite(spec_data)));
@@ -4343,12 +4338,22 @@ for ci = 1:nComp
     if ~isfinite(robust_scale) || robust_scale <= eps
         robust_scale = 1;
     end
-    rel_prom = 0.18 * max(y_pos);
-    min_prom = max([0, rel_prom, prom_abs_floor, 0.8 * robust_scale]);
+    rel_prom = 0.12 * max(y_pos);
+    min_prom = max([0, rel_prom, prom_abs_floor, 0.25 * robust_scale]);
     [pks, locs, widths, prom] = findpeaks(y_pos, x_band, ...
         'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
     if isempty(pks)
-        continue;
+        % Fallback: keep best local maximum to avoid collapsing valid-but-noisy traces to PF=0.
+        [dom_amp, dom_idx] = max(y_pos);
+        if ~isfinite(dom_amp) || dom_amp <= eps
+            continue;
+        end
+        dom_loc = x_band(dom_idx);
+        dom_prom = max(0, dom_amp - median(y_pos));
+        widths = 6;
+        pks = dom_amp;
+        locs = dom_loc;
+        prom = dom_prom;
     end
     [~, dom_idx] = max(prom);
     dom_amp = pks(dom_idx);
@@ -4377,7 +4382,14 @@ for ci = 1:nComp
     snr_score = dom_prom / (dom_prom + robust_scale);
     dom_scale = max(dom_amp, prctile(y_pos, 90));
     prom_score = dom_prom / max(dom_scale, eps);
-    dominant_quality = max(0, min(1, (0.55 * prom_score + 0.45 * snr_score) * width_score));
+    peak_core_hz = 6;
+    peak_core_mask = abs(x_band - dom_loc) <= peak_core_hz;
+    conc_ratio = sum(y_pos(peak_core_mask)) / max(sum(y_pos), eps);
+    concentration_pen = 1;
+    if isfinite(conc_ratio) && conc_ratio < 0.32
+        concentration_pen = max(0.35, conc_ratio / 0.32);
+    end
+    dominant_quality = max(0, min(1, (0.60 * prom_score + 0.40 * snr_score) * width_score * concentration_pen));
 
     best_pre_penalty = dominant_quality;
     mode_raw = 'dominant';
@@ -4412,13 +4424,13 @@ for ci = 1:nComp
     diag.edge_artifact_flag(ci) = edge_flag;
     edge_pen = 1;
     if isfinite(edge_ratio) && edge_ratio > edge_ratio_soft
-        edge_pen = edge_pen * max(0.65, 1 - 0.35 * min(1, (edge_ratio - edge_ratio_soft) / max(edge_ratio_hard - edge_ratio_soft, eps)));
+        edge_pen = edge_pen * max(0.80, 1 - 0.20 * min(1, (edge_ratio - edge_ratio_soft) / max(edge_ratio_hard - edge_ratio_soft, eps)));
     end
     if isfinite(edge_run_score) && edge_run_score > edge_run_soft
-        edge_pen = edge_pen * max(0.65, 1 - 0.35 * min(1, (edge_run_score - edge_run_soft) / max(edge_run_hard - edge_run_soft, eps)));
+        edge_pen = edge_pen * max(0.80, 1 - 0.20 * min(1, (edge_run_score - edge_run_soft) / max(edge_run_hard - edge_run_soft, eps)));
     end
     if edge_flag
-        edge_pen = edge_pen * 0.70;
+        edge_pen = edge_pen * 0.90;
     end
 
     dominance_pen = minor_pen;
