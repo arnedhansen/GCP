@@ -4040,15 +4040,10 @@ for wi = 1:3
     xlabel('Hz'); ylabel('Power Change [%]');
     box on;
 
-    [pf_score, pf_mode, pf_center_hz, pf_penalty] = compute_combined_peak_form_metrics( ...
-        spec_vec, scan_freqs, analysis_freq_range, detrend_in_log, detrend_flat_edges, ...
-        peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
-        peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
-        peak_form_smooth_n, peak_form_prom_abs_floor, peak_form_peak_width_min_hz, ...
-        peak_form_peak_width_max_hz, peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, ...
-        peak_form_edge_run_soft, peak_form_edge_run_hard);
-    text(0.02, 0.98, sprintf('PF=%.2f | mode=%s | center=%.1f Hz | penalty=%s', ...
-        pf_score, pf_mode, pf_center_hz, pf_penalty), ...
+    [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
+        spec_vec, scan_freqs, analysis_freq_range);
+    text(0.02, 0.98, sprintf('PF=%.2f | peak=%.1f Hz (\\pm2.5 Hz)', ...
+        pf_score, pf_peak_hz), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
         'FontSize', 9, 'Interpreter', 'none', 'Color', [0.1 0.1 0.1]);
     title(sprintf('Combined Spectrum (%s)', upper(win_names{wi})), ...
@@ -4086,38 +4081,50 @@ end
 sel_w = sel_w / sum(sel_w);
 end
 
-function [pf_score, pf_mode, pf_center_hz, pf_penalty] = compute_combined_peak_form_metrics( ...
-    spec_vec, scan_freqs, analysis_freq_range, detrend_in_log, detrend_flat_edges, ...
-    peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
-    peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
-    peak_form_smooth_n, peak_form_prom_abs_floor, peak_form_peak_width_min_hz, ...
-    peak_form_peak_width_max_hz, peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, ...
-    peak_form_edge_run_soft, peak_form_edge_run_hard)
+function [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
+    spec_vec, scan_freqs, analysis_freq_range)
 pf_score = NaN;
-pf_mode = 'none';
-pf_center_hz = NaN;
-pf_penalty = 'none';
+pf_peak_hz = NaN;
 if isempty(spec_vec) || isempty(scan_freqs) || numel(spec_vec) ~= numel(scan_freqs)
     return;
 end
-try
-    [pf_score_vec, pf_mode_vec, pf_diag] = compute_peak_form_template_score_from_spectra( ...
-        spec_vec(:)', scan_freqs, analysis_freq_range, ...
-        detrend_in_log, detrend_flat_edges, peak_form_shift_max_hz, ...
-        peak_form_single_widths, peak_form_double_widths, peak_form_double_separations, ...
-        peak_form_min_trough_depth, peak_form_min_similarity, peak_form_smooth_n, ...
-        peak_form_prom_abs_floor, peak_form_peak_width_min_hz, peak_form_peak_width_max_hz, ...
-        peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, peak_form_edge_run_soft, peak_form_edge_run_hard);
-    pf_score = pf_score_vec(1);
-    pf_mode = safe_cellstr_at(pf_mode_vec, 1, 'none');
-    if isfield(pf_diag, 'best_center_hz') && ~isempty(pf_diag.best_center_hz)
-        pf_center_hz = pf_diag.best_center_hz(1);
+freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
+if sum(freq_mask) < 3
+    return;
+end
+x = scan_freqs(freq_mask);
+y = spec_vec(freq_mask);
+valid = isfinite(x) & isfinite(y);
+x = x(valid);
+y = y(valid);
+if numel(y) < 3
+    return;
+end
+peak_lo = max(40, analysis_freq_range(1));
+peak_hi = min(80, analysis_freq_range(2));
+inner_mask = x >= peak_lo & x <= peak_hi;
+if sum(inner_mask) >= 3
+    x_peak = x(inner_mask);
+    y_peak = y(inner_mask);
+else
+    x_peak = x;
+    y_peak = y;
+end
+[pks, locs] = findpeaks(y_peak, x_peak, 'SortStr', 'descend');
+if ~isempty(pks)
+    pf_peak_hz = locs(1);
+else
+    [~, idx_max] = max(y_peak); % robust fallback for mostly negative/flat spectra
+    pf_peak_hz = x_peak(idx_max);
+end
+win_mask = abs(x - pf_peak_hz) <= 2.5;
+if any(win_mask)
+    pf_score = mean(y(win_mask), 'omitnan');
+else
+    y0 = interp1(x, y, pf_peak_hz, 'linear', NaN);
+    if isfinite(y0)
+        pf_score = y0;
     end
-    if isfield(pf_diag, 'dominant_penalty_tag') && ~isempty(pf_diag.dominant_penalty_tag)
-        pf_penalty = safe_cellstr_at(pf_diag.dominant_penalty_tag, 1, 'none');
-    end
-catch
-    % Keep fallback NaN/"none" values when PF metrics cannot be estimated.
 end
 end
 
