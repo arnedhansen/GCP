@@ -4132,9 +4132,14 @@ for ci = 1:nComp
         edge_pen = 0.85;
     end
 
-    % Check peak dominance: penalize if no clear dominant peak
+    % Check peak dominance: penalize if no clear dominant peak.
+    % MinPeakProminence must be nonnegative even when detrended values are <=0.
     dominance_pen = 1;
-    [pks, ~] = findpeaks(y_band, 'MinPeakProminence', 0.20 * max(y_band));
+    max_y_band = max(y_band);
+    if ~isfinite(max_y_band)
+        max_y_band = 0;
+    end
+    [pks, ~] = findpeaks(y_band, 'MinPeakProminence', max(0, 0.20 * max_y_band));
     if numel(pks) > 1
         pks_sorted = sort(pks, 'descend');
         dominance_ratio = pks_sorted(1) / max(pks_sorted(2), eps);
@@ -5346,6 +5351,67 @@ if in_log
     y_fit = log(max(y, eps));  % preserve shape; y(:) would force column and cause implicit expansion downstream
 end
 y_dt = detrend_poly_stable(y_fit, x, ord, edge_exclude_n, flat_edges);
+% Suppress edge artifacts smoothly in detrended spectra:
+% - keep 40-80 Hz largely unchanged
+% - attenuate 30-40 and 80-90 progressively
+% - drive <30 and >90 close to zero (not exactly zero)
+y_dt = apply_soft_edge_attenuation(y_dt, x, [30 90], [40 80], 0.03, 2.0, 4.0);
+end
+
+function y_out = apply_soft_edge_attenuation(y_in, x, outer_band, core_band, edge_floor, shoulder_pow, outside_decay_hz)
+y_out = y_in;
+if isempty(y_in) || isempty(x) || numel(y_in) ~= numel(x)
+    return;
+end
+if nargin < 4 || isempty(core_band) || numel(core_band) ~= 2
+    core_band = [40 80];
+end
+if nargin < 3 || isempty(outer_band) || numel(outer_band) ~= 2
+    outer_band = [30 90];
+end
+if nargin < 5 || isempty(edge_floor)
+    edge_floor = 0.03;
+end
+if nargin < 6 || isempty(shoulder_pow)
+    shoulder_pow = 2.0;
+end
+if nargin < 7 || isempty(outside_decay_hz)
+    outside_decay_hz = 4.0;
+end
+
+edge_floor = max(0, min(1, edge_floor));
+shoulder_pow = max(1, shoulder_pow);
+outside_decay_hz = max(eps, outside_decay_hz);
+
+outer_lo = min(outer_band);
+outer_hi = max(outer_band);
+core_lo = min(core_band);
+core_hi = max(core_band);
+if ~(core_lo >= outer_lo && core_hi <= outer_hi)
+    core_lo = max(core_lo, outer_lo);
+    core_hi = min(core_hi, outer_hi);
+end
+
+w = zeros(size(x));
+inside_outer = (x >= outer_lo) & (x <= outer_hi);
+inside_core = (x >= core_lo) & (x <= core_hi);
+w(inside_core) = 1;
+
+shoulder_mask = inside_outer & ~inside_core;
+if any(shoulder_mask)
+    d_to_outer = min(abs(x(shoulder_mask) - outer_lo), abs(x(shoulder_mask) - outer_hi));
+    shoulder_half_width = max(eps, min(core_lo - outer_lo, outer_hi - core_hi));
+    t = max(0, min(1, d_to_outer / shoulder_half_width));
+    w(shoulder_mask) = edge_floor + (1 - edge_floor) * (t .^ shoulder_pow);
+end
+
+outside_mask = ~inside_outer;
+if any(outside_mask)
+    d_out = min(abs(x(outside_mask) - outer_lo), abs(x(outside_mask) - outer_hi));
+    w(outside_mask) = edge_floor * exp(-(d_out / outside_decay_hz) .^ 2);
+end
+
+y_out = y_in .* w;
 end
 
 function y_dt = detrend_poly_stable(y, x, ord, edge_exclude_n, flat_edges)
