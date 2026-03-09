@@ -153,9 +153,9 @@ peak_form_single_widths = [5 7 9 12];
 peak_form_double_separations = [8 12 16 20];
 peak_form_double_widths = [3 4 5 6];
 peak_form_min_trough_depth = 0.10;  % minimum trough depth for double-peak plausibility
-peak_form_min_similarity = 0.50;    % floor similarity before positive score is assigned
+peak_form_min_similarity = 0.40;    % soft PF quality reference for raw-spectrum scoring
 peak_form_smooth_n = 3;             % moving-average smoothing for template scoring
-peak_form_prom_abs_floor = 0.002;   % robust absolute prominence floor for PF peak detection
+peak_form_prom_abs_floor = 0.001;   % robust absolute prominence floor for PF peak detection
 peak_form_peak_width_min_hz = 2.0;  % reject ultra-narrow micro-peaks
 peak_form_peak_width_max_hz = 20.0; % reject ultra-broad plateaus
 peak_form_edge_ratio_soft = 1.25;   % soft edge-artifact warning threshold
@@ -4187,19 +4187,28 @@ for ci = 1:nComp
     diag.best_single_similarity(ci) = single_best;
     diag.best_double_similarity(ci) = double_best;
 
-    y_pos = max(y_band, 0);
-    robust_scale = robust_mad(y_band);
+    % Raw spectra can be globally offset (including mostly negative values),
+    % so peak prominence is measured relative to a local raw floor.
+    y_floor = prctile(y_band(isfinite(y_band)), 20);
+    if ~isfinite(y_floor)
+        y_floor = median(y_band(isfinite(y_band)));
+    end
+    if ~isfinite(y_floor)
+        y_floor = 0;
+    end
+    y_pos = max(y_band - y_floor, 0);
+    robust_scale = robust_mad(y_pos);
     if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = iqr(y_band);
+        robust_scale = iqr(y_pos);
     end
     if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = std(y_band(isfinite(y_band)));
+        robust_scale = std(y_pos(isfinite(y_pos)));
     end
     if ~isfinite(robust_scale) || robust_scale <= eps
         robust_scale = 1;
     end
-    rel_prom = 0.12 * max(y_pos);
-    min_prom = max([0, rel_prom, prom_abs_floor, 0.25 * robust_scale]);
+    rel_prom = 0.08 * max(y_pos);
+    min_prom = max([0, rel_prom, prom_abs_floor, 0.15 * robust_scale]);
     [pks, locs, widths, prom] = findpeaks(y_pos, x_band, ...
         'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
     if isempty(pks)
@@ -4240,8 +4249,8 @@ for ci = 1:nComp
         end
     end
     snr_score = dom_prom / (dom_prom + robust_scale);
-    dom_scale = max(dom_amp, prctile(y_pos, 90));
-    prom_score = dom_prom / max(dom_scale, eps);
+    prom_score = dom_prom / (dom_prom + 0.70 * robust_scale);
+    shape_score = max(single_best, double_best);
     peak_core_hz = 6;
     peak_core_mask = abs(x_band - dom_loc) <= peak_core_hz;
     conc_ratio = sum(y_pos(peak_core_mask)) / max(sum(y_pos), eps);
@@ -4249,7 +4258,7 @@ for ci = 1:nComp
     if isfinite(conc_ratio) && conc_ratio < 0.32
         concentration_pen = max(0.35, conc_ratio / 0.32);
     end
-    dominant_quality = max(0, min(1, (0.60 * prom_score + 0.40 * snr_score) * width_score * concentration_pen));
+    dominant_quality = max(0, min(1, (0.40 * prom_score + 0.30 * snr_score + 0.30 * shape_score) * width_score * concentration_pen));
 
     best_pre_penalty = dominant_quality;
     mode_raw = 'dominant';
@@ -4272,9 +4281,9 @@ for ci = 1:nComp
 
     minor_pen = 1;
     if minor_count > 0
-        minor_pen = minor_pen * max(0.55, 1 - 0.10 * max(minor_count - 1, 0));
-        if minor_relmax > 0.60
-            minor_pen = minor_pen * max(0.40, 1 - 0.90 * (minor_relmax - 0.60));
+        minor_pen = minor_pen * max(0.35, 1 - 0.16 * max(minor_count - 1, 0));
+        if minor_relmax > 0.55
+            minor_pen = minor_pen * max(0.25, 1 - 1.10 * (minor_relmax - 0.55));
         end
     end
 
@@ -4316,10 +4325,10 @@ for ci = 1:nComp
             amp_scale = 1;
         end
         roughness_ratio = robust_mad(dy) / amp_scale;
-        rough_ref = 0.50;
-        rough_span = 0.80;
-        rough_pen_floor = 0.70;
-        rough_pen_max_loss = 0.30;
+        rough_ref = 0.35;
+        rough_span = 0.65;
+        rough_pen_floor = 0.45;
+        rough_pen_max_loss = 0.55;
         if isfinite(roughness_ratio) && roughness_ratio > rough_ref
             loss_frac = min(1, (roughness_ratio - rough_ref) / rough_span);
             roughness_pen = max(rough_pen_floor, 1 - rough_pen_max_loss * loss_frac);
@@ -4327,7 +4336,7 @@ for ci = 1:nComp
     end
 
     penalty_raw = edge_pen * dominance_pen * hf_pen * roughness_pen;
-    penalty_floor = 0.35;
+    penalty_floor = 0.25;
     penalty_used = max(penalty_floor, penalty_raw);
     best_raw = best_pre_penalty * penalty_used;
 
@@ -4362,14 +4371,9 @@ for ci = 1:nComp
         peak_form_score_vec(ci) = 0;
         peak_form_mode_vec{ci} = 'none';
     else
-        % Smooth transfer avoids score collapse to exactly zero below min_similarity.
-        if best_raw <= min_similarity
-            below = min_similarity - best_raw;
-            score_tail = exp(-4 * below / max(min_similarity, eps));
-            score_mapped = 0.20 * score_tail;
-        else
-            score_high = (best_raw - min_similarity) / max(1 - min_similarity, eps);
-            score_mapped = 0.20 + 0.80 * score_high;
+        score_mapped = best_raw;
+        if isfinite(min_similarity) && (min_similarity > 0) && (best_raw < min_similarity)
+            score_mapped = 0.75 * score_mapped;
         end
         peak_form_score_vec(ci) = max(0, min(1, score_mapped));
         peak_form_mode_vec{ci} = mode_raw;
