@@ -47,10 +47,8 @@
 %      (stimulus / baseline) in component space using three benchmark
 %      methods: (a) raw posterior-ROI channel average, (b) top-eigenvalue
 %      GED component, (c) combined artifact-screened weighted GED.
-%   2. Trim the power-ratio spectrum to the 30-90 Hz analysis band after
-%      fitting a quadratic polynomial trend on the full 10-110 Hz support
-%      and subtracting it (detrending).
-%   3. Detect peaks on each detrended trial spectrum:
+%   2. Trim the power-ratio spectrum to the 30-90 Hz analysis band.
+%   3. Detect peaks on each raw trial spectrum:
 %        - Single peak: tallest prominent peak in 30-90 Hz.
 %        - Dual peaks: tallest peaks below and above 50 Hz.
 %        - Spectral centroid: positive-mass centroid in 40-80 Hz.
@@ -62,7 +60,7 @@
 %   - Three-way benchmark comparison: detectability, prominence,
 %     trial-level reliability (CV), condition separation (linear slope
 %     across contrast levels, delta 100%-25%).
-%   - Grand-average detrended power spectra and condition-separation
+%   - Grand-average raw power spectra and condition-separation
 %     statistics (one-sample t-test on subject-level slopes/deltas).
 %   - Simulation validation: ground-truth sensitivity, specificity,
 %     and localisation error across SNR, depth, overlap, and artifact
@@ -90,7 +88,7 @@ gamma_range = [30, 90];
 gamma_peak_power_halfwidth_hz = 2.5;
 
 % Narrowband scanning parameters
-% Detrending fit is computed on a wider band, then trimmed to analysis band.
+% Frequency scan is computed on a wider band, then trimmed to analysis band.
 scan_freqs_detrend = 10:1:110;
 analysis_freq_range = [30, 90];
 analysis_freq_mask_detrend = scan_freqs_detrend >= analysis_freq_range(1) & scan_freqs_detrend <= analysis_freq_range(2);
@@ -206,18 +204,14 @@ simulation_depth_levels = [0.6 1.0 1.4];
 simulation_overlap_levels = [0.15 0.35 0.55];
 simulation_artifact_levels = [0.0 0.25 0.5];
 
-% Detrending parameters for power-ratio spectrum
-poly_order = 2;                    % use linear-domain quadratic detrending (legacy-compatible)
-detrend_edge_exclude_n = 5;        % exclude edge bins from polynomial fit to reduce boundary artifacts
-detrend_in_log = false;            % linear-domain detrending
-detrend_flat_edges = true;         % force residual to zero at edges to reduce PF edge bias
+% Raw power-ratio peak detection parameters (no detrending/normalization)
 peak_min_prom_frac = 0.15;         % MinPeakProminence as fraction of current-spectrum max
 peak_min_distance_hz = 5;          % MinPeakDistance in Hz
 peak_min_prom_abs = 0.02;          % absolute prominence floor (robustness in low-amplitude trials)
 centroid_freq_range = [40 80];
 centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
-centroid_min_peak = 0.02;    % minimum positive peak in detrended spectrum
+centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
 
 % Condition info
 condNames  = {'c25', 'c50', 'c75', 'c100'};
@@ -309,9 +303,6 @@ warning_log_by_subj = cell(nSubj, 1);
 all_trial_powratio_bench = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_bench_early = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_bench_late  = cell(nBenchmarkMethods, 4, nSubj);
-all_trial_powratio_dt_bench = cell(nBenchmarkMethods, 4, nSubj);
-all_trial_powratio_dt_bench_early = cell(nBenchmarkMethods, 4, nSubj);
-all_trial_powratio_dt_bench_late  = cell(nBenchmarkMethods, 4, nSubj);
 all_trial_powratio_components_full  = cell(4, nSubj);
 all_trial_powratio_components_early = cell(4, nSubj);
 all_trial_powratio_components_late  = cell(4, nSubj);
@@ -630,11 +621,9 @@ for subj = 1:nSubj
         isfinite(lineharm_vec) & isfinite(stationarity_vec) & isfinite(burst_vec) & ...
         isfinite(hf_slope_vec) & isfinite(condlock_vec);
     [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
-        searchMeanPrSpectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
-        detrend_in_log, detrend_flat_edges, peak_min_prom_frac, peak_min_distance_hz);
+        searchMeanPrSpectrum, scan_freqs, analysis_freq_range, peak_min_prom_frac, peak_min_distance_hz);
     [peak_form_score_vec, peak_form_mode_vec, peak_form_diag] = compute_peak_form_template_score_from_spectra( ...
-        searchMeanPrSpectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
-        detrend_in_log, detrend_flat_edges, peak_form_shift_max_hz, peak_form_single_widths, ...
+        searchMeanPrSpectrum, scan_freqs, analysis_freq_range, peak_form_shift_max_hz, peak_form_single_widths, ...
         peak_form_double_widths, peak_form_double_separations, peak_form_min_trough_depth, ...
         peak_form_min_similarity, peak_form_smooth_n, ...
         peak_form_prom_abs_floor, peak_form_peak_width_min_hz, peak_form_peak_width_max_hz, ...
@@ -1353,7 +1342,7 @@ for subj = 1:nSubj
         searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
         searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
         searchTopos_late, searchMeanPrSpectrum_late, selected_idx_late, w_combined_late, ...
-        analysis_freq_range, detrend_in_log, detrend_flat_edges, ...
+        analysis_freq_range, ...
         peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
         peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
         peak_form_smooth_n, peak_form_prom_abs_floor, peak_form_peak_width_min_hz, ...
@@ -1579,39 +1568,12 @@ for subj = 1:nSubj
         for mi = 1:nBenchmarkMethods
             pr_m_full = squeeze(powratio_methods_full_analysis(mi, :, :));
             all_trial_powratio_bench{mi, cond, subj} = pr_m_full;
-            if ~isempty(pr_m_full)
-                dt_m_full = nan(size(pr_m_full));
-                for trl = 1:size(pr_m_full, 1)
-                    pr_full = squeeze(powratio_methods_full(mi, trl, :))';
-                    dt_full = detrend_power_ratio(pr_full, scan_freqs_detrend, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
-                    dt_m_full(trl,:) = dt_full(analysis_freq_mask_detrend);
-                end
-                all_trial_powratio_dt_bench{mi, cond, subj} = dt_m_full;
-            end
 
             pr_m_early = squeeze(powratio_methods_early_analysis(mi, :, :));
             all_trial_powratio_bench_early{mi, cond, subj} = pr_m_early;
-            if ~isempty(pr_m_early)
-                dt_m_early = nan(size(pr_m_early));
-                for trl = 1:size(pr_m_early, 1)
-                    pr_full = squeeze(powratio_methods_early(mi, trl, :))';
-                    dt_full = detrend_power_ratio(pr_full, scan_freqs_detrend, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
-                    dt_m_early(trl,:) = dt_full(analysis_freq_mask_detrend);
-                end
-                all_trial_powratio_dt_bench_early{mi, cond, subj} = dt_m_early;
-            end
 
             pr_m_late = squeeze(powratio_methods_late_analysis(mi, :, :));
             all_trial_powratio_bench_late{mi, cond, subj} = pr_m_late;
-            if ~isempty(pr_m_late)
-                dt_m_late = nan(size(pr_m_late));
-                for trl = 1:size(pr_m_late, 1)
-                    pr_full = squeeze(powratio_methods_late(mi, trl, :))';
-                    dt_full = detrend_power_ratio(pr_full, scan_freqs_detrend, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
-                    dt_m_late(trl,:) = dt_full(analysis_freq_mask_detrend);
-                end
-                all_trial_powratio_dt_bench_late{mi, cond, subj} = dt_m_late;
-            end
         end
 
         % Keep full-window outputs based on weighted combined GED branch.
@@ -1652,7 +1614,7 @@ for subj = 1:nSubj
                 robust_scale = 1;
             end
 
-            % Stripe-center metric: spectral centroid of positive detrended mass in 40-80 Hz.
+            % Stripe-center metric: spectral centroid of positive raw mass in 40-80 Hz.
             centroid_mask_use = freq_use >= centroid_freq_range(1) & freq_use <= centroid_freq_range(2);
             pr_band = pr_proc(centroid_mask_use);
             freq_band = freq_use(centroid_mask_use);
@@ -1817,119 +1779,13 @@ for subj = 1:nSubj
     end % condition loop
 
     %% ================================================================
-    %  PER-SUBJECT FIGURE (4 rows x 4 columns)
+    %  PER-SUBJECT FIGURES (one each for full, early, late; raw spectra)
     %  ================================================================
     close all
-    fig = figure('Position', [0 0 1512 982], 'Color', 'w');
-    sgtitle(sprintf('Trial-Level GED: Subject %s', subjects{subj}), ...
-        'FontSize', 18, 'FontWeight', 'bold');
-
     cmap_div = interp1([0 0.5 1], ...
         [0.17 0.27 0.53; 0.97 0.97 0.97; 0.70 0.09 0.17], linspace(0,1,256));
 
-    % Pre-compute detrended matrices (fit over 10-110 Hz, keep 30-90 Hz).
-    pr_dt_mats = cell(1, 4);
-    for cond = 1:4
-        pr_mat_full = all_trial_powratio_fullscan{cond, subj};
-        if ~isempty(pr_mat_full)
-            nTrl = size(pr_mat_full, 1);
-            dt = nan(nTrl, nFreqs);
-            for trl = 1:nTrl
-                dt_full = detrend_power_ratio(pr_mat_full(trl,:), scan_freqs_detrend, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
-                dt(trl,:) = dt_full(analysis_freq_mask_detrend);
-            end
-            pr_dt_mats{cond} = dt;
-        end
-    end
-    row1_clim = ones(1, 4);
-    for cond = 1:4
-        if ~isempty(pr_dt_mats{cond})
-            cond_vals = abs(pr_dt_mats{cond}(:));
-            cond_vals = cond_vals(isfinite(cond_vals));
-            if ~isempty(cond_vals)
-                row1_clim(cond) = prctile(cond_vals, 95);
-                if ~isfinite(row1_clim(cond)) || row1_clim(cond) <= 0
-                    row1_clim(cond) = max(cond_vals);
-                end
-            end
-        end
-        if ~isfinite(row1_clim(cond)) || row1_clim(cond) <= 0
-            row1_clim(cond) = 1;
-        end
-    end
-
-    % --- Row 1: Heatmap of trial-level detrended power-ratio spectra ---
-    for cond = 1:4
-        subplot(3, 4, cond);
-        if ~isempty(pr_dt_mats{cond})
-            hold on;
-            imagesc(scan_freqs, 1:size(pr_dt_mats{cond},1), pr_dt_mats{cond});
-            colormap(gca, cmap_div);
-            caxis([-row1_clim(cond) row1_clim(cond)]);
-            cb = colorbar; cb.FontSize = 8;
-            ctd = all_trial_centroid{cond, subj};
-            if ~isempty(ctd)
-                valid_ctd = ~isnan(ctd);
-                tr_idx = find(valid_ctd);
-                if ~isempty(tr_idx)
-                    plot(ctd(valid_ctd), tr_idx, '.', 'Color', [0 0 0], 'MarkerSize', 7);
-                end
-                if numel(tr_idx) >= 2
-                    plot(ctd(valid_ctd), tr_idx, '-', 'Color', [0 0 0], 'LineWidth', 0.6);
-                end
-            end
-            xlabel('Freq [Hz]'); ylabel('Trial');
-            set(gca, 'YDir', 'normal');
-        end
-        title(sprintf('%s Detrended', condLabels{cond}), 'FontSize', 11);
-        set(gca, 'FontSize', 10); xlim([30 90]); box on;
-    end
-
-    % --- Row 2: Mean trial-level spectrum with dual-peak markers ---
-    for cond = 1:4
-        subplot(3, 4, 4 + cond); hold on;
-        if ~isempty(pr_dt_mats{cond})
-            mu_dt = nanmean(pr_dt_mats{cond}, 1);
-            nTrl = size(pr_dt_mats{cond}, 1);
-            sem_dt = nanstd(pr_dt_mats{cond}, [], 1) / sqrt(nTrl);
-            row2_abs = max(abs([mu_dt - sem_dt, mu_dt + sem_dt]), [], 'omitnan');
-            if ~isfinite(row2_abs) || row2_abs <= 0
-                row2_abs = 1;
-            end
-            faceC = 0.8*colors(cond,:) + 0.2*[1 1 1];
-            patch([scan_freqs, fliplr(scan_freqs)], ...
-                [mu_dt - sem_dt, fliplr(mu_dt + sem_dt)], ...
-                colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
-            plot(scan_freqs, mu_dt, '-', 'Color', colors(cond,:), 'LineWidth', 2.5);
-            yline(0, 'k-', 'LineWidth', 0.5);
-            xline(50, 'k:', 'LineWidth', 1, 'Alpha', 0.5);
-            pf_lo = all_trial_median_low(cond, subj);
-            pf_hi = all_trial_median_high(cond, subj);
-            if ~isnan(pf_lo)
-                xline(pf_lo, '--', 'LineWidth', 2, 'Color', [0 0 0.7]);
-                text(pf_lo + 1, max(mu_dt) * 0.85, ...
-                    sprintf('L:%.0f', pf_lo), 'FontSize', 9, ...
-                    'Color', [0 0 0.7], 'FontWeight', 'bold');
-            end
-            if ~isnan(pf_hi)
-                xline(pf_hi, '--', 'LineWidth', 2, 'Color', [0.7 0 0]);
-                text(pf_hi + 1, max(mu_dt) * 0.65, ...
-                    sprintf('H:%.0f', pf_hi), 'FontSize', 9, ...
-                    'Color', [0.7 0 0], 'FontWeight', 'bold');
-            end
-            ylim([-row2_abs row2_abs]);
-        end
-        xlabel('Freq [Hz]'); ylabel('\Delta PR');
-        det_lo = all_trial_detrate_low(cond, subj);
-        det_hi = all_trial_detrate_high(cond, subj);
-        title(sprintf('%s Dual (L:%.0f%% H:%.0f%%)', condLabels{cond}, det_lo*100, det_hi*100), 'FontSize', 10);
-        set(gca, 'FontSize', 10); xlim([30 90]);  box on;
-    end
-
-    % --- Row 3: Topoplot + histogram ---
-    % Use the same occipital-channel definition as component selection.
     occ_highlight = dataEEG_c25.label(occ_idx);
-
     cfg_topo = [];
     cfg_topo.layout    = headmodel.layANThead;
     cfg_topo.comment   = 'no';
@@ -1945,107 +1801,248 @@ for subj = 1:nSubj
     cfg_topo.highlightsize      = {12};
     cfg_topo.highlightcolor     = {[0 0 0]};
 
-    subplot(3, 4, 9);
-    if ~isempty(searchTopos_full) && ~isempty(selected_idx_full)
-        topo_data = [];
-        topo_data.label  = dataEEG_c25.label;
-        w_plot_common = w_combined_full(:);
-        if numel(w_plot_common) ~= numel(selected_idx_full) || ~any(isfinite(w_plot_common))
-            w_plot_common = ones(numel(selected_idx_full), 1);
+    window_names = {'full', 'early', 'late'};
+    for wi = 1:3
+        if wi == 1
+            pr_source = all_trial_powratio_fullscan;
+            peaks_single_source = all_trial_peaks_single;
+            median_low_source = all_trial_median_low;
+            median_high_source = all_trial_median_high;
+            detrate_low_source = all_trial_detrate_low;
+            detrate_high_source = all_trial_detrate_high;
+            centroid_source = all_trial_centroid;
+            topo_mat_window = searchTopos_full;
+            selected_idx_window = selected_idx_full;
+            selected_w_window = w_combined_full;
+            eigvals_window = evals_sorted_full;
+        elseif wi == 2
+            pr_source = all_trial_powratio_early;
+            peaks_single_source = all_trial_peaks_single_early;
+            median_low_source = all_trial_median_low_early;
+            median_high_source = all_trial_median_high_early;
+            detrate_low_source = all_trial_detrate_single_early;
+            detrate_high_source = all_trial_detrate_single_early;
+            centroid_source = cell(size(all_trial_powratio_early));
+            topo_mat_window = searchTopos_early;
+            selected_idx_window = selected_idx_early;
+            selected_w_window = w_combined_early;
+            eigvals_window = evals_sorted_early;
+        else
+            pr_source = all_trial_powratio_late;
+            peaks_single_source = all_trial_peaks_single_late;
+            median_low_source = all_trial_median_low_late;
+            median_high_source = all_trial_median_high_late;
+            detrate_low_source = all_trial_detrate_single_late;
+            detrate_high_source = all_trial_detrate_single_late;
+            centroid_source = cell(size(all_trial_powratio_late));
+            topo_mat_window = searchTopos_late;
+            selected_idx_window = selected_idx_late;
+            selected_w_window = w_combined_late;
+            eigvals_window = evals_sorted_late;
         end
-        w_plot_common(~isfinite(w_plot_common) | w_plot_common <= 0) = 0;
-        if sum(w_plot_common) <= 0
-            w_plot_common = ones(numel(selected_idx_full), 1);
-        end
-        w_plot_common = w_plot_common / sum(w_plot_common);
-        topo_plot_common = searchTopos_full(:, selected_idx_full) * w_plot_common;
-        if viz_suppress_nonocc_outliers && ~isempty(nonocc_idx)
-            post_abs = abs(topo_plot_common(post_idx));
-            post_abs = post_abs(isfinite(post_abs));
-            if isempty(post_abs)
-                post_abs = abs(topo_plot_common(isfinite(topo_plot_common)));
-            end
-            if isempty(post_abs)
-                amp_thr_common = 1;
-            else
-                amp_thr_common = prctile(post_abs, viz_topo_prctile);
-                if ~isfinite(amp_thr_common) || amp_thr_common <= 0
-                    amp_thr_common = max(post_abs);
-                end
-                if ~isfinite(amp_thr_common) || amp_thr_common <= 0
-                    amp_thr_common = 1;
-                end
-            end
-            nonocc_out = false(nChans, 1);
-            nonocc_out(nonocc_idx) = abs(topo_plot_common(nonocc_idx)) > (viz_nonocc_outlier_mult * amp_thr_common);
-            if any(nonocc_out)
-                valid_interp = find(~nonocc_out & isfinite(topo_plot_common) & has_pos);
-                out_idx = find(nonocc_out);
-                for oi = out_idx(:)'
-                    if has_pos(oi) && numel(valid_interp) >= 3
-                        d = sqrt(sum((chan_pos(valid_interp, :) - chan_pos(oi, :)).^2, 2));
-                        [d_sorted, d_ord] = sort(d, 'ascend');
-                        k_use = min(viz_interp_k, numel(d_sorted));
-                        nbr_idx = valid_interp(d_ord(1:k_use));
-                        w = 1 ./ max(d_sorted(1:k_use), 1e-6);
-                        topo_plot_common(oi) = sum(w .* topo_plot_common(nbr_idx)) / sum(w);
-                    else
-                        topo_plot_common(oi) = sign(topo_plot_common(oi)) * amp_thr_common;
+
+        pr_raw_mats = cell(1, 4);
+        row1_clim = ones(1, 4);
+        for cond = 1:4
+            pr_raw_mats{cond} = pr_source{cond, subj};
+            if ~isempty(pr_raw_mats{cond})
+                cond_vals = abs(pr_raw_mats{cond}(:));
+                cond_vals = cond_vals(isfinite(cond_vals));
+                if ~isempty(cond_vals)
+                    row1_clim(cond) = prctile(cond_vals, 95);
+                    if ~isfinite(row1_clim(cond)) || row1_clim(cond) <= 0
+                        row1_clim(cond) = max(cond_vals);
                     end
                 end
             end
-        end
-        topo_data.avg    = topo_plot_common;
-        topo_data.dimord = 'chan';
-        topo_abs_common = abs(topo_plot_common(post_idx));
-        topo_abs_common = topo_abs_common(isfinite(topo_abs_common));
-        if isempty(topo_abs_common)
-            topo_abs_common = abs(topo_plot_common(isfinite(topo_plot_common)));
-        end
-        if isempty(topo_abs_common)
-            topo_clim_common = 1;
-        else
-            topo_clim_common = prctile(topo_abs_common, viz_topo_prctile);
-            if ~isfinite(topo_clim_common) || topo_clim_common <= 0
-                topo_clim_common = max(topo_abs_common);
+            if ~isfinite(row1_clim(cond)) || row1_clim(cond) <= 0
+                row1_clim(cond) = 1;
             end
-            if ~isfinite(topo_clim_common) || topo_clim_common <= 0
+        end
+
+        fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+        sgtitle(sprintf('Trial-Level GED: Subject %s (%s)', subjects{subj}, window_names{wi}), ...
+            'FontSize', 18, 'FontWeight', 'bold');
+
+        % --- Row 1: Heatmap of trial-level raw power-ratio spectra ---
+        for cond = 1:4
+            subplot(3, 4, cond);
+            if ~isempty(pr_raw_mats{cond})
+                hold on;
+                imagesc(scan_freqs, 1:size(pr_raw_mats{cond},1), pr_raw_mats{cond});
+                colormap(gca, cmap_div);
+                caxis([-row1_clim(cond) row1_clim(cond)]);
+                cb = colorbar; cb.FontSize = 8;
+                ctd = centroid_source{cond, subj};
+                if ~isempty(ctd)
+                    valid_ctd = ~isnan(ctd);
+                    tr_idx = find(valid_ctd);
+                    if ~isempty(tr_idx)
+                        plot(ctd(valid_ctd), tr_idx, '.', 'Color', [0 0 0], 'MarkerSize', 7);
+                    end
+                    if numel(tr_idx) >= 2
+                        plot(ctd(valid_ctd), tr_idx, '-', 'Color', [0 0 0], 'LineWidth', 0.6);
+                    end
+                end
+                xlabel('Freq [Hz]'); ylabel('Trial');
+                set(gca, 'YDir', 'normal');
+            end
+            title(sprintf('%s Raw', condLabels{cond}), 'FontSize', 11);
+            set(gca, 'FontSize', 10); xlim([30 90]); box on;
+        end
+
+        % --- Row 2: Mean trial-level raw spectrum with dual-peak markers ---
+        for cond = 1:4
+            subplot(3, 4, 4 + cond); hold on;
+            if ~isempty(pr_raw_mats{cond})
+                mu_raw = nanmean(pr_raw_mats{cond}, 1);
+                nTrl = size(pr_raw_mats{cond}, 1);
+                sem_raw = nanstd(pr_raw_mats{cond}, [], 1) / sqrt(max(1, nTrl));
+                row2_abs = max(abs([mu_raw - sem_raw, mu_raw + sem_raw]), [], 'omitnan');
+                if ~isfinite(row2_abs) || row2_abs <= 0
+                    row2_abs = 1;
+                end
+                faceC = 0.8*colors(cond,:) + 0.2*[1 1 1];
+                patch([scan_freqs, fliplr(scan_freqs)], ...
+                    [mu_raw - sem_raw, fliplr(mu_raw + sem_raw)], ...
+                    colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
+                plot(scan_freqs, mu_raw, '-', 'Color', colors(cond,:), 'LineWidth', 2.5);
+                yline(0, 'k-', 'LineWidth', 0.5);
+                xline(50, 'k:', 'LineWidth', 1, 'Alpha', 0.5);
+                pf_lo = median_low_source(cond, subj);
+                pf_hi = median_high_source(cond, subj);
+                if ~isnan(pf_lo)
+                    xline(pf_lo, '--', 'LineWidth', 2, 'Color', [0 0 0.7]);
+                    text(pf_lo + 1, max(mu_raw) * 0.85, ...
+                        sprintf('L:%.0f', pf_lo), 'FontSize', 9, ...
+                        'Color', [0 0 0.7], 'FontWeight', 'bold');
+                end
+                if ~isnan(pf_hi)
+                    xline(pf_hi, '--', 'LineWidth', 2, 'Color', [0.7 0 0]);
+                    text(pf_hi + 1, max(mu_raw) * 0.65, ...
+                        sprintf('H:%.0f', pf_hi), 'FontSize', 9, ...
+                        'Color', [0.7 0 0], 'FontWeight', 'bold');
+                end
+                ylim([-row2_abs row2_abs]);
+            end
+            xlabel('Freq [Hz]'); ylabel('\Delta PR');
+            det_lo = detrate_low_source(cond, subj);
+            det_hi = detrate_high_source(cond, subj);
+            title(sprintf('%s Dual (L:%.0f%% H:%.0f%%)', condLabels{cond}, det_lo*100, det_hi*100), 'FontSize', 10);
+            set(gca, 'FontSize', 10); xlim([30 90]);  box on;
+        end
+
+        % --- Row 3: Topoplot + histogram ---
+        subplot(3, 4, 9);
+        if ~isempty(topo_mat_window) && ~isempty(selected_idx_window)
+            topo_data = [];
+            topo_data.label  = dataEEG_c25.label;
+            w_plot_common = selected_w_window(:);
+            if numel(w_plot_common) ~= numel(selected_idx_window) || ~any(isfinite(w_plot_common))
+                w_plot_common = ones(numel(selected_idx_window), 1);
+            end
+            w_plot_common(~isfinite(w_plot_common) | w_plot_common <= 0) = 0;
+            if sum(w_plot_common) <= 0
+                w_plot_common = ones(numel(selected_idx_window), 1);
+            end
+            w_plot_common = w_plot_common / sum(w_plot_common);
+            topo_plot_common = topo_mat_window(:, selected_idx_window) * w_plot_common;
+            if viz_suppress_nonocc_outliers && ~isempty(nonocc_idx)
+                post_abs = abs(topo_plot_common(post_idx));
+                post_abs = post_abs(isfinite(post_abs));
+                if isempty(post_abs)
+                    post_abs = abs(topo_plot_common(isfinite(topo_plot_common)));
+                end
+                if isempty(post_abs)
+                    amp_thr_common = 1;
+                else
+                    amp_thr_common = prctile(post_abs, viz_topo_prctile);
+                    if ~isfinite(amp_thr_common) || amp_thr_common <= 0
+                        amp_thr_common = max(post_abs);
+                    end
+                    if ~isfinite(amp_thr_common) || amp_thr_common <= 0
+                        amp_thr_common = 1;
+                    end
+                end
+                nonocc_out = false(nChans, 1);
+                nonocc_out(nonocc_idx) = abs(topo_plot_common(nonocc_idx)) > (viz_nonocc_outlier_mult * amp_thr_common);
+                if any(nonocc_out)
+                    valid_interp = find(~nonocc_out & isfinite(topo_plot_common) & has_pos);
+                    out_idx = find(nonocc_out);
+                    for oi = out_idx(:)'
+                        if has_pos(oi) && numel(valid_interp) >= 3
+                            d = sqrt(sum((chan_pos(valid_interp, :) - chan_pos(oi, :)).^2, 2));
+                            [d_sorted, d_ord] = sort(d, 'ascend');
+                            k_use = min(viz_interp_k, numel(d_sorted));
+                            nbr_idx = valid_interp(d_ord(1:k_use));
+                            w = 1 ./ max(d_sorted(1:k_use), 1e-6);
+                            topo_plot_common(oi) = sum(w .* topo_plot_common(nbr_idx)) / sum(w);
+                        else
+                            topo_plot_common(oi) = sign(topo_plot_common(oi)) * amp_thr_common;
+                        end
+                    end
+                end
+            end
+            topo_data.avg    = topo_plot_common;
+            topo_data.dimord = 'chan';
+            topo_abs_common = abs(topo_plot_common(post_idx));
+            topo_abs_common = topo_abs_common(isfinite(topo_abs_common));
+            if isempty(topo_abs_common)
+                topo_abs_common = abs(topo_plot_common(isfinite(topo_plot_common)));
+            end
+            if isempty(topo_abs_common)
                 topo_clim_common = 1;
+            else
+                topo_clim_common = prctile(topo_abs_common, viz_topo_prctile);
+                if ~isfinite(topo_clim_common) || topo_clim_common <= 0
+                    topo_clim_common = max(topo_abs_common);
+                end
+                if ~isfinite(topo_clim_common) || topo_clim_common <= 0
+                    topo_clim_common = 1;
+                end
+            end
+            cfg_topo_common = cfg_topo;
+            cfg_topo_common.zlim = [-topo_clim_common topo_clim_common];
+            try
+                ft_topoplotER(cfg_topo_common, topo_data);
+                cb = colorbar; cb.FontSize = 9;
+            catch
+                imagesc(topo_data.avg); caxis([-topo_clim_common topo_clim_common]); colorbar;
+            end
+            n_sel_show = numel(selected_idx_window);
+            lambda_show = NaN;
+            if ~isempty(eigvals_window) && ~isempty(selected_idx_window)
+                idx_show = selected_idx_window(1);
+                if idx_show >= 1 && idx_show <= numel(eigvals_window)
+                    lambda_show = eigvals_window(idx_show);
+                end
+            end
+            title(sprintf('Weighted GED (%d comps, \\lambda=%.2f)', n_sel_show, lambda_show), 'FontSize', 11);
+        end
+
+        subplot(3, 4, [10 11 12]); hold on;
+        edges = 30:2:90;
+        hist_mat = zeros(4, length(edges)-1);
+        for cond = 1:4
+            tpk = peaks_single_source{cond, subj};
+            if ~isempty(tpk)
+                tpk = tpk(~isnan(tpk));
+                hist_mat(cond,:) = histcounts(tpk, edges);
             end
         end
-        cfg_topo_common = cfg_topo;
-        cfg_topo_common.zlim = [-topo_clim_common topo_clim_common];
-        try
-            ft_topoplotER(cfg_topo_common, topo_data);
-            cb = colorbar; cb.FontSize = 9;
-        catch
-            imagesc(topo_data.avg); caxis([-topo_clim_common topo_clim_common]); colorbar;
+        centers = edges(1:end-1) + diff(edges)/2;
+        bh = bar(centers, hist_mat', 'stacked', 'EdgeColor', 'none', 'BarWidth', 1);
+        for cond = 1:4
+            bh(cond).FaceColor = colors(cond,:);
         end
-        n_sel_show = numel(selected_idx_full);
-        title(sprintf('Weighted GED (%d comps, \\lambda=%.2f)', n_sel_show, all_eigenvalues(subj)), 'FontSize', 11);
-    end
+        xlabel('Peak Frequency [Hz]'); ylabel('Trial Count');
+        title('Trial-Level Single Peak Distribution', 'FontSize', 12);
+        legend(bh, condLabels, 'FontSize', 10, 'Location', 'best');
+        set(gca, 'FontSize', 11); xlim([30 90]);  box on;
 
-    subplot(3, 4, [10 11 12]); hold on;
-    edges = 30:2:90;
-    hist_mat = zeros(4, length(edges)-1);
-    for cond = 1:4
-        tpk = all_trial_peaks_single{cond, subj};
-        if ~isempty(tpk)
-            tpk = tpk(~isnan(tpk));
-            hist_mat(cond,:) = histcounts(tpk, edges);
-        end
+        save_figure_png(fig, fullfile(comp_sel_save_dir, ...
+            sprintf('GCP_eeg_GED_subj%s_%s.png', subjects{subj}, window_names{wi})));
     end
-    centers = edges(1:end-1) + diff(edges)/2;
-    bh = bar(centers, hist_mat', 'stacked', 'EdgeColor', 'none', 'BarWidth', 1);
-    for cond = 1:4
-        bh(cond).FaceColor = colors(cond,:);
-    end
-    xlabel('Peak Frequency [Hz]'); ylabel('Trial Count');
-    title('Trial-Level Single Peak Distribution', 'FontSize', 12);
-    legend(bh, condLabels, 'FontSize', 10, 'Location', 'best');
-    set(gca, 'FontSize', 11); xlim([30 90]);  box on;
-
-    save_figure_png(fig, fullfile(comp_sel_save_dir, sprintf('GCP_eeg_GED_subj%s.png', subjects{subj})));
     warning_log_by_subj{subj} = warning_log_subj;
     toc
 end % subject loop
@@ -2069,16 +2066,15 @@ for mi = 1:nBenchmarkMethods
     for subj = 1:nSubj
         cond_medians = nan(4, 1);
         for cond = 1:4
-            pr_dt = all_trial_powratio_dt_bench{mi, cond, subj};
-            if isempty(pr_dt)
+            pr_raw = all_trial_powratio_bench{mi, cond, subj};
+            if isempty(pr_raw)
                 continue;
             end
-            nTrl = size(pr_dt, 1);
+            nTrl = size(pr_raw, 1);
             peak_freq = nan(nTrl, 1);
             peak_prom = nan(nTrl, 1);
             for trl = 1:nTrl
-                y = movmean(pr_dt(trl, :), 5);
-                y = apply_soft_edge_attenuation(y, scan_freqs, [30 90], [40 80], 0.01, 4.0, 3.0);
+                y = movmean(pr_raw(trl, :), 5);
                 if all(isnan(y))
                     continue;
                 end
@@ -2177,10 +2173,10 @@ for subj = 1:nSubj
         subplot(2, 3, mi); hold on;
         cond_line_handles = gobjects(1, 4);
         for cond = 1:4
-            pr_dt = all_trial_powratio_dt_bench{mi, cond, subj};
-            if isempty(pr_dt), continue; end
-            mu = nanmean(pr_dt, 1);
-            se = nanstd(pr_dt, [], 1) / sqrt(max(1, size(pr_dt, 1)));
+            pr_raw = all_trial_powratio_bench{mi, cond, subj};
+            if isempty(pr_raw), continue; end
+            mu = nanmean(pr_raw, 1);
+            se = nanstd(pr_raw, [], 1) / sqrt(max(1, size(pr_raw, 1)));
             faceC = 0.8 * colors(cond,:) + 0.2 * [1 1 1];
             patch([scan_freqs, fliplr(scan_freqs)], ...
                 [mu - se, fliplr(mu + se)], ...
@@ -2350,10 +2346,10 @@ for mi = 1:nBenchmarkMethods
     for cond = 1:4
         subj_curves = nan(nSubj, nFreqs);
         for s = 1:nSubj
-            pr_dt = all_trial_powratio_dt_bench{mi, cond, s};
-            if ~isempty(pr_dt)
-                subj_mu = nanmean(pr_dt, 1);
-                subj_curves(s, :) = normalize_maxabs_curve(subj_mu);
+            pr_raw = all_trial_powratio_bench{mi, cond, s};
+            if ~isempty(pr_raw)
+                subj_mu = nanmean(pr_raw, 1);
+                subj_curves(s, :) = subj_mu;
             end
         end
         mu = nanmean(subj_curves, 1);
@@ -3042,7 +3038,7 @@ title('Single Peak: All Trials (pooled across subjects)', ...
 save_figure_png(fig_trl1, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_alltrials_GammaFreq.png'));
 
 %% ====================================================================
-%  GRAND AVERAGE: Mean detrended power spectrum
+%  GRAND AVERAGE: Mean raw power spectrum
 %  ====================================================================
 close all
 fig_grand_psd = figure('Position', [0 0 1512/2 982], 'Color', 'w');
@@ -3053,18 +3049,11 @@ grand_panel_maxabs = 0;
 for cond = 1:4
     subj_curves = nan(nSubj, nFreqs);
     for s = 1:nSubj
-        pr_mat_full = all_trial_powratio_fullscan{cond, s};
+        pr_mat_full = all_trial_powratio{cond, s};
         if isempty(pr_mat_full)
             continue;
         end
-        nTrl = size(pr_mat_full, 1);
-        pr_dt_mat = nan(nTrl, nFreqs);
-        for trl = 1:nTrl
-            pr_dt_full = detrend_power_ratio(pr_mat_full(trl,:), scan_freqs_detrend, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
-            pr_dt_mat(trl,:) = pr_dt_full(analysis_freq_mask_detrend);
-        end
-        subj_mu = nanmean(pr_dt_mat, 1);
-        subj_curves(s, :) = normalize_maxabs_curve(subj_mu);
+        subj_curves(s, :) = nanmean(pr_mat_full, 1);
     end
 
     mu = nanmean(subj_curves, 1);
@@ -3106,8 +3095,8 @@ grand_panel_maxabs = max(grand_panel_maxabs, eps);
 xlim([30 90]);
 ylim([-grand_panel_maxabs grand_panel_maxabs]);
 xlabel('Frequency [Hz]');
-ylabel('\Delta Power Ratio (normalized)');
-title(sprintf('Grand Average Detrended Power Spectrum'), 'FontSize', 25, 'FontWeight', 'bold');
+ylabel('\Delta Power Ratio');
+title(sprintf('Grand Average Raw Power Spectrum'), 'FontSize', 25, 'FontWeight', 'bold');
 set(gca, 'FontSize', 15);
 valid_handles = isgraphics(grand_line_handles);
 if any(valid_handles)
@@ -3117,11 +3106,11 @@ end
 save_figure_png(fig_grand_psd, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_grand_average_power_spectrum.png'));
 
 %% ====================================================================
-%  GRAND AVERAGE: All-subjects subplot (mean trial spectra)
+%  GRAND AVERAGE: All-subjects subplot (mean raw trial spectra)
 %  ====================================================================
 nRows = ceil(nSubj / 5);
 fig_all = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle(sprintf('Trial-Level Mean Detrended Spectra: All Subjects (N=%d)', nSubj), ...
+sgtitle(sprintf('Trial-Level Mean Raw Spectra: All Subjects (N=%d)', nSubj), ...
     'FontSize', 16, 'FontWeight', 'bold');
 fig_all_legend_handles = gobjects(1, 4);
 
@@ -3129,18 +3118,11 @@ for s = 1:nSubj
     subplot(nRows, 5, s); hold on;
     subj_panel_maxabs = 0;
     for cond = 1:4
-        pr_mat_full = all_trial_powratio_fullscan{cond, s};
+        pr_mat_full = all_trial_powratio{cond, s};
         if ~isempty(pr_mat_full)
-            nTrl = size(pr_mat_full, 1);
-            pr_dt_mat = nan(nTrl, nFreqs);
-            for trl = 1:nTrl
-                pr_dt_full = detrend_power_ratio(pr_mat_full(trl,:), scan_freqs_detrend, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
-                pr_dt_mat(trl,:) = pr_dt_full(analysis_freq_mask_detrend);
-            end
-            mu_dt = nanmean(pr_dt_mat, 1);
-            mu_dt = normalize_maxabs_curve(mu_dt);
-            subj_panel_maxabs = max(subj_panel_maxabs, max(abs(mu_dt), [], 'omitnan'));
-            h_cond = plot(scan_freqs, movmean(mu_dt, 5), '-', ...
+            mu_raw = nanmean(pr_mat_full, 1);
+            subj_panel_maxabs = max(subj_panel_maxabs, max(abs(mu_raw), [], 'omitnan'));
+            h_cond = plot(scan_freqs, movmean(mu_raw, 5), '-', ...
                 'Color', colors(cond,:), 'LineWidth', 2);
             if s == 1
                 fig_all_legend_handles(cond) = h_cond;
@@ -3252,10 +3234,9 @@ save(save_path, ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
     'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
     'all_crosswin_match_stats', 'warning_log', ...
-    'all_trial_powratio_bench', 'all_trial_powratio_dt_bench', ...
+    'all_trial_powratio_bench', ...
     'all_trial_powratio_components_full', 'all_trial_powratio_components_early', 'all_trial_powratio_components_late', ...
     'all_trial_powratio_bench_early', 'all_trial_powratio_bench_late', ...
-    'all_trial_powratio_dt_bench_early', 'all_trial_powratio_dt_bench_late', ...
     'benchmark_methods', 'raw_reference_definition', ...
     'benchmark_metric_detectability', 'benchmark_metric_prominence', ...
     'benchmark_metric_separation_slope', 'benchmark_metric_separation_delta', ...
@@ -3997,7 +3978,7 @@ function plot_combined_topo_spectra_windows(save_dir, subject_id, scan_freqs, cf
     searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
     searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
     searchTopos_late, searchMeanPrSpectrum_late, selected_idx_late, w_combined_late, ...
-    analysis_freq_range, detrend_in_log, detrend_flat_edges, ...
+    analysis_freq_range, ...
     peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
     peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
     peak_form_smooth_n, peak_form_prom_abs_floor, peak_form_peak_width_min_hz, ...
@@ -4225,8 +4206,7 @@ edge_artifact_flag = isfinite(edge_ratio) && (edge_ratio > 1.75) && ...
 end
 
 function [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
-    mean_pr_spectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
-    detrend_in_log, detrend_flat_edges, peak_min_prom_frac, peak_min_distance_hz)
+    mean_pr_spectrum, scan_freqs, analysis_freq_range, peak_min_prom_frac, peak_min_distance_hz)
 nComp = size(mean_pr_spectrum, 1);
 peak_bonus_vec = zeros(nComp, 1);
 peak_count_vec = zeros(nComp, 1);
@@ -4239,8 +4219,7 @@ for ci = 1:nComp
     if all(~isfinite(y))
         continue;
     end
-    y_dt = detrend_power_ratio(y, scan_freqs, poly_order, detrend_edge_exclude_n, detrend_in_log, detrend_flat_edges);
-    y_band = y_dt(freq_mask);
+    y_band = y(freq_mask);
     x_band = scan_freqs(freq_mask);
     valid = isfinite(y_band) & isfinite(x_band);
     y_band = y_band(valid);
@@ -4249,7 +4228,6 @@ for ci = 1:nComp
         continue;
     end
     y_band = movmean(y_band, 3);
-    y_band = apply_soft_edge_attenuation(y_band, x_band, [30 90], [40 80], 0.01, 4.0, 3.0);
     peak_scale = max(y_band) - median(y_band);
     if ~isfinite(peak_scale) || peak_scale <= eps
         continue;
@@ -4271,8 +4249,7 @@ end
 end
 
 function [peak_form_score_vec, peak_form_mode_vec, diag] = compute_peak_form_template_score_from_spectra( ...
-    mean_pr_spectrum, scan_freqs, analysis_freq_range, poly_order, detrend_edge_exclude_n, ...
-    detrend_in_log, detrend_flat_edges, shift_max_hz, single_widths_hz, double_widths_hz, ...
+    mean_pr_spectrum, scan_freqs, analysis_freq_range, shift_max_hz, single_widths_hz, double_widths_hz, ...
     double_separations_hz, min_trough_depth, min_similarity, smooth_n, ...
     prom_abs_floor, peak_width_min_hz, peak_width_max_hz, edge_ratio_soft, edge_ratio_hard, ...
     edge_run_soft, edge_run_hard)
@@ -4749,11 +4726,11 @@ for ci = 1:numel(centers_hz)
     double_specs(ci, :) = gaussian_template(scan_freqs, c1, width_hz) + gaussian_template(scan_freqs, c2, width_hz);
 end
 [single_scores, ~] = compute_peak_form_template_score_from_spectra( ...
-    single_specs, scan_freqs, analysis_freq_range, 0, 0, false, false, shift_max_hz, ...
+    single_specs, scan_freqs, analysis_freq_range, shift_max_hz, ...
     single_widths_hz, double_widths_hz, double_separations_hz, min_trough_depth, min_similarity, smooth_n, ...
     0.02, 2.0, 20.0, 1.25, 1.75, 0.025, 0.060);
 [double_scores, ~] = compute_peak_form_template_score_from_spectra( ...
-    double_specs, scan_freqs, analysis_freq_range, 0, 0, false, false, shift_max_hz, ...
+    double_specs, scan_freqs, analysis_freq_range, shift_max_hz, ...
     single_widths_hz, double_widths_hz, double_separations_hz, min_trough_depth, min_similarity, smooth_n, ...
     0.02, 2.0, 20.0, 1.25, 1.75, 0.025, 0.060);
 stats.single_scores = single_scores;
@@ -5518,17 +5495,6 @@ for ci = 1:numel(u_codes)
 end
 end
 
-function vec_out = normalize_maxabs_curve(vec_in)
-vec_out = vec_in;
-if isempty(vec_in)
-    return;
-end
-scale = max(abs(vec_in(~isnan(vec_in))));
-if ~isempty(scale) && isfinite(scale) && scale > 0
-    vec_out = vec_in ./ scale;
-end
-end
-
 function p_adj = bh_fdr_adjust(p_raw)
 p = p_raw(:);
 n = numel(p);
@@ -5629,148 +5595,4 @@ y_edge = smooth_reflective(x, edge_win);
 edge_mask = freqs < core_band(1) | freqs > core_band(2);
 y(edge_mask) = y_edge(edge_mask);
 y(~edge_mask) = y_core(~edge_mask);
-end
-
-function y_dt = detrend_power_ratio(y, x, ord, edge_exclude_n, in_log, flat_edges)
-% Detrend power-ratio spectrum for peak detection.
-% y: power ratio (positive values)
-% x: frequency vector
-% ord: polynomial order
-% edge_exclude_n: bins to exclude from fit at each edge (default 5)
-% in_log: if true, fit polynomial to log(y), return residual in log space (default true)
-% flat_edges: if true, constrain residual to zero at first/last frequency (default true)
-y_dt = y;
-if isempty(y) || isempty(x) || numel(y) ~= numel(x)
-    return;
-end
-if nargin < 4 || isempty(edge_exclude_n)
-    edge_exclude_n = 5;
-end
-if nargin < 5
-    in_log = true;
-end
-if nargin < 6
-    flat_edges = true;
-end
-y_fit = y;
-if in_log
-    y_fit = log(max(y, eps));  % preserve shape; y(:) would force column and cause implicit expansion downstream
-end
-y_dt = detrend_poly_stable(y_fit, x, ord, edge_exclude_n, flat_edges);
-% Suppress edge artifacts smoothly in detrended spectra:
-% - keep 40-80 Hz largely unchanged
-% - attenuate 30-40 and 80-90 progressively
-% - drive <30 and >90 close to zero (not exactly zero)
-y_dt = apply_soft_edge_attenuation(y_dt, x, [30 90], [40 80], 0.01, 4.0, 3.0);
-end
-
-function y_out = apply_soft_edge_attenuation(y_in, x, outer_band, core_band, edge_floor, shoulder_pow, outside_decay_hz)
-y_out = y_in;
-if isempty(y_in) || isempty(x) || numel(y_in) ~= numel(x)
-    return;
-end
-if nargin < 4 || isempty(core_band) || numel(core_band) ~= 2
-    core_band = [40 80];
-end
-if nargin < 3 || isempty(outer_band) || numel(outer_band) ~= 2
-    outer_band = [30 90];
-end
-if nargin < 5 || isempty(edge_floor)
-    edge_floor = 0.03;
-end
-if nargin < 6 || isempty(shoulder_pow)
-    shoulder_pow = 2.0;
-end
-if nargin < 7 || isempty(outside_decay_hz)
-    outside_decay_hz = 4.0;
-end
-
-edge_floor = max(0, min(1, edge_floor));
-shoulder_pow = max(1, shoulder_pow);
-outside_decay_hz = max(eps, outside_decay_hz);
-
-outer_lo = min(outer_band);
-outer_hi = max(outer_band);
-core_lo = min(core_band);
-core_hi = max(core_band);
-if ~(core_lo >= outer_lo && core_hi <= outer_hi)
-    core_lo = max(core_lo, outer_lo);
-    core_hi = min(core_hi, outer_hi);
-end
-
-w = zeros(size(x));
-inside_outer = (x >= outer_lo) & (x <= outer_hi);
-inside_core = (x >= core_lo) & (x <= core_hi);
-w(inside_core) = 1;
-
-shoulder_mask = inside_outer & ~inside_core;
-if any(shoulder_mask)
-    d_to_outer = min(abs(x(shoulder_mask) - outer_lo), abs(x(shoulder_mask) - outer_hi));
-    shoulder_half_width = max(eps, min(core_lo - outer_lo, outer_hi - core_hi));
-    t = max(0, min(1, d_to_outer / shoulder_half_width));
-    w(shoulder_mask) = edge_floor + (1 - edge_floor) * (t .^ shoulder_pow);
-end
-
-outside_mask = ~inside_outer;
-if any(outside_mask)
-    d_out = min(abs(x(outside_mask) - outer_lo), abs(x(outside_mask) - outer_hi));
-    w(outside_mask) = edge_floor * exp(-(d_out / outside_decay_hz) .^ 2);
-end
-
-y_out = y_in .* w;
-end
-
-function y_dt = detrend_poly_stable(y, x, ord, edge_exclude_n, flat_edges)
-y_dt = y;
-if isempty(y) || isempty(x) || numel(y) ~= numel(x)
-    return;
-end
-if nargin < 4 || isempty(edge_exclude_n)
-    edge_exclude_n = 0;
-end
-if nargin < 5
-    flat_edges = true;
-end
-edge_exclude_n = max(0, round(edge_exclude_n));
-n = numel(x);
-
-fit_idx = (1 + edge_exclude_n):(n - edge_exclude_n);
-if numel(fit_idx) < (ord + 1)
-    fit_idx = 1:n;
-end
-
-% Restrict to valid indices for both y and x, and force same orientation
-% to avoid implicit expansion when y is column and x is row (e.g. y 61x1, x 1x61)
-fit_idx = fit_idx(fit_idx <= min(numel(y), numel(x)) & fit_idx >= 1);
-yv = y(fit_idx);
-xv = x(fit_idx);
-valid_mask = isfinite(yv(:)) & isfinite(xv(:));
-valid_fit = fit_idx(valid_mask);
-if numel(valid_fit) < (ord + 1)
-    valid_fit = find(isfinite(y(:)) & isfinite(x(:)));
-end
-if numel(valid_fit) < (ord + 1)
-    return;
-end
-
-p = polyfit(x(valid_fit), y(valid_fit), ord);
-baseline = polyval(p, x);
-baseline = reshape(baseline, size(y));  % match y orientation to avoid implicit expansion
-y_dt = y - baseline;
-
-% Constrain residual to zero at edges
-if flat_edges && n >= 2
-    x1 = x(1);
-    xn = x(n);
-    if isfinite(x1) && isfinite(xn) && xn > x1
-        d1 = y_dt(1);
-        dn = y_dt(n);
-        if isfinite(d1) && isfinite(dn)
-            % Linear ramp from d1 at x1 to dn at xn; subtract so residual -> 0 at edges
-            ramp = d1 + (dn - d1) * (x(:) - x1) / (xn - x1);
-            ramp = reshape(ramp, size(y_dt));  % match orientation
-            y_dt = y_dt - ramp;
-        end
-    end
-end
 end
