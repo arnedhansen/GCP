@@ -3867,11 +3867,6 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        if k == 1
-            lgd = legend(h_raw, {'raw PR'}, ...
-                'FontSize', 5.0, 'Location', 'northwest', 'Box', 'off', 'AutoUpdate', 'off');
-            lgd.ItemTokenSize = [8, 6];
-        end
         info_lines = { ...
             sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
             sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
@@ -4301,20 +4296,20 @@ for ci = 1:nComp
 
     minor_pen = 1;
     if minor_count > 0
-        % Mild crowding penalty only when many minors exist; avoid punishing
-        % small shoulders around a physiologic dominant gamma peak.
-        if minor_count >= 3
-            minor_pen = minor_pen * max(0.85, 1 - 0.05 * (minor_count - 2));
+        % Slightly stronger crowding penalty: messy spectra with several
+        % minors should score lower, while one small shoulder remains tolerated.
+        if minor_count >= 2
+            minor_pen = minor_pen * max(0.75, 1 - 0.08 * (minor_count - 1));
         end
 
         % Strong penalty only when a secondary peak is truly prominent
         % relative to the dominant peak (C11/C14-like multi-peak pattern).
-        strong_minor_rel_start = 0.62;
-        strong_minor_rel_full = 0.90;
+        strong_minor_rel_start = 0.55;
+        strong_minor_rel_full = 0.85;
         if isfinite(minor_prom_relmax) && minor_prom_relmax > strong_minor_rel_start
             rel_span = max(strong_minor_rel_full - strong_minor_rel_start, eps);
             rel_frac = min(1, (minor_prom_relmax - strong_minor_rel_start) / rel_span);
-            minor_pen = minor_pen * max(0.40, 1 - 0.60 * rel_frac);
+            minor_pen = minor_pen * max(0.30, 1 - 0.70 * rel_frac);
         end
     end
 
@@ -4356,10 +4351,10 @@ for ci = 1:nComp
             amp_scale = 1;
         end
         roughness_ratio = robust_mad(dy) / amp_scale;
-        rough_ref = 0.35;
-        rough_span = 0.65;
-        rough_pen_floor = 0.45;
-        rough_pen_max_loss = 0.55;
+        rough_ref = 0.32;
+        rough_span = 0.58;
+        rough_pen_floor = 0.38;
+        rough_pen_max_loss = 0.62;
         if isfinite(roughness_ratio) && roughness_ratio > rough_ref
             loss_frac = min(1, (roughness_ratio - rough_ref) / rough_span);
             roughness_pen = max(rough_pen_floor, 1 - rough_pen_max_loss * loss_frac);
@@ -4367,7 +4362,7 @@ for ci = 1:nComp
     end
 
     penalty_raw = edge_pen * dominance_pen * hf_pen * roughness_pen;
-    penalty_floor = 0.25;
+    penalty_floor = 0.20;
     penalty_used = max(penalty_floor, penalty_raw);
     best_raw = best_pre_penalty * penalty_used;
 
