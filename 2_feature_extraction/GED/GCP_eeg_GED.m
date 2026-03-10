@@ -3316,11 +3316,11 @@ for cond = 1:4
         grand_line_handles(cond) = plot(scan_freqs, mu_plot, '-', ...
             'Color', colors(cond,:), 'LineWidth', 5);
 
-        % Xlines for Median Gamma Freqs
-        % md_pf = nanmedian(all_trial_median_single(cond, :));
-        % if ~isnan(md_pf)
-        %     xline(md_pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.2, 'Alpha', 0.7);
-        % end
+        % Xlines for median peak frequencies across subjects (per condition)
+        md_pf = nanmedian(all_trial_median_single(cond, :));
+        if ~isnan(md_pf)
+            xline(md_pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.2, 'Alpha', 0.7);
+        end
     end
 end
 
@@ -3439,8 +3439,8 @@ for s = 1:nSubj
         end
         set(gca, 'FontSize', 10); xlim([30 90]); ylim([y_lo y_hi]); box on;
     end
-    text(0.03, 0.97, strjoin(cellstr(peak_freq_txt), newline), ...
-        'Units', 'normalized', 'HorizontalAlignment', 'left', ...
+    text(0.97, 0.97, strjoin(cellstr(peak_freq_txt), newline), ...
+        'Units', 'normalized', 'HorizontalAlignment', 'right', ...
         'VerticalAlignment', 'top', 'Color', 'k', 'FontSize', 8);
     if s == 1
         valid_handles = isgraphics(fig_all_legend_handles);
