@@ -3316,10 +3316,12 @@ for cond = 1:4
         grand_line_handles(cond) = plot(scan_freqs, mu_plot, '-', ...
             'Color', colors(cond,:), 'LineWidth', 5);
 
-        % Xlines for median peak frequencies across subjects (per condition)
-        md_pf = nanmedian(all_trial_median_single(cond, :));
-        if ~isnan(md_pf)
-            xline(md_pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.2, 'Alpha', 0.7);
+        % Xlines for highest peak in the plotted grand-average curve (per condition)
+        if any(isfinite(mu_plot))
+            [~, peak_idx] = max(mu_plot);
+            if ~isempty(peak_idx) && isfinite(scan_freqs(peak_idx))
+                xline(scan_freqs(peak_idx), '--', 'Color', colors(cond,:), 'LineWidth', 2.4, 'Alpha', 0.85);
+            end
         end
     end
 end
