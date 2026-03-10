@@ -4066,8 +4066,28 @@ if nComp < 1
 end
 figA = figure('Position', [0 0 1512 982]);
 scatter_size = 60 + 80 * max(eigval_vec - min(eigval_vec), 0) / max(max(eigval_vec) - min(eigval_vec), eps);
-scatter(occ_evidence, emg_score, scatter_size, [0.30 0.30 0.30], 'filled', ...
+eig_color_vals = eigval_vec(:);
+eig_color_vals(~isfinite(eig_color_vals)) = 1.1;
+scatter(occ_evidence, emg_score, scatter_size, eig_color_vals, 'filled', ...
     'MarkerEdgeColor', 'k', 'LineWidth', 0.8); hold on;
+eig_max = max(eig_color_vals);
+if ~isfinite(eig_max) || eig_max <= 1.1
+    eig_max = 1.1001;
+end
+caxis([1.1 eig_max]);
+t = linspace(0, 1, 256)';
+anchor_t = [0; 0.25; 0.6; 1.0];
+anchor_rgb = [1.00 1.00 1.00;   % white
+              1.00 1.00 0.00;   % yellow
+              1.00 0.65 0.00;   % orange
+              1.00 0.00 0.00];  % red
+eig_cmap = [interp1(anchor_t, anchor_rgb(:, 1), t, 'linear'), ...
+            interp1(anchor_t, anchor_rgb(:, 2), t, 'linear'), ...
+            interp1(anchor_t, anchor_rgb(:, 3), t, 'linear')];
+colormap(gca, eig_cmap);
+cb = colorbar;
+cb.Label.String = 'Eigenvalue';
+cb.FontSize = 11;
 xline(adaptive_thr.occ_class_thr, 'k--', 'LineWidth', 1.0);
 yline(adaptive_thr.emg_class_thr, 'k--', 'LineWidth', 1.0);
 xline(0, '-', 'Color', [0.45 0.45 0.45], 'LineWidth', 0.8);
