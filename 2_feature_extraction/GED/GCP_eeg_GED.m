@@ -3270,6 +3270,7 @@ fig_grand_psd = figure('Position', [0 0 1512/2 982], 'Color', 'w');
 hold on;
 grand_line_handles = gobjects(1, 4);
 grand_panel_maxabs = 0;
+grand_panel_max = -inf;
 
 for cond = 1:4
     subj_curves = nan(nSubj, nFreqs);
@@ -3302,6 +3303,7 @@ for cond = 1:4
         if ~isempty(env_vals)
             grand_panel_maxabs = max(grand_panel_maxabs, max(abs(env_vals)));
         end
+        grand_panel_max = max(grand_panel_max, max(mu, [], 'omitnan'));
 
         faceC = 0.8 * colors(cond,:) + 0.2 * [1 1 1];
         % SEB
@@ -3330,7 +3332,10 @@ end
 grand_panel_maxabs = max(grand_panel_maxabs, eps);
 xlim([30 90]);
 if plotstats_scalar_norm_enable
-    ylim([0 max(2, grand_panel_maxabs)]);
+    if ~isfinite(grand_panel_max)
+        grand_panel_max = 1;
+    end
+    ylim([1 max(1.01, grand_panel_max * 1.15)]);
 else
     grand_panel_maxabs = max(grand_panel_maxabs, 5);
     ylim([-grand_panel_maxabs grand_panel_maxabs]);
@@ -3370,6 +3375,7 @@ for s = 1:nSubj
     subj_panel_maxabs = 0;
     subj_panel_min = inf;
     subj_panel_max = -inf;
+    peak_freq_txt = strings(4,1);
     for cond = 1:4
         if plotstats_scalar_norm_enable
             pr_mat_full = all_trial_powratio_plotstat{cond, s};
@@ -3392,14 +3398,9 @@ for s = 1:nSubj
             md_pf = all_trial_median_single(cond, s);
             if ~isnan(md_pf)
                 xline(md_pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.2);
-            end
-            md_lo = all_trial_median_low(cond, s);
-            if ~isnan(md_lo)
-                xline(md_lo, ':', 'Color', [0 0 0.7], 'LineWidth', 1.1);
-            end
-            md_hi = all_trial_median_high(cond, s);
-            if ~isnan(md_hi)
-                xline(md_hi, ':', 'Color', [0.7 0 0], 'LineWidth', 1.1);
+                peak_freq_txt(cond) = sprintf('%s: %.0fHz', condLabels{cond}, md_pf);
+            else
+                peak_freq_txt(cond) = sprintf('%s: n/a', condLabels{cond});
             end
         end
     end
@@ -3419,8 +3420,13 @@ for s = 1:nSubj
     if plotstats_scalar_norm_enable
         if ~isfinite(subj_panel_min), subj_panel_min = 0; end
         if ~isfinite(subj_panel_max), subj_panel_max = 2; end
-        y_lo = max(0, subj_panel_min - 0.05 * abs(subj_panel_max - subj_panel_min));
-        y_hi = max(2, subj_panel_max + 0.05 * abs(subj_panel_max - subj_panel_min));
+        span_val = abs(subj_panel_max - subj_panel_min);
+        y_lo = subj_panel_min - 0.08 * span_val;
+        y_hi = subj_panel_max + 0.15 * span_val;
+        if ~isfinite(y_lo) || ~isfinite(y_hi) || y_hi <= y_lo
+            y_lo = max(0.9, subj_panel_min);
+            y_hi = max(1.1, subj_panel_max * 1.15);
+        end
         set(gca, 'FontSize', 10); xlim([30 90]); ylim([y_lo y_hi]); box on;
     else
         if ~isfinite(subj_panel_min), subj_panel_min = -10; end
@@ -3433,6 +3439,9 @@ for s = 1:nSubj
         end
         set(gca, 'FontSize', 10); xlim([30 90]); ylim([y_lo y_hi]); box on;
     end
+    text(0.03, 0.97, strjoin(cellstr(peak_freq_txt), newline), ...
+        'Units', 'normalized', 'HorizontalAlignment', 'left', ...
+        'VerticalAlignment', 'top', 'Color', 'k', 'FontSize', 8);
     if s == 1
         valid_handles = isgraphics(fig_all_legend_handles);
         if any(valid_handles)
