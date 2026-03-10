@@ -3068,7 +3068,8 @@ save_figure_png(fig_box1_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_box
 %% ====================================================================
 %  MAIN FIGURE: Gamma frequency over contrast (mean+-SEM + trajectories)
 %  ====================================================================
-fig_main_gamma = figure('Position', [0 0 151/2 982], 'Color', 'w');
+close all
+fig_main_gamma = figure('Position', [0 0 1512/2 982], 'Color', 'w');
 hold on;
 
 dat = all_trial_median_single;  % [condition x subject]
