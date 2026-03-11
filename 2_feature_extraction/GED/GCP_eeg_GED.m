@@ -218,8 +218,8 @@ centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centro
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
 centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
 
-% Plot/stat-only scalar normalization (shape-preserving; detection stays raw)
-plotstats_scalar_norm_enable = true;
+% Scalar normalization path disabled (analysis/plots use percent change directly).
+plotstats_scalar_norm_enable = false;
 plotstats_scalar_ref_bands_hz = [30 40; 80 90];
 
 % Condition info
@@ -1721,14 +1721,10 @@ for subj = 1:nSubj
         powratio_trials_full = squeeze(powratio_methods_full_analysis(3, :, :));
         powratio_trials_early = squeeze(powratio_methods_early_analysis(3, :, :));
         powratio_trials_late = squeeze(powratio_methods_late_analysis(3, :, :));
-        [powratio_trials_fullscan_plotstat, ~] = normalize_powratio_trials_scalar( ...
-            powratio_trials_fullscan, scan_freqs, plotstats_scalar_norm_enable, plotstats_scalar_ref_bands_hz);
-        [powratio_trials_full_plotstat, trial_scale_full] = normalize_powratio_trials_scalar( ...
-            powratio_trials_full, scan_freqs, plotstats_scalar_norm_enable, plotstats_scalar_ref_bands_hz);
-        [powratio_trials_early_plotstat, trial_scale_early] = normalize_powratio_trials_scalar( ...
-            powratio_trials_early, scan_freqs, plotstats_scalar_norm_enable, plotstats_scalar_ref_bands_hz);
-        [powratio_trials_late_plotstat, trial_scale_late] = normalize_powratio_trials_scalar( ...
-            powratio_trials_late, scan_freqs, plotstats_scalar_norm_enable, plotstats_scalar_ref_bands_hz);
+        powratio_trials_fullscan_plotstat = powratio_trials_fullscan;
+        powratio_trials_full_plotstat = powratio_trials_full;
+        powratio_trials_early_plotstat = powratio_trials_early;
+        powratio_trials_late_plotstat = powratio_trials_late;
         all_trial_powratio_fullscan{cond, subj} = powratio_trials_fullscan;
         all_trial_powratio{cond, subj} = powratio_trials_full;
         all_trial_powratio_early{cond, subj} = powratio_trials_early;
@@ -1863,9 +1859,9 @@ for subj = 1:nSubj
             powratio_trials_early, scan_freqs, trl_peaks_single_early, gamma_peak_power_halfwidth_hz);
         [trial_gamma_power_late, all_trial_gamma_power_late(cond, subj)] = compute_peak_centered_gamma_power( ...
             powratio_trials_late, scan_freqs, trl_peaks_single_late, gamma_peak_power_halfwidth_hz);
-        all_trial_gamma_power_plotstat(cond, subj) = normalize_mean_trial_metric_by_scalar(trial_gamma_power_full, trial_scale_full, plotstats_scalar_norm_enable);
-        all_trial_gamma_power_early_plotstat(cond, subj) = normalize_mean_trial_metric_by_scalar(trial_gamma_power_early, trial_scale_early, plotstats_scalar_norm_enable);
-        all_trial_gamma_power_late_plotstat(cond, subj) = normalize_mean_trial_metric_by_scalar(trial_gamma_power_late, trial_scale_late, plotstats_scalar_norm_enable);
+        all_trial_gamma_power_plotstat(cond, subj) = mean(trial_gamma_power_full, 'omitnan');
+        all_trial_gamma_power_early_plotstat(cond, subj) = mean(trial_gamma_power_early, 'omitnan');
+        all_trial_gamma_power_late_plotstat(cond, subj) = mean(trial_gamma_power_late, 'omitnan');
 
         % Time-split dual-peak, centroid, prominence, and reliability summaries.
         [~, trl_peaks_low_early, trl_peaks_high_early, trl_centroid_early, trl_peak_prom_early] = ...
@@ -1957,11 +1953,7 @@ for subj = 1:nSubj
     window_names = {'full', 'early', 'late'};
     for wi = 1:3
         if wi == 1
-            if plotstats_scalar_norm_enable
-                pr_source = all_trial_powratio_fullscan_plotstat;
-            else
-                pr_source = all_trial_powratio_fullscan;
-            end
+            pr_source = all_trial_powratio_fullscan;
             peaks_single_source = all_trial_peaks_single;
             median_low_source = all_trial_median_low;
             median_high_source = all_trial_median_high;
@@ -1973,11 +1965,7 @@ for subj = 1:nSubj
             selected_w_window = w_combined_full;
             eigvals_window = evals_sorted_full;
         elseif wi == 2
-            if plotstats_scalar_norm_enable
-                pr_source = all_trial_powratio_early_plotstat;
-            else
-                pr_source = all_trial_powratio_early;
-            end
+            pr_source = all_trial_powratio_early;
             peaks_single_source = all_trial_peaks_single_early;
             median_low_source = all_trial_median_low_early;
             median_high_source = all_trial_median_high_early;
@@ -1989,11 +1977,7 @@ for subj = 1:nSubj
             selected_w_window = w_combined_early;
             eigvals_window = evals_sorted_early;
         else
-            if plotstats_scalar_norm_enable
-                pr_source = all_trial_powratio_late_plotstat;
-            else
-                pr_source = all_trial_powratio_late;
-            end
+            pr_source = all_trial_powratio_late;
             peaks_single_source = all_trial_peaks_single_late;
             median_low_source = all_trial_median_low_late;
             median_high_source = all_trial_median_high_late;
@@ -2036,11 +2020,7 @@ for subj = 1:nSubj
                 hold on;
                 imagesc(scan_freqs, 1:size(pr_raw_mats{cond},1), pr_raw_mats{cond});
                 colormap(gca, cmap_div);
-                if plotstats_scalar_norm_enable
-                    caxis([0 row1_clim(cond)]);
-                else
-                    caxis([-row1_clim(cond) row1_clim(cond)]);
-                end
+                caxis([-row1_clim(cond) row1_clim(cond)]);
                 cb = colorbar; cb.FontSize = 8;
                 ctd = centroid_source{cond, subj};
                 if ~isempty(ctd)
@@ -2056,11 +2036,7 @@ for subj = 1:nSubj
                 xlabel('Freq [Hz]'); ylabel('Trial');
                 set(gca, 'YDir', 'normal');
             end
-            if plotstats_scalar_norm_enable
-                title(sprintf('%s Scalar-norm.', condLabels{cond}), 'FontSize', 11);
-            else
-                title(sprintf('%s Raw', condLabels{cond}), 'FontSize', 11);
-            end
+            title(sprintf('%s Raw', condLabels{cond}), 'FontSize', 11);
             set(gca, 'FontSize', 10); xlim([30 90]); box on;
         end
 
@@ -2088,11 +2064,7 @@ for subj = 1:nSubj
                     [mu_raw - sem_raw, fliplr(mu_raw + sem_raw)], ...
                     colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
                 plot(scan_freqs, mu_raw, '-', 'Color', colors(cond,:), 'LineWidth', 2.5);
-                if plotstats_scalar_norm_enable
-                    yline(1, 'k-', 'LineWidth', 0.5);
-                else
-                    yline(0, 'k-', 'LineWidth', 0.5);
-                end
+                yline(0, 'k-', 'LineWidth', 0.5);
                 xline(50, 'k:', 'LineWidth', 1, 'Alpha', 0.5);
                 pf_lo = median_low_source(cond, subj);
                 pf_hi = median_high_source(cond, subj);
@@ -2108,26 +2080,16 @@ for subj = 1:nSubj
                         sprintf('H:%.0f', pf_hi), 'FontSize', 9, ...
                         'Color', [0.7 0 0], 'FontWeight', 'bold');
                 end
-                if plotstats_scalar_norm_enable
-                    y_lo = max(0, row2_min - 0.08 * abs(row2_max - row2_min));
-                    y_hi = max(2, row2_max + 0.08 * abs(row2_max - row2_min));
-                    ylim([y_lo y_hi]);
-                else
-                    y_lo = row2_min - 0.08 * abs(row2_max - row2_min);
-                    y_hi = row2_max + 0.08 * abs(row2_max - row2_min);
-                    if ~isfinite(y_lo) || ~isfinite(y_hi) || y_hi <= y_lo
-                        y_lo = -10;
-                        y_hi = 10;
-                    end
-                    ylim([y_lo y_hi]);
+                y_lo = row2_min - 0.08 * abs(row2_max - row2_min);
+                y_hi = row2_max + 0.08 * abs(row2_max - row2_min);
+                if ~isfinite(y_lo) || ~isfinite(y_hi) || y_hi <= y_lo
+                    y_lo = -10;
+                    y_hi = 10;
                 end
+                ylim([y_lo y_hi]);
             end
             xlabel('Freq [Hz]');
-            if plotstats_scalar_norm_enable
-                ylabel('Normalized PR [a.u.]');
-            else
-                ylabel('Power Change from Baseline [%]');
-            end
+            ylabel('Power Change from Baseline [%]');
             det_lo = detrate_low_source(cond, subj);
             det_hi = detrate_high_source(cond, subj);
             title(sprintf('%s Dual (L:%.0f%% H:%.0f%%)', condLabels{cond}, det_lo*100, det_hi*100), 'FontSize', 10);
@@ -2788,13 +2750,8 @@ save_figure_png(fig_cond_shift_bar, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bar_
 fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('GED Trials Summary Dashboard (component selection backprojected)', ...
     'FontSize', 16, 'FontWeight', 'bold');
-if plotstats_scalar_norm_enable
-    gamma_metric_full = all_trial_gamma_power_plotstat;
-    gamma_metric_label = 'Gamma Power (norm.)';
-else
-    gamma_metric_full = all_trial_gamma_power;
-    gamma_metric_label = 'Gamma Power';
-end
+gamma_metric_full = all_trial_gamma_power;
+gamma_metric_label = 'Gamma Power Change [%]';
 
 summary_metrics = { ...
     all_trial_median_single, ...
@@ -2858,11 +2815,7 @@ for mi = 1:numel(summary_metrics)
     elseif mi == 7
         ylim([50 60]);
     elseif mi == 8
-        if plotstats_scalar_norm_enable
-            ylim([0.5 1.5]);
-        else
-            ylim([-15 40]);
-        end
+        ylim([-15 40]);
     end
 end
 apply_dynamic_summary_ylims();
@@ -2871,11 +2824,7 @@ save_figure_png(fig_summary, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_sum
 fig_summary_early = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('GED Trials Summary Dashboard (component selection backprojected, early window)', ...
     'FontSize', 16, 'FontWeight', 'bold');
-if plotstats_scalar_norm_enable
-    gamma_metric_early = all_trial_gamma_power_early_plotstat;
-else
-    gamma_metric_early = all_trial_gamma_power_early;
-end
+gamma_metric_early = all_trial_gamma_power_early;
 summary_metrics_early = { ...
     all_trial_median_single_early, ...
     all_trial_median_low_early, ...
@@ -2927,11 +2876,7 @@ save_figure_png(fig_summary_early, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metri
 fig_summary_late = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('GED Trials Summary Dashboard (component selection backprojected, late window)', ...
     'FontSize', 16, 'FontWeight', 'bold');
-if plotstats_scalar_norm_enable
-    gamma_metric_late = all_trial_gamma_power_late_plotstat;
-else
-    gamma_metric_late = all_trial_gamma_power_late;
-end
+gamma_metric_late = all_trial_gamma_power_late;
 summary_metrics_late = { ...
     all_trial_median_single_late, ...
     all_trial_median_low_late, ...
@@ -3166,6 +3111,43 @@ text(0.02, 0.98, sprintf('Linear trend (subject slope): p=%.4f, d=%.2f', ...
 save_figure_png(fig_main_gamma, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq.png'));
 
 %% ====================================================================
+%  CONDITION SHIFT FIGURE: normalized gamma frequency trajectories
+%  ====================================================================
+fig_condition_shift = figure('Position', [0 0 1512 982], 'Color', 'w');
+hold on;
+
+dat_freq = all_trial_median_single;  % [condition x subject]
+dat_shift = dat_freq - dat_freq(1, :);  % Anchor each subject at 25% condition
+
+for s = 1:nSubj
+    y_subj = dat_shift(:, s);
+    valid_subj = isfinite(y_subj);
+    if sum(valid_subj) >= 2
+        plot(find(valid_subj), y_subj(valid_subj), '-o', ...
+            'Color', [0.75 0.75 0.75], 'LineWidth', 1.2, ...
+            'MarkerFaceColor', [0.75 0.75 0.75], 'MarkerSize', 6);
+    end
+end
+
+mu_shift = nanmean(dat_shift, 2);
+sem_shift = nanstd(dat_shift, [], 2) ./ sqrt(sum(isfinite(dat_shift), 2));
+errorbar(1:4, mu_shift, sem_shift, '-o', ...
+    'Color', colors(4, :), 'LineWidth', 2.8, 'CapSize', 10, ...
+    'MarkerFaceColor', colors(4, :), 'MarkerSize', 8);
+
+yline(0, 'k--', 'LineWidth', 1.5);
+set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
+    'FontSize', 18, 'Box', 'off');
+xlim([0.5 4.5]);
+xlabel('Contrast condition');
+ylabel('\Delta Gamma Frequency vs 25% [Hz]');
+title('Gamma Frequency Shift (Subject-normalized to 25%)', ...
+    'FontSize', 24, 'FontWeight', 'bold');
+
+cond_shift_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/GCP_eeg_GED_condition_shift.png';
+save_figure_png(fig_condition_shift, cond_shift_path);
+
+%% ====================================================================
 %  MAIN FIGURE: Gamma frequency over contrast by time window
 %  ====================================================================
 [gamma_slope_full, gamma_delta_full] = compute_condition_separation_from_matrix(all_trial_median_single);
@@ -3214,11 +3196,7 @@ save_figure_png(fig_main_gamma_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_
 fig_power_statsstyle = figure('Position', [0 0 1512/2 982], 'Color', 'w');
 hold on;
 
-if plotstats_scalar_norm_enable
-    dat_power = all_trial_gamma_power_plotstat;
-else
-    dat_power = all_trial_gamma_power;
-end
+dat_power = all_trial_gamma_power;
 dat_power_plot = dat_power;
 
 % Figure-only outlier suppression (per condition): Tukey-style extreme outliers.
@@ -3258,21 +3236,12 @@ for c = 1:4
     scatter(x_jit, y_c(valid_c), 170, colors(c,:), 'filled', ...
         'MarkerEdgeColor', [0.25 0.25 0.25], 'LineWidth', 0.7);
 end
-if plotstats_scalar_norm_enable
-    yline(1, 'k--', 'LineWidth', 1.2);
-else
-    yline(0, 'k--', 'LineWidth', 1.2);
-end
+yline(0, 'k--', 'LineWidth', 1.2);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 15, 'Box', 'off');
 xlim([0.5 4.5]);
-if plotstats_scalar_norm_enable
-    ylabel('Normalized Gamma Power [a.u.]');
-    title('Gamma Power (Scalar-normalized)', 'FontSize', 30, 'FontWeight', 'bold');
-else
-    ylabel('Gamma Power Change from Baseline [%]');
-    title('Gamma Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
-end
+ylabel('Gamma Power Change from Baseline [%]');
+title('Gamma Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
 save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaPower_statsStyle.png'));
 
 %% ====================================================================
@@ -3335,11 +3304,7 @@ grand_panel_max = -inf;
 for cond = 1:4
     subj_curves = nan(nSubj, nFreqs);
     for s = 1:nSubj
-        if plotstats_scalar_norm_enable
-            pr_mat_full = all_trial_powratio_plotstat{cond, s};
-        else
-            pr_mat_full = all_trial_powratio{cond, s};
-        end
+        pr_mat_full = all_trial_powratio{cond, s};
         if isempty(pr_mat_full)
             continue;
         end
@@ -3383,30 +3348,14 @@ for cond = 1:4
     end
 end
 
-if plotstats_scalar_norm_enable
-    yline(1, 'k--', 'LineWidth', 0.5);
-else
-    yline(0, 'k--', 'LineWidth', 0.5);
-end
+yline(0, 'k--', 'LineWidth', 0.5);
 grand_panel_maxabs = max(grand_panel_maxabs, eps);
 xlim([30 90]);
-if plotstats_scalar_norm_enable
-    if ~isfinite(grand_panel_max)
-        grand_panel_max = 1;
-    end
-    ylim([1 max(1.01, grand_panel_max * 1.15)]);
-else
-    grand_panel_maxabs = max(grand_panel_maxabs, 5);
-    ylim([-grand_panel_maxabs grand_panel_maxabs]);
-end
+grand_panel_maxabs = max(grand_panel_maxabs, 5);
+ylim([-grand_panel_maxabs grand_panel_maxabs]);
 xlabel('Frequency [Hz]');
-if plotstats_scalar_norm_enable
-    ylabel('Normalized Power Ratio [a.u.]');
-    title(sprintf('Grand Average Scalar-Normalized Power Spectrum'), 'FontSize', 25, 'FontWeight', 'bold');
-else
-    ylabel('Power Change from Baseline [%]');
-    title(sprintf('Grand Average Raw Power Spectrum (%% Change)'), 'FontSize', 25, 'FontWeight', 'bold');
-end
+ylabel('Power Change from Baseline [%]');
+title(sprintf('Grand Average Raw Power Spectrum (%% Change)'), 'FontSize', 25, 'FontWeight', 'bold');
 set(gca, 'FontSize', 15);
 valid_handles = isgraphics(grand_line_handles);
 if any(valid_handles)
@@ -3420,13 +3369,8 @@ save_figure_png(fig_grand_psd, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_grand_ave
 %  ====================================================================
 nRows = ceil(nSubj / 5);
 fig_all = figure('Position', [0 0 1512 982], 'Color', 'w');
-if plotstats_scalar_norm_enable
-    sgtitle(sprintf('Trial-Level Mean Scalar-Normalized Spectra: All Subjects (N=%d)', nSubj), ...
-        'FontSize', 16, 'FontWeight', 'bold');
-else
-    sgtitle(sprintf('Trial-Level Mean Raw Spectra: All Subjects (N=%d)', nSubj), ...
-        'FontSize', 16, 'FontWeight', 'bold');
-end
+sgtitle(sprintf('Trial-Level Mean Raw Spectra: All Subjects (N=%d)', nSubj), ...
+    'FontSize', 16, 'FontWeight', 'bold');
 fig_all_legend_handles = gobjects(1, 4);
 
 for s = 1:nSubj
@@ -3436,11 +3380,7 @@ for s = 1:nSubj
     subj_panel_max = -inf;
     peak_freq_txt = strings(4,1);
     for cond = 1:4
-        if plotstats_scalar_norm_enable
-            pr_mat_full = all_trial_powratio_plotstat{cond, s};
-        else
-            pr_mat_full = all_trial_powratio{cond, s};
-        end
+        pr_mat_full = all_trial_powratio{cond, s};
         if ~isempty(pr_mat_full)
             mu_raw = nanmean(pr_mat_full, 1);
             subj_panel_maxabs = max(subj_panel_maxabs, max(abs(mu_raw), [], 'omitnan'));
@@ -3460,41 +3400,20 @@ for s = 1:nSubj
             end
         end
     end
-    if plotstats_scalar_norm_enable
-        yline(1, 'k-', 'LineWidth', 0.5);
-    else
-        yline(0, 'k-', 'LineWidth', 0.5);
-    end
+    yline(0, 'k-', 'LineWidth', 0.5);
     subj_panel_maxabs = max(subj_panel_maxabs, eps);
     xlabel('Freq [Hz]');
-    if plotstats_scalar_norm_enable
-        ylabel('Norm. PR');
-    else
-        ylabel('Power Change [%]');
-    end
+    ylabel('Power Change [%]');
     title(sprintf('Subj %s', subjects{s}), 'FontSize', 11);
-    if plotstats_scalar_norm_enable
-        if ~isfinite(subj_panel_min), subj_panel_min = 0; end
-        if ~isfinite(subj_panel_max), subj_panel_max = 2; end
-        span_val = abs(subj_panel_max - subj_panel_min);
-        y_lo = subj_panel_min - 0.08 * span_val;
-        y_hi = subj_panel_max + 0.15 * span_val;
-        if ~isfinite(y_lo) || ~isfinite(y_hi) || y_hi <= y_lo
-            y_lo = max(0.9, subj_panel_min);
-            y_hi = max(1.1, subj_panel_max * 1.15);
-        end
-        set(gca, 'FontSize', 10); xlim([30 90]); ylim([y_lo y_hi]); box on;
-    else
-        if ~isfinite(subj_panel_min), subj_panel_min = -10; end
-        if ~isfinite(subj_panel_max), subj_panel_max = 10; end
-        y_lo = subj_panel_min - 0.05 * abs(subj_panel_max - subj_panel_min);
-        y_hi = subj_panel_max + 0.05 * abs(subj_panel_max - subj_panel_min);
-        if ~isfinite(y_lo) || ~isfinite(y_hi) || y_hi <= y_lo
-            y_lo = -10;
-            y_hi = 10;
-        end
-        set(gca, 'FontSize', 10); xlim([30 90]); ylim([y_lo y_hi]); box on;
+    if ~isfinite(subj_panel_min), subj_panel_min = -10; end
+    if ~isfinite(subj_panel_max), subj_panel_max = 10; end
+    y_lo = subj_panel_min - 0.05 * abs(subj_panel_max - subj_panel_min);
+    y_hi = subj_panel_max + 0.05 * abs(subj_panel_max - subj_panel_min);
+    if ~isfinite(y_lo) || ~isfinite(y_hi) || y_hi <= y_lo
+        y_lo = -10;
+        y_hi = 10;
     end
+    set(gca, 'FontSize', 10); xlim([30 90]); ylim([y_lo y_hi]); box on;
     text(0.97, 0.97, strjoin(cellstr(peak_freq_txt), newline), ...
         'Units', 'normalized', 'HorizontalAlignment', 'right', ...
         'VerticalAlignment', 'top', 'Color', 'k', 'FontSize', 8);
@@ -3716,77 +3635,6 @@ if ~isempty(W_combined)
         method_ratios(3) = sum(ratio_vec(valid_comp)' .* w_use);
     end
 end
-end
-
-function [powratio_trials_norm, trial_scale] = normalize_powratio_trials_scalar(powratio_trials_raw, scan_freqs_axis, enable_norm, ref_bands_hz)
-if ~enable_norm
-    powratio_trials_norm = powratio_trials_raw;
-    trial_scale = ones(size(powratio_trials_raw, 1), 1);
-    return;
-end
-if isempty(powratio_trials_raw)
-    powratio_trials_norm = powratio_trials_raw;
-    trial_scale = [];
-    return;
-end
-if isvector(powratio_trials_raw)
-    powratio_trials_raw = reshape(powratio_trials_raw, 1, []);
-end
-
-powratio_trials_norm = powratio_trials_raw;
-nTrl = size(powratio_trials_raw, 1);
-trial_scale = nan(nTrl, 1);
-ref_mask = false(size(scan_freqs_axis));
-for bi = 1:size(ref_bands_hz, 1)
-    ref_mask = ref_mask | ...
-        (scan_freqs_axis >= ref_bands_hz(bi, 1) & scan_freqs_axis <= ref_bands_hz(bi, 2));
-end
-if ~any(ref_mask)
-    ref_mask = true(size(scan_freqs_axis));
-end
-for trl = 1:nTrl
-    row = powratio_trials_raw(trl, :);
-    vals = row(ref_mask & isfinite(row));
-    if isempty(vals)
-        vals = row(isfinite(row));
-    end
-    s = median(vals, 'omitnan');
-    if ~isfinite(s) || s <= eps
-        s = 1;
-    end
-    trial_scale(trl) = s;
-    powratio_trials_norm(trl, :) = row ./ s;
-end
-end
-
-function mean_metric = normalize_mean_trial_metric_by_scalar(trial_metric, trial_scale, enable_norm)
-if nargin < 3 || ~enable_norm
-    mean_metric = mean(trial_metric, 'omitnan');
-    return;
-end
-if isempty(trial_metric)
-    mean_metric = nan;
-    return;
-end
-tm = trial_metric(:);
-if isempty(trial_scale)
-    mean_metric = mean(tm, 'omitnan');
-    return;
-end
-ts = trial_scale(:);
-nUse = min(numel(tm), numel(ts));
-if nUse < 1
-    mean_metric = nan;
-    return;
-end
-tm = tm(1:nUse);
-ts = ts(1:nUse);
-valid = isfinite(tm) & isfinite(ts) & ts > eps;
-if ~any(valid)
-    mean_metric = nan;
-    return;
-end
-mean_metric = mean(tm(valid) ./ ts(valid), 'omitnan');
 end
 
 function trl_peaks_single = detect_single_peaks_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, smooth_n, peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz)
@@ -4615,8 +4463,7 @@ yt = get(axh, 'YTick');
 if isempty(yt)
     return;
 end
-yt_pct = 100 * yt;
-yt_lbl = arrayfun(@(v) sprintf('%g', v), yt_pct, 'UniformOutput', false);
+yt_lbl = arrayfun(@(v) sprintf('%g', v), yt, 'UniformOutput', false);
 set(axh, 'YTickLabel', yt_lbl);
 end
 
