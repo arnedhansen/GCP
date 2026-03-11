@@ -137,6 +137,9 @@ exclude_dominant_outlier = true;    % remove dominant top outlier (lambda1/lambd
 outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for dominant-outlier detection
 outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
 outlier_min_rest = 0;               % minimum non-top eligible components for dominant-outlier exclusion (0 = no minimum)
+baseline_outlier_exclusion_enable = true; % reject trials with unreliable baseline power estimates
+baseline_outlier_mad_mult = 3.5;    % robust log-power cutoff (MAD units) for baseline outliers
+baseline_outlier_min_trials = 12;   % minimum trial count before baseline outlier screening is applied
 peak_form_weight = 3.00;            % strongly prioritize shift-invariant gamma peak form during ranking
 peak_bonus_weight = 0.5;            % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
@@ -1571,6 +1574,55 @@ for subj = 1:nSubj
             cfg_filt.bpfiltord  = round(3 * fsample / bpfreq(1));
             dat_nb = ft_preprocessing(cfg_filt, dat);
 
+            % Baseline quality gate (per frequency): reject trials with implausibly
+            % low/high baseline power (log-domain robust outlier detection).
+            baseline_power_raw = nan(nTrl, 1);
+            baseline_power_comb_full = nan(nTrl, 1);
+            baseline_power_comb_early = nan(nTrl, 1);
+            baseline_power_comb_late = nan(nTrl, 1);
+            for trl = 1:nTrl
+                x_nb = double(dat_nb.trial{trl});
+                t_nb = dat_nb.time{trl};
+                idx_base = t_nb >= baseline_window(1) & t_nb <= baseline_window(2);
+                x_base = x_nb(:, idx_base);
+                if isempty(x_base)
+                    continue;
+                end
+                pow_base_chan = mean(x_base.^2, 2);
+                baseline_power_raw(trl) = sum(raw_w(:) .* pow_base_chan(:));
+
+                if adequate_full && ~isempty(filters.full.W_combined)
+                    x_base_full = filters.full.W_combined' * x_base;
+                    baseline_power_comb_full(trl) = mean(x_base_full.^2);
+                end
+                if adequate_early && ~isempty(filters.early.W_combined)
+                    x_base_early = filters.early.W_combined' * x_base;
+                    baseline_power_comb_early(trl) = mean(x_base_early.^2);
+                end
+                if adequate_late && ~isempty(filters.late.W_combined)
+                    x_base_late = filters.late.W_combined' * x_base;
+                    baseline_power_comb_late(trl) = mean(x_base_late.^2);
+                end
+            end
+
+            bad_base_raw = flag_unreliable_baseline_trials( ...
+                baseline_power_raw, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
+            bad_base_full = bad_base_raw;
+            bad_base_early = bad_base_raw;
+            bad_base_late = bad_base_raw;
+            if adequate_full
+                bad_base_full = bad_base_full | flag_unreliable_baseline_trials( ...
+                    baseline_power_comb_full, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
+            end
+            if adequate_early
+                bad_base_early = bad_base_early | flag_unreliable_baseline_trials( ...
+                    baseline_power_comb_early, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
+            end
+            if adequate_late
+                bad_base_late = bad_base_late | flag_unreliable_baseline_trials( ...
+                    baseline_power_comb_late, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
+            end
+
             for trl = 1:nTrl
                 x_nb = double(dat_nb.trial{trl});
                 t_nb = dat_nb.time{trl};
@@ -1585,6 +1637,9 @@ for subj = 1:nSubj
                 x_late = x_nb(:, idx_late);
 
                 if adequate_full
+                    if bad_base_full(trl)
+                        continue;
+                    end
                     nSearch_full = size(filters.full.searchFilters, 2);
                     comp_base_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_base;
                     pow_base_all_full = mean(comp_base_all_full.^2, 2);
@@ -1592,13 +1647,17 @@ for subj = 1:nSubj
                     comp_stim_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_full;
                     pow_stim_all_full = mean(comp_stim_all_full.^2, 2);
                     valid_all_full = isfinite(pow_stim_all_full) & isfinite(pow_base_all_full) & (pow_base_all_full > 0);
-                    ratio_all_full(valid_all_full) = pow_stim_all_full(valid_all_full) ./ pow_base_all_full(valid_all_full);
+                    ratio_all_full(valid_all_full) = ...
+                        100 * (pow_stim_all_full(valid_all_full) - pow_base_all_full(valid_all_full)) ./ pow_base_all_full(valid_all_full);
                     powratio_components(:, trl, fi) = ratio_all_full;
                     powratio_methods_full(:, trl, fi) = compute_method_ratios_from_components( ...
                         ratio_all_full, x_full, x_base, raw_w, filters.full.W_top, filters.full.W_combined, filters.full.selected_idx, filters.full.w_combined, nBenchmarkMethods);
                 end
 
                 if adequate_early
+                    if bad_base_early(trl)
+                        continue;
+                    end
                     nSearch_early = size(filters.early.searchFilters, 2);
                     comp_base_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_base;
                     pow_base_all_early = mean(comp_base_all_early.^2, 2);
@@ -1606,13 +1665,17 @@ for subj = 1:nSubj
                     comp_stim_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_early;
                     pow_stim_all_early = mean(comp_stim_all_early.^2, 2);
                     valid_all_early = isfinite(pow_stim_all_early) & isfinite(pow_base_all_early) & (pow_base_all_early > 0);
-                    ratio_all_early(valid_all_early) = pow_stim_all_early(valid_all_early) ./ pow_base_all_early(valid_all_early);
+                    ratio_all_early(valid_all_early) = ...
+                        100 * (pow_stim_all_early(valid_all_early) - pow_base_all_early(valid_all_early)) ./ pow_base_all_early(valid_all_early);
                     powratio_components_early(1:nSearch_early, trl, fi) = ratio_all_early;
                     powratio_methods_early(:, trl, fi) = compute_method_ratios_from_components( ...
                         ratio_all_early, x_early, x_base, raw_w, filters.early.W_top, filters.early.W_combined, filters.early.selected_idx, filters.early.w_combined, nBenchmarkMethods);
                 end
 
                 if adequate_late
+                    if bad_base_late(trl)
+                        continue;
+                    end
                     nSearch_late = size(filters.late.searchFilters, 2);
                     comp_base_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_base;
                     pow_base_all_late = mean(comp_base_all_late.^2, 2);
@@ -1620,7 +1683,8 @@ for subj = 1:nSubj
                     comp_stim_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_late;
                     pow_stim_all_late = mean(comp_stim_all_late.^2, 2);
                     valid_all_late = isfinite(pow_stim_all_late) & isfinite(pow_base_all_late) & (pow_base_all_late > 0);
-                    ratio_all_late(valid_all_late) = pow_stim_all_late(valid_all_late) ./ pow_base_all_late(valid_all_late);
+                    ratio_all_late(valid_all_late) = ...
+                        100 * (pow_stim_all_late(valid_all_late) - pow_base_all_late(valid_all_late)) ./ pow_base_all_late(valid_all_late);
                     powratio_components_late(1:nSearch_late, trl, fi) = ratio_all_late;
                     powratio_methods_late(:, trl, fi) = compute_method_ratios_from_components( ...
                         ratio_all_late, x_late, x_base, raw_w, filters.late.W_top, filters.late.W_combined, filters.late.selected_idx, filters.late.w_combined, nBenchmarkMethods);
@@ -1792,7 +1856,7 @@ for subj = 1:nSubj
         all_trial_median_single_late(cond, subj) = median(trl_peaks_single_late(valid_s_late));
         all_trial_detrate_single_late(cond, subj) = sum(valid_s_late) / nTrl;
 
-        % Peak-centered gamma power: mean stim/base ratio within peak +/- 2.5 Hz.
+        % Peak-centered gamma power: mean percent change from baseline within peak +/- 2.5 Hz.
         [trial_gamma_power_full, all_trial_gamma_power(cond, subj)] = compute_peak_centered_gamma_power( ...
             powratio_trials_full, scan_freqs, trl_peaks_single, gamma_peak_power_halfwidth_hz);
         [trial_gamma_power_early, all_trial_gamma_power_early(cond, subj)] = compute_peak_centered_gamma_power( ...
@@ -1946,9 +2010,6 @@ for subj = 1:nSubj
         row1_clim = ones(1, 4);
         for cond = 1:4
             pr_raw_mats{cond} = pr_source{cond, subj};
-            if ~plotstats_scalar_norm_enable && ~isempty(pr_raw_mats{cond})
-                pr_raw_mats{cond} = (pr_raw_mats{cond} - 1) * 100;
-            end
             if ~isempty(pr_raw_mats{cond})
                 cond_vals = abs(pr_raw_mats{cond}(:));
                 cond_vals = cond_vals(isfinite(cond_vals));
@@ -2348,7 +2409,7 @@ for cwi = 1:numel(comparison_windows)
 
     %% Subject-level component comparison figures (raw, top GED, combined GED; edge flattening applied)
     for subj = 1:nSubj
-        fig_bench_subj = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+        fig_bench_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
         sgtitle(sprintf('Component Comparison (%s): Subject %s', win_title, subjects{subj}), ...
             'FontSize', 18, 'FontWeight', 'bold');
 
@@ -2358,7 +2419,6 @@ for cwi = 1:numel(comparison_windows)
             for cond = 1:4
                 pr_raw = all_trial_powratio_bench_window{mi, cond, subj};
                 if isempty(pr_raw), continue; end
-                pr_raw = (pr_raw - 1) * 100;
                 mu = nanmean(pr_raw, 1);
                 se = nanstd(pr_raw, [], 1) / sqrt(max(1, size(pr_raw, 1)));
                 faceC = 0.8 * colors(cond,:) + 0.2 * [1 1 1];
@@ -2535,7 +2595,6 @@ end
             for s = 1:nSubj
                 pr_raw = all_trial_powratio_bench_window{mi, cond, s};
                 if ~isempty(pr_raw)
-                    pr_raw = (pr_raw - 1) * 100;
                     subj_mu = nanmean(pr_raw, 1);
                     subj_curves(s, :) = subj_mu;
                 end
@@ -2733,7 +2792,7 @@ if plotstats_scalar_norm_enable
     gamma_metric_full = all_trial_gamma_power_plotstat;
     gamma_metric_label = 'Gamma Power (norm.)';
 else
-    gamma_metric_full = (all_trial_gamma_power - 1) * 100;
+    gamma_metric_full = all_trial_gamma_power;
     gamma_metric_label = 'Gamma Power';
 end
 
@@ -2815,7 +2874,7 @@ sgtitle('GED Trials Summary Dashboard (component selection backprojected, early 
 if plotstats_scalar_norm_enable
     gamma_metric_early = all_trial_gamma_power_early_plotstat;
 else
-    gamma_metric_early = (all_trial_gamma_power_early - 1) * 100;
+    gamma_metric_early = all_trial_gamma_power_early;
 end
 summary_metrics_early = { ...
     all_trial_median_single_early, ...
@@ -2871,7 +2930,7 @@ sgtitle('GED Trials Summary Dashboard (component selection backprojected, late w
 if plotstats_scalar_norm_enable
     gamma_metric_late = all_trial_gamma_power_late_plotstat;
 else
-    gamma_metric_late = (all_trial_gamma_power_late - 1) * 100;
+    gamma_metric_late = all_trial_gamma_power_late;
 end
 summary_metrics_late = { ...
     all_trial_median_single_late, ...
@@ -3158,7 +3217,7 @@ hold on;
 if plotstats_scalar_norm_enable
     dat_power = all_trial_gamma_power_plotstat;
 else
-    dat_power = (all_trial_gamma_power - 1) * 100; % mean trial-level stim/base gamma power percentage change
+    dat_power = all_trial_gamma_power;
 end
 dat_power_plot = dat_power;
 
@@ -3280,9 +3339,6 @@ for cond = 1:4
             pr_mat_full = all_trial_powratio_plotstat{cond, s};
         else
             pr_mat_full = all_trial_powratio{cond, s};
-            if ~isempty(pr_mat_full)
-                pr_mat_full = (pr_mat_full - 1) * 100;
-            end
         end
         if isempty(pr_mat_full)
             continue;
@@ -3384,9 +3440,6 @@ for s = 1:nSubj
             pr_mat_full = all_trial_powratio_plotstat{cond, s};
         else
             pr_mat_full = all_trial_powratio{cond, s};
-            if ~isempty(pr_mat_full)
-                pr_mat_full = (pr_mat_full - 1) * 100;
-            end
         end
         if ~isempty(pr_mat_full)
             mu_raw = nanmean(pr_mat_full, 1);
@@ -3632,7 +3685,7 @@ else
 end
 
 function method_ratios = compute_method_ratios_from_components(ratio_all, x_stim, x_base, raw_w, W_top, W_combined, selected_idx, w_combined, nBenchmarkMethods)
-% ratio_all: power ratios indexed by component (1 = highest eigenvalue); must match W_top (col 1) and selected_idx
+% ratio_all: baseline-percent-change values indexed by component
 method_ratios = nan(nBenchmarkMethods, 1);
 
 pow_stim_chan = mean(x_stim.^2, 2);
@@ -3640,7 +3693,7 @@ pow_base_chan = mean(x_base.^2, 2);
 raw_pow_stim = sum(raw_w(:) .* pow_stim_chan(:));
 raw_pow_base = sum(raw_w(:) .* pow_base_chan(:));
 if isfinite(raw_pow_stim) && isfinite(raw_pow_base) && raw_pow_base > 0
-    method_ratios(1) = raw_pow_stim / raw_pow_base;
+    method_ratios(1) = 100 * (raw_pow_stim - raw_pow_base) / raw_pow_base;
 end
 
 if ~isempty(W_top)
@@ -5672,6 +5725,30 @@ proxy.unknown_high_risk = ~(isfinite(proxy.lineharm_ratio) && isfinite(proxy.sta
     isfinite(proxy.burst_ratio) && isfinite(proxy.hf_slope) && isfinite(proxy.cond_lock_rho));
 end
 
+function bad_mask = flag_unreliable_baseline_trials(base_power_vals, mad_mult, min_trials, enable_flag)
+bad_mask = false(size(base_power_vals));
+if nargin < 4 || ~enable_flag || isempty(base_power_vals)
+    return;
+end
+valid = isfinite(base_power_vals) & (base_power_vals > 0);
+if sum(valid) < max(3, min_trials)
+    return;
+end
+logp = log10(base_power_vals(valid));
+center = median(logp, 'omitnan');
+spread = robust_mad(logp);
+if ~isfinite(spread) || spread <= eps
+    spread = iqr(logp) / 1.349;
+end
+if ~isfinite(spread) || spread <= eps
+    return;
+end
+zabs = abs((logp - center) / spread);
+tmp = false(size(logp));
+tmp(zabs > mad_mult) = true;
+bad_mask(valid) = tmp;
+end
+
 function pr_scan = compute_simple_power_ratio_scan(x_stim, x_base, fs, scan_freqs, scan_width)
 pr_scan = nan(size(scan_freqs));
 if isempty(x_stim) || isempty(x_base) || fs <= 0
@@ -5695,7 +5772,7 @@ for fi = 1:numel(scan_freqs)
     end
     p_stim = mean(px_stim(f_mask));
     p_base = mean(px_base(f_mask));
-    pr_scan(fi) = (p_stim - p_base) / max(p_base, eps);
+    pr_scan(fi) = 100 * (p_stim - p_base) / max(p_base, eps);
 end
 end
 
