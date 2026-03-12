@@ -1593,15 +1593,15 @@ for subj = 1:nSubj
 
                 if adequate_full && ~isempty(filters.full.W_combined)
                     x_base_full = filters.full.W_combined' * x_base;
-                    baseline_power_comb_full(trl) = mean(x_base_full.^2);
+                    baseline_power_comb_full(trl) = mean(x_base_full(:).^2);
                 end
                 if adequate_early && ~isempty(filters.early.W_combined)
                     x_base_early = filters.early.W_combined' * x_base;
-                    baseline_power_comb_early(trl) = mean(x_base_early.^2);
+                    baseline_power_comb_early(trl) = mean(x_base_early(:).^2);
                 end
                 if adequate_late && ~isempty(filters.late.W_combined)
                     x_base_late = filters.late.W_combined' * x_base;
-                    baseline_power_comb_late(trl) = mean(x_base_late.^2);
+                    baseline_power_comb_late(trl) = mean(x_base_late(:).^2);
                 end
             end
 
@@ -1636,10 +1636,7 @@ for subj = 1:nSubj
                 x_early = x_nb(:, idx_early);
                 x_late = x_nb(:, idx_late);
 
-                if adequate_full
-                    if bad_base_full(trl)
-                        continue;
-                    end
+                if adequate_full && ~bad_base_full(trl)
                     nSearch_full = size(filters.full.searchFilters, 2);
                     comp_base_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_base;
                     pow_base_all_full = mean(comp_base_all_full.^2, 2);
@@ -1654,10 +1651,7 @@ for subj = 1:nSubj
                         ratio_all_full, x_full, x_base, raw_w, filters.full.W_top, filters.full.W_combined, filters.full.selected_idx, filters.full.w_combined, nBenchmarkMethods);
                 end
 
-                if adequate_early
-                    if bad_base_early(trl)
-                        continue;
-                    end
+                if adequate_early && ~bad_base_early(trl)
                     nSearch_early = size(filters.early.searchFilters, 2);
                     comp_base_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_base;
                     pow_base_all_early = mean(comp_base_all_early.^2, 2);
@@ -1672,10 +1666,7 @@ for subj = 1:nSubj
                         ratio_all_early, x_early, x_base, raw_w, filters.early.W_top, filters.early.W_combined, filters.early.selected_idx, filters.early.w_combined, nBenchmarkMethods);
                 end
 
-                if adequate_late
-                    if bad_base_late(trl)
-                        continue;
-                    end
+                if adequate_late && ~bad_base_late(trl)
                     nSearch_late = size(filters.late.searchFilters, 2);
                     comp_base_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_base;
                     pow_base_all_late = mean(comp_base_all_late.^2, 2);
