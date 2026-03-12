@@ -169,12 +169,6 @@ occipital_pf_extreme_lineharm = 5.0;      % only reject occipital PF>=0.6 if lin
 occipital_pf_extreme_hf_slope = 2.0;      % only reject occipital PF>=0.6 if hf_slope exceeds this extreme threshold
 occipital_pf_extreme_front_leak = 10.0;   % only reject occipital PF>=0.6 if front_leak exceeds this extreme threshold
 occipital_pf_extreme_temp_leak = 10.0;    % only reject occipital PF>=0.6 if temp_leak exceeds this extreme threshold
-crosswin_w_topo = 0.50;             % cross-window matching weight for topography similarity
-crosswin_w_spec = 0.35;             % cross-window matching weight for spectrum similarity
-crosswin_w_feat = 0.15;             % cross-window matching weight for scalar-feature similarity
-crosswin_match_min_conf = 0.65;     % minimum confidence required to accept a cross-window match
-crosswin_consistency_min = 0.65;    % minimum mean confidence to treat a cross-window group as stable
-crosswin_consistency_bonus = 0.12;  % additive score bonus for stable occipital-like cross-window groups
 topo_flat_std_min = 1e-6;           % near-zero std => degenerate/flat map
 topo_flat_range_min = 1e-5;         % near-zero dynamic range => degenerate/flat map
 topo_nonposterior_max = 0.28;       % posterior concentration below this is non-posterior
@@ -313,7 +307,6 @@ all_selected_comp_weights = cell(1, nSubj);
 all_component_selection_stats_full  = cell(1, nSubj);
 all_component_selection_stats_early = cell(1, nSubj);
 all_component_selection_stats_late  = cell(1, nSubj);
-all_crosswin_match_stats = cell(1, nSubj);
 warning_log_by_subj = cell(nSubj, 1);
 
 all_trial_powratio_bench = cell(nBenchmarkMethods, 4, nSubj);
@@ -505,9 +498,7 @@ for subj = 1:nSubj
     rejection_flags_full = struct(); rejection_flags_early = struct(); rejection_flags_late = struct();
     soft_warn_flags_full = struct(); soft_warn_flags_early = struct(); soft_warn_flags_late = struct();
     adaptive_thr_full = struct(); adaptive_thr_early = struct(); adaptive_thr_late = struct();
-    component_signature_full = struct(); component_signature_early = struct(); component_signature_late = struct();
     candidate_table_full = struct(); candidate_table_early = struct(); candidate_table_late = struct();
-    crosswin_id_full = []; crosswin_id_early = []; crosswin_id_late = [];
 
     % Simulated signed occipital template (same for all windows)
     sim_template = zeros(nChans, 1);
@@ -983,8 +974,6 @@ for subj = 1:nSubj
     candidate_table.hard_eligible_raw = hard_eligible_raw;
     candidate_table.dominant_outlier = dominant_outlier_mask;
     candidate_table.hard_eligible = hard_eligible;
-    candidate_table.crosswin_id = nan(nSearch, 1);
-    candidate_table.crosswin_match_conf = nan(nSearch, 1);
     candidate_table.thr_min_eigval = repmat(enforced_min_eigval, nSearch, 1);
     candidate_table.thr_min_single_peak_pf = repmat(min_peak_form_single_hard, nSearch, 1);
     candidate_table.thr_max_minor_peaks = repmat(max_minor_peaks_hard, nSearch, 1);
@@ -992,10 +981,6 @@ for subj = 1:nSubj
     candidate_table.thr_occ_class = repmat(adaptive_thr.occ_class_thr, nSearch, 1);
     candidate_table.thr_emg_class = repmat(adaptive_thr.emg_class_thr, nSearch, 1);
     candidate_table.thr_occ_margin = repmat(adaptive_thr.min_occ_margin, nSearch, 1);
-    component_signature = build_component_signature_block( ...
-        searchTopos, searchMeanPrSpectrum, corr_vec, ratio_vec, condlock_vec, ...
-        lineharm_vec, hf_slope_vec, leak_vec, temp_leak_vec, eval_raw_vec, topo_posterior_vec);
-
     combined_idx = find(selection_pool_mask & isfinite(searchScores));
     fallback_occipital_idx = NaN;
     fallback_selected_mask = false(nSearch, 1);
@@ -1128,7 +1113,6 @@ for subj = 1:nSubj
             rejection_flags_full = rejection_flags;
             soft_warn_flags_full = soft_warn_flags;
             adaptive_thr_full = adaptive_thr;
-            component_signature_full = component_signature;
             candidate_table_full = candidate_table;
         elseif w == 2
             searchFilters_early = searchFilters;
@@ -1149,7 +1133,6 @@ for subj = 1:nSubj
             rejection_flags_early = rejection_flags;
             soft_warn_flags_early = soft_warn_flags;
             adaptive_thr_early = adaptive_thr;
-            component_signature_early = component_signature;
             candidate_table_early = candidate_table;
         else
             searchFilters_late = searchFilters;
@@ -1170,7 +1153,6 @@ for subj = 1:nSubj
             rejection_flags_late = rejection_flags;
             soft_warn_flags_late = soft_warn_flags;
             adaptive_thr_late = adaptive_thr;
-            component_signature_late = component_signature;
             candidate_table_late = candidate_table;
         end
 
@@ -1204,7 +1186,6 @@ for subj = 1:nSubj
             'fallback_selected_idx', fallback_occipital_idx, ...
             'selected_weights', selected_weights, ...
             'candidate_table', candidate_table, ...
-            'component_signature', component_signature, ...
             'best_idx', bestIdx, ...
             'best_score', bestScore, ...
             'best_corr', bestCorr, ...
@@ -1229,44 +1210,7 @@ for subj = 1:nSubj
             all_component_selection_stats_late{subj} = comp_sel_struct;
         end
 
-    % EMG exclusion diagnostics are generated after all windows are processed,
-    % once cross-window IDs and consistency updates are available.
-    end
-
-    match_cfg = struct( ...
-        'w_topo', crosswin_w_topo, ...
-        'w_spec', crosswin_w_spec, ...
-        'w_feat', crosswin_w_feat, ...
-        'min_conf', crosswin_match_min_conf);
-    crosswin_match = match_components_full_anchor( ...
-        component_signature_full, component_signature_early, component_signature_late, match_cfg);
-    crosswin_id_full = crosswin_match.id_full;
-    crosswin_id_early = crosswin_match.id_early;
-    crosswin_id_late = crosswin_match.id_late;
-
-    [group_consistent_map, group_occipital_map, group_member_count, group_mean_conf] = ...
-        compute_crosswindow_group_consistency( ...
-            crosswin_match, candidate_table_full, candidate_table_early, candidate_table_late, ...
-            crosswin_consistency_min);
-
-    [candidate_table_full, selected_idx_full, w_combined_full] = ...
-        apply_crosswindow_consistency_bonus(candidate_table_full, crosswin_id_full, ...
-            group_consistent_map, group_occipital_map, crosswin_consistency_bonus, max_components_to_combine);
-    [candidate_table_early, selected_idx_early, w_combined_early] = ...
-        apply_crosswindow_consistency_bonus(candidate_table_early, crosswin_id_early, ...
-            group_consistent_map, group_occipital_map, crosswin_consistency_bonus, max_components_to_combine);
-    [candidate_table_late, selected_idx_late, w_combined_late] = ...
-        apply_crosswindow_consistency_bonus(candidate_table_late, crosswin_id_late, ...
-            group_consistent_map, group_occipital_map, crosswin_consistency_bonus, max_components_to_combine);
-
-    if isempty(selected_idx_full)
-        w_combined_full = [];
-    end
-    if isempty(selected_idx_early)
-        w_combined_early = [];
-    end
-    if isempty(selected_idx_late)
-        w_combined_late = [];
+    % EMG exclusion diagnostics are generated after all windows are processed.
     end
 
     W_combined_full = searchFilters_full(:, selected_idx_full);
@@ -1289,59 +1233,12 @@ for subj = 1:nSubj
         all_selected_comp_corr(subj) = NaN;
         all_selected_comp_eval(subj) = NaN;
         all_eigenvalues(subj) = NaN;
-        sel_id_full = NaN;
     else
         all_selected_comp_idx(subj) = selected_idx_full(1);
         all_selected_comp_corr(subj) = searchCorrs_full(selected_idx_full(1));
         all_selected_comp_eval(subj) = evals_sorted_full(selected_idx_full(1));
         all_eigenvalues(subj) = evals_sorted_full(selected_idx_full(1));
-        sel_id_full = crosswin_id_full(selected_idx_full(1));
     end
-    if isempty(selected_idx_early)
-        sel_id_early = NaN;
-    else
-        sel_id_early = crosswin_id_early(selected_idx_early(1));
-    end
-    if isempty(selected_idx_late)
-        sel_id_late = NaN;
-    else
-        sel_id_late = crosswin_id_late(selected_idx_late(1));
-    end
-    sanity_report = struct( ...
-        'subject', subjects{subj}, ...
-        'selected_id_full', sel_id_full, ...
-        'selected_id_early', sel_id_early, ...
-        'selected_id_late', sel_id_late, ...
-        'full_matches_early', isfinite(sel_id_full) && isfinite(sel_id_early) && (sel_id_full == sel_id_early), ...
-        'full_matches_late', isfinite(sel_id_full) && isfinite(sel_id_late) && (sel_id_full == sel_id_late), ...
-        'early_matches_late', isfinite(sel_id_early) && isfinite(sel_id_late) && (sel_id_early == sel_id_late), ...
-        'selected_hard_reject_full', any(candidate_table_full.hard_reject(selected_idx_full)), ...
-        'selected_hard_reject_early', any(candidate_table_early.hard_reject(selected_idx_early)), ...
-        'selected_hard_reject_late', any(candidate_table_late.hard_reject(selected_idx_late)));
-    crosswin_match.sanity_report = sanity_report;
-    all_crosswin_match_stats{subj} = crosswin_match;
-
-    candidate_table_full.crosswin_id = crosswin_id_full;
-    candidate_table_early.crosswin_id = crosswin_id_early;
-    candidate_table_late.crosswin_id = crosswin_id_late;
-    candidate_table_full.crosswin_match_conf = crosswin_match.conf_full;
-    candidate_table_early.crosswin_match_conf = crosswin_match.conf_early;
-    candidate_table_late.crosswin_match_conf = crosswin_match.conf_late;
-    candidate_table_full.crosswin_group_consistent = lookup_group_property(crosswin_id_full, group_consistent_map);
-    candidate_table_early.crosswin_group_consistent = lookup_group_property(crosswin_id_early, group_consistent_map);
-    candidate_table_late.crosswin_group_consistent = lookup_group_property(crosswin_id_late, group_consistent_map);
-    candidate_table_full.crosswin_group_occipital = lookup_group_property(crosswin_id_full, group_occipital_map);
-    candidate_table_early.crosswin_group_occipital = lookup_group_property(crosswin_id_early, group_occipital_map);
-    candidate_table_late.crosswin_group_occipital = lookup_group_property(crosswin_id_late, group_occipital_map);
-    candidate_table_full.crosswin_group_members = lookup_group_property(crosswin_id_full, group_member_count);
-    candidate_table_early.crosswin_group_members = lookup_group_property(crosswin_id_early, group_member_count);
-    candidate_table_late.crosswin_group_members = lookup_group_property(crosswin_id_late, group_member_count);
-    candidate_table_full.crosswin_group_mean_conf = lookup_group_property(crosswin_id_full, group_mean_conf);
-    candidate_table_early.crosswin_group_mean_conf = lookup_group_property(crosswin_id_early, group_mean_conf);
-    candidate_table_late.crosswin_group_mean_conf = lookup_group_property(crosswin_id_late, group_mean_conf);
-    candidate_table_full = enforce_occipital_label_stability(candidate_table_full, group_occipital_map);
-    candidate_table_early = enforce_occipital_label_stability(candidate_table_early, group_occipital_map);
-    candidate_table_late = enforce_occipital_label_stability(candidate_table_late, group_occipital_map);
     pf_benchmark = build_pf_benchmark_summary(candidate_table_full, candidate_table_early, candidate_table_late);
     fprintf(['PF benchmark %s | full top/pass/fail: %d/%d/%d | early top/pass/fail: %d/%d/%d | ', ...
         'late top/pass/fail: %d/%d/%d\n'], ...
@@ -1354,25 +1251,16 @@ for subj = 1:nSubj
     all_component_selection_stats_full{subj}.selected_weights = w_combined_full;
     all_component_selection_stats_full{subj}.candidate_table = candidate_table_full;
     all_component_selection_stats_full{subj}.pf_benchmark = pf_benchmark.full;
-    all_component_selection_stats_full{subj}.crosswin_id = crosswin_id_full;
-    all_component_selection_stats_full{subj}.crosswin_match = crosswin_match;
-    all_component_selection_stats_full{subj}.crosswin_group_consistent = group_consistent_map;
 
     all_component_selection_stats_early{subj}.selected_idx = selected_idx_early;
     all_component_selection_stats_early{subj}.selected_weights = w_combined_early;
     all_component_selection_stats_early{subj}.candidate_table = candidate_table_early;
     all_component_selection_stats_early{subj}.pf_benchmark = pf_benchmark.early;
-    all_component_selection_stats_early{subj}.crosswin_id = crosswin_id_early;
-    all_component_selection_stats_early{subj}.crosswin_match = crosswin_match;
-    all_component_selection_stats_early{subj}.crosswin_group_consistent = group_consistent_map;
 
     all_component_selection_stats_late{subj}.selected_idx = selected_idx_late;
     all_component_selection_stats_late{subj}.selected_weights = w_combined_late;
     all_component_selection_stats_late{subj}.candidate_table = candidate_table_late;
     all_component_selection_stats_late{subj}.pf_benchmark = pf_benchmark.late;
-    all_component_selection_stats_late{subj}.crosswin_id = crosswin_id_late;
-    all_component_selection_stats_late{subj}.crosswin_match = crosswin_match;
-    all_component_selection_stats_late{subj}.crosswin_group_consistent = group_consistent_map;
 
     cfg_topo = [];
     cfg_topo.layout    = headmodel.layANThead;
@@ -1385,7 +1273,7 @@ for subj = 1:nSubj
     cfg_topo.figure    = 'gcf';
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
-        searchMeanPrSpectrum_full, evals_sorted_full(1:numel(crosswin_id_full)), ...
+        searchMeanPrSpectrum_full, evals_sorted_full(1:numel(candidate_table_full.comp_idx)), ...
         occipital_evidence_full, emg_artifact_score_full, searchEmgClass_full, unknown_proxy_full, ...
         candidate_table_full.hard_eligible, candidate_table_full.force_include_occipital, ...
         hard_reject_full, soft_warn_full, rejection_flags_full, ...
@@ -1393,11 +1281,11 @@ for subj = 1:nSubj
         candidate_table_full.lineharm_ratio, candidate_table_full.hf_slope, ...
         adaptive_thr_full, cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
         candidate_table_full.peak_form_mode, candidate_table_full.peak_form_best_center_hz, ...
-        candidate_table_full.peak_form_dominant_penalty, crosswin_id_full, ...
+        candidate_table_full.peak_form_dominant_penalty, ...
         selected_idx_full, get_candidate_table_fallback_idx(candidate_table_full));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
-        searchMeanPrSpectrum_early, evals_sorted_early(1:numel(crosswin_id_early)), ...
+        searchMeanPrSpectrum_early, evals_sorted_early(1:numel(candidate_table_early.comp_idx)), ...
         occipital_evidence_early, emg_artifact_score_early, searchEmgClass_early, unknown_proxy_early, ...
         candidate_table_early.hard_eligible, candidate_table_early.force_include_occipital, ...
         hard_reject_early, soft_warn_early, rejection_flags_early, ...
@@ -1405,11 +1293,11 @@ for subj = 1:nSubj
         candidate_table_early.lineharm_ratio, candidate_table_early.hf_slope, ...
         adaptive_thr_early, cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
         candidate_table_early.peak_form_mode, candidate_table_early.peak_form_best_center_hz, ...
-        candidate_table_early.peak_form_dominant_penalty, crosswin_id_early, ...
+        candidate_table_early.peak_form_dominant_penalty, ...
         selected_idx_early, get_candidate_table_fallback_idx(candidate_table_early));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
-        searchMeanPrSpectrum_late, evals_sorted_late(1:numel(crosswin_id_late)), ...
+        searchMeanPrSpectrum_late, evals_sorted_late(1:numel(candidate_table_late.comp_idx)), ...
         occipital_evidence_late, emg_artifact_score_late, searchEmgClass_late, unknown_proxy_late, ...
         candidate_table_late.hard_eligible, candidate_table_late.force_include_occipital, ...
         hard_reject_late, soft_warn_late, rejection_flags_late, ...
@@ -1417,7 +1305,7 @@ for subj = 1:nSubj
         candidate_table_late.lineharm_ratio, candidate_table_late.hf_slope, ...
         adaptive_thr_late, cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
         candidate_table_late.peak_form_mode, candidate_table_late.peak_form_best_center_hz, ...
-        candidate_table_late.peak_form_dominant_penalty, crosswin_id_late, ...
+        candidate_table_late.peak_form_dominant_penalty, ...
         selected_idx_late, get_candidate_table_fallback_idx(candidate_table_late));
     plot_combined_topo_spectra_windows( ...
         fig_save_dir_emg_exclusion, subjects{subj}, scan_freqs, cfg_topo, all_topo_labels{subj}, ...
@@ -3499,7 +3387,7 @@ save(save_path, ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
     'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
-    'all_crosswin_match_stats', 'warning_log', ...
+    'warning_log', ...
     'all_trial_powratio_bench', ...
     'all_trial_powratio_components_full', 'all_trial_powratio_components_early', 'all_trial_powratio_components_late', ...
     'all_trial_powratio_bench_early', 'all_trial_powratio_bench_late', ...
@@ -3963,7 +3851,7 @@ function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_fre
     front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec, ...
     adaptive_thr, cfg_topo, topo_labels, ...
     peak_form_score, peak_form_mode, peak_form_best_center_hz, peak_form_dominant_penalty, ...
-    crosswin_id, selected_idx, fallback_selected_idx)
+    selected_idx, fallback_selected_idx)
 nComp = numel(eigval_vec);
 if nComp < 1
     return;
@@ -4041,7 +3929,7 @@ save_figure_png(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_scatter_%s.
 close(figA);
 
 selected_mask = false(nComp, 1);
-if nargin >= 29 && ~isempty(selected_idx)
+if ~isempty(selected_idx)
     selected_idx = unique(selected_idx(:));
     selected_idx = selected_idx(isfinite(selected_idx));
     selected_idx = selected_idx(selected_idx >= 1 & selected_idx <= nComp);
@@ -4101,6 +3989,8 @@ for k = 1:nCols
     if k <= nShowSel
         ci = sel_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
+        peak_hz_ci = peak_form_best_center_hz(ci);
+        add_peak_band_overlay(scan_freqs, spec_data, peak_hz_ci, 2.5);
         h_raw = plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
         spec_min = min(spec_data(isfinite(spec_data)));
@@ -4109,29 +3999,9 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        info_lines = { ...
-            sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
-            sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
-            sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
-            sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
-        info_viol = [ ...
-            rejection_flags.lineharm(ci), ...
-            rejection_flags.hf_slope(ci), ...
-            rejection_flags.front_leak(ci), ...
-            rejection_flags.temp_leak(ci)];
-        y0 = 1.52;
-        dy = 0.11;
-        for li = 1:numel(info_lines)
-            if info_viol(li)
-                txt_col = [0.82 0.10 0.10];
-            else
-                txt_col = [0.10 0.10 0.10];
-            end
-            text(0.02, y0 - (li - 1) * dy, info_lines{li}, ...
-                'Units', 'normalized', 'Clipping', 'off', ...
-                'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
-                'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
-        end
+        [info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2] = ...
+            build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec);
+        plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2);
         format_power_change_percent_axis(gca);
         xlabel('Hz'); ylabel('Power Change [%]');
         title(sprintf('\\lambda=%.2f, PF=%.2f', ...
@@ -4173,6 +4043,8 @@ for k = 1:nCols
     if k <= nShowRej
         ci = rej_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
+        peak_hz_ci = peak_form_best_center_hz(ci);
+        add_peak_band_overlay(scan_freqs, spec_data, peak_hz_ci, 2.5);
         h_raw_r = plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
         spec_min = min(spec_data(isfinite(spec_data)));
@@ -4181,30 +4053,9 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        % Legend shown only once in selected row first panel.
-        info_lines = { ...
-            sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
-            sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
-            sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
-            sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
-        info_viol = [ ...
-            rejection_flags.lineharm(ci), ...
-            rejection_flags.hf_slope(ci), ...
-            rejection_flags.front_leak(ci), ...
-            rejection_flags.temp_leak(ci)];
-        y0 = 1.52;
-        dy = 0.11;
-        for li = 1:numel(info_lines)
-            if info_viol(li)
-                txt_col = [0.82 0.10 0.10];
-            else
-                txt_col = [0.10 0.10 0.10];
-            end
-            text(0.02, y0 - (li - 1) * dy, info_lines{li}, ...
-                'Units', 'normalized', 'Clipping', 'off', ...
-                'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
-                'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
-        end
+        [info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2] = ...
+            build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec);
+        plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2);
         format_power_change_percent_axis(gca);
         xlabel('Hz'); ylabel('Power Change [%]');
         title(sprintf('\\lambda=%.2f, PF=%.2f', ...
@@ -4265,6 +4116,97 @@ save_figure_png(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_summary_%s.
 close(figC);
 end
 
+function [info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2] = ...
+    build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec)
+primary_lines = { ...
+    sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
+    sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
+    sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
+    sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
+primary_viol = [ ...
+    get_flag_value(rejection_flags, 'lineharm', ci), ...
+    get_flag_value(rejection_flags, 'hf_slope', ci), ...
+    get_flag_value(rejection_flags, 'front_leak', ci), ...
+    get_flag_value(rejection_flags, 'temp_leak', ci)];
+secondary_lines = { ...
+    sprintf('unknown_proxy: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'unknown_proxy', ci))), ...
+    sprintf('corr: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'corr', ci))), ...
+    sprintf('stationarity: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'stationarity', ci))), ...
+    sprintf('burst: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'burst', ci))), ...
+    sprintf('condlock: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'condlock', ci))), ...
+    sprintf('emg_score: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'emg_score', ci))), ...
+    sprintf('severe_emg: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'severe_emg_score', ci))), ...
+    sprintf('occ_margin: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'occ_margin', ci))), ...
+    sprintf('severe_front: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'severe_front_leak', ci))), ...
+    sprintf('severe_temp: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'severe_temp_leak', ci))), ...
+    sprintf('topo_flat: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'topo_flat', ci))), ...
+    sprintf('topo_nonpost: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'topo_nonposterior', ci))), ...
+    sprintf('topo_frag: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'topo_fragmented', ci)))};
+secondary_viol = [ ...
+    get_flag_value(rejection_flags, 'unknown_proxy', ci), ...
+    get_flag_value(rejection_flags, 'corr', ci), ...
+    get_flag_value(rejection_flags, 'stationarity', ci), ...
+    get_flag_value(rejection_flags, 'burst', ci), ...
+    get_flag_value(rejection_flags, 'condlock', ci), ...
+    get_flag_value(rejection_flags, 'emg_score', ci), ...
+    get_flag_value(rejection_flags, 'severe_emg_score', ci), ...
+    get_flag_value(rejection_flags, 'occ_margin', ci), ...
+    get_flag_value(rejection_flags, 'severe_front_leak', ci), ...
+    get_flag_value(rejection_flags, 'severe_temp_leak', ci), ...
+    get_flag_value(rejection_flags, 'topo_flat', ci), ...
+    get_flag_value(rejection_flags, 'topo_nonposterior', ci), ...
+    get_flag_value(rejection_flags, 'topo_fragmented', ci)];
+info_lines_col1 = primary_lines;
+info_viol_col1 = primary_viol;
+info_lines_col2 = secondary_lines;
+info_viol_col2 = secondary_viol;
+end
+
+function plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2)
+y0 = 1.52;
+dy = 0.11;
+for li = 1:numel(info_lines_col1)
+    if info_viol_col1(li)
+        txt_col = [0.82 0.10 0.10];
+    else
+        txt_col = [0.10 0.10 0.10];
+    end
+    text(0.02, y0 - (li - 1) * dy, info_lines_col1{li}, ...
+        'Units', 'normalized', 'Clipping', 'off', ...
+        'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
+        'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
+end
+for li = 1:numel(info_lines_col2)
+    if info_viol_col2(li)
+        txt_col = [0.82 0.10 0.10];
+    else
+        txt_col = [0.10 0.10 0.10];
+    end
+    text(0.62, y0 - (li - 1) * dy, info_lines_col2{li}, ...
+        'Units', 'normalized', 'Clipping', 'off', ...
+        'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
+        'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
+end
+end
+
+function val = get_flag_value(flags_struct, field_name, idx)
+val = false;
+if isfield(flags_struct, field_name)
+    field_val = flags_struct.(field_name);
+    if numel(field_val) >= idx && isfinite(field_val(idx))
+        val = logical(field_val(idx));
+    end
+end
+end
+
+function str = logical_to_yes_no(flag)
+if flag
+    str = 'Y';
+else
+    str = 'N';
+end
+end
+
 function plot_combined_topo_spectra_windows(save_dir, subject_id, scan_freqs, cfg_topo, topo_labels, ...
     searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
     searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
@@ -4323,6 +4265,9 @@ for wi = 1:3
         continue;
     end
     spec_vec = sel_w(:)' * spec_mat(sel_idx, :);
+    [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
+        spec_vec, scan_freqs, analysis_freq_range);
+    add_peak_band_overlay(scan_freqs, spec_vec, pf_peak_hz, 2.5);
     plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0);
     yline(0, 'k--', 'LineWidth', 0.8);
     xlim([analysis_freq_range(1) analysis_freq_range(2)]);
@@ -4338,9 +4283,6 @@ for wi = 1:3
     format_power_change_percent_axis(gca);
     xlabel('Hz'); ylabel('Power Change [%]');
     box on;
-
-    [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
-        spec_vec, scan_freqs, analysis_freq_range);
     text(0.02, 0.98, sprintf('PF=%.2f | peak=%.1f Hz (+/- 2.5 Hz)', ...
         pf_score, pf_peak_hz), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
@@ -4354,6 +4296,58 @@ sgtitle(sprintf('Combined GED Components: %s', subject_id), ...
     'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
 save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_combined.png', subject_id)));
 close(fig);
+end
+
+function add_peak_band_overlay(freq_axis, spec_vec, peak_hz, halfwidth_hz)
+if nargin < 4 || ~isfinite(halfwidth_hz) || halfwidth_hz <= 0
+    halfwidth_hz = 2.5;
+end
+if isempty(freq_axis) || isempty(spec_vec) || numel(freq_axis) ~= numel(spec_vec)
+    return;
+end
+valid = isfinite(freq_axis) & isfinite(spec_vec);
+x = freq_axis(valid);
+y = spec_vec(valid);
+if numel(x) < 2 || numel(y) < 2
+    return;
+end
+[x, sort_idx] = sort(x(:)');
+y = y(sort_idx);
+baseline_y = min(y);
+if ~isfinite(baseline_y)
+    return;
+end
+
+if ~isfinite(peak_hz)
+    [~, idx_peak] = max(y);
+    peak_hz = x(idx_peak);
+end
+
+band_mask = abs(x - peak_hz) <= halfwidth_hz;
+if any(band_mask)
+    xb = x(band_mask);
+    yb = y(band_mask);
+    x_fill = [xb, fliplr(xb)];
+    y_fill = [yb, baseline_y * ones(size(yb))];
+    patch(x_fill, y_fill, [0.70 0.70 0.70], ...
+        'FaceAlpha', 0.28, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+    gamma_avg = mean(yb, 'omitnan');
+    if isfinite(gamma_avg) && numel(xb) >= 2
+        plot([xb(1) xb(end)], [gamma_avg gamma_avg], '-', ...
+            'Color', [0 0 0], 'LineWidth', 1.8, 'HandleVisibility', 'off');
+    end
+end
+
+peak_power = interp1(x, y, peak_hz, 'linear', NaN);
+if ~isfinite(peak_power)
+    [~, idx_near] = min(abs(x - peak_hz));
+    peak_hz = x(idx_near);
+    peak_power = y(idx_near);
+end
+if isfinite(peak_hz) && isfinite(peak_power)
+    plot([peak_hz peak_hz], [baseline_y peak_power], '--', ...
+        'Color', [0.55 0.55 0.55], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+end
 end
 
 function [sel_idx, sel_w] = sanitize_selected_components(sel_idx, sel_w, nComp)
@@ -5030,239 +5024,6 @@ ok = isfinite(stats.single_spread) && isfinite(stats.double_spread) && ...
     (stats.single_spread <= spread_tol) && (stats.double_spread <= spread_tol);
 end
 
-function signature = build_component_signature_block(searchTopos, searchMeanPrSpectrum, corr_vec, ratio_vec, ...
-    condlock_vec, lineharm_vec, hf_slope_vec, leak_vec, temp_leak_vec, eval_raw_vec, topo_posterior_vec)
-nComp = size(searchTopos, 2);
-nFreq = size(searchMeanPrSpectrum, 2);
-signature = struct();
-signature.nComp = nComp;
-signature.topo_norm = zeros(size(searchTopos));
-signature.spec_norm = zeros(size(searchMeanPrSpectrum));
-signature.scalar_raw = nan(nComp, 9);
-signature.scalar_z = nan(nComp, 9);
-if nComp < 1
-    return;
-end
-for ci = 1:nComp
-    topo_ci = searchTopos(:, ci);
-    topo_finite = topo_ci(isfinite(topo_ci));
-    if isempty(topo_finite)
-        topo_finite = 0;
-    end
-    topo_ci = topo_ci - mean(topo_finite);
-    topo_scale = norm(topo_ci(isfinite(topo_ci)));
-    if ~isfinite(topo_scale) || topo_scale <= eps
-        topo_scale = 1;
-    end
-    topo_ci(~isfinite(topo_ci)) = 0;
-    signature.topo_norm(:, ci) = topo_ci / topo_scale;
-
-    if nFreq > 0
-        spec_ci = searchMeanPrSpectrum(ci, :);
-        spec_ci = spec_ci(:)';
-        if any(isfinite(spec_ci))
-            spec_ci = spec_ci - nanmean(spec_ci);
-            spec_scale = norm(spec_ci(isfinite(spec_ci)));
-            if ~isfinite(spec_scale) || spec_scale <= eps
-                spec_scale = 1;
-            end
-            spec_ci(~isfinite(spec_ci)) = 0;
-            signature.spec_norm(ci, :) = spec_ci / spec_scale;
-        end
-    end
-end
-signature.scalar_raw(:, 1) = corr_vec(:);
-signature.scalar_raw(:, 2) = ratio_vec(:);
-signature.scalar_raw(:, 3) = condlock_vec(:);
-signature.scalar_raw(:, 4) = lineharm_vec(:);
-signature.scalar_raw(:, 5) = hf_slope_vec(:);
-signature.scalar_raw(:, 6) = leak_vec(:);
-signature.scalar_raw(:, 7) = temp_leak_vec(:);
-signature.scalar_raw(:, 8) = eval_raw_vec(:);
-signature.scalar_raw(:, 9) = topo_posterior_vec(:);
-for fi = 1:size(signature.scalar_raw, 2)
-    signature.scalar_z(:, fi) = normalize_robust(signature.scalar_raw(:, fi));
-end
-end
-
-function match = match_components_full_anchor(sig_full, sig_early, sig_late, cfg)
-nFull = sig_full.nComp;
-nEarly = sig_early.nComp;
-nLate = sig_late.nComp;
-id_full = (1:nFull)';
-id_early = nan(nEarly, 1);
-id_late = nan(nLate, 1);
-conf_full = nan(nFull, 1);
-conf_early = nan(nEarly, 1);
-conf_late = nan(nLate, 1);
-
-[map_full_to_early, conf_full_early, map_early_to_full, conf_early_full] = ...
-    match_anchor_to_target(sig_full, sig_early, cfg);
-[map_full_to_late, conf_full_late, map_late_to_full, conf_late_full] = ...
-    match_anchor_to_target(sig_full, sig_late, cfg);
-
-for ei = 1:nEarly
-    fi = map_early_to_full(ei);
-    if fi > 0
-        id_early(ei) = id_full(fi);
-        conf_early(ei) = conf_early_full(ei);
-    end
-end
-for li = 1:nLate
-    fi = map_late_to_full(li);
-    if fi > 0
-        id_late(li) = id_full(fi);
-        conf_late(li) = conf_late_full(li);
-    end
-end
-conf_full = max([conf_full_early(:), conf_full_late(:)], [], 2);
-
-next_id = nFull + 1;
-for ei = 1:nEarly
-    if ~isfinite(id_early(ei))
-        id_early(ei) = next_id;
-        conf_early(ei) = 0;
-        next_id = next_id + 1;
-    end
-end
-for li = 1:nLate
-    if ~isfinite(id_late(li))
-        id_late(li) = next_id;
-        conf_late(li) = 0;
-        next_id = next_id + 1;
-    end
-end
-for fi = 1:nFull
-    if ~isfinite(conf_full(fi))
-        conf_full(fi) = 0;
-    end
-end
-
-match = struct();
-match.id_full = id_full;
-match.id_early = id_early;
-match.id_late = id_late;
-match.conf_full = conf_full;
-match.conf_early = conf_early;
-match.conf_late = conf_late;
-match.full_to_early = map_full_to_early;
-match.full_to_late = map_full_to_late;
-match.full_to_early_conf = conf_full_early;
-match.full_to_late_conf = conf_full_late;
-match.cfg = cfg;
-end
-
-function [anchor_to_target, conf_anchor, target_to_anchor, conf_target] = match_anchor_to_target(sig_anchor, sig_target, cfg)
-nAnchor = sig_anchor.nComp;
-nTarget = sig_target.nComp;
-anchor_to_target = zeros(nAnchor, 1);
-conf_anchor = zeros(nAnchor, 1);
-target_to_anchor = zeros(nTarget, 1);
-conf_target = zeros(nTarget, 1);
-if nAnchor < 1 || nTarget < 1
-    return;
-end
-sim_mat = build_crosswindow_similarity_matrix(sig_anchor, sig_target, cfg);
-sim_work = sim_mat;
-assigned_anchor = false(nAnchor, 1);
-assigned_target = false(nTarget, 1);
-while true
-    sim_work(assigned_anchor, :) = -Inf;
-    sim_work(:, assigned_target) = -Inf;
-    [best_val, lin_idx] = max(sim_work(:));
-    if ~isfinite(best_val)
-        break;
-    end
-    [ai, tj] = ind2sub(size(sim_work), lin_idx);
-    assigned_anchor(ai) = true;
-    assigned_target(tj) = true;
-    if best_val >= cfg.min_conf
-        anchor_to_target(ai) = tj;
-        conf_anchor(ai) = best_val;
-        target_to_anchor(tj) = ai;
-        conf_target(tj) = best_val;
-    end
-end
-end
-
-function sim_mat = build_crosswindow_similarity_matrix(sig_a, sig_b, cfg)
-nA = sig_a.nComp;
-nB = sig_b.nComp;
-sim_mat = nan(nA, nB);
-for ai = 1:nA
-    topo_a = sig_a.topo_norm(:, ai);
-    spec_a = sig_a.spec_norm(ai, :);
-    feat_a = sig_a.scalar_z(ai, :);
-    for bj = 1:nB
-        topo_b = sig_b.topo_norm(:, bj);
-        spec_b = sig_b.spec_norm(bj, :);
-        feat_b = sig_b.scalar_z(bj, :);
-        sim_topo = corr(topo_a, topo_b, 'rows', 'complete');
-        if ~isfinite(sim_topo), sim_topo = 0; end
-        sim_topo = abs(sim_topo);
-        sim_spec = corr(spec_a(:), spec_b(:), 'rows', 'complete');
-        if ~isfinite(sim_spec), sim_spec = 0; end
-        sim_spec = max(min((sim_spec + 1) / 2, 1), 0);
-        feat_diff = feat_a - feat_b;
-        feat_diff = feat_diff(isfinite(feat_diff));
-        if isempty(feat_diff)
-            sim_feat = 0;
-        else
-            feat_dist = sqrt(mean(feat_diff .^ 2));
-            sim_feat = max(0, 1 - min(feat_dist / 3, 1));
-        end
-        sim_mat(ai, bj) = cfg.w_topo * sim_topo + cfg.w_spec * sim_spec + cfg.w_feat * sim_feat;
-    end
-end
-sim_mat = max(min(sim_mat, 1), 0);
-end
-
-function [group_consistent, group_occipital, group_member_count, group_mean_conf] = ...
-    compute_crosswindow_group_consistency(match, tbl_full, tbl_early, tbl_late, min_conf)
-all_ids = unique([match.id_full(:); match.id_early(:); match.id_late(:)]);
-all_ids = all_ids(isfinite(all_ids));
-group_consistent = containers.Map('KeyType', 'double', 'ValueType', 'any');
-group_occipital = containers.Map('KeyType', 'double', 'ValueType', 'any');
-group_member_count = containers.Map('KeyType', 'double', 'ValueType', 'any');
-group_mean_conf = containers.Map('KeyType', 'double', 'ValueType', 'any');
-for ii = 1:numel(all_ids)
-    gid = all_ids(ii);
-    idx_f = find(match.id_full == gid);
-    idx_e = find(match.id_early == gid);
-    idx_l = find(match.id_late == gid);
-    member_count = numel(idx_f) + numel(idx_e) + numel(idx_l);
-    occ_votes = 0;
-    hard_votes = 0;
-    conf_vals = [];
-    if ~isempty(idx_f)
-        occ_votes = occ_votes + sum(strcmp(tbl_full.emg_class(idx_f), 'occipital'));
-        hard_votes = hard_votes + sum(tbl_full.hard_reject(idx_f));
-        conf_vals = [conf_vals; match.conf_full(idx_f)]; %#ok<AGROW>
-    end
-    if ~isempty(idx_e)
-        occ_votes = occ_votes + sum(strcmp(tbl_early.emg_class(idx_e), 'occipital'));
-        hard_votes = hard_votes + sum(tbl_early.hard_reject(idx_e));
-        conf_vals = [conf_vals; match.conf_early(idx_e)]; %#ok<AGROW>
-    end
-    if ~isempty(idx_l)
-        occ_votes = occ_votes + sum(strcmp(tbl_late.emg_class(idx_l), 'occipital'));
-        hard_votes = hard_votes + sum(tbl_late.hard_reject(idx_l));
-        conf_vals = [conf_vals; match.conf_late(idx_l)]; %#ok<AGROW>
-    end
-    conf_vals = conf_vals(isfinite(conf_vals) & conf_vals > 0);
-    if isempty(conf_vals)
-        mean_conf = 0;
-    else
-        mean_conf = mean(conf_vals);
-    end
-    occipital_like = (occ_votes >= max(1, ceil(0.5 * member_count))) && (hard_votes == 0);
-    consistent = (member_count >= 2) && (mean_conf >= min_conf) && occipital_like;
-    group_consistent(gid) = logical(consistent);
-    group_occipital(gid) = logical(occipital_like);
-    group_member_count(gid) = member_count;
-    group_mean_conf(gid) = mean_conf;
-end
-end
 
 function fallback_idx = get_candidate_table_fallback_idx(candidate_table)
 fallback_idx = NaN;
@@ -5270,91 +5031,6 @@ if isfield(candidate_table, 'fallback_selected')
     idx = find(logical(candidate_table.fallback_selected), 1, 'first');
     if ~isempty(idx)
         fallback_idx = idx;
-    end
-end
-end
-
-function [candidate_table, selected_idx, selected_weights] = apply_crosswindow_consistency_bonus( ...
-    candidate_table, crosswin_id, group_consistent_map, group_occipital_map, bonus_val, max_components_to_combine)
-nComp = numel(candidate_table.comp_idx);
-if isempty(crosswin_id) || numel(crosswin_id) ~= nComp
-    crosswin_id = nan(nComp, 1);
-end
-eligible_mask = candidate_table.hard_eligible;
-if isfield(candidate_table, 'force_include_occipital')
-    eligible_mask = eligible_mask | logical(candidate_table.force_include_occipital);
-end
-if isfield(candidate_table, 'fallback_selected')
-    eligible_mask = eligible_mask | logical(candidate_table.fallback_selected);
-end
-if isfield(candidate_table, 'emg_class')
-    occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), candidate_table.emg_class(:));
-    eligible_mask = eligible_mask & occipital_class_mask;
-end
-score_final = candidate_table.score_base;
-bonus_vec = zeros(nComp, 1);
-for ci = 1:nComp
-    gid = crosswin_id(ci);
-    if ~isfinite(gid)
-        continue;
-    end
-    if isKey(group_consistent_map, gid) && isKey(group_occipital_map, gid) && ...
-            logical(group_consistent_map(gid)) && logical(group_occipital_map(gid)) && ...
-            eligible_mask(ci) && ~candidate_table.hard_reject(ci)
-        bonus_vec(ci) = bonus_val;
-    end
-end
-score_final = score_final + bonus_vec;
-eligible = find(eligible_mask & isfinite(score_final));
-if isempty(eligible)
-    selected_idx = [];
-else
-    [~, ord] = sort(score_final(eligible), 'descend');
-    selected_idx = eligible(ord);
-    selected_idx = selected_idx(1:min(max_components_to_combine, numel(selected_idx)));
-end
-selected_weights = candidate_table.eigenvalue(selected_idx)';
-selected_weights(~isfinite(selected_weights) | selected_weights <= 0) = 0;
-if sum(selected_weights) <= 0
-    selected_weights = ones(1, numel(selected_idx));
-end
-selected_weights = selected_weights / sum(selected_weights);
-candidate_table.consistency_bonus = bonus_vec;
-candidate_table.score_final = score_final;
-candidate_table.score = score_final;
-candidate_table.crosswin_id = crosswin_id;
-end
-
-function values = lookup_group_property(id_vec, prop_map)
-values = nan(numel(id_vec), 1);
-for ii = 1:numel(id_vec)
-    gid = id_vec(ii);
-    if ~isfinite(gid)
-        continue;
-    end
-    if isKey(prop_map, gid)
-        val = prop_map(gid);
-        if islogical(val)
-            values(ii) = double(val);
-        else
-            values(ii) = val;
-        end
-    end
-end
-end
-
-function candidate_table = enforce_occipital_label_stability(candidate_table, group_occipital_map)
-if isempty(candidate_table) || ~isfield(candidate_table, 'crosswin_id') || ...
-        ~isfield(candidate_table, 'emg_class') || ~isfield(candidate_table, 'hard_reject')
-    return;
-end
-for ci = 1:numel(candidate_table.crosswin_id)
-    gid = candidate_table.crosswin_id(ci);
-    if ~isfinite(gid) || candidate_table.hard_reject(ci)
-        continue;
-    end
-    if isKey(group_occipital_map, gid) && logical(group_occipital_map(gid))
-        candidate_table.emg_class{ci} = 'occipital';
     end
 end
 end
