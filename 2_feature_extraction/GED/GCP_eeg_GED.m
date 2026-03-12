@@ -720,7 +720,7 @@ for subj = 1:nSubj
     occ_minus_emg = occipital_evidence - emg_artifact_score;
     fail_occ_margin = finite_metrics & (emg_artifact_score >= adaptive_thr.emg_class_thr) & ...
         (occ_minus_emg < adaptive_thr.min_occ_margin);
-    hard_reject_flags = severe_front_leak | severe_temp_leak | fail_lineharm | fail_hf_slope | ...
+    hard_reject_flags_raw = severe_front_leak | severe_temp_leak | fail_lineharm | fail_hf_slope | ...
         severe_emg_score | unknown_proxy_vec | topo_flat_fail_vec | ...
         topo_nonposterior_fail_vec | topo_fragmented_fail_vec;
     soft_warn_any = fail_front_leak | fail_temp_leak | fail_corr | fail_stationarity | ...
@@ -735,7 +735,7 @@ for subj = 1:nSubj
         'emg_score', fail_emg_score & ~severe_emg_score, ...
         'occ_margin', fail_occ_margin, ...
         'any', soft_warn_any);
-    artifact_flags = hard_reject_flags;
+    artifact_flags = hard_reject_flags_raw;
     rejection_flags = struct( ...
         'unknown_proxy', unknown_proxy_vec, ...
         'front_leak', fail_front_leak, ...
@@ -817,10 +817,12 @@ for subj = 1:nSubj
     very_good_pf_mask = finite_metrics & (peak_form_score_vec >= occipital_pf_lenient_min);
     pass_lenient_eig_gate = finite_metrics & (eval_raw_vec >= enforced_min_eigval);
     lenient_occipital_pf_mask = occipital_pf_lenient_override & occipital_class_mask & very_good_pf_mask & ...
-        pass_lenient_eig_gate & ...
-        ~unknown_proxy_vec & ~dominant_outlier_mask & ...
-        ~extreme_lineharm & ~extreme_hf_slope & ~extreme_front_leak & ~extreme_temp_leak & ~severe_emg_score;
+        pass_lenient_eig_gate & ~dominant_outlier_mask & ~severe_emg_score;
     force_include_occipital_mask = include_occipital_label_override & lenient_occipital_pf_mask;
+    % Lenient override intent: occipital + PF>=lenient threshold + non-severe EMG
+    % remains selectable even if raw hard-reject criteria are triggered.
+    hard_reject_flags = hard_reject_flags_raw & ~force_include_occipital_mask;
+    artifact_flags = hard_reject_flags;
     selection_pool_mask = (hard_eligible | force_include_occipital_mask) & occipital_class_mask;
     searchScores = eval_raw_vec + peak_form_weight * peak_form_score_vec + peak_bonus_weight * peak_bonus_vec;
     searchScores(~finite_metrics) = -Inf;
@@ -943,6 +945,7 @@ for subj = 1:nSubj
     candidate_table.force_include_occipital = force_include_occipital_mask;
     candidate_table.consistency_bonus = zeros(nSearch, 1);
     candidate_table.artifact_flag = artifact_flags;
+    candidate_table.hard_reject_raw = hard_reject_flags_raw;
     candidate_table.hard_reject = hard_reject_flags;
     candidate_table.soft_warn = soft_warn_any;
     candidate_table.reject_reason = compute_primary_rejection_reason(rejection_flags);
@@ -3936,8 +3939,11 @@ if ~isempty(selected_idx)
     selected_idx = round(selected_idx);
     selected_mask(selected_idx) = true;
 end
+occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), emg_class(:));
+final_eligible_mask = (logical(hard_eligible(:)) | logical(force_include_occipital(:))) & occipital_class_mask;
+final_rejected_mask = ~final_eligible_mask;
 sel_idx = find(selected_mask);
-rej_idx = find(hard_reject_flags & ~selected_mask);
+rej_idx = find(final_rejected_mask & ~selected_mask);
 [~, so] = sort(eigval_vec(sel_idx), 'descend');
 sel_idx = sel_idx(so);
 [~, ro] = sort(eigval_vec(rej_idx), 'descend');
@@ -4089,7 +4095,7 @@ figC = figure('Position', [0 0 756 982]);
 tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile;
 counts = [numel(sel_idx), sum(logical(soft_warn_flags)), sum(logical(hard_reject_flags & ~selected_mask)), numel(eigval_vec)];
-cats = {'Selected', 'SoftWarn', 'HardRejected', 'Candidates'};
+cats = {'Selected', 'SoftWarn', 'RejectedFinal', 'Candidates'};
 bar(counts, 0.6, 'FaceColor', [0.3 0.4 0.7]); hold on;
 set(gca, 'XTick', 1:numel(cats), 'XTickLabel', cats, 'XTickLabelRotation', 20);
 ylabel('Count');
@@ -4267,7 +4273,7 @@ for wi = 1:3
     spec_vec = sel_w(:)' * spec_mat(sel_idx, :);
     [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
         spec_vec, scan_freqs, analysis_freq_range);
-    add_peak_band_overlay(scan_freqs, spec_vec, pf_peak_hz, 2.5);
+    add_peak_band_overlay(scan_freqs, spec_vec, pf_peak_hz, 2.5, true, [1 0 0], 0.70);
     plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0);
     yline(0, 'k--', 'LineWidth', 0.8);
     xlim([analysis_freq_range(1) analysis_freq_range(2)]);
@@ -4298,10 +4304,20 @@ save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra
 close(fig);
 end
 
-function add_peak_band_overlay(freq_axis, spec_vec, peak_hz, halfwidth_hz)
+function add_peak_band_overlay(freq_axis, spec_vec, peak_hz, halfwidth_hz, show_mean_line, mean_line_color, mean_line_frac)
 if nargin < 4 || ~isfinite(halfwidth_hz) || halfwidth_hz <= 0
     halfwidth_hz = 2.5;
 end
+if nargin < 5 || isempty(show_mean_line)
+    show_mean_line = false;
+end
+if nargin < 6 || isempty(mean_line_color) || numel(mean_line_color) ~= 3
+    mean_line_color = [0 0 0];
+end
+if nargin < 7 || ~isfinite(mean_line_frac) || mean_line_frac <= 0
+    mean_line_frac = 1.0;
+end
+mean_line_frac = min(mean_line_frac, 1.0);
 if isempty(freq_axis) || isempty(spec_vec) || numel(freq_axis) ~= numel(spec_vec)
     return;
 end
@@ -4332,9 +4348,13 @@ if any(band_mask)
     patch(x_fill, y_fill, [0.70 0.70 0.70], ...
         'FaceAlpha', 0.28, 'EdgeColor', 'none', 'HandleVisibility', 'off');
     gamma_avg = mean(yb, 'omitnan');
-    if isfinite(gamma_avg) && numel(xb) >= 2
-        plot([xb(1) xb(end)], [gamma_avg gamma_avg], '-', ...
-            'Color', [0 0 0], 'LineWidth', 1.8, 'HandleVisibility', 'off');
+    if show_mean_line && isfinite(gamma_avg) && numel(xb) >= 2
+        x_center = mean([xb(1), xb(end)]);
+        x_half = 0.5 * (xb(end) - xb(1)) * mean_line_frac;
+        x_lo = x_center - x_half;
+        x_hi = x_center + x_half;
+        plot([x_lo x_hi], [gamma_avg gamma_avg], '-', ...
+            'Color', mean_line_color, 'LineWidth', 1.8, 'HandleVisibility', 'off');
     end
 end
 
