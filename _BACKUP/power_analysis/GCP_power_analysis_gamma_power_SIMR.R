@@ -8,7 +8,11 @@ library(ggplot2)
 set.seed(123)
 Subject <- factor(rep(1:30, each=10))
 condition <- factor(rep(c("A", "B"), 150)) # Lowest and highest condition
-gamma_power <- rnorm(300, mean=0, sd=1) + ifelse(condition == "A", 1, 0)
+#gamma_power <- rnorm(300, mean=0, sd=1) + ifelse(condition == "A", 1, 0)
+sd_subj <- 0.5 # Standard deviation for subject effects
+sd_res <- 2 # Standard deviations for residual effects
+subj_eff  <- rnorm(30, 0, sd_subj)
+gamma_power <- subj_eff[Subject] + rnorm(300, 0, sd_res) + ifelse(condition=="A", 1, 0)
 data <- data.frame(Subject, condition, gamma_power)
 
 # Fit the mixed model
@@ -17,15 +21,16 @@ summary(model)
 
 # Extend the model to allow for sample size calculation
 extended_model <- extend(model, along = "Subject", n=100) # Extend to a larger sample size
+sigma(extended_model) <- 2.5 # Set the residual standard deviation
 
 # Set the fixed effect size for condition (Effect size of contrast condition on GAMMA POWER)
-fixef(extended_model)["conditionB"] <- 0.3
+fixef(extended_model)["conditionB"] <- 1.14
 
 # Power analysis
 sim <- powerSim(extended_model, nsim = 1000, progress = FALSE)
 
 # Compute power curve for a range of sample sizes
-power_curve <- powerCurve(extended_model, along = "Subject", nsim = 1000, breaks = seq(5, 75, by=5))
+power_curve <- powerCurve(extended_model, along = "Subject", nsim = 1000, breaks = seq(5, 50, by=5))
 
 # Print, plot and save the power curve
 print(power_curve)
@@ -37,14 +42,14 @@ power_curve_df <- data.frame(
   Lower = power_curve_summary$lower,
   Upper = power_curve_summary$upper
 )
-png(file = "/Volumes/methlab/Students/Arne/GCP/figures/power_analysis/GCP_power_analysis_gamma_power_conservative.png", width = 1800, height = 1400, res = 300)
+png(file = "/Volumes/methlab/Students/Arne/GCP/figures/power_analysis/GCP_power_analysis_gamma_power.png", width = 1800, height = 1400, res = 300)
 ggplot(power_curve_df, aes(x = Subjects, y = Power)) +
   geom_point(size = 2, color = "blue") +
   geom_line(color = "blue", linetype = "dotted") +
   geom_errorbar(aes(ymin = Lower, ymax = Upper), width = 3, color = "blue", alpha = 0.5) +
   geom_hline(yintercept = 0.90, linetype = "dashed", color = "grey", size = 0.5) +  
   scale_x_continuous(
-    breaks = c(0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75)  
+    breaks = c(0, 10, 20, 30, 40, 50)  
   ) +
   scale_y_continuous(
     labels = scales::percent_format(),
