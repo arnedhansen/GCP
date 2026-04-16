@@ -8,15 +8,16 @@
 clear
 clc
 close all
-path = '/Volumes/methlab_data/OCC/GCP/data/';
-dirs = dir(path);
+[subjects, paths] = setup('GCP', 0);
+rawPath = paths.raw_occ;
+dirs = dir(rawPath);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
 behav_data = struct('ID', {}, 'Condition', {}, 'Accuracy', {}, 'ReactionTime', {});
 
 %% Read data
 for subj = 1:length(subjects)
-    datapath = strcat(path, subjects{subj});
+    datapath = fullfile(rawPath, subjects{subj});
     cd(datapath)
 
     % Initialize subject-specific arrays
@@ -30,7 +31,7 @@ for subj = 1:length(subjects)
     trial_counter = 1;
     try
         for block = 1:4
-            load(strcat(subjects{subj}, '_GCP_block', num2str(block), '.mat'))
+            load(sprintf('%s_GCP_block%d.mat', subjects{subj}, block))
             num_trials = length(saves.data.correct);
 
             % Append data for this block
@@ -76,7 +77,7 @@ for subj = 1:length(subjects)
         'Accuracy', num2cell([c25_acc; c50_acc; c75_acc; c100_acc]), 'ReactionTime', num2cell([c25_rt; c50_rt; c75_rt; c100_rt]));
 
     %% Save
-    savepath = strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/',subjects{subj}, '/behavioral/');
+    savepath = fullfile(paths.features, subjects{subj}, 'behavioral');
     mkdir(savepath)
     cd(savepath)
     save behavioral_matrix_trial subj_data_behav_trial
@@ -89,4 +90,4 @@ for subj = 1:length(subjects)
     % Append to the final structure array
     behav_data = [behav_data; subj_data_behav];
 end
-save /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/behavioral_matrix behav_data
+save(fullfile(paths.features, 'GCP_behavioral_matrix.mat'), 'behav_data')

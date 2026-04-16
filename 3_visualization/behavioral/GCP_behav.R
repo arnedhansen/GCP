@@ -12,7 +12,7 @@ library(ggplot2)
 library(dplyr)
 
 # Load GCP data
-dat <- read.csv("/Volumes/methlab/Students/Arne/GCP/data/features/merged_data.csv")
+dat <- read.csv("/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_merged_data.csv")
 
 # Change variable types
 dat$ID <- as.integer(dat$ID)                       # ID as integer

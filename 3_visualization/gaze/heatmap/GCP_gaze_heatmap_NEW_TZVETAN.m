@@ -2,7 +2,7 @@
 
 %% Setup
 startup
-[subjects, path, colors, headmodel] = setup('GCP');
+[subjects, paths, colors, headmodel] = setup('GCP');
 
 % Gaze heatmap parameters
 sampling_rate = 500;
@@ -32,8 +32,8 @@ results = struct([]);
 
 %% Loop over subjects
 for subj = 1:nS
-    datapath = strcat(path,subjects{subj}, '/gaze');
-    load([datapath, filesep 'dataET'])
+    datapath = fullfile(paths.features, subjects{subj}, 'gaze');
+    load(fullfile(datapath, 'dataET'))
     labels = {'25','50','75','100'};
     vars   = {'dataET_c25','dataET_c50','dataET_c75','dataET_c100'};
 

@@ -4,20 +4,17 @@
 clear
 clc
 close all
-path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/';
-dirs = dir(path);
-folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
-subjects = {folders.name};
+[~, paths] = setup('GCP', 0);
 
 %% Load data
-% demog_data = readtable('/Volumes/g_psyplafor_methlab$/VP/OCC/GCP/GCP_VPs.xlsx');
+% demog_data = readtable(paths.vp_table);
 % demog_data = demog_data(:, {'ID', 'Gender', 'Alter', 'H_ndigkeit', 'OcularDominance'});
 % demog_data = table2struct(demog_data(1:120, :));
 
-load('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/behavioral_matrix.mat');
-load('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/eeg_matrix.mat');
-load('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/gaze_matrix.mat');
-ged_file = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_eeg_GED.mat';
+load(fullfile(paths.features, 'GCP_behavioral_matrix.mat'));
+load(fullfile(paths.features, 'GCP_eeg_matrix.mat'));
+load(fullfile(paths.features, 'GCP_gaze_matrix.mat'));
+ged_file = fullfile(paths.features, 'GCP_eeg_GED.mat');
 
 %% Merge structures
 % Convert structs to tables
@@ -75,9 +72,9 @@ end
 merged_data = table2struct(T_merge);
 
 %% Save as .mat
-save /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/merged_data.mat merged_data
+save(fullfile(paths.features, 'GCP_merged_data.mat'), 'merged_data')
 
 %% Save as .csv
 merged_table = struct2table(merged_data)
-csv_filename = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/merged_data.csv';
+csv_filename = fullfile(paths.features, 'GCP_merged_data.csv');
 writetable(merged_table, csv_filename);

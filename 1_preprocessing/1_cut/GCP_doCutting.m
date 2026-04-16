@@ -4,14 +4,15 @@
 %% EEGlab
 clear
 clc
+[~, paths] = setup('GCP');
 p = pwd;
-cd /Volumes/methlab/4marius_bdf/eeglab
+cd(paths.eeglab)
 eeglab
 close()
 cd(p)
 
 %% Define path, cut data and convert asc to mat files.
-d = dir(strcat('/Volumes/methlab_data/OCC/GCP/data/*/', '*cnt'));
+d = dir(fullfile(paths.raw_occ, '*', '*cnt'));
 ids = {};
 for f = 1 : size(d, 1)
     filePath = fullfile( d(f).folder, d(f).name);
@@ -25,8 +26,8 @@ end
 for id = 1 : length(ids) 
     ID = ids{id};
 
-    filePath = fullfile('/Volumes/methlab_data/OCC/GCP/data', ID);
-    d = dir([filePath, filesep, '*.asc']);
+    filePath = fullfile(paths.raw_occ, ID);
+    d = dir(fullfile(filePath, '*.asc'));
     
     if not(isempty(d))
         for f = 1 : size(d, 1)
@@ -52,13 +53,13 @@ for id = 1 : length(ids)
                 task = 'GCP';
                 etfile = [id, '_' task, '_block', num2str(block), '_task_ET.mat'];
             end
-            outputFile = [d(f).folder filesep etfile];
+            outputFile = fullfile(d(f).folder, etfile);
             ET = parseeyelink(inputFile, outputFile);
         end
     end
 
     % Move asc files to archive
-    d = dir([filePath, filesep, '*.asc']);
+    d = dir(fullfile(filePath, '*.asc'));
     for f = 1 : size(d, 1)
         source = fullfile(d(f).folder, d(f).name);
         destination = fullfile(fullfile(filePath, 'archive'));
@@ -66,7 +67,7 @@ for id = 1 : length(ids)
     end
 
     % Move edf files to archive
-    d = dir([filePath, filesep, '*.edf']);
+    d = dir(fullfile(filePath, '*.edf'));
     for f = 1 : size(d, 1)
         source = fullfile(d(f).folder, d(f).name);
         destination = fullfile(fullfile(filePath, 'archive'));

@@ -13,7 +13,7 @@
 
 %% Setup
 startup
-[subjects, path, colors, headmodel] = setup('GCP');
+[subjects, paths, colors, headmodel] = setup('GCP');
 % path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/';
 % dirs  = dir(path);
 % folders = dirs([dirs.isdir] & ~ismember({dirs.name},{'.','..'}));
@@ -51,7 +51,7 @@ for subj = 1:numel(subjects)
     % Load preprocessed ET data
     clc
     fprintf('Loading Subject %d/%d...\n', subj, numel(subjects));
-    datapath = fullfile(path, subjects{subj}, 'gaze');
+    datapath = fullfile(paths.features, subjects{subj}, 'gaze');
     load(fullfile(datapath,'dataET'));
 
     %% Loop over conditions
@@ -715,7 +715,7 @@ msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
     end
 
     %% CREATE SUBJECT‐LEVEL STRUCTS ACROSS CONDITIONS
-    savepath = fullfile(path, subjects{subj}, 'gaze');
+    savepath = fullfile(paths.features, subjects{subj}, 'gaze');
     if ~exist(savepath,'dir'); mkdir(savepath); end
 
     % load the pre‐extracted GCP_preprocessing metrics
@@ -810,5 +810,5 @@ for k = 1:numel(gaze_data)
 end
 
 %% Save files
-save(fullfile(path,'gaze_raw'),    'gaze_x_c25','gaze_y_c25','gaze_x_c50','gaze_y_c50','gaze_x_c75','gaze_y_c75','gaze_x_c100','gaze_y_c100');
-save(fullfile(path,'gaze_matrix'), 'gaze_data');
+save(fullfile(paths.features, 'GCP_gaze_raw.mat'), 'gaze_x_c25','gaze_y_c25','gaze_x_c50','gaze_y_c50','gaze_x_c75','gaze_y_c75','gaze_x_c100','gaze_y_c100');
+save(fullfile(paths.features, 'GCP_gaze_matrix.mat'), 'gaze_data');

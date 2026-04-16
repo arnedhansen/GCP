@@ -7,14 +7,15 @@
 clear
 clc
 close all
-path = '/Volumes/methlab/Students/Arne/GCP/data/features/';
+[subjects, paths] = setup('GCP', 0);
+path = paths.features;
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
 
 %% Load RT and Acc data
 for subj = 1:length(subjects)
-    datapath = strcat(path, subjects{subj}, '/behavioral');
+    datapath = fullfile(path, subjects{subj}, 'behavioral');
     cd(datapath);
     load('acc.mat');
     load('rt.mat');
@@ -76,12 +77,12 @@ title('Grating Task Accuracy', 'FontName', 'Arial', 'FontSize', 25);
 hold off;
 
 % Save the plot
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/behavioral/GCP_acc_boxplot.png');
+saveas(gcf, fullfile(paths.figures, 'behavioral', 'GCP_acc_boxplot.png'));
 
 % Stats
 means = mean(dataAcc, 'omitnan');
 stds = std(dataAcc, 'omitnan');
-save /Volumes/methlab/Students/Arne/GCP/data/features/accuracy means stds
+save(fullfile(paths.features, 'accuracy.mat'), 'means', 'stds')
 
 % Display the results
 disp('Means:');

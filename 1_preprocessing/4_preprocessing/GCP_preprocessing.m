@@ -4,22 +4,23 @@
 startup
 clear
 addEEGLab
-path = '/Volumes/methlab/Students/Arne/GCP/data/merged/';
-dirs = dir(path);
+[subjects, paths] = setup('GCP', 0);
+mergedPath = paths.merged;
+dirs = dir(mergedPath);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
 
 %% Read data, segment and convert to FieldTrip data structure
 for subj = 1:length(subjects)
-    clearvars -except subjects subj path
-    datapath = strcat(path,subjects{subj});
+    clearvars -except subjects subj mergedPath paths
+    datapath = fullfile(mergedPath, subjects{subj});
     cd(datapath)
 
-    if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/dataEEG.mat']))
+    if isempty(dir(fullfile(paths.features, subjects{subj}, 'eeg', 'dataEEG.mat')))
         %% Read blocks
         for block = 1:4
             try % Do not load emtpy blocks
-                load(strcat(subjects{subj}, '_EEG_ET_GCP_block',num2str(block),'_merged.mat'))
+                load(sprintf('%s_EEG_ET_GCP_block%d_merged.mat', subjects{subj}, block))
                 alleeg{block} = EEG;
                 clear EEG
                 fprintf('Subject GCP %.3s (%.3d/%.3d): Block %.1d loaded \n', subjects{subj}, subj, length(subjects), block)
@@ -250,11 +251,11 @@ for subj = 1:length(subjects)
         c100_blinks = sum(c100_blink(:)) / sum(c100_trl(:));
 
         %% Save data
-        savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/eeg/');
+        savepath = fullfile(paths.features, subjects{subj}, 'eeg');
         mkdir(savepath)
         cd(savepath)
         save dataEEG dataEEG_c25 dataEEG_c50 dataEEG_c75 dataEEG_c100
-        savepathET = strcat('/Volumes/methlab/Students/Arne/GCP/data/features/',subjects{subj}, '/gaze/');
+        savepathET = fullfile(paths.features, subjects{subj}, 'gaze');
         mkdir(savepathET)
         cd(savepathET)
         save dataET dataET_c25 dataET_c50 dataET_c75 dataET_c100

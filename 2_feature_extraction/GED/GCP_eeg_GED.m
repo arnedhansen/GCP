@@ -72,7 +72,7 @@
 
 %% Setup
 startup
-[subjects, path, colors, headmodel] = setup('GCP');
+[subjects, paths, colors, headmodel] = setup('GCP');
 
 %%
 nSubj = length(subjects);
@@ -221,11 +221,7 @@ condNames  = {'c25', 'c50', 'c75', 'c100'};
 condLabels = {'25%', '50%', '75%', '100%'};
 
 % Figure save directories
-if ispc
-    gcp_root_path = 'W:\Students\Arne\GCP';
-else
-    gcp_root_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP';
-end
+gcp_root_path = paths.root;
 fig_save_dir_ged = fullfile(gcp_root_path, 'figures', 'eeg', 'ged');
 fig_save_dir_component_comparison = fullfile(fig_save_dir_ged, 'component_comparison');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
@@ -3031,7 +3027,7 @@ ylabel('\Delta Gamma Frequency vs 25% [Hz]');
 title('Gamma Frequency Shift (Subject-normalized to 25%)', ...
     'FontSize', 24, 'FontWeight', 'bold');
 
-cond_shift_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/GCP_eeg_GED_condition_shift.png';
+cond_shift_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift.png');
 save_figure_png(fig_condition_shift, cond_shift_path);
 
 %% ====================================================================

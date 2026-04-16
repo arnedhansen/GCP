@@ -9,7 +9,7 @@ clear; close all; clc
 
 %% Setup
 startup
-[subjects, path, ~, ~] = setup('GCP');
+[subjects, paths, ~, ~] = setup('GCP');
 
 %% DataQueue for parfor progress
 % function printProgress(s)
@@ -22,7 +22,7 @@ startup
 %% Loop subjects
 for subj = 1:length(subjects)
 
-    datapath = strcat(path, subjects{subj}, filesep, 'eeg');
+    datapath = fullfile(paths.features, subjects{subj}, 'eeg');
     cd(datapath)
     close all
     clc
@@ -31,9 +31,9 @@ for subj = 1:length(subjects)
 
     load dataEEG
     if ispc
-        load('W:\Students\Arne\MA\headmodel\ant128lay.mat');
+        load(fullfile(paths.ma_headmodel, 'ant128lay.mat'));
     else
-        load('/Volumes/g_psyplafor_methlab$/Students/Arne/MA/headmodel/ant128lay.mat');
+        load(fullfile(paths.ma_headmodel, 'ant128lay.mat'));
     end
 
     %% Identify trial indices (per dataset)

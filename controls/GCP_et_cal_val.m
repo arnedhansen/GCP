@@ -4,7 +4,8 @@
 clear
 clc
 close all
-path = '/Volumes/methlab_data/OCC/GCP/data/';
+[subjects, paths] = setup('GCP', 0);
+path = paths.raw_occ;
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
@@ -15,7 +16,7 @@ numFiles = 4;
 
 % Loop through each subject
 for subj = 1:length(subjects)
-    datapath = strcat(path, subjects{subj}, '/archive');
+    datapath = fullfile(path, subjects{subj}, 'archive');
     cd(datapath);
 
     % Initialize
@@ -88,11 +89,11 @@ for subjIdx = 1:numSubjects
         hold off;
 
         % Save
-        savepath = strcat('/Volumes/methlab/Students/Arne/GCP/data/controls/',subjects{subjIdx});
+        savepath = fullfile(paths.controls, subjects{subjIdx});
         warning('off', 'MATLAB:MKDIR:DirectoryExists')
         mkdir(savepath)
         cd(savepath)
-        saveName = [savepath, filesep, num2str(subjects{subjIdx}) '_Validations.png'];
+        saveName = fullfile(savepath, [num2str(subjects{subjIdx}) '_Validations.png']);
         saveas(gcf, saveName)
     catch
         disp(['Could not create VALIDATION overview for subject ' num2str(subjects{subjIdx})])

@@ -20,7 +20,7 @@ clear; close all; clc
 
 %% Setup
 startup
-[subjects, path, colors, headmodel] = setup('GCP');
+[subjects, paths, colors, headmodel] = setup('GCP');
 
 nSubj = length(subjects);
 
@@ -40,11 +40,7 @@ condNames  = {'c25', 'c50', 'c75', 'c100'};
 trialCodes = [61, 62, 63, 64];
 condLabels = {'25%', '50%', '75%', '100%'};
 
-if ispc
-    fig_save_dir = 'W:\Students\Arne\GCP\figures\eeg\ged\peak_explorer';
-else
-    fig_save_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/peak_explorer';
-end
+fig_save_dir = fullfile(paths.figures, 'eeg', 'ged', 'peak_explorer');
 if ~exist(fig_save_dir, 'dir'), mkdir(fig_save_dir); end
 
 %% Preallocate
@@ -61,7 +57,7 @@ all_eigenvalues = nan(1, nSubj);
 %  ====================================================================
 for subj = 1:nSubj
 
-    datapath = strcat(path, subjects{subj}, filesep, 'eeg');
+    datapath = fullfile(paths.features, subjects{subj}, 'eeg');
     cd(datapath)
     load dataEEG
 
@@ -829,11 +825,7 @@ legend([h_lo, h_hi, h_med, h_mu], ...
 saveas(fig6, fullfile(fig_save_dir, 'GCP_peak_explorer_raincloud_split.png'));
 
 %% Save data
-if ispc
-    save_path = 'W:\Students\Arne\GCP\data\features\GCP_eeg_GED_peak_explorer.mat';
-else
-    save_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_eeg_GED_peak_explorer.mat';
-end
+save_path = fullfile(paths.features, 'GCP_eeg_GED_peak_explorer.mat');
 save(save_path, ...
     'all_trial_powratio', 'all_peak_freqs', 'all_peak_counts', ...
     'all_topos', 'all_topo_labels', 'all_eigenvalues', ...

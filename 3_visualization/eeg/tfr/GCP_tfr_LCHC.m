@@ -2,12 +2,12 @@
 
 %% Setup
 clear
-[subjects, path] = setup('GCP');
+[subjects, paths] = setup('GCP');
 
 %% Compute grand average time and frequency data GATFR
 % Load high contrast data
 for subj = 1:length(subjects)
-    datapath = strcat(path,subjects{subj}, '/eeg');
+    datapath = fullfile(paths.features, subjects{subj}, 'eeg');
     cd(datapath)
     load('data_tfr.mat');
 
@@ -35,7 +35,7 @@ channels = occ_channels;
 
 %% Plot GRAND AVERAGE TFR for HIGH and LOW CONTRAST conditions
 close all
-load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
+load(fullfile(paths.base_students, 'toolboxes', 'headmodel', 'layANThead.mat'))
 
 % Common configuration
 cfg = [];
@@ -65,7 +65,7 @@ ylabel('Frequency [Hz]');
 title('TFR LOW CONTRAST ', 'FontSize', 30);
 
 % Save
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_lc.png');
+saveas(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_lc.png'));
 
 % HIGH CONTRAST
 figure;
@@ -83,7 +83,7 @@ ylabel('Frequency [Hz]');
 title('TFR HIGH CONTRAST ', 'FontSize', 30);
 
 % Save
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_hc.png');
+saveas(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_hc.png'));
 
 %% Difference
 diff = gatfr_hc_baselined;
@@ -104,4 +104,4 @@ ylabel('Frequency [Hz]');
 title('TFR DIFFERENCE (HC-LC) ', 'FontSize', 30);
 
 % Save
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_diff.png');
+saveas(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_diff.png'));

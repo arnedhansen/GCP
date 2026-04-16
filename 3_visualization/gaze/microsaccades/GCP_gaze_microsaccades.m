@@ -19,12 +19,12 @@
 
 %% Setup
 startup
-[subjects, path, colors, ~] = setup('GCP');
+[subjects, paths, colors, ~] = setup('GCP');
 close all
 clc
 
-datapath = path;
-figpath  = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/microsaccades/';
+datapath = paths.features;
+figpath  = fullfile(paths.figures, 'gaze', 'microsaccades');
 mkdir(figpath);
 
 nSubj = length(subjects);

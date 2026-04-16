@@ -2,15 +2,15 @@
 
 %% Setup
 startup
-[subjects, path, colors] = setup('GCP');
+[subjects, paths, colors] = setup('GCP');
 analysis_period = 0; % 1 = ONLY 0-300ms, otherwise 300-2000ms after stimulus presentation
 
 %% Load power spectra data
 for subj = 1:length(subjects)
     if analysis_period == 1
-        load(strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra_300'))
+        load(fullfile(paths.features, subjects{subj}, 'eeg', 'power_spectra_300'))
     else
-        load(strcat('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+        load(fullfile(paths.features, subjects{subj}, 'eeg', 'power_spectra'))
     end
 
     % Raw powerspectra
@@ -74,7 +74,7 @@ gapow_c75_fooof_bl_smooth  = ft_freqgrandaverage(cfg, power_c75_fooof_bl_smooth{
 gapow_c100_fooof_bl_smooth = ft_freqgrandaverage(cfg, power_c100_fooof_bl_smooth{:});
 
 %% Define channels
-datapath = strcat(path, subjects{1}, '/eeg');
+datapath = fullfile(paths.features, subjects{1}, 'eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
@@ -158,9 +158,9 @@ hold off;
 
 % Save the plot
 if analysis_period == 1
-    saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_fooof_bl_smooth_300.png');
+    saveas(gcf, fullfile(paths.figures, 'eeg', 'powspctrm', 'GCP_powspctrm_fooof_bl_smooth_300.png'));
 else
-    saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_fooof_bl_smooth_extra.png');
+    saveas(gcf, fullfile(paths.figures, 'eeg', 'powspctrm', 'GCP_powspctrm_fooof_bl_smooth_extra.png'));
 end
 
 %% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
@@ -328,7 +328,7 @@ end
 
 %% Subplot with all INDIVIDUAL power spectra
 close all
-output_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/';
+output_dir = fullfile(paths.figures, 'eeg', 'powspctrm');
 num_subs = length(subjects);
 cols = 5;  % Number of columns
 rows = ceil(num_subs / cols); % Number of rows dynamically calculated

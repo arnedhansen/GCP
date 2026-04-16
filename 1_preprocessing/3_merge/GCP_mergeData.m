@@ -4,11 +4,12 @@
 %% Setup
 startup
 clear
-addpath /Volumes/methlab/4marius_bdf/eeglab % for pop_importeyetracker (EYE-EEG)
+[~, paths] = setup('GCP', 0);
+addpath(paths.eeglab) % for pop_importeyetracker (EYE-EEG)
 eeglab
 clc
 close all
-path = '/Volumes/methlab/Students/Arne/GCP/data/automagic/';
+path = paths.automagic;
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjectIDs = {folders.name};
@@ -18,14 +19,15 @@ tic;
 for subjects = 1 : length(subjectIDs)
     subjectID = subjectIDs(subjects);
     % Check if subject files have already been merged
-    if isempty(dir(['/Volumes/methlab/Students/Arne/GCP/data/merged/', char(subjectID), filesep, char(subjectID), '*_merged.mat']))
+    mergedPattern = fullfile(paths.merged, char(subjectID), [char(subjectID) '*_merged.mat']);
+    if isempty(dir(mergedPattern))
         % Set up data paths
-        filePathET = ['/Volumes/methlab_data/OCC/GCP/data/', char(subjectID)];
-        filePathEEG = ['/Volumes/methlab/Students/Arne/GCP/data/automagic/',  char(subjectID)];
-        resultFolder = ['/Volumes/methlab/Students/Arne/GCP/data/merged/', char(subjectID)];
+        filePathET = fullfile(paths.raw_occ, char(subjectID));
+        filePathEEG = fullfile(paths.automagic, char(subjectID));
+        resultFolder = fullfile(paths.merged, char(subjectID));
         mkdir(resultFolder)
-        dEEG = dir([filePathEEG, filesep, '*ip*EEG.mat']);
-        dET = dir([filePathET, filesep, '*ET.mat']);
+        dEEG = dir(fullfile(filePathEEG, '*ip*EEG.mat'));
+        dET = dir(fullfile(filePathET, '*ET.mat'));
         try
             for files = 1 : size(dEEG, 1)
                 ETnameShort = dET(files).name(1:end-7);

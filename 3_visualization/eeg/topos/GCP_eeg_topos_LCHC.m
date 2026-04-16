@@ -2,11 +2,11 @@
 
 %% Setup
 clear
-[subjects, path] = setup('GCP');
+[subjects, paths] = setup('GCP');
 
 %% Load power spectra data
 for subj = 1:length(subjects)
-    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    load(fullfile(paths.features, subjects{subj}, 'eeg', 'power_spectra'))
 
     % Low contrast
     power_lc{subj} = pow_lc;
@@ -30,7 +30,7 @@ gapow_hc_baseline_period                               = ft_freqgrandaverage([],
 
 %% Define channels
 subj = 1;
-datapath = strcat(path, subjects{subj}, '/eeg');
+datapath = fullfile(paths.features, subjects{subj}, 'eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
@@ -51,7 +51,7 @@ gapow_HIGH = gapow_hc_baselined;
 
 % Common configuration
 cfg = [];
-load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
+load(fullfile(paths.base_students, 'toolboxes', 'headmodel', 'layANThead.mat'))
 cfg.layout = layANThead;
 cfg.comment     = 'no';
 cfg.gridscale   = 300;
@@ -101,12 +101,12 @@ ylabel(cb, 'Power [dB]', 'FontSize', 25);
 title('DIFFERENCE (HC-LC)', 'FontSize', 25);
 
 % Save figure
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_eeg_topos_ga.png');
+saveas(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_eeg_topos_ga.png'));
 
 %% Topoplots for Individual Subjects (HC, LC, and Difference)
 close all;
 cfg             = [];
-load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
+load(fullfile(paths.base_students, 'toolboxes', 'headmodel', 'layANThead.mat'))
 cfg.layout = layANThead;
 cfg.comment     = 'no';
 %cfg.channels = channels;
@@ -155,7 +155,7 @@ for subj = 1:length(subjects)
     ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
     % Save individual figure
-    saveas(gcf, sprintf('/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_topoplot_subj%s_HC_LC_Diff.png', subjects{subj}));
+    saveas(gcf, fullfile(paths.figures, 'eeg', 'topos', sprintf('GCP_topoplot_subj%s_HC_LC_Diff.png', subjects{subj})));
 end
 
 %% Subplot of All Subjects (HC, LC, and Difference)
@@ -202,4 +202,4 @@ for subj = 1:num_subs
 end
 
 % Save the combined subplot figure with all subjects
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_topoplot_allsubs_HC_LC_Diff.png');
+saveas(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_topoplot_allsubs_HC_LC_Diff.png'));

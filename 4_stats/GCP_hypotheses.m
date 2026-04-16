@@ -29,7 +29,7 @@ clear; close all; clc
 
 %% Setup
 startup
-[subjects, path, colors, headmodel] = setup('GCP');
+[subjects, paths, colors, headmodel] = setup('GCP');
 
 % Exclude outlier subject(s) — numeric comparison to handle any folder naming
 exclude_numeric = [607];
@@ -46,13 +46,8 @@ condLabels    = {'25%', '50%', '75%', '100%'};
 contrast_vals = [25, 50, 75, 100];
 fontSize      = 16;
 
-if ispc
-    data_dir = 'W:\Students\Arne\GCP\data\features';
-    fig_dir  = 'W:\Students\Arne\GCP\figures\hypotheses';
-else
-    data_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features';
-    fig_dir  = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/hypotheses';
-end
+data_dir = paths.features;
+fig_dir = fullfile(paths.figures, 'hypotheses');
 if ~exist(fig_dir, 'dir'), mkdir(fig_dir); end
 
 %% ====================================================================
@@ -161,7 +156,7 @@ vel_mat = [];
 pup_mat = [];
 
 for subj = 1:nSubj
-    gazepath = fullfile(path, subjects{subj}, 'gaze');
+    gazepath = fullfile(paths.features, subjects{subj}, 'gaze');
 
     % Microsaccade rate (baseline-corrected, % change)
     msfile = fullfile(gazepath, 'gaze_microsaccade_timeseries.mat');

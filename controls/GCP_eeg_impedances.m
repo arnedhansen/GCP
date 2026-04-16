@@ -2,12 +2,12 @@
 % This script extracts impedances before and after tasks from ANT Neuro .cnt files
 % and visualises the results for each subject and block.
 clear
-[subjects, path, colors] = setup('GCP');
-addpath('/Volumes/methlab/Utility/scriptsForEEG')
+[subjects, paths, colors] = setup('GCP');
+addpath(paths.utility_scripts)
 
 %% Define paths
-baseDir = '/Volumes/methlab_data/OCC/GCP/data/'; % Base directory
-saveDir = '/Volumes/methlab/Students/Arne/GCP/figures/controls'; % Directory to save figures
+baseDir = paths.raw_occ; % Base directory
+saveDir = fullfile(paths.figures, 'controls'); % Directory to save figures
 if ~exist(saveDir, 'dir'), mkdir(saveDir); end % Create save directory if it doesn't exist
 
 % Find all subjects (subfolders in baseDir)

@@ -2,11 +2,11 @@
 
 %% Setup
 clear
-[subjects, path] = setup('GCP');
+[subjects, paths] = setup('GCP');
 
 %% Load power spectra data
 for subj = 1:length(subjects)
-    load(strcat('/Volumes/methlab/Students/Arne/GCP/data/features/', subjects{subj}, '/eeg/power_spectra'))
+    load(fullfile(paths.features, subjects{subj}, 'eeg', 'power_spectra'))
     pow25{subj}  = pow_c25_fooof_bl_smooth;
     pow50{subj}  = pow_c50_fooof_bl_smooth;
     pow75{subj}  = pow_c75_fooof_bl_smooth;
@@ -22,7 +22,7 @@ gapow100 = ft_freqgrandaverage([], pow100{:});
 
 %% Define channels
 subj = 1;
-datapath = strcat(path, subjects{subj}, '/eeg');
+datapath = fullfile(paths.features, subjects{subj}, 'eeg');
 cd(datapath);
 % Occipital channels
 occ_channels = {};
@@ -50,7 +50,7 @@ sgtitle('Grand Average Topographical Maps', 'FontSize', 30, 'FontWeight', 'bold'
 % Common configuration
 cfg = [];
 cfg.figure = 'gcf';
-load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
+load(fullfile(paths.base_students, 'toolboxes', 'headmodel', 'layANThead.mat'))
 cfg.layout = layANThead;
 allchannels = cfg.layout.label;
 cfg.channel = allchannels(1:end-2);
@@ -117,13 +117,13 @@ cb.FontSize = 20;
 ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
 % Save figure
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_eeg_topos_ga.png');
+saveas(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_eeg_topos_ga.png'));
 
 %% Topoplots for Individual Subjects
 close all;
 % Common configuration
 cfg = [];
-load('/Volumes/methlab/Students/Arne/toolboxes/headmodel/layANThead.mat')
+load(fullfile(paths.base_students, 'toolboxes', 'headmodel', 'layANThead.mat'))
 cfg.layout = layANThead;
 allchannels = cfg.layout.label;
 cfg.channel = allchannels(1:end-2);
@@ -203,5 +203,5 @@ for subj = 1:length(subjects)
     ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
     % Save individual figure
-    saveas(gcf, sprintf('/Volumes/methlab/Students/Arne/GCP/figures/eeg/topos/GCP_eeg_topos_subj%s.png', subjects{subj}));
+    saveas(gcf, fullfile(paths.figures, 'eeg', 'topos', sprintf('GCP_eeg_topos_subj%s.png', subjects{subj})));
 end

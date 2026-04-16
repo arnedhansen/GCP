@@ -7,14 +7,15 @@
 clear
 clc
 close all
-path = '/Volumes/methlab/Students/Arne/GCP/data/features/';
+[subjects, paths] = setup('GCP', 0);
+path = paths.features;
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
 
 %% Load gaze data
 for subj = 1:length(subjects)
-    datapath = strcat(path, subjects{subj}, '/gaze');
+    datapath = fullfile(path, subjects{subj}, 'gaze');
     cd(datapath);
     load('gaze_dev.mat');
     devs_lc(subj) = lc_gdev;
@@ -56,7 +57,7 @@ title('Sternberg Mean Euclidean Gaze Deviation', 'FontName', 'Arial', 'FontSize'
 hold off;
 
 % Save the plot
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/deviation/GCP_dev_boxplot_euclidean.png');
+saveas(gcf, fullfile(paths.figures, 'gaze', 'deviation', 'GCP_dev_boxplot_euclidean.png'));
 
 % Stats
 means = mean(dataDeviation, 'omitnan');

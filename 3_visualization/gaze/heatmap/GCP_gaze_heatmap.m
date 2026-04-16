@@ -5,15 +5,16 @@ startup
 clear
 clc
 close all
-path = '/Volumes/methlab/Students/Arne/GCP/data/features/';
+[subjects, paths] = setup('GCP', 0);
+path = paths.features;
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};
 
 %% Load data
 for subj = 1:length(subjects)
-    datapath = strcat(path,subjects{subj}, '/gaze');
-    load([datapath, filesep 'dataET'])
+    datapath = fullfile(path, subjects{subj}, 'gaze');
+    load(fullfile(datapath, 'dataET'))
 
     %% Choose data 300ms after stimulus presentation to exclude evoked activity
     cfg = [];
@@ -155,7 +156,7 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Gaze Density [a.u.]', 'FontSize', 32); % Label the colorbar
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_lc.png');
+saveas(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_lc.png'));
 
 %% Plot high contrast condition
 freq.powspctrm(1,:,:) = squeeze(hc_gdensity)';
@@ -167,7 +168,7 @@ freq.dimord = 'chan_freq_time';
 clf;
 close all;
 figure;
-addpath('/Volumes/methlab/Students/Arne/MA/scripts/lib/');
+addpath(fullfile(paths.ma_root, 'scripts', 'lib'));
 mycolormap = customcolormap_preset('red-white-blue');
 set(gcf, 'Position', [0, 0, 1200, 800]); % Specify the figure size
 colormap(mycolormap);
@@ -188,7 +189,7 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Gaze Density [a.u.]', 'FontSize', 32); % Label the colorbar
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_hc.png');
+saveas(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_hc.png'));
 
 %% Plot difference (hc - lc)
 diff = hc_gdensity - lc_gdensity;
@@ -201,7 +202,7 @@ freq.dimord = 'chan_freq_time';
 clf;
 close all;
 figure;
-addpath('/Volumes/methlab/Students/Arne/MA/scripts/lib/');
+addpath(fullfile(paths.ma_root, 'scripts', 'lib'));
 mycolormap = customcolormap_preset('red-white-blue');
 set(gcf, 'Position', [0, 0, 1200, 800]); % Specify the figure size
 colormap(mycolormap);
@@ -222,7 +223,7 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Gaze Density [a.u.]', 'FontSize', 32); % Label the colorbar
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_diff.png');
+saveas(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_diff.png'));
 
 %% Plot t-value stats
 mycolormap = customcolormap_preset('red-white-blue');
@@ -254,7 +255,7 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Effect Size [Cohen''s d]', 'FontSize', 32); % Label the colorbar
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_stats_raw.png');
+saveas(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_stats_raw.png'));
 
 %% Plot differnces between load 2 & load 8 for all subs  - INDIVIDUAL PLOTS
 for subj = 1:length(subjects)
@@ -289,7 +290,7 @@ for subj = 1:length(subjects)
     xlim([0 800]);
     ylim([0 600]);
 
-    saveas(gcf, ['/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_diff_subj', num2str(subj), '.png']);
+    saveas(gcf, fullfile(paths.figures, 'gaze', 'heatmap', ['GCP_gaze_heatmap_diff_subj' num2str(subj) '.png']));
 end
 
 %% MONTECARLO
@@ -357,4 +358,4 @@ plot(centerX, centerY, '+', 'MarkerSize', 15, 'LineWidth', 1, 'Color', 'k');
 xlim([0 800]);
 ylim([0 600]);
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/gaze/heatmap/GCP_gaze_heatmap_stats_montecarlo.png');
+saveas(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_stats_montecarlo.png'));

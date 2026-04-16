@@ -1,5 +1,6 @@
 %% GCP Hypotheses Visualization
 clear; close all; clc
+[~, paths] = setup('GCP', 0);
 
 % Freqs
 fMin = 30;
@@ -73,4 +74,4 @@ ax.XLabel.Position(2) = ax.XLabel.Position(2) - 0.02;
 ax.YLabel.Position(1) = ax.YLabel.Position(1) - 0.02;
 
 % Save
-print(set(fig, 'Renderer', 'painters'), '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/hypotheses/GCP_hypotheses.png', '-dpng', '-r600')
+print(set(fig, 'Renderer', 'painters'), fullfile(paths.figures, 'hypotheses', 'GCP_hypotheses.png'), '-dpng', '-r600')

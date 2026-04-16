@@ -3,9 +3,10 @@
 clear
 clc
 close all
+[~, paths] = setup('GCP', 0);
 
 % Load and convert
-load('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/merged_data.mat')
+load(fullfile(paths.features, 'GCP_merged_data.mat'))
 T = struct2table(merged_data);
 
 % Identify numeric variables only (excluding ID and Condition)
@@ -47,4 +48,4 @@ for i = 1:nVars
 end
 
 sgtitle('Merged Data Overview: Boxplots per Condition');
-saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/overview/GCP_stats_overview.png')
+saveas(gcf, fullfile(paths.figures, 'stats', 'overview', 'GCP_stats_overview.png'))

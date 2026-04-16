@@ -2,7 +2,7 @@
 
 %% Setup
 startup
-[subjects, path, colors, headmodel] = setup('GCP');
+[subjects, paths, colors, headmodel] = setup('GCP');
 
 % representational modes to plot, in order
 modes = {'raw','bl','pct'};
@@ -27,9 +27,9 @@ for m = 1:numel(modes)
     alltlk100et = cell(1, numel(subjects));
 
     for subj = 1:length(subjects)
-        datapath = strcat(path, subjects{subj}, '/gaze');
+        datapath = fullfile(paths.features, subjects{subj}, 'gaze');
         disp(['Loading Subject ', num2str(subjects{subj})])
-        load([datapath, filesep 'gaze_pupil_timeseries'])
+        load(fullfile(datapath, 'gaze_pupil_timeseries'))
 
         % velTS_cXX           = timelocked average Pupil Size (no baseline)
         % velTS_cXX_bl        = timelocked average with subtractive baseline
@@ -149,8 +149,8 @@ for m = 1:numel(modes)
             sgtitle('GCP Gaze Pupil Size PERCENTAGE CHANGE');
     end
 
-    outdir_overview = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/pupil/';
-    saveName = sprintf('%sGCP_gaze_pupil_overview_%s.png', outdir_overview, suffix);
+    outdir_overview = fullfile(paths.figures, 'gaze', 'pupil');
+    saveName = fullfile(outdir_overview, sprintf('GCP_gaze_pupil_overview_%s.png', suffix));
     saveas(gcf, saveName);
 
     % Also save individual channel plots for this mode
@@ -182,7 +182,7 @@ for m = 1:numel(modes)
 
         % build single plots filename
         outdir_single = outdir_overview;
-        saveName_single = sprintf('%sGCP_gaze_pupil_%s_%s.png', outdir_single, channels{c}, suffix);
+        saveName_single = fullfile(outdir_single, sprintf('GCP_gaze_pupil_%s_%s.png', channels{c}, suffix));
         saveas(fig_single, saveName_single);
         close(fig_single);
     end

@@ -2,8 +2,9 @@
 clc
 clear
 close all
-load('/Volumes/methlab/Students/Arne/GCP/figures/paradigm/grating_lc.mat')
-load('/Volumes/methlab/Students/Arne/GCP/figures/paradigm/grating_hc.mat')
+[~, paths] = setup('GCP', 0);
+load(fullfile(paths.figures, 'paradigm', 'grating_lc.mat'))
+load(fullfile(paths.figures, 'paradigm', 'grating_hc.mat'))
 
 % Define colours for the GCP project
 colors = color_def('GCP'); % Get colours: Beige and Purple
@@ -60,4 +61,4 @@ legend({'Low Contrast', 'High Contrast'}); % Show legend
 % grid on;
 hold off;
 
-saveas(gcf, '/Volumes/methlab/Students/Arne/GCP/figures/paradigm/GCP_gratings_rgb_distribution.png')
+saveas(gcf, fullfile(paths.figures, 'paradigm', 'GCP_gratings_rgb_distribution.png'))

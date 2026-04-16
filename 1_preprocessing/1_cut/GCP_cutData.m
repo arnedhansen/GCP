@@ -1,4 +1,4 @@
-function  cutData(filePath)
+function cutData(filePath)
 
 % ANT EEG data comes in 1 file containig all tasks (e.g. Resting & Grating).
 % This function cuts the data into distinct tasks, saves the tasks
@@ -10,10 +10,9 @@ function  cutData(filePath)
 [EEGorig, command] = pop_loadeep_v4(filePath);
 
 %% Extract path and filename
-splitpath = strsplit(filePath, filesep);
-subjectID = splitpath{7};
-filePath = fullfile(filesep, splitpath{1:end-1});
-fileName = splitpath{end};
+subjectDir = fileparts(filePath);
+fileName = [erase(filePath, [subjectDir filesep])];
+subjectID = [erase(subjectDir, [fileparts(subjectDir) filesep])];
 splitpath_str = strsplit(fileName, '_');
 
 %% Remove photodiode data and save to a file

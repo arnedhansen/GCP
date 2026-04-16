@@ -2,7 +2,7 @@
 
 %% Setup
 startup
-[subjects, path, colors, headmodel] = setup('GCP');
+[subjects, paths, colors, headmodel] = setup('GCP');
 
 % representational modes to plot, in order
 modes = {'raw','bl','pct'};
@@ -33,9 +33,9 @@ for m = 1:numel(modes)
     alltlk100et = cell(1, numel(subjects));
 
     for subj = 1:length(subjects)
-        datapath = strcat(path, subjects{subj}, '/gaze');
+        datapath = fullfile(paths.features, subjects{subj}, 'gaze');
         disp(['Loading Subject ', num2str(subjects{subj})])
-        load([datapath, filesep 'gaze_velocity_timeseries'])
+        load(fullfile(datapath, 'gaze_velocity_timeseries'))
 
         % velTS_cXX           = timelocked average velocity (no baseline)
         % velTS_cXX_bl        = timelocked average with subtractive baseline
@@ -155,8 +155,7 @@ for m = 1:numel(modes)
             sgtitle('GCP Gaze Velocity PERCENTAGE CHANGE');
     end
 
-    saveName = sprintf(['/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/' ...
-        'gaze/velocity/GCP_gaze_velocity_overview_%s.png'], suffix);
+    saveName = fullfile(paths.figures, 'gaze', 'velocity', sprintf('GCP_gaze_velocity_overview_%s.png', suffix));
     saveas(gcf, saveName);
 
     % Also save individual channel plots for this mode
@@ -187,9 +186,8 @@ for m = 1:numel(modes)
             mode_title, channeltitles{c}));
 
         % build single plots filename
-        outdir_single   = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/gaze/velocity/';
-        saveName_single = sprintf('%sGCP_gaze_velocity_%s_%s.png', ...
-            outdir_single, channels{c}, suffix);
+        outdir_single = fullfile(paths.figures, 'gaze', 'velocity');
+        saveName_single = fullfile(outdir_single, sprintf('GCP_gaze_velocity_%s_%s.png', channels{c}, suffix));
         saveas(fig_single, saveName_single);
         close(fig_single);
     end

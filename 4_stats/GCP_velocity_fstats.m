@@ -2,7 +2,7 @@
 
 %% Setup
 startup
-[subjects, path, colors, headmodel] = setup('GCP');
+[subjects, paths, colors, headmodel] = setup('GCP');
 
 % channels for stats and plotting
 channels      = {'VelH','VelV','Vel2D'};
@@ -22,9 +22,9 @@ for m = 1:numel(modes)
     alltlk100et = cell(1, numel(subjects));
 
     for subj = 1:length(subjects)
-        datapath = strcat(path, subjects{subj}, '/gaze');
+        datapath = fullfile(paths.features, subjects{subj}, 'gaze');
         disp(['Loading Subject ', num2str(subjects{subj})])
-        load([datapath, filesep 'gaze_velocity_timeseries'])
+        load(fullfile(datapath, 'gaze_velocity_timeseries'))
 
         % velTS_cXX           = timelocked average velocity (no baseline)
         % velTS_cXX_bl        = timelocked average with subtractive baseline
@@ -172,7 +172,7 @@ for m = 1:numel(modes)
     end
 
     % Save
-    outdir_stats = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/velocity_f-tests/';
+    outdir_stats = fullfile(paths.figures, 'stats', 'velocity_f-tests');
     saveas(figF, fullfile(outdir_stats, ...
         sprintf('GCP_gaze_velocity_overview_%s_Ftest.png', suffix)));
 end

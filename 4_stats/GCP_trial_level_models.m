@@ -14,8 +14,9 @@
 clear
 clc
 close all
+[~, paths] = setup('GCP', 0);
 
-features_root = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features';
+features_root = paths.features;
 merged_path = fullfile(features_root, 'GCP_merged_data_trials.mat');
 
 if ~isfile(merged_path)

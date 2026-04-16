@@ -15,8 +15,8 @@
 clear
 clc
 close all
-
-features_root = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features';
+[subjects, paths] = setup('GCP', 0);
+features_root = paths.features;
 dirs = dir(features_root);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjects = {folders.name};

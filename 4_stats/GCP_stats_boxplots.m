@@ -4,9 +4,10 @@ clear
 clc
 close all
 [~, ~, colors, ~] = setup('GCP', 0);
+[~, paths] = setup('GCP', 0);
 
 % Load and convert
-load('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/merged_data.mat')
+load(fullfile(paths.features, 'GCP_merged_data.mat'))
 T = struct2table(merged_data);
 
 % Identify numeric variables only (excluding ID and Condition)
@@ -119,5 +120,5 @@ for iVar = 3%%%%%1:numel(numericVars)
     end
 
     % Save
-    saveas(gcf, ['/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/stats/boxplots/GCP_stats_boxplot_', varName, '.png'])
+    saveas(gcf, fullfile(paths.figures, 'stats', 'boxplots', ['GCP_stats_boxplot_' varName '.png']))
 end

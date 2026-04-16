@@ -11,16 +11,16 @@
 
 %% Setup
 startup
-[subjects, path, ~, ~] = setup('GCP');
+[subjects, paths, ~, ~] = setup('GCP');
 
 %% Extract TFR
 % Read data, segment and convert to FieldTrip data structure
 parfor subj = 1 : length(subjects)
-    datapath = fullfile(path, subjects{subj}, 'eeg');
+    datapath = fullfile(paths.features, subjects{subj}, 'eeg');
     %if ~isfile(strcat([datapath, '/data_tfr.mat'])) % only new data
     close all
     load(fullfile(datapath, 'dataEEG.mat'))
-    load('/Volumes/g_psyplafor_methlab$/Students/Arne/MA/headmodel/ant128lay.mat');
+    load(fullfile(paths.ma_headmodel, 'ant128lay.mat'));
 
     %% Identify indices of trials belonging to conditions
     ind61 = find(dataEEG_c25.trialinfo  == 61);
@@ -149,10 +149,10 @@ disp('POWER ANALYSIS')
 baseline_period = [-1.5 -0.25];
 analysis_period = [0.3 2]; % only start from 300ms after stimulus presentation
 freq_range = [30 90];
-[subjects, path] = setup('GCP');
+[subjects, paths] = setup('GCP');
 
 parfor subj = 1 : length(subjects)
-    datapath = fullfile(path, subjects{subj}, 'eeg');
+    datapath = fullfile(paths.features, subjects{subj}, 'eeg');
     %if ~isfile(strcat([datapath, '/power_spectra.mat'])) % only new data
     % Load data
     load(fullfile(datapath, 'data_tfr.mat'));
@@ -206,7 +206,7 @@ parfor subj = 1 : length(subjects)
     pow_c100_baseline_period                       = remove_time_dimension(pow_c100_baseline_period);
 
     %% Save data
-    savepath = fullfile('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features', subjects{subj}, 'eeg');
+    savepath = fullfile(paths.features, subjects{subj}, 'eeg');
     if ~exist(savepath, 'dir')
         mkdir(savepath)
     end
@@ -218,7 +218,7 @@ end
 %end
 
 %% Define channels
-first_subj_power_file = fullfile('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features', subjects{1}, 'eeg', 'power_spectra.mat');
+first_subj_power_file = fullfile(paths.features, subjects{1}, 'eeg', 'power_spectra.mat');
 % Occipital channels
 occ_channels = {};
 tmp_pow = load(first_subj_power_file, 'pow_c25');
@@ -235,7 +235,7 @@ channels = occ_channels;
 subj_data_cell = cell(length(subjects), 1);
 parfor subj = 1:length(subjects)
     % Load power spectra data
-    load(fullfile('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features', subjects{subj}, 'eeg', 'power_spectra.mat'))
+    load(fullfile(paths.features, subjects{subj}, 'eeg', 'power_spectra.mat'))
 
     % Find channels and frequencies of interest
     channels_idx = ismember(pow_c25_fooof_bl_smooth.label, channels);
@@ -350,7 +350,7 @@ parfor subj = 1:length(subjects)
     text(38, -maxylim*0.65, [num2str(round(c50_pow, 4)) ], 'FontSize', 25, 'Color', colors(2, :))
     text(46, -maxylim*0.65, [num2str(round(c75_pow, 4)) ], 'FontSize', 25, 'Color', colors(3, :))
     text(54, -maxylim*0.65, [num2str(round(c100_pow, 4))], 'FontSize', 25, 'Color', colors(4, :))
-    saveas(gcf, ['/Users/Arne/Documents/GitHub/GCP/controls/powspctrm/GCP_controls_powscptrm_subj' num2str(subjects{subj}), '.png'])
+    saveas(gcf, fullfile('/Users/Arne/Documents/GitHub/GCP', 'controls', 'powspctrm', ['GCP_controls_powscptrm_subj' num2str(subjects{subj}) '.png']))
 
     % Create across condition structure
     subject_id = repmat(str2num(subjects{subj}), 4, 1);
@@ -364,7 +364,7 @@ parfor subj = 1:length(subjects)
         'Frequency',     num2cell(frequencies));
 
     % Save data
-    savepath = fullfile('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features', subjects{subj}, 'eeg');
+    savepath = fullfile(paths.features, subjects{subj}, 'eeg');
     if ~exist(savepath, 'dir')
         mkdir(savepath)
     end
@@ -378,6 +378,6 @@ parfor subj = 1:length(subjects)
     subj_data_cell{subj} = subj_data_eeg;
 end
 eeg_data = vertcat(subj_data_cell{:});
-save('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/eeg_matrix.mat', 'eeg_data')
+save(fullfile(paths.features, 'GCP_eeg_matrix.mat'), 'eeg_data')
 clc
 disp('EEG Feature Matrix created')

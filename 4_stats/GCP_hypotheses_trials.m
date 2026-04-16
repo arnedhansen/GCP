@@ -28,7 +28,7 @@ clear; close all; clc
 
 %% Setup
 startup
-[subjects, path, colors, ~] = setup('GCP', 0);
+[subjects, paths, colors, ~] = setup('GCP', 0);
 
 nSubj = length(subjects);
 fprintf('Subjects (N=%d): %s\n', nSubj, strjoin(subjects, ', '));
@@ -38,13 +38,8 @@ condLabels    = {'25%', '50%', '75%', '100%'};
 contrast_vals = [25, 50, 75, 100];
 fontSize      = 16;
 
-if ispc
-    data_dir = 'W:\Students\Arne\GCP\data\features';
-    fig_dir  = 'W:\Students\Arne\GCP\figures\hypotheses';
-else
-    data_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features';
-    fig_dir  = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/hypotheses';
-end
+data_dir = paths.features;
+fig_dir = fullfile(paths.figures, 'hypotheses');
 if ~exist(fig_dir, 'dir'), mkdir(fig_dir); end
 
 %% ====================================================================
@@ -65,7 +60,7 @@ gaze_PupilSize = [];
 gaze_BCEA      = [];
 
 for subj = 1:nSubj
-    gazepath = fullfile(path, subjects{subj}, 'gaze');
+    gazepath = fullfile(paths.features, subjects{subj}, 'gaze');
     trialfile = fullfile(gazepath, 'gaze_matrix_trial.mat');
     if ~exist(trialfile, 'file')
         fprintf('  %s: gaze_matrix_trial.mat not found, skipping.\n', subjects{subj});

@@ -2,12 +2,12 @@
 
 %% Setup
 startup
-[subjects, path, ~, layANThead] = setup('GCP');
+[subjects, paths, ~, layANThead] = setup('GCP');
 
 %% Compute grand average time and frequency data GATFR
 % Load high contrast data
 for subj = 1:length(subjects)
-    datapath = strcat(path,subjects{subj}, '/eeg');
+    datapath = fullfile(paths.features, subjects{subj}, 'eeg');
     cd(datapath)
     load('data_tfr_fooof_sw.mat');
     tfr25{subj}  = tfr_c25_fooof_bl;
@@ -137,7 +137,7 @@ set(gca, 'FontSize', 20)
 title('100% Contrast');
 
 % Save
-print(set(gcf, 'Renderer', 'painters'), '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr.png', '-dpng', '-r600')
+print(set(gcf, 'Renderer', 'painters'), fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr.png'), '-dpng', '-r600')
 
 %% Difference
 diff = gatfr100;
@@ -155,4 +155,4 @@ ylabel('Frequency [Hz]');
 %rectangle('Position', [0, 30, 2, 60], 'EdgeColor', 'r', 'LineWidth', 5);
 set(gca, 'FontSize', 25)
 title('TFR Difference: 100% Contrast - 50% Contrast');
-print(set(gcf, 'Renderer', 'painters'), '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/tfr/GCP_eeg_tfr_diff.png', '-dpng', '-r600')
+print(set(gcf, 'Renderer', 'painters'), fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_diff.png'), '-dpng', '-r600')

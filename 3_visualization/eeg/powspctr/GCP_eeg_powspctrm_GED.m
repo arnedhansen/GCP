@@ -12,16 +12,11 @@
 
 %% Setup
 startup
-[subjects, ~, colors] = setup('GCP');
+[subjects, paths, colors] = setup('GCP');
 
 %% Paths
-if ispc
-    data_path = 'W:\Students\Arne\GCP\data\features\GCP_eeg_GED.mat';
-    fig_dir = 'W:\Students\Arne\GCP\figures\eeg\powspctrm\ged';
-else
-    data_path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_eeg_GED.mat';
-    fig_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/ged';
-end
+data_path = fullfile(paths.features, 'GCP_eeg_GED.mat');
+fig_dir = fullfile(paths.figures, 'eeg', 'powspctrm', 'ged');
 if ~exist(fig_dir, 'dir')
     mkdir(fig_dir);
 end
