@@ -29,6 +29,7 @@ result <- run_outcome_power_analysis(list(
   progress_every = 250,
   parallel_enabled = TRUE,
   parallel_workers = 8,
+  parallel_round_chunk_nsim = 1,
   validation_nsim = 1000,
   validation_n = 40,
   alpha_tolerance = 0.02,
