@@ -24,7 +24,7 @@ runSESOI <- function() {
   input_file <- "/Users/Arne/Documents/GitHub/GCP/data/features/GCP_eeg_GED_gamma_metrics_trials.csv"
   output_dir <- "/Users/Arne/Documents/GitHub/GCP/figures/power_analysis"
   output_prefix <- "GCP_power_analysis_gamma_frequency_SESOI_only"
-  plot_title <- "Power Curve: Gamma Frequency SESOI (contrast_num_c)"
+  plot_title <- "Power Analysis: Gamma Frequency"
 
   set.seed(seed)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
