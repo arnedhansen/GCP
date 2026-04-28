@@ -47,15 +47,6 @@ resolve_power_output_dir <- function() {
   if (dir.exists(dirname(preferred))) preferred else fallback
 }
 
-resolve_manifest_path <- function(output_dir = resolve_power_output_dir()) {
-  candidate_a <- file.path(output_dir, "pilot_stats", "power_parameter_manifest.csv")
-  candidate_b <- file.path(getwd(), "_power_analysis", "outputs", "pilot_stats", "power_parameter_manifest.csv")
-  if (file.exists(candidate_a)) {
-    return(candidate_a)
-  }
-  candidate_b
-}
-
 resolve_trials_per_condition <- function(default_value = 160) {
   roots <- resolve_project_roots()
   candidates <- c(
@@ -82,12 +73,24 @@ make_subject_condition_design <- function(n_subjects, trials_per_condition, cont
 }
 
 simulate_outcome <- function(dat, scenario, sim_col) {
+  as_num <- function(x) suppressWarnings(as.numeric(x[1]))
   n_subjects <- nlevels(dat$Subject)
-  random_intercepts <- rnorm(n_subjects, mean = 0, sd = scenario$random_intercept_sd * scenario$random_intercept_sd_multiplier)
-  random_slopes <- rnorm(n_subjects, mean = 0, sd = scenario$random_slope_sd * scenario$random_slope_sd_multiplier)
+  ri_sd <- as_num(scenario$random_intercept_sd)
+  rs_sd <- as_num(scenario$random_slope_sd)
+  e_sd <- as_num(scenario$residual_sd)
+  beta_raw <- as_num(scenario$beta_raw)
+  mu0 <- as_num(scenario$outcome_mean)
+  ri_mult <- as_num(scenario$random_intercept_sd_multiplier)
+  rs_mult <- as_num(scenario$random_slope_sd_multiplier)
+  e_mult <- as_num(scenario$residual_sd_multiplier)
+  if (!is.finite(ri_mult)) ri_mult <- 1
+  if (!is.finite(rs_mult)) rs_mult <- 1
+  if (!is.finite(e_mult)) e_mult <- 1
+  random_intercepts <- rnorm(n_subjects, mean = 0, sd = ri_sd * ri_mult)
+  random_slopes <- rnorm(n_subjects, mean = 0, sd = rs_sd * rs_mult)
   x <- dat$contrast_num_c
-  mu <- scenario$outcome_mean + random_intercepts[dat$Subject] + random_slopes[dat$Subject] * x + scenario$beta_raw * x
-  y <- mu + rnorm(nrow(dat), mean = 0, sd = scenario$residual_sd * scenario$residual_sd_multiplier)
+  mu <- mu0 + random_intercepts[dat$Subject] + random_slopes[dat$Subject] * x + beta_raw * x
+  y <- mu + rnorm(nrow(dat), mean = 0, sd = e_sd * e_mult)
   dat[[sim_col]] <- y
   dat
 }
@@ -211,8 +214,6 @@ estimate_power_parallel <- function(
 
 run_sesoi_only <- function() {
   cfg <- list(
-    manifest_outcome = "PeakFrequency",
-    scenario_role = "sesoi",
     sim_col = "gamma_frequency",
     target_term = "contrast_num_c",
     model_formula = gamma_frequency ~ contrast_num_c + (1 + contrast_num_c | Subject),
@@ -231,12 +232,19 @@ run_sesoi_only <- function() {
   set.seed(cfg$seed)
   output_dir <- resolve_power_output_dir()
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
-  manifest <- read.csv(resolve_manifest_path(output_dir), stringsAsFactors = FALSE)
-  scenario <- manifest[
-    manifest$outcome == cfg$manifest_outcome & manifest$scenario_role == cfg$scenario_role,
-    ,
-    drop = FALSE
-  ]
+  scenario <- data.frame(
+    scenario_label = "SESOI",
+    scenario_role = "sesoi",
+    beta_raw = 0.05,
+    outcome_mean = 0.00,
+    random_intercept_sd = 0.20,
+    random_slope_sd = 0.10,
+    residual_sd = 1.00,
+    random_intercept_sd_multiplier = 1.00,
+    random_slope_sd_multiplier = 1.00,
+    residual_sd_multiplier = 1.00,
+    stringsAsFactors = FALSE
+  )
 
   cl <- parallel::makeCluster(as.integer(cfg$parallel_workers), type = "PSOCK")
   on.exit(parallel::stopCluster(cl), add = TRUE)
