@@ -1,6 +1,14 @@
 ## GCP Pilot Statistics for Power Parameterization
 ## This script exports pilot descriptive statistics for simulation-based power analyses.
 
+ensure_packages <- function(pkgs) {
+  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing) > 0) {
+    install.packages(missing, repos = "https://cloud.r-project.org")
+  }
+}
+
+ensure_packages(c("lme4"))
 suppressPackageStartupMessages({
   library(lme4)
 })

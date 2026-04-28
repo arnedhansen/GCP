@@ -1,5 +1,31 @@
 ## Shared utilities for GCP power analysis scripts.
 
+ensure_packages <- function(pkgs) {
+  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing) > 0) {
+    user_lib <- Sys.getenv("R_LIBS_USER")
+    if (!nzchar(user_lib)) {
+      user_lib <- file.path(path.expand("~"), "R", paste0(R.version$platform, "-library"), paste(R.version$major, strsplit(R.version$minor, ".", fixed = TRUE)[[1]][1], sep = "."))
+    }
+    if (!dir.exists(user_lib)) {
+      dir.create(user_lib, recursive = TRUE, showWarnings = FALSE)
+    }
+    .libPaths(unique(c(user_lib, .libPaths())))
+    install.packages(missing, repos = "https://cloud.r-project.org", lib = user_lib)
+    still_missing <- missing[!vapply(missing, requireNamespace, logical(1), quietly = TRUE)]
+    if (length(still_missing) > 0) {
+      stop(
+        "Failed to install required packages: ",
+        paste(still_missing, collapse = ", "),
+        ". Try manually in R: install.packages(c(",
+        paste(sprintf("'%s'", still_missing), collapse = ", "),
+        "), repos='https://cloud.r-project.org')"
+      )
+    }
+  }
+}
+
+ensure_packages(c("lme4", "ggplot2", "scales"))
 suppressPackageStartupMessages({
   library(lme4)
   library(ggplot2)

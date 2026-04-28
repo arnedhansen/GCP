@@ -7,7 +7,11 @@ resolve_script_dir <- function() {
   if (length(file_arg) > 0) {
     return(dirname(normalizePath(sub("^--file=", "", file_arg[1]))))
   }
-  file.path(getwd(), "_power_analysis")
+  cwd <- normalizePath(getwd(), winslash = "/", mustWork = FALSE)
+  if (basename(cwd) == "_power_analysis") {
+    return(cwd)
+  }
+  file.path(cwd, "_power_analysis")
 }
 source(file.path(resolve_script_dir(), "GCP_power_analysis_common.R"))
 
