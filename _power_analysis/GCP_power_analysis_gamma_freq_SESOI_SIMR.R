@@ -20,8 +20,11 @@ ensure_packages <- function(pkgs) {
   }
 }
 
-ensure_packages(c("lme4"))
-suppressPackageStartupMessages(library(lme4))
+ensure_packages(c("lme4", "ggplot2", "scales"))
+suppressPackageStartupMessages({
+  library(lme4)
+  library(ggplot2)
+})
 
 log_progress <- function(..., verbose = TRUE) {
   if (!isTRUE(verbose)) {
@@ -226,6 +229,7 @@ run_sesoi_only <- function() {
     parallel_workers = 8,
     parallel_round_chunk_nsim = 1,
     file_prefix = "GCP_power_analysis_gamma_frequency_SESOI_only",
+    plot_title = "Power Curve: Gamma Frequency SESOI (contrast_num_c)",
     verbose = TRUE
   )
 
@@ -280,6 +284,47 @@ run_sesoi_only <- function() {
   power_df <- do.call(rbind, rows)
   power_df$meets_target_90 <- power_df$power >= cfg$strict_power_target
   write.csv(power_df, file.path(output_dir, paste0(cfg$file_prefix, "_curve.csv")), row.names = FALSE)
+
+  x_breaks <- sort(unique(cfg$subject_breaks))
+  plot_obj <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power)) +
+    geom_point(size = 2, color = "blue") +
+    geom_line(color = "blue", linetype = "dotted") +
+    geom_errorbar(aes(ymin = .data$lower, ymax = .data$upper), width = 3, color = "blue", alpha = 0.5) +
+    geom_hline(yintercept = cfg$strict_power_target, linetype = "dashed", color = "grey", linewidth = 0.5) +
+    scale_x_continuous(breaks = x_breaks) +
+    scale_y_continuous(
+      labels = scales::percent_format(),
+      limits = c(0, 1),
+      breaks = c(0, 0.25, 0.50, 0.75, 0.90, 1)
+    ) +
+    labs(
+      x = "Subjects",
+      y = "Power",
+      title = cfg$plot_title
+    ) +
+    theme_minimal(base_size = 15) +
+    theme(
+      plot.background = element_rect(fill = "white", colour = NA),
+      panel.background = element_rect(fill = "white", colour = NA),
+      panel.border = element_rect(colour = "black", fill = NA, linewidth = 1),
+      axis.line = element_line(colour = "black", linewidth = 1),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      axis.ticks.length = grid::unit(0.2, "cm"),
+      axis.ticks = element_line(linewidth = 0.5),
+      axis.ticks.x = element_line(colour = "black", linewidth = 0.5, lineend = "square"),
+      axis.ticks.y = element_line(colour = "black", linewidth = 0.5, lineend = "square"),
+      axis.text.x = element_text(margin = margin(t = 10)),
+      axis.text.y = element_text(margin = margin(r = 10))
+    )
+
+  png(
+    file = file.path(output_dir, paste0(cfg$file_prefix, ".png")),
+    width = 2200, height = 1400, res = 300
+  )
+  print(plot_obj)
+  dev.off()
+
   power_df
 }
 
