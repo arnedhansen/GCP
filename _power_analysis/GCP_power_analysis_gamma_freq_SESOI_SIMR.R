@@ -123,7 +123,7 @@ estimate_power_chunk <- function(
     dat <- simulate_outcome(dat, scenario, sim_col = sim_col)
     rejects <- rejects + as.integer(fit_model_and_extract(dat, model_formula, target_term, alpha))
   }
-  list(chunk_nsim = chunk_nsim, rejects = rejects)
+  list(chunk_nsim = as.integer(chunk_nsim), rejects = as.integer(rejects))
 }
 
 estimate_power_parallel <- function(
@@ -183,9 +183,9 @@ estimate_power_parallel <- function(
       alpha = alpha
     )
 
-    round_n <- sum(vapply(chunk_results, `[[`, integer(1), "chunk_nsim"))
+    round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
     total_nsim <- total_nsim + round_n
-    total_rejects <- total_rejects + sum(vapply(chunk_results, `[[`, integer(1), "rejects"))
+    total_rejects <- total_rejects + sum(vapply(chunk_results, function(x) as.integer(x$rejects), integer(1)))
     remaining <- nsim - total_nsim
     interim_power <- total_rejects / total_nsim
     log_progress(
