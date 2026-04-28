@@ -1,6 +1,5 @@
-## GCP Pilot Statistics for SIMR Power Parameterization
-## This script summarizes pilot gamma frequency/power by condition and
-## exports statistics that can be used to parameterize simulation-based power analyses.
+## GCP Pilot Statistics for Power Parameterization
+## This script exports pilot descriptive statistics for simulation-based power analyses.
 
 suppressPackageStartupMessages({
   library(lme4)
@@ -8,9 +7,39 @@ suppressPackageStartupMessages({
 
 set.seed(123)
 
-INPUT_FILE <- "/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_eeg_GED_gamma_metrics_trials.csv"
-PREFERRED_OUTPUT_DIR <- "/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/power_analysis/pilot_stats"
+resolve_project_roots <- function() {
+  if (.Platform$OS.type == "windows") {
+    list(
+      data_root = file.path("W:/Students/Arne/GCP"),
+      share_root = "W:/"
+    )
+  } else {
+    list(
+      data_root = file.path("/Volumes/g_psyplafor_methlab$/Students/Arne/GCP"),
+      share_root = "/Volumes/g_psyplafor_methlab$/"
+    )
+  }
+}
+
+roots <- resolve_project_roots()
+PREFERRED_OUTPUT_DIR <- file.path(roots$data_root, "figures", "power_analysis", "pilot_stats")
 FALLBACK_OUTPUT_DIR <- file.path(getwd(), "_power_analysis", "outputs", "pilot_stats")
+
+resolve_input_file <- function() {
+  candidates <- c(
+    file.path(roots$data_root, "data", "features", "GCP_eeg_GED_gamma_metrics_trials.csv"),
+    file.path(getwd(), "data", "features", "GCP_eeg_GED_gamma_metrics_trials.csv")
+  )
+  hit <- candidates[file.exists(candidates)]
+  if (length(hit) == 0) {
+    stop(
+      "Could not find GCP_eeg_GED_gamma_metrics_trials.csv. Checked: ",
+      paste(candidates, collapse = " | ")
+    )
+  }
+  hit[1]
+}
+INPUT_FILE <- resolve_input_file()
 
 resolve_output_dir <- function() {
   if (dir.exists(dirname(PREFERRED_OUTPUT_DIR))) {
@@ -90,9 +119,37 @@ extract_mixed_model_stats <- function(model_obj, outcome_label) {
   fix <- as.data.frame(sm$coefficients)
   fix$term <- rownames(fix)
   rownames(fix) <- NULL
-  names(fix) <- c("estimate", "std_error", "statistic", "term")
-  fix <- fix[, c("term", "estimate", "std_error", "statistic")]
-  fix$outcome <- outcome_label
+
+  estimate_col <- grep("^Estimate$", names(fix), value = TRUE, ignore.case = TRUE)[1]
+  se_col <- grep("Std\\.?\\s*Error", names(fix), value = TRUE, ignore.case = TRUE)[1]
+  t_col <- grep("^t\\s*value$", names(fix), value = TRUE, ignore.case = TRUE)[1]
+  z_col <- grep("^z\\s*value$", names(fix), value = TRUE, ignore.case = TRUE)[1]
+  df_col <- grep("^df$", names(fix), value = TRUE, ignore.case = TRUE)[1]
+  p_col <- grep("^Pr\\(", names(fix), value = TRUE)[1]
+
+  if (is.na(estimate_col) || is.na(se_col)) {
+    stop("Could not identify estimate/std_error columns in model summary.")
+  }
+
+  stat_col <- if (!is.na(t_col)) t_col else z_col
+  if (is.na(stat_col)) {
+    stop("Could not identify t/z statistic column in model summary.")
+  }
+
+  out_cols <- data.frame(
+    term = fix$term,
+    estimate = as.numeric(fix[[estimate_col]]),
+    std_error = as.numeric(fix[[se_col]]),
+    statistic = as.numeric(fix[[stat_col]]),
+    stringsAsFactors = FALSE
+  )
+  if (!is.na(df_col)) {
+    out_cols$df <- as.numeric(fix[[df_col]])
+  }
+  if (!is.na(p_col)) {
+    out_cols$p_value <- as.numeric(fix[[p_col]])
+  }
+  out_cols$outcome <- outcome_label
 
   ci <- suppressMessages(confint(model_obj, parm = "beta_", method = "Wald"))
   ci_df <- data.frame(
@@ -103,7 +160,69 @@ extract_mixed_model_stats <- function(model_obj, outcome_label) {
   )
   ci_df$term <- sub("^beta_", "", ci_df$term)
 
-  merge(fix, ci_df, by = "term", all.x = TRUE)
+  merge(out_cols, ci_df, by = "term", all.x = TRUE)
+}
+
+safe_random_slope_sd <- function(model_obj, term_name) {
+  vc <- as.data.frame(VarCorr(model_obj))
+  hit <- vc[vc$grp == "Subject" & vc$var1 == term_name & vc$var2 == "", "sdcor"]
+  if (length(hit) == 0) {
+    return(0)
+  }
+  as.numeric(hit[1])
+}
+
+build_triangulated_manifest <- function(subject_level_means, mm_freq, mm_power) {
+  ## External assumptions should be reviewed and replaced with published values.
+  ## They are intentionally conservative defaults, not pilot-derived anchors.
+  external_effects <- list(
+    PeakFrequency = list(
+      sesoi_std = 0.10,
+      external_lower_std = 0.12,
+      external_point_std = 0.18
+    ),
+    PeakAmplitude = list(
+      sesoi_std = -0.08,
+      external_lower_std = -0.10,
+      external_point_std = -0.16
+    )
+  )
+
+  make_rows <- function(outcome, target_term, model_obj) {
+    y <- subject_level_means[[outcome]]
+    y_sd <- stats::sd(y, na.rm = TRUE)
+    y_mean <- mean(y, na.rm = TRUE)
+    pilot_fix <- lme4::fixef(model_obj)
+    pilot_beta <- unname(pilot_fix[target_term])
+    pilot_beta_std <- pilot_beta / y_sd
+    ext <- external_effects[[outcome]]
+
+    random_intercept_sd <- as.numeric(attr(VarCorr(model_obj)$Subject, "stddev")[1])
+    random_slope_sd <- safe_random_slope_sd(model_obj, "contrast_num_c")
+    residual_sd <- sigma(model_obj)
+
+    data.frame(
+      outcome = outcome,
+      target_term = target_term,
+      scenario_label = c("Pessimistic", "Base", "SESOI", "PilotSecondary"),
+      scenario_role = c("pessimistic", "base", "sesoi", "pilot_secondary"),
+      effect_source = c("external_lower_bound", "external_point_estimate", "sesoi", "pilot_secondary"),
+      beta_std = c(ext$external_lower_std, ext$external_point_std, ext$sesoi_std, pilot_beta_std),
+      beta_raw = c(ext$external_lower_std, ext$external_point_std, ext$sesoi_std, pilot_beta_std) * y_sd,
+      outcome_mean = y_mean,
+      outcome_sd = y_sd,
+      random_intercept_sd = random_intercept_sd,
+      random_slope_sd = random_slope_sd,
+      residual_sd = residual_sd,
+      n_subjects_pilot = length(unique(subject_level_means$Subject)),
+      stringsAsFactors = FALSE
+    )
+  }
+
+  rbind(
+    make_rows("PeakFrequency", "contrast_num_c", mm_freq),
+    make_rows("PeakAmplitude", "contrast_num_c2", mm_power)
+  )
 }
 
 message("Loading pilot data from: ", INPUT_FILE)
@@ -123,7 +242,7 @@ dat$contrast_num_c2 <- dat$contrast_num_c^2
 
 message("Computing trial-count diagnostics.")
 trial_counts_by_subject_condition <- aggregate(
-  Trial ~ Subject + Contrast,
+  rep(1, nrow(dat)) ~ Subject + Contrast,
   data = dat,
   FUN = length
 )
@@ -218,6 +337,8 @@ random_effects_summary <- rbind(
   data.frame(outcome = "PeakAmplitude", as.data.frame(VarCorr(mm_power)))
 )
 
+triangulated_manifest <- build_triangulated_manifest(subject_level_means, mm_freq, mm_power)
+
 output_dir <- resolve_output_dir()
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 message("Saving outputs to: ", output_dir)
@@ -257,6 +378,11 @@ write.csv(
   file.path(output_dir, "pilot_mixed_model_random_effects_gamma_freq_power.csv"),
   row.names = FALSE
 )
+write.csv(
+  triangulated_manifest,
+  file.path(output_dir, "power_parameter_manifest.csv"),
+  row.names = FALSE
+)
 
 saveRDS(
   list(
@@ -266,7 +392,8 @@ saveRDS(
     subject_level_descriptives = subject_level_descriptives,
     pairwise_contrasts = pairwise_contrasts,
     mixed_model_fixed_effects = mixed_model_stats,
-    mixed_model_random_effects = random_effects_summary
+    mixed_model_random_effects = random_effects_summary,
+    triangulated_manifest = triangulated_manifest
   ),
   file = file.path(output_dir, "pilot_stats_for_power_analysis.rds")
 )
