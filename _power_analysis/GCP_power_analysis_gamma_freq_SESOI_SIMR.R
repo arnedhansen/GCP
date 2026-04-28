@@ -8,6 +8,13 @@ suppressPackageStartupMessages(library(lme4))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(scales))
 
+resolve_gcp_root <- function() {
+  if (.Platform$OS.type == "windows") {
+    return("W:/Students/Arne/GCP")
+  }
+  "/Users/Arne/Documents/GitHub/GCP"
+}
+
 runSESOI <- function() {
   seed <- 123L
   alpha <- 0.05
@@ -21,8 +28,9 @@ runSESOI <- function() {
   target_term <- "contrast_num_c"
   model_formula <- gamma_frequency ~ contrast_num_c + (1 + contrast_num_c | Subject)
 
-  input_file <- "/Users/Arne/Documents/GitHub/GCP/data/features/GCP_eeg_GED_gamma_metrics_trials.csv"
-  output_dir <- "/Users/Arne/Documents/GitHub/GCP/figures/power_analysis"
+  gcp_root <- resolve_gcp_root()
+  input_file <- file.path(gcp_root, "data", "features", "GCP_eeg_GED_gamma_metrics_trials.csv")
+  output_dir <- file.path(gcp_root, "figures", "power_analysis")
   output_prefix <- "GCP_power_analysis_gamma_frequency_SESOI_only"
   plot_title <- "Power Analysis: Gamma Frequency"
 
@@ -233,9 +241,10 @@ runSESOI <- function() {
   target_term <- "contrast_num_c" # Define fixed effect term tested for significance
   model_formula <- gamma_frequency ~ contrast_num_c + (1 + contrast_num_c | Subject) # Define fitted LMM for each synthetic dataset
 
-  # ----------------------------- Hardcoded project paths -----------------------------
-  input_file <- "/Users/Arne/Documents/GitHub/GCP/data/features/GCP_eeg_GED_gamma_metrics_trials.csv" # Use one explicit source file for trial counts
-  output_dir <- "/Users/Arne/Documents/GitHub/GCP/figures/power_analysis" # Use one explicit output folder for CSV and PNG artifacts
+  # ----------------------------- OS-aware project paths -----------------------------
+  gcp_root <- resolve_gcp_root() # Resolve shared project root for local macOS and Windows server
+  input_file <- file.path(gcp_root, "data", "features", "GCP_eeg_GED_gamma_metrics_trials.csv") # Use one explicit source file for trial counts
+  output_dir <- file.path(gcp_root, "figures", "power_analysis") # Use one explicit output folder for CSV and PNG artifacts
   output_prefix <- "GCP_power_analysis_gamma_frequency_SESOI_only" # Use one explicit filename stem for all result files
   plot_title <- "Power Curve: Gamma Frequency SESOI (contrast_num_c)" # Use one explicit title for figure output
 
