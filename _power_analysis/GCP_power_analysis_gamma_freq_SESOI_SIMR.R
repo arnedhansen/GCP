@@ -95,17 +95,35 @@ make_subject_condition_design <- function(n_subjects, trials_per_condition, cont
 }
 
 simulate_outcome <- function(dat, scenario, sim_col, target_term) {
+  get_num <- function(name, default = NA_real_) {
+    if (!name %in% names(scenario)) {
+      return(default)
+    }
+    val <- suppressWarnings(as.numeric(scenario[[name]][1]))
+    if (!is.finite(val)) default else val
+  }
   n_subjects <- nlevels(dat$Subject)
-  random_intercepts <- rnorm(n_subjects, mean = 0, sd = scenario$random_intercept_sd * scenario$random_intercept_sd_multiplier)
-  random_slopes <- rnorm(n_subjects, mean = 0, sd = scenario$random_slope_sd * scenario$random_slope_sd_multiplier)
+  random_intercept_sd <- get_num("random_intercept_sd")
+  random_slope_sd <- get_num("random_slope_sd")
+  residual_sd <- get_num("residual_sd")
+  outcome_mean <- get_num("outcome_mean")
+  beta_raw <- get_num("beta_raw")
+  ri_mult <- get_num("random_intercept_sd_multiplier", default = 1)
+  rs_mult <- get_num("random_slope_sd_multiplier", default = 1)
+  e_mult <- get_num("residual_sd_multiplier", default = 1)
+  if (!all(is.finite(c(random_intercept_sd, random_slope_sd, residual_sd, outcome_mean, beta_raw)))) {
+    stop("SESOI manifest row has missing numeric parameters required for simulation.")
+  }
+  random_intercepts <- rnorm(n_subjects, mean = 0, sd = random_intercept_sd * ri_mult)
+  random_slopes <- rnorm(n_subjects, mean = 0, sd = random_slope_sd * rs_mult)
   x <- dat$contrast_num_c
-  mu <- scenario$outcome_mean + random_intercepts[dat$Subject] + random_slopes[dat$Subject] * x
+  mu <- outcome_mean + random_intercepts[dat$Subject] + random_slopes[dat$Subject] * x
   if (target_term == "contrast_num_c") {
-    mu <- mu + scenario$beta_raw * x
+    mu <- mu + beta_raw * x
   } else {
     stop("Unsupported target term for standalone SESOI script: ", target_term)
   }
-  y <- mu + rnorm(nrow(dat), mean = 0, sd = scenario$residual_sd * scenario$residual_sd_multiplier)
+  y <- mu + rnorm(nrow(dat), mean = 0, sd = residual_sd * e_mult)
   dat[[sim_col]] <- y
   dat
 }
@@ -178,6 +196,15 @@ run_sesoi_only <- function() {
   ]
   if (nrow(scenario) != 1) {
     stop("Expected exactly one SESOI scenario row for ", cfg$manifest_outcome, ".")
+  }
+  required_cols <- c("beta_raw", "outcome_mean", "random_intercept_sd", "random_slope_sd", "residual_sd")
+  missing_cols <- setdiff(required_cols, names(scenario))
+  if (length(missing_cols) > 0) {
+    stop(
+      "SESOI row is missing required columns: ",
+      paste(missing_cols, collapse = ", "),
+      ". Regenerate _power_analysis/GCP_power_analysis_pilot_stats.R."
+    )
   }
 
   rows <- lapply(cfg$subject_breaks, function(n_subjects) {
