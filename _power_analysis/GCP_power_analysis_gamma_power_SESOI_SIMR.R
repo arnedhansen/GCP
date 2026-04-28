@@ -1,4 +1,4 @@
-## Standalone parallel-only GCP simulation-based power analysis for gamma frequency (SESOI-only).
+## Standalone parallel-only GCP simulation-based power analysis for gamma power (SESOI-only).
 
 ensure_packages <- function(pkgs) {
   missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
@@ -72,10 +72,15 @@ make_subject_condition_design <- function(n_subjects, trials_per_condition, cont
   )
   contrast_num <- as.numeric(as.character(contrast))
   contrast_num_c <- as.numeric(scale(contrast_num, center = TRUE, scale = TRUE))
-  data.frame(Subject = Subject, contrast_num_c = contrast_num_c)
+  contrast_num_c2 <- contrast_num_c^2
+  data.frame(
+    Subject = Subject,
+    contrast_num_c = contrast_num_c,
+    contrast_num_c2 = contrast_num_c2
+  )
 }
 
-simulate_outcome <- function(dat, scenario, sim_col) {
+simulate_outcome <- function(dat, scenario, sim_col, linear_nuisance_beta = 0.05) {
   as_num <- function(x) suppressWarnings(as.numeric(x[1]))
   n_subjects <- nlevels(dat$Subject)
   ri_sd <- as_num(scenario$random_intercept_sd)
@@ -92,7 +97,8 @@ simulate_outcome <- function(dat, scenario, sim_col) {
   random_intercepts <- rnorm(n_subjects, mean = 0, sd = ri_sd * ri_mult)
   random_slopes <- rnorm(n_subjects, mean = 0, sd = rs_sd * rs_mult)
   x <- dat$contrast_num_c
-  mu <- mu0 + random_intercepts[dat$Subject] + random_slopes[dat$Subject] * x + beta_raw * x
+  x2 <- dat$contrast_num_c2
+  mu <- mu0 + random_intercepts[dat$Subject] + random_slopes[dat$Subject] * x + linear_nuisance_beta * x + beta_raw * x2
   y <- mu + rnorm(nrow(dat), mean = 0, sd = e_sd * e_mult)
   dat[[sim_col]] <- y
   dat
@@ -119,11 +125,12 @@ estimate_power_chunk <- function(
     sim_col,
     model_formula,
     target_term,
-    alpha) {
+    alpha,
+    linear_nuisance_beta = 0.05) {
   rejects <- 0L
   for (i in seq_len(chunk_nsim)) {
     dat <- make_subject_condition_design(n_subjects, trials_per_condition)
-    dat <- simulate_outcome(dat, scenario, sim_col = sim_col)
+    dat <- simulate_outcome(dat, scenario, sim_col = sim_col, linear_nuisance_beta = linear_nuisance_beta)
     rejects <- rejects + as.integer(fit_model_and_extract(dat, model_formula, target_term, alpha))
   }
   list(chunk_nsim = as.integer(chunk_nsim), rejects = as.integer(rejects))
@@ -140,7 +147,8 @@ estimate_power_parallel <- function(
     alpha,
     cl,
     verbose = TRUE,
-    round_chunk_nsim = 1L) {
+    round_chunk_nsim = 1L,
+    linear_nuisance_beta = 0.05) {
   n_workers <- length(cl)
   log_progress("START! SESOI parallel | N=", n_subjects, " | nsim=", nsim, " | workers=", n_workers, verbose = verbose)
   total_nsim <- 0L
@@ -165,7 +173,7 @@ estimate_power_parallel <- function(
     chunk_results <- parallel::parLapply(
       cl,
       chunk_sizes,
-      fun = function(chunk_nsim, scenario, n_subjects, trials_per_condition, sim_col, model_formula, target_term, alpha) {
+      fun = function(chunk_nsim, scenario, n_subjects, trials_per_condition, sim_col, model_formula, target_term, alpha, linear_nuisance_beta) {
         estimate_power_chunk(
           chunk_nsim = chunk_nsim,
           scenario = scenario,
@@ -174,7 +182,8 @@ estimate_power_parallel <- function(
           sim_col = sim_col,
           model_formula = model_formula,
           target_term = target_term,
-          alpha = alpha
+          alpha = alpha,
+          linear_nuisance_beta = linear_nuisance_beta
         )
       },
       scenario = scenario,
@@ -183,7 +192,8 @@ estimate_power_parallel <- function(
       sim_col = sim_col,
       model_formula = model_formula,
       target_term = target_term,
-      alpha = alpha
+      alpha = alpha,
+      linear_nuisance_beta = linear_nuisance_beta
     )
 
     round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
@@ -217,19 +227,20 @@ estimate_power_parallel <- function(
 
 run_sesoi_only <- function() {
   cfg <- list(
-    sim_col = "gamma_frequency",
-    target_term = "contrast_num_c",
-    model_formula = gamma_frequency ~ contrast_num_c + (1 + contrast_num_c | Subject),
+    sim_col = "gamma_power",
+    target_term = "contrast_num_c2",
+    model_formula = gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c | Subject),
+    linear_nuisance_beta = 0.05,
     alpha = 0.05,
     nsim = 1000,
     subject_breaks = seq(20, 60, by = 5),
     trials_per_condition = resolve_trials_per_condition(default_value = 160),
-    seed = 123,
+    seed = 124,
     strict_power_target = 0.90,
     parallel_workers = 8,
     parallel_round_chunk_nsim = 1,
-    file_prefix = "GCP_power_analysis_gamma_frequency_SESOI_only",
-    plot_title = "Power Curve: Gamma Frequency SESOI (contrast_num_c)",
+    file_prefix = "GCP_power_analysis_gamma_power_SESOI_only",
+    plot_title = "Power Curve: Gamma Power SESOI (contrast_num_c2)",
     verbose = TRUE
   )
 
@@ -277,7 +288,8 @@ run_sesoi_only <- function() {
       alpha = cfg$alpha,
       cl = cl,
       verbose = cfg$verbose,
-      round_chunk_nsim = cfg$parallel_round_chunk_nsim
+      round_chunk_nsim = cfg$parallel_round_chunk_nsim,
+      linear_nuisance_beta = cfg$linear_nuisance_beta
     )
   })
 

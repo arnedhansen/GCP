@@ -185,14 +185,14 @@ build_triangulated_manifest <- function(subject_level_means, mm_freq, mm_power) 
   ## They are intentionally conservative defaults, not pilot-derived anchors.
   external_effects <- list(
     PeakFrequency = list(
-      sesoi_std = 0.10,
-      external_lower_std = 0.12,
-      external_point_std = 0.18
+      sesoi_std = 0.05,
+      external_lower_std = 0.05,
+      external_point_std = 0.08
     ),
     PeakAmplitude = list(
-      sesoi_std = -0.08,
-      external_lower_std = -0.10,
-      external_point_std = -0.16
+      sesoi_std = -0.02,
+      external_lower_std = -0.04,
+      external_point_std = -0.06
     )
   )
 
@@ -217,6 +217,9 @@ build_triangulated_manifest <- function(subject_level_means, mm_freq, mm_power) 
       effect_source = c("external_lower_bound", "external_point_estimate", "sesoi", "pilot_secondary"),
       beta_std = c(ext$external_lower_std, ext$external_point_std, ext$sesoi_std, pilot_beta_std),
       beta_raw = c(ext$external_lower_std, ext$external_point_std, ext$sesoi_std, pilot_beta_std) * y_sd,
+      residual_sd_multiplier = c(1.50, 1.20, 1.35, 1.10),
+      random_intercept_sd_multiplier = c(1.50, 1.20, 1.30, 1.10),
+      random_slope_sd_multiplier = c(1.50, 1.20, 1.30, 1.10),
       outcome_mean = y_mean,
       outcome_sd = y_sd,
       random_intercept_sd = random_intercept_sd,
