@@ -387,6 +387,8 @@ compute_recommendations <- function(power_df, strict_base = 0.90, strict_pessimi
 run_outcome_power_analysis <- function(outcome_cfg) {
   verbose <- if (!is.null(outcome_cfg$verbose)) isTRUE(outcome_cfg$verbose) else TRUE
   progress_every <- if (!is.null(outcome_cfg$progress_every)) as.integer(outcome_cfg$progress_every) else NULL
+  parallel_enabled <- if (!is.null(outcome_cfg$parallel_enabled)) isTRUE(outcome_cfg$parallel_enabled) else TRUE
+  parallel_workers <- if (!is.null(outcome_cfg$parallel_workers)) as.integer(outcome_cfg$parallel_workers) else max(1L, parallel::detectCores(logical = TRUE) - 1L)
 
   set.seed(outcome_cfg$seed)
 
@@ -412,6 +414,18 @@ run_outcome_power_analysis <- function(outcome_cfg) {
   subject_breaks <- outcome_cfg$subject_breaks
   all_rows <- list()
   row_idx <- 1L
+
+  use_parallel <- parallel_enabled && parallel_workers > 1L && length(subject_breaks) > 1L
+  cl <- NULL
+  if (use_parallel) {
+    log_progress("Parallel mode active with workers=", parallel_workers, verbose = verbose)
+    cl <- parallel::makeCluster(parallel_workers, type = "PSOCK")
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    parallel::clusterEvalQ(cl, suppressPackageStartupMessages(library(lme4)))
+  } else {
+    log_progress("Parallel mode disabled. Using serial execution.", verbose = verbose)
+  }
+
   for (i in seq_len(nrow(scenario_manifest))) {
     sc <- scenario_manifest[i, , drop = FALSE]
     log_progress(
@@ -421,19 +435,52 @@ run_outcome_power_analysis <- function(outcome_cfg) {
       " source=", sc$effect_source,
       verbose = verbose
     )
-    for (n in subject_breaks) {
-      all_rows[[row_idx]] <- estimate_power(
-        scenario = sc,
-        outcome_cfg = outcome_cfg,
-        n_subjects = n,
-        nsim = nsim,
-        trials_per_condition = outcome_cfg$trials_per_condition,
-        alpha = outcome_cfg$alpha,
-        verbose = verbose,
-        progress_every = progress_every,
-        context_label = sprintf("%s | N=%d", sc$scenario_label, n)
+    if (use_parallel) {
+      parallel::clusterExport(
+        cl,
+        varlist = c(
+          "estimate_power", "make_subject_condition_design", "simulate_outcome",
+          "fit_model_and_extract", "log_progress"
+        ),
+        envir = environment()
       )
-      row_idx <- row_idx + 1L
+      scenario_rows <- parallel::parLapply(cl, subject_breaks, function(n) {
+        estimate_power(
+          scenario = sc,
+          outcome_cfg = outcome_cfg,
+          n_subjects = n,
+          nsim = nsim,
+          trials_per_condition = outcome_cfg$trials_per_condition,
+          alpha = outcome_cfg$alpha,
+          verbose = FALSE,
+          progress_every = progress_every,
+          context_label = sprintf("%s | N=%d", sc$scenario_label, n)
+        )
+      })
+      for (k in seq_along(scenario_rows)) {
+        all_rows[[row_idx]] <- scenario_rows[[k]]
+        row_idx <- row_idx + 1L
+      }
+      log_progress(
+        "Completed parallel batch for scenario=", sc$scenario_label,
+        " across N={", paste(subject_breaks, collapse = ","), "}",
+        verbose = verbose
+      )
+    } else {
+      for (n in subject_breaks) {
+        all_rows[[row_idx]] <- estimate_power(
+          scenario = sc,
+          outcome_cfg = outcome_cfg,
+          n_subjects = n,
+          nsim = nsim,
+          trials_per_condition = outcome_cfg$trials_per_condition,
+          alpha = outcome_cfg$alpha,
+          verbose = verbose,
+          progress_every = progress_every,
+          context_label = sprintf("%s | N=%d", sc$scenario_label, n)
+        )
+        row_idx <- row_idx + 1L
+      }
     }
   }
   power_df <- do.call(rbind, all_rows)
