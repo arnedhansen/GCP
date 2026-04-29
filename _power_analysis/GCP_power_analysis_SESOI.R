@@ -26,7 +26,7 @@ runSESOI <- function(plot_only = FALSE) {
   # Simulation settings
   seed <- 123
   alpha <- 0.05
-  nsim <- 100
+  nsim <- 5000
   strict_power_target <- 0.90
   subject_breaks <- c(20, 30, 40, 50, 60)
   contrast_levels <- c("25", "50", "75", "100")
@@ -36,8 +36,11 @@ runSESOI <- function(plot_only = FALSE) {
   baseline_random_intercept_sd <- 2.96
   baseline_random_slope_sd <- 0.08
   baseline_residual_sd <- 0.75
-  extra_error_multiplier <- 3
-  ri_multiplier_fixed <- 1.00
+  extra_error_multiplier <- 0
+  ri_ci_bounds <- c(lower = 2.40, median = 2.96, upper = 3.52)
+  ri_conservative_quantile <- 0.75
+  ri_conservative_value <- as.numeric(stats::quantile(ri_ci_bounds, probs = ri_conservative_quantile, type = 1))
+  ri_multiplier_fixed <- ri_conservative_value / baseline_random_intercept_sd
   rs_multipliers <- c(0.375, 1.00, 2.00)
   residual_multipliers <- c(0.75, 1.00, 1.25)
   trial_missingness_rate <- 0.20
@@ -48,6 +51,7 @@ runSESOI <- function(plot_only = FALSE) {
   model_formula_full <- gamma_power ~ contrast_num_c + (1 + contrast_num_c | Subject)
   output_prefix <- "GCP_power_analysis_SESOI_linear"
   plot_title <- "Power Analysis: SESOI Linear Slope"
+  power_label <- "SESOI decision power"
   # Darker red-green endpoints with green onset at >= 0.8 in heatmaps
   heat_low_color <- "#8E0F1F"
   heat_high_color <- "#0B6E3A"
@@ -95,8 +99,15 @@ runSESOI <- function(plot_only = FALSE) {
       extra_error_multiplier,
       trial_missingness_rate,
       subject_dropout_rate) {
-    # Count significant likelihood-ratio tests for the target fixed effect
-    rejects <- 0
+    # Count SESOI-decision outcomes and diagnostic metrics
+    valid_fits <- 0
+    sesoi_successes <- 0
+    nhst_rejects <- 0
+    sign_errors <- 0
+    type_m_sum <- 0
+    type_m_count <- 0
+    singular_count <- 0
+    convergence_warn_count <- 0
     for (i in seq_len(chunk_nsim)) {
       # Create balanced trial table before missingness and dropout
       Subject <- factor(rep(seq_len(n_subjects), each = length(contrast_levels) * trials_per_condition))
@@ -162,10 +173,40 @@ runSESOI <- function(plot_only = FALSE) {
       if (is.null(lrt_tbl) || nrow(lrt_tbl) < 2 || !"Pr(>Chisq)" %in% names(lrt_tbl)) {
         next
       }
+      coef_tbl <- tryCatch(summary(fit_full)$coefficients, error = function(e) NULL)
+      if (is.null(coef_tbl) || !"contrast_num_c" %in% rownames(coef_tbl)) {
+        next
+      }
+      valid_fits <- valid_fits + 1
+      singular_count <- singular_count + as.integer(isTRUE(lme4::isSingular(fit_full, tol = 1e-4)))
+      conv_msgs <- fit_full@optinfo$conv$lme4$messages
+      convergence_warn_count <- convergence_warn_count + as.integer(length(conv_msgs) > 0)
+
+      est <- as.numeric(coef_tbl["contrast_num_c", "Estimate"])
+      est_se <- as.numeric(coef_tbl["contrast_num_c", "Std. Error"])
+      ci_low <- est - 1.96 * est_se
+      ci_high <- est + 1.96 * est_se
+      sesoi_success <- if (beta_raw >= 0) ci_low > beta_raw else ci_high < beta_raw
+      sesoi_successes <- sesoi_successes + as.integer(sesoi_success)
+      sign_errors <- sign_errors + as.integer(sign(est) != sign(beta_raw))
+      if (isTRUE(sesoi_success)) {
+        type_m_sum <- type_m_sum + abs(est / beta_raw)
+        type_m_count <- type_m_count + 1
+      }
       p_value <- as.numeric(lrt_tbl[2, "Pr(>Chisq)"])
-      rejects <- rejects + as.integer(is.finite(p_value) && p_value < alpha)
+      nhst_rejects <- nhst_rejects + as.integer(is.finite(p_value) && p_value < alpha)
     }
-    list(chunk_nsim = as.integer(chunk_nsim), rejects = as.integer(rejects))
+    list(
+      chunk_nsim = as.integer(chunk_nsim),
+      valid_fits = as.integer(valid_fits),
+      sesoi_successes = as.integer(sesoi_successes),
+      nhst_rejects = as.integer(nhst_rejects),
+      sign_errors = as.integer(sign_errors),
+      type_m_sum = as.numeric(type_m_sum),
+      type_m_count = as.integer(type_m_count),
+      singular_count = as.integer(singular_count),
+      convergence_warn_count = as.integer(convergence_warn_count)
+    )
   }
 
   if (!plot_only) {
@@ -185,7 +226,14 @@ runSESOI <- function(plot_only = FALSE) {
         flush.console()
 
         total_nsim <- 0
-        total_rejects <- 0
+        total_valid_fits <- 0
+        total_sesoi_successes <- 0
+        total_nhst_rejects <- 0
+        total_sign_errors <- 0
+        total_type_m_sum <- 0
+        total_type_m_count <- 0
+        total_singular <- 0
+        total_convergence_warn <- 0
         # Run chunks in parallel until nsim is reached
         while (total_nsim < nsim) {
           remaining <- nsim - total_nsim
@@ -220,16 +268,31 @@ runSESOI <- function(plot_only = FALSE) {
           )
 
           round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
-          round_rejects <- sum(vapply(chunk_results, function(x) as.integer(x$rejects), integer(1)))
+          round_valid_fits <- sum(vapply(chunk_results, function(x) as.integer(x$valid_fits), integer(1)))
+          round_sesoi_successes <- sum(vapply(chunk_results, function(x) as.integer(x$sesoi_successes), integer(1)))
+          round_nhst_rejects <- sum(vapply(chunk_results, function(x) as.integer(x$nhst_rejects), integer(1)))
+          round_sign_errors <- sum(vapply(chunk_results, function(x) as.integer(x$sign_errors), integer(1)))
+          round_type_m_sum <- sum(vapply(chunk_results, function(x) as.numeric(x$type_m_sum), numeric(1)))
+          round_type_m_count <- sum(vapply(chunk_results, function(x) as.integer(x$type_m_count), integer(1)))
+          round_singular <- sum(vapply(chunk_results, function(x) as.integer(x$singular_count), integer(1)))
+          round_convergence_warn <- sum(vapply(chunk_results, function(x) as.integer(x$convergence_warn_count), integer(1)))
           total_nsim <- total_nsim + round_n
-          total_rejects <- total_rejects + round_rejects
+          total_valid_fits <- total_valid_fits + round_valid_fits
+          total_sesoi_successes <- total_sesoi_successes + round_sesoi_successes
+          total_nhst_rejects <- total_nhst_rejects + round_nhst_rejects
+          total_sign_errors <- total_sign_errors + round_sign_errors
+          total_type_m_sum <- total_type_m_sum + round_type_m_sum
+          total_type_m_count <- total_type_m_count + round_type_m_count
+          total_singular <- total_singular + round_singular
+          total_convergence_warn <- total_convergence_warn + round_convergence_warn
         }
 
-        power <- total_rejects / total_nsim
-        power_label <- sub("^0", "", sprintf("%.3f", power))
-        cat(sprintf(" | POWER : %s\n", power_label))
+        power <- if (total_valid_fits > 0) total_sesoi_successes / total_valid_fits else NA_real_
+        power_label_out <- if (is.finite(power)) sub("^0", "", sprintf("%.3f", power)) else "NA"
+        cat(sprintf(" | SESOI POWER : %s\n", power_label_out))
         flush.console()
-        se <- sqrt(power * (1 - power) / total_nsim)
+        se <- if (total_valid_fits > 0) sqrt(power * (1 - power) / total_valid_fits) else NA_real_
+        nhst_power <- if (total_valid_fits > 0) total_nhst_rejects / total_valid_fits else NA_real_
         out <- data.frame(
           scenario_label = scenario$scenario_label,
           varied_component = scenario$varied_component,
@@ -239,9 +302,16 @@ runSESOI <- function(plot_only = FALSE) {
           residual_sd = scenario$residual_sd_value,
           n_subjects = n_subjects,
           power = power,
-          lower = pmax(0, power - 1.96 * se),
-          upper = pmin(1, power + 1.96 * se),
+          lower = if (is.finite(se)) pmax(0, power - 1.96 * se) else NA_real_,
+          upper = if (is.finite(se)) pmin(1, power + 1.96 * se) else NA_real_,
           nsim = total_nsim,
+          valid_fits = total_valid_fits,
+          fit_success_rate = if (total_nsim > 0) total_valid_fits / total_nsim else NA_real_,
+          nhst_power = nhst_power,
+          type_s = if (total_valid_fits > 0) total_sign_errors / total_valid_fits else NA_real_,
+          type_m = if (total_type_m_count > 0) total_type_m_sum / total_type_m_count else NA_real_,
+          singular_rate = if (total_valid_fits > 0) total_singular / total_valid_fits else NA_real_,
+          convergence_warn_rate = if (total_valid_fits > 0) total_convergence_warn / total_valid_fits else NA_real_,
           stringsAsFactors = FALSE
         )
         out
@@ -285,11 +355,29 @@ runSESOI <- function(plot_only = FALSE) {
       multiplier = as.numeric(df$multiplier[1]),
       N_min_for_90 = if (length(hit) > 0) min(hit) else NA_integer_,
       power_at_max_N = df$power[which.max(df$n_subjects)],
+      nhst_power_at_max_N = df$nhst_power[which.max(df$n_subjects)],
+      type_s_at_max_N = df$type_s[which.max(df$n_subjects)],
+      type_m_at_max_N = df$type_m[which.max(df$n_subjects)],
+      singular_rate_at_max_N = df$singular_rate[which.max(df$n_subjects)],
+      convergence_warn_rate_at_max_N = df$convergence_warn_rate[which.max(df$n_subjects)],
       monotonic_non_decreasing = all(diff(df$power) >= -0.02),
       stringsAsFactors = FALSE
     )
   }))
   write.csv(summary_rows, file.path(data_output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
+  sensitivity_plan_df <- data.frame(
+    parameter = "random_intercept_sd",
+    lower_bound = ri_ci_bounds[["lower"]],
+    conservative_quantile_value = ri_conservative_value,
+    upper_bound = ri_ci_bounds[["upper"]],
+    conservative_quantile = ri_conservative_quantile,
+    stringsAsFactors = FALSE
+  )
+  write.csv(
+    sensitivity_plan_df,
+    file.path(data_output_dir, paste0(output_prefix, "_nuisance_sensitivity_plan.csv")),
+    row.names = FALSE
+  )
 
   curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power, color = .data$scenario_label, group = .data$scenario_label)) +
     geom_line(linewidth = 0.8) +
@@ -297,7 +385,7 @@ runSESOI <- function(plot_only = FALSE) {
     geom_hline(yintercept = strict_power_target, linetype = "dashed", color = "grey40", linewidth = 0.5) +
     scale_x_continuous(breaks = sort(unique(subject_breaks))) +
     scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1), breaks = c(0, 0.25, 0.50, 0.75, 0.90, 1)) +
-    labs(x = "Subjects", y = "Power", color = "Scenario", title = plot_title) +
+    labs(x = "Subjects", y = power_label, color = "Scenario", title = plot_title) +
     theme_minimal(base_size = 13, base_family = "Arial") +
     theme(panel.grid.minor = element_blank())
   png(file = file.path(figure_output_dir, paste0(output_prefix, ".png")), width = 2200, height = 1400, res = 300)
@@ -319,8 +407,8 @@ runSESOI <- function(plot_only = FALSE) {
     coord_fixed() +
     labs(
       x = "Number of subjects",
-      y = "Residual Variance",
-      fill = "Power",
+      y = "RV Multiplier",
+      fill = power_label,
       title = plot_title
     ) +
     theme_minimal(base_size = 16, base_family = "Arial") +
