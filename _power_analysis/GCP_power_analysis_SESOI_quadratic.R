@@ -28,7 +28,7 @@ runSESOI <- function(plot_only = FALSE) {
   # Simulation settings
   seed <- 123
   alpha <- 0.05
-  nsim <- 5000
+  nsim <- 20
   strict_power_target <- 0.90
   subject_breaks <- c(20, 30, 40, 50, 60)
   contrast_levels <- c("25", "50", "75", "100")
@@ -40,6 +40,7 @@ runSESOI <- function(plot_only = FALSE) {
   baseline_random_slope_sd <- 0.05
   baseline_random_quadratic_slope_sd <- 0.13
   baseline_residual_sd <- 0.30
+  extra_error_multiplier <- 0.50
   ri_multiplier_fixed <- 1.00
   rs_multiplier_fixed <- 1.00
   rqs_multipliers <- c(0.4615, 1.00, 1.6923)
@@ -101,6 +102,7 @@ runSESOI <- function(plot_only = FALSE) {
       random_slope_sd,
       random_quadratic_slope_sd,
       residual_sd,
+      extra_error_multiplier,
       trial_missingness_rate,
       subject_dropout_rate) {
     # Count significant likelihood-ratio tests for the target fixed effect
@@ -132,7 +134,9 @@ runSESOI <- function(plot_only = FALSE) {
         random_quadratic_slopes[dat$Subject] * x2 +
         linear_nuisance_beta * x +
         beta_raw * x2
-      dat[[sim_col]] <- mu + rnorm(nrow(dat), mean = 0, sd = residual_sd)
+      extra_error_sd <- extra_error_multiplier * residual_sd
+      effective_residual_sd <- sqrt(residual_sd^2 + extra_error_sd^2)
+      dat[[sim_col]] <- mu + rnorm(nrow(dat), mean = 0, sd = effective_residual_sd)
 
       # Apply trial-level missingness
       keep_trial <- stats::runif(nrow(dat)) > trial_missingness_rate
@@ -236,6 +240,7 @@ runSESOI <- function(plot_only = FALSE) {
             random_slope_sd = scenario$random_slope_sd_value,
             random_quadratic_slope_sd = scenario$random_quadratic_slope_sd_value,
             residual_sd = scenario$residual_sd_value,
+            extra_error_multiplier = extra_error_multiplier,
             trial_missingness_rate = trial_missingness_rate,
             subject_dropout_rate = subject_dropout_rate
           )
@@ -331,7 +336,7 @@ runSESOI <- function(plot_only = FALSE) {
   heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_multiplier, fill = .data$power)) +
     geom_tile(color = "white", linewidth = 1.1) +
     geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3.8, fontface = "bold", family = "Arial") +
-    facet_wrap(~rqs_multiplier, nrow = 1, labeller = labeller(rqs_multiplier = function(x) paste0("RQS = ", x))) +
+    facet_wrap(~rqs_multiplier, nrow = 1, labeller = labeller(rqs_multiplier = function(x) paste0("RQS Multiplier = ", x))) +
     scale_fill_gradientn(
       colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
       values = c(0.00, 0.60, 0.79, 0.80, 1.00),
