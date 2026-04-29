@@ -21,13 +21,13 @@ runSESOI <- function() {
   alpha <- 0.05
   nsim <- 5000
   strict_power_target <- 0.90
-  subject_breaks <- c(25, 50, 75)
+  subject_breaks <- c(20, 30, 40, 50, 60)
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
   sesoi_beta <- 0.10
   outcome_mean <- 0.00
-  baseline_random_intercept_sd <- 0.20
-  baseline_random_slope_sd <- 0.18
+  baseline_random_intercept_sd <- 0.25
+  baseline_random_slope_sd <- 0.2
   baseline_residual_sd <- 1.00
   ri_multipliers <- c(0.75, 1.00, 1.25)
   rs_multipliers <- c(0.75, 1.00, 1.25)
