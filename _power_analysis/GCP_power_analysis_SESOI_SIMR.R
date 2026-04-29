@@ -16,7 +16,7 @@ resolve_gcp_root <- function() {
 }
 
 runSESOI <- function() {
-  # Configuration
+  # Simulation settings
   seed <- 123
   alpha <- 0.05
   nsim <- 5000
@@ -27,9 +27,11 @@ runSESOI <- function() {
   sesoi_beta <- 0.10
   outcome_mean <- 0.00
   baseline_random_intercept_sd <- 0.20
-  baseline_random_slope_sd <- 0.10
+  baseline_random_slope_sd <- 0.18
   baseline_residual_sd <- 1.00
-  sd_multipliers <- c(0.75, 1.00, 1.25)
+  sd_multipliers <- c(0.75, 1.00, 1.25, 1.50)
+  trial_missingness_range <- c(0.10, 0.20)
+  subject_dropout_range <- c(0.05, 0.10)
   parallel_workers <- 8
   parallel_round_chunk_nsim <- 1
   sim_col <- "gamma_power"
@@ -45,45 +47,44 @@ runSESOI <- function() {
   set.seed(seed)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # Repeated trial-level data increases information per subject, but gains can be offset
-  # by residual trial noise and subject-level heterogeneity in baseline and slope
+  # Build sensitivity scenarios by changing one variance block at a time
   make_scenarios <- function() {
     baseline <- data.frame(
       scenario_label = "baseline",
       varied_component = "none",
       multiplier = 1.00,
-      ri_sd = baseline_random_intercept_sd,
-      rs_sd = baseline_random_slope_sd,
-      resid_sd = baseline_residual_sd,
+      random_intercept_sd_value = baseline_random_intercept_sd,
+      random_slope_sd_value = baseline_random_slope_sd,
+      residual_sd_value = baseline_residual_sd,
       stringsAsFactors = FALSE
     )
     scenario_rows <- list(baseline)
     for (m in sd_multipliers[sd_multipliers != 1]) {
       scenario_rows[[length(scenario_rows) + 1]] <- data.frame(
-        scenario_label = sprintf("ri_%.2fx", m),
+        scenario_label = sprintf("random_intercept_sd_%.2fx", m),
         varied_component = "random_intercept_sd",
         multiplier = m,
-        ri_sd = baseline_random_intercept_sd * m,
-        rs_sd = baseline_random_slope_sd,
-        resid_sd = baseline_residual_sd,
+        random_intercept_sd_value = baseline_random_intercept_sd * m,
+        random_slope_sd_value = baseline_random_slope_sd,
+        residual_sd_value = baseline_residual_sd,
         stringsAsFactors = FALSE
       )
       scenario_rows[[length(scenario_rows) + 1]] <- data.frame(
-        scenario_label = sprintf("rs_%.2fx", m),
+        scenario_label = sprintf("random_slope_sd_%.2fx", m),
         varied_component = "random_slope_sd",
         multiplier = m,
-        ri_sd = baseline_random_intercept_sd,
-        rs_sd = baseline_random_slope_sd * m,
-        resid_sd = baseline_residual_sd,
+        random_intercept_sd_value = baseline_random_intercept_sd,
+        random_slope_sd_value = baseline_random_slope_sd * m,
+        residual_sd_value = baseline_residual_sd,
         stringsAsFactors = FALSE
       )
       scenario_rows[[length(scenario_rows) + 1]] <- data.frame(
-        scenario_label = sprintf("resid_%.2fx", m),
+        scenario_label = sprintf("residual_sd_%.2fx", m),
         varied_component = "residual_sd",
         multiplier = m,
-        ri_sd = baseline_random_intercept_sd,
-        rs_sd = baseline_random_slope_sd,
-        resid_sd = baseline_residual_sd * m,
+        random_intercept_sd_value = baseline_random_intercept_sd,
+        random_slope_sd_value = baseline_random_slope_sd,
+        residual_sd_value = baseline_residual_sd * m,
         stringsAsFactors = FALSE
       )
     }
@@ -102,9 +103,13 @@ runSESOI <- function() {
       outcome_mean,
       random_intercept_sd,
       random_slope_sd,
-      residual_sd) {
+      residual_sd,
+      trial_missingness_range,
+      subject_dropout_range) {
+    # Count significant tests for the target fixed effect
     rejects <- 0
     for (i in seq_len(chunk_nsim)) {
+      # Create balanced trial table before missingness and dropout
       Subject <- factor(rep(seq_len(n_subjects), each = length(contrast_levels) * trials_per_condition))
       contrast <- factor(
         rep(rep(contrast_levels, each = trials_per_condition), times = n_subjects),
@@ -112,9 +117,11 @@ runSESOI <- function() {
         ordered = TRUE
       )
       contrast_num <- as.numeric(as.character(contrast))
+      # Standardize contrast predictor
       contrast_num_c <- as.numeric(scale(contrast_num, center = TRUE, scale = TRUE))
       dat <- data.frame(Subject = Subject, contrast_num_c = contrast_num_c)
 
+      # Generate outcome with fixed SESOI, subject random effects, and residual noise
       n_subject_levels <- nlevels(dat$Subject)
       random_intercepts <- rnorm(n_subject_levels, mean = 0, sd = random_intercept_sd)
       random_slopes <- rnorm(n_subject_levels, mean = 0, sd = random_slope_sd)
@@ -122,10 +129,39 @@ runSESOI <- function() {
       mu <- outcome_mean + random_intercepts[dat$Subject] + random_slopes[dat$Subject] * x + beta_raw * x
       dat[[sim_col]] <- mu + rnorm(nrow(dat), mean = 0, sd = residual_sd)
 
-      fit <- suppressMessages(lmer(model_formula, data = dat, REML = FALSE))
+      # Apply trial-level missingness
+      trial_missingness_rate <- runif(1, min = trial_missingness_range[1], max = trial_missingness_range[2])
+      keep_trial <- stats::runif(nrow(dat)) > trial_missingness_rate
+      dat <- dat[keep_trial, , drop = FALSE]
+      if (nrow(dat) == 0) {
+        next
+      }
+
+      # Apply subject-level dropout after trial loss
+      subject_dropout_rate <- runif(1, min = subject_dropout_range[1], max = subject_dropout_range[2])
+      subject_levels <- levels(droplevels(dat$Subject))
+      n_drop_subjects <- floor(length(subject_levels) * subject_dropout_rate)
+      if (n_drop_subjects > 0) {
+        dropped_subjects <- sample(subject_levels, size = n_drop_subjects, replace = FALSE)
+        dat <- dat[!(dat$Subject %in% dropped_subjects), , drop = FALSE]
+      }
+      dat <- droplevels(dat)
+      if (nlevels(dat$Subject) < 3 || nrow(dat) == 0) {
+        next
+      }
+
+      # Skip failed fits without adding a rejection
+      fit <- tryCatch(
+        suppressMessages(lmer(model_formula, data = dat, REML = FALSE)),
+        error = function(e) NULL
+      )
+      if (is.null(fit)) {
+        next
+      }
       cf <- as.data.frame(summary(fit)$coefficients)
       cf$term <- rownames(cf)
       target_row <- cf[cf$term == target_term, , drop = FALSE]
+      # Fall back to normal-approximation p-value if needed
       if ("Pr(>|t|)" %in% names(target_row)) {
         p_value <- as.numeric(target_row[["Pr(>|t|)"]])
       } else {
@@ -156,6 +192,7 @@ runSESOI <- function() {
 
       total_nsim <- 0
       total_rejects <- 0
+      # Run chunks in parallel until nsim is reached
       while (total_nsim < nsim) {
         remaining <- nsim - total_nsim
         workers_this_round <- min(length(cl), remaining)
@@ -181,9 +218,11 @@ runSESOI <- function() {
           alpha = alpha,
           beta_raw = sesoi_beta,
           outcome_mean = outcome_mean,
-          random_intercept_sd = scenario$ri_sd,
-          random_slope_sd = scenario$rs_sd,
-          residual_sd = scenario$resid_sd
+          random_intercept_sd = scenario$random_intercept_sd_value,
+          random_slope_sd = scenario$random_slope_sd_value,
+          residual_sd = scenario$residual_sd_value,
+          trial_missingness_range = trial_missingness_range,
+          subject_dropout_range = subject_dropout_range
         )
 
         round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
@@ -198,9 +237,9 @@ runSESOI <- function() {
         scenario_label = scenario$scenario_label,
         varied_component = scenario$varied_component,
         multiplier = scenario$multiplier,
-        ri_sd = scenario$ri_sd,
-        rs_sd = scenario$rs_sd,
-        resid_sd = scenario$resid_sd,
+        random_intercept_sd = scenario$random_intercept_sd_value,
+        random_slope_sd = scenario$random_slope_sd_value,
+        residual_sd = scenario$residual_sd_value,
         n_subjects = n_subjects,
         power = power,
         lower = pmax(0, power - 1.96 * se),
@@ -220,6 +259,7 @@ runSESOI <- function() {
   power_df$meets_target_90 <- power_df$power >= strict_power_target
   write.csv(power_df, file.path(output_dir, paste0(output_prefix, "_curve.csv")), row.names = FALSE)
 
+  # Summarize minimum sample size for target power
   summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
     df <- df[order(df$n_subjects), , drop = FALSE]
     hit <- df[df$meets_target_90, "n_subjects", drop = TRUE]
@@ -248,8 +288,7 @@ runSESOI <- function() {
   print(curve_plot)
   dev.off()
 
-  # Power Heatmaps
-  # Tiles visualize power for each combination of subject count and sensitivity scenario
+  # Plot heatmap of power by sample size and scenario
   heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$scenario_label, fill = .data$power)) +
     geom_tile(color = "white", linewidth = 0.5) +
     geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3) +
