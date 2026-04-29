@@ -28,7 +28,7 @@ runSESOI <- function(plot_only = FALSE) {
   # Simulation settings
   seed <- 123
   alpha <- 0.05
-  nsim <- 20
+  nsim <- 100
   strict_power_target <- 0.90
   subject_breaks <- c(20, 30, 40, 50, 60)
   contrast_levels <- c("25", "50", "75", "100")
@@ -40,7 +40,7 @@ runSESOI <- function(plot_only = FALSE) {
   baseline_random_slope_sd <- 0.05
   baseline_random_quadratic_slope_sd <- 0.13
   baseline_residual_sd <- 0.30
-  extra_error_multiplier <- 0.50
+  extra_error_multiplier <- 3
   ri_multiplier_fixed <- 1.00
   rs_multiplier_fixed <- 1.00
   rqs_multipliers <- c(0.4615, 1.00, 1.6923)
@@ -340,7 +340,9 @@ runSESOI <- function(plot_only = FALSE) {
     scale_fill_gradientn(
       colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
       values = c(0.00, 0.60, 0.79, 0.80, 1.00),
-      limits = c(0, 1)
+      limits = c(0, 1),
+      breaks = seq(0, 1, by = 0.2),
+      labels = sprintf("%.2f", seq(0, 1, by = 0.2))
     ) +
     coord_fixed() +
     labs(
