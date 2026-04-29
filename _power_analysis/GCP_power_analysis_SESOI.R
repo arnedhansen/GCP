@@ -37,10 +37,7 @@ runSESOI <- function(plot_only = FALSE) {
   baseline_random_slope_sd <- 0.08
   baseline_residual_sd <- 0.75
   extra_error_multiplier <- 0
-  ri_ci_bounds <- c(lower = 2.40, median = 2.96, upper = 3.52)
-  ri_conservative_quantile <- 0.75
-  ri_conservative_value <- as.numeric(stats::quantile(ri_ci_bounds, probs = ri_conservative_quantile, type = 1))
-  ri_multiplier_fixed <- ri_conservative_value / baseline_random_intercept_sd
+  ri_multiplier_fixed <- 1.00
   rs_multipliers <- c(0.375, 1.00, 2.00)
   residual_multipliers <- c(0.75, 1.00, 1.25)
   trial_missingness_rate <- 0.20
@@ -365,20 +362,6 @@ runSESOI <- function(plot_only = FALSE) {
     )
   }))
   write.csv(summary_rows, file.path(data_output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
-  sensitivity_plan_df <- data.frame(
-    parameter = "random_intercept_sd",
-    lower_bound = ri_ci_bounds[["lower"]],
-    conservative_quantile_value = ri_conservative_value,
-    upper_bound = ri_ci_bounds[["upper"]],
-    conservative_quantile = ri_conservative_quantile,
-    stringsAsFactors = FALSE
-  )
-  write.csv(
-    sensitivity_plan_df,
-    file.path(data_output_dir, paste0(output_prefix, "_nuisance_sensitivity_plan.csv")),
-    row.names = FALSE
-  )
-
   curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power, color = .data$scenario_label, group = .data$scenario_label)) +
     geom_line(linewidth = 0.8) +
     geom_point(size = 1.5) +
