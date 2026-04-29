@@ -15,7 +15,7 @@ resolve_gcp_root <- function() {
   "/Users/Arne/Documents/GitHub/GCP"
 }
 
-runSESOI <- function() {
+runSESOI <- function(plot_only = FALSE) {
   # Simulation settings
   seed <- 123
   alpha <- 0.05
@@ -46,11 +46,12 @@ runSESOI <- function() {
   output_prefix <- "GCP_power_analysis_SESOI_quadratic"
   plot_title <- "Power Analysis: SESOI Quadratic Slope"
   # Tracker heat endpoints from ContentView.swift
-  heat_low_color <- "#DE4C4C"
-  heat_high_color <- "#57C757"
+  heat_low_color <- "#C2554D"
+  heat_high_color <- "#4EA565"
 
   gcp_root <- resolve_gcp_root()
   output_dir <- file.path(gcp_root, "figures", "power_analysis")
+  curve_csv_path <- file.path(output_dir, paste0(output_prefix, "_curve.csv"))
   set.seed(seed)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -170,95 +171,104 @@ runSESOI <- function() {
     list(chunk_nsim = as.integer(chunk_nsim), rejects = as.integer(rejects))
   }
 
-  cl <- parallel::makeCluster(as.integer(parallel_workers), type = "PSOCK")
-  on.exit(parallel::stopCluster(cl), add = TRUE)
-  parallel::clusterEvalQ(cl, suppressPackageStartupMessages(library(lme4)))
-  parallel::clusterSetRNGStream(cl, iseed = seed)
-  parallel::clusterExport(cl, varlist = c("estimate_power_chunk", "contrast_levels"), envir = environment())
+  if (!plot_only) {
+    cl <- parallel::makeCluster(as.integer(parallel_workers), type = "PSOCK")
+    on.exit(parallel::stopCluster(cl), add = TRUE)
+    parallel::clusterEvalQ(cl, suppressPackageStartupMessages(library(lme4)))
+    parallel::clusterSetRNGStream(cl, iseed = seed)
+    parallel::clusterExport(cl, varlist = c("estimate_power_chunk", "contrast_levels"), envir = environment())
 
-  scenario_df <- make_scenarios()
-  scenario_order <- scenario_df$scenario_label
+    scenario_df <- make_scenarios()
+    scenario_order <- scenario_df$scenario_label
 
-  scenario_rows <- lapply(seq_len(nrow(scenario_df)), function(idx) {
-    scenario <- scenario_df[idx, , drop = FALSE]
-    cat(sprintf("[%s] SCENARIO %s\n", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label))
-    flush.console()
-
-    n_rows <- lapply(subject_breaks, function(n_subjects) {
-      cat(sprintf("[%s] START scenario=%s N=%d\n", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects))
+    scenario_rows <- lapply(seq_len(nrow(scenario_df)), function(idx) {
+      scenario <- scenario_df[idx, , drop = FALSE]
+      cat(sprintf("[%s] SCENARIO %s\n", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label))
       flush.console()
 
-      total_nsim <- 0
-      total_rejects <- 0
-      # Run chunks in parallel until nsim is reached
-      while (total_nsim < nsim) {
-        remaining <- nsim - total_nsim
-        workers_this_round <- min(length(cl), remaining)
-        chunk_sizes <- rep(parallel_round_chunk_nsim, workers_this_round)
-        overflow <- (workers_this_round * parallel_round_chunk_nsim) - remaining
-        if (overflow > 0) {
-          for (k in seq_len(overflow)) {
-            idx2 <- ((k - 1) %% workers_this_round) + 1
-            chunk_sizes[idx2] <- chunk_sizes[idx2] - 1
-          }
-        }
-        chunk_sizes <- chunk_sizes[chunk_sizes > 0]
+      n_rows <- lapply(subject_breaks, function(n_subjects) {
+        cat(sprintf("[%s] START scenario=%s N=%d\n", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects))
+        flush.console()
 
-        chunk_results <- parallel::parLapply(
-          cl = cl,
-          X = chunk_sizes,
-          fun = estimate_power_chunk,
-          n_subjects = n_subjects,
-          trials_per_condition = trials_per_condition,
-          sim_col = sim_col,
-          model_formula_with_random_quadratic_slope = model_formula_with_random_quadratic_slope,
-          model_formula_without_random_quadratic_slope = model_formula_without_random_quadratic_slope,
-          target_term = target_term,
-          alpha = alpha,
-          linear_nuisance_beta = linear_nuisance_beta,
-          beta_raw = sesoi_beta,
-          outcome_mean = outcome_mean,
+        total_nsim <- 0
+        total_rejects <- 0
+        # Run chunks in parallel until nsim is reached
+        while (total_nsim < nsim) {
+          remaining <- nsim - total_nsim
+          workers_this_round <- min(length(cl), remaining)
+          chunk_sizes <- rep(parallel_round_chunk_nsim, workers_this_round)
+          overflow <- (workers_this_round * parallel_round_chunk_nsim) - remaining
+          if (overflow > 0) {
+            for (k in seq_len(overflow)) {
+              idx2 <- ((k - 1) %% workers_this_round) + 1
+              chunk_sizes[idx2] <- chunk_sizes[idx2] - 1
+            }
+          }
+          chunk_sizes <- chunk_sizes[chunk_sizes > 0]
+
+          chunk_results <- parallel::parLapply(
+            cl = cl,
+            X = chunk_sizes,
+            fun = estimate_power_chunk,
+            n_subjects = n_subjects,
+            trials_per_condition = trials_per_condition,
+            sim_col = sim_col,
+            model_formula_with_random_quadratic_slope = model_formula_with_random_quadratic_slope,
+            model_formula_without_random_quadratic_slope = model_formula_without_random_quadratic_slope,
+            target_term = target_term,
+            alpha = alpha,
+            linear_nuisance_beta = linear_nuisance_beta,
+            beta_raw = sesoi_beta,
+            outcome_mean = outcome_mean,
+            random_intercept_sd = scenario$random_intercept_sd_value,
+            random_slope_sd = scenario$random_slope_sd_value,
+            random_quadratic_slope_sd = scenario$random_quadratic_slope_sd_value,
+            residual_sd = scenario$residual_sd_value,
+            trial_missingness_rate = trial_missingness_rate,
+            subject_dropout_rate = subject_dropout_rate
+          )
+
+          round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
+          round_rejects <- sum(vapply(chunk_results, function(x) as.integer(x$rejects), integer(1)))
+          total_nsim <- total_nsim + round_n
+          total_rejects <- total_rejects + round_rejects
+        }
+
+        power <- total_rejects / total_nsim
+        se <- sqrt(power * (1 - power) / total_nsim)
+        out <- data.frame(
+          scenario_label = scenario$scenario_label,
+          varied_component = scenario$varied_component,
+          multiplier = scenario$multiplier,
           random_intercept_sd = scenario$random_intercept_sd_value,
           random_slope_sd = scenario$random_slope_sd_value,
           random_quadratic_slope_sd = scenario$random_quadratic_slope_sd_value,
           residual_sd = scenario$residual_sd_value,
-          trial_missingness_rate = trial_missingness_rate,
-          subject_dropout_rate = subject_dropout_rate
+          n_subjects = n_subjects,
+          power = power,
+          lower = pmax(0, power - 1.96 * se),
+          upper = pmin(1, power + 1.96 * se),
+          nsim = total_nsim,
+          stringsAsFactors = FALSE
         )
-
-        round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
-        round_rejects <- sum(vapply(chunk_results, function(x) as.integer(x$rejects), integer(1)))
-        total_nsim <- total_nsim + round_n
-        total_rejects <- total_rejects + round_rejects
-      }
-
-      power <- total_rejects / total_nsim
-      se <- sqrt(power * (1 - power) / total_nsim)
-      out <- data.frame(
-        scenario_label = scenario$scenario_label,
-        varied_component = scenario$varied_component,
-        multiplier = scenario$multiplier,
-        random_intercept_sd = scenario$random_intercept_sd_value,
-        random_slope_sd = scenario$random_slope_sd_value,
-        random_quadratic_slope_sd = scenario$random_quadratic_slope_sd_value,
-        residual_sd = scenario$residual_sd_value,
-        n_subjects = n_subjects,
-        power = power,
-        lower = pmax(0, power - 1.96 * se),
-        upper = pmin(1, power + 1.96 * se),
-        nsim = total_nsim,
-        stringsAsFactors = FALSE
-      )
-      cat(sprintf("[%s] DONE  scenario=%s N=%d power=%.3f\n", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects, power))
-      flush.console()
-      out
+        out
+      })
+      do.call(rbind, n_rows)
     })
-    do.call(rbind, n_rows)
-  })
 
-  power_df <- do.call(rbind, scenario_rows)
-  power_df$scenario_label <- factor(power_df$scenario_label, levels = scenario_order, ordered = TRUE)
-  power_df$meets_target_90 <- power_df$power >= strict_power_target
+    power_df <- do.call(rbind, scenario_rows)
+    power_df$scenario_label <- factor(power_df$scenario_label, levels = scenario_order, ordered = TRUE)
+    power_df$meets_target_90 <- power_df$power >= strict_power_target
+    write.csv(power_df, curve_csv_path, row.names = FALSE)
+  } else {
+    if (!file.exists(curve_csv_path)) {
+      stop("plot_only=TRUE requested but curve CSV not found: ", curve_csv_path)
+    }
+    power_df <- read.csv(curve_csv_path, stringsAsFactors = FALSE)
+    if (!"meets_target_90" %in% names(power_df)) {
+      power_df$meets_target_90 <- power_df$power >= strict_power_target
+    }
+  }
   power_df$residual_multiplier <- factor(
     sprintf("%.2f", power_df$residual_sd / baseline_residual_sd),
     levels = rev(sprintf("%.2f", residual_multipliers))
@@ -272,7 +282,6 @@ runSESOI <- function() {
   stopifnot(all(power_df$random_quadratic_slope_sd == baseline_random_quadratic_slope_sd * random_quadratic_slope_multiplier))
   combo_counts <- with(power_df, table(as.character(residual_multiplier), as.character(rs_multiplier)))
   stopifnot(all(combo_counts > 0))
-  write.csv(power_df, file.path(output_dir, paste0(output_prefix, "_curve.csv")), row.names = FALSE)
 
   # Summarize minimum sample size for target power
   summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
@@ -306,7 +315,7 @@ runSESOI <- function() {
   # Plot faceted heatmap using RS blocks and residual-variance rows
   heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_multiplier, fill = .data$power)) +
     geom_tile(color = "white", linewidth = 1.1) +
-    geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 4.6, fontface = "bold") +
+    geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 4.2, fontface = "bold") +
     facet_wrap(~rs_multiplier, nrow = 1, labeller = labeller(rs_multiplier = function(x) paste0("RS = ", x))) +
     scale_fill_gradient(low = heat_low_color, high = heat_high_color, limits = c(0, 1)) +
     coord_fixed() +
@@ -331,12 +340,14 @@ runSESOI <- function() {
       plot.title = element_text(size = 20, face = "plain", hjust = 0.5),
       panel.spacing = grid::unit(0.9, "lines")
     )
-  png(file = file.path(output_dir, paste0(output_prefix, "_heatmap.png")), width = 2200, height = 1400, res = 300)
+  png(file = file.path(output_dir, paste0(output_prefix, "_heatmap.png")), width = 2500, height = 1400, res = 300)
   print(heatmap_plot)
   dev.off()
 
   power_df
 }
 
-result <- runSESOI()
-print(result)
+if (sys.nframe() == 0) {
+  result <- runSESOI(plot_only = FALSE)
+  print(result)
+}
