@@ -1,2 +1,0 @@
-"outcome","target_term","scenario_label","scenario_role","effect_source","beta_std","beta_raw","outcome_mean","outcome_sd","random_intercept_sd","random_slope_sd","residual_sd","n_subjects_pilot"
-"PeakFrequency","contrast_num_c","Base","base","ext",0.1,0.1,0,1,0.2,0.1,1,10

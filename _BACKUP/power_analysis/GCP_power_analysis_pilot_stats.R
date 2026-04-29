@@ -30,8 +30,8 @@ resolve_project_roots <- function() {
 }
 
 roots <- resolve_project_roots()
-PREFERRED_OUTPUT_DIR <- file.path(roots$data_root, "figures", "power_analysis", "pilot_stats")
-FALLBACK_OUTPUT_DIR <- file.path(getwd(), "_power_analysis", "outputs", "pilot_stats")
+PREFERRED_OUTPUT_DIR <- file.path(roots$data_root, "data", "pilot_stats")
+FALLBACK_OUTPUT_DIR <- file.path(getwd(), "data", "pilot_stats")
 
 resolve_input_file <- function() {
   candidates <- c(

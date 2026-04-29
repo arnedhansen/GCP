@@ -3,6 +3,13 @@
 # install.packages("lme4", repos = "https://cloud.r-project.org")
 # install.packages("ggplot2", repos = "https://cloud.r-project.org")
 # install.packages("scales", repos = "https://cloud.r-project.org")
+# Pilot-informed settings:
+# outcome_mean = 53.75
+# baseline_random_intercept_sd = 2.96
+# baseline_residual_sd = 0.75 (levels: 0.56, 0.75, 0.94)
+# baseline_random_slope_sd = 0.08 (levels: 0.03, 0.08, 0.16)
+# 3-level values are centered on the bootstrap median and CI-informed bounds from pilot data.
+# Source: /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/pilot_stats/
 
 suppressPackageStartupMessages(library(lme4))
 suppressPackageStartupMessages(library(ggplot2))
@@ -25,12 +32,12 @@ runSESOI <- function(plot_only = FALSE) {
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
   sesoi_beta <- 0.10
-  outcome_mean <- 0.00
-  baseline_random_intercept_sd <- 0.2
-  baseline_random_slope_sd <- 0.15
-  baseline_residual_sd <- 1.00
+  outcome_mean <- 53.75
+  baseline_random_intercept_sd <- 2.96
+  baseline_random_slope_sd <- 0.08
+  baseline_residual_sd <- 0.75
   ri_multiplier_fixed <- 1.00
-  rs_multipliers <- c(0.75, 1.00, 1.25)
+  rs_multipliers <- c(0.375, 1.00, 2.00)
   residual_multipliers <- c(0.75, 1.00, 1.25)
   trial_missingness_rate <- 0.20
   subject_dropout_rate <- 0.10
@@ -40,16 +47,18 @@ runSESOI <- function(plot_only = FALSE) {
   target_term <- "contrast_num_c"
   model_formula <- gamma_power ~ contrast_num_c + (1 + contrast_num_c | Subject)
   output_prefix <- "GCP_power_analysis_SESOI_linear"
-  plot_title <- "Power Analysis: SESOI Linear Slope"
+  plot_title <- "Power Analysis: SESOI Linear Slope (Pilot-informed)"
   # Refined red-green endpoints with clearer contrast
   heat_low_color <- "#B2182B"
   heat_high_color <- "#1A9850"
 
   gcp_root <- resolve_gcp_root()
-  output_dir <- file.path(gcp_root, "figures", "power_analysis")
-  curve_csv_path <- file.path(output_dir, paste0(output_prefix, "_curve.csv"))
+  figure_output_dir <- file.path(gcp_root, "figures", "power_analysis")
+  data_output_dir <- file.path(gcp_root, "data", "power_analysis")
+  curve_csv_path <- file.path(data_output_dir, paste0(output_prefix, "_curve.csv"))
   set.seed(seed)
-  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  dir.create(figure_output_dir, recursive = TRUE, showWarnings = FALSE)
+  dir.create(data_output_dir, recursive = TRUE, showWarnings = FALSE)
 
   # Build compact scenario grid for residual variance and random slope
   make_scenarios <- function() {
@@ -271,7 +280,7 @@ runSESOI <- function(plot_only = FALSE) {
       stringsAsFactors = FALSE
     )
   }))
-  write.csv(summary_rows, file.path(output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
+  write.csv(summary_rows, file.path(data_output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
 
   curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power, color = .data$scenario_label, group = .data$scenario_label)) +
     geom_line(linewidth = 0.8) +
@@ -282,7 +291,7 @@ runSESOI <- function(plot_only = FALSE) {
     labs(x = "Subjects", y = "Power", color = "Scenario", title = plot_title) +
     theme_minimal(base_size = 13, base_family = "Arial") +
     theme(panel.grid.minor = element_blank())
-  png(file = file.path(output_dir, paste0(output_prefix, ".png")), width = 2200, height = 1400, res = 300)
+  png(file = file.path(figure_output_dir, paste0(output_prefix, ".png")), width = 2200, height = 1400, res = 300)
   print(curve_plot)
   dev.off()
 
@@ -314,9 +323,11 @@ runSESOI <- function(plot_only = FALSE) {
       plot.title = element_text(size = 20, face = "plain", hjust = 0.5),
       panel.spacing = grid::unit(0.9, "lines")
     )
-  png(file = file.path(output_dir, paste0(output_prefix, "_heatmap.png")), width = 2500, height = 1400, res = 300)
+  png(file = file.path(figure_output_dir, paste0(output_prefix, "_heatmap.png")), width = 2500, height = 1400, res = 300)
   print(heatmap_plot)
   dev.off()
 
   power_df
 }
+
+result <- runSESOI(plot_only = FALSE)
