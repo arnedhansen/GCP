@@ -29,9 +29,9 @@ runSESOI <- function() {
   baseline_random_intercept_sd <- 0.25
   baseline_random_slope_sd <- 0.2
   baseline_residual_sd <- 1.00
-  ri_multipliers <- c(0.75, 1.00, 1.25)
+  ri_multiplier_fixed <- 1.00
   rs_multipliers <- c(0.75, 1.00, 1.25)
-  residual_multiplier <- 1.00
+  residual_multipliers <- c(0.75, 1.00, 1.25)
   trial_missingness_rate <- 0.20
   subject_dropout_rate <- 0.10
   parallel_workers <- 8
@@ -41,31 +41,32 @@ runSESOI <- function() {
   model_formula <- gamma_power ~ contrast_num_c + (1 + contrast_num_c | Subject)
   output_prefix <- "GCP_power_analysis_SESOI_linear"
   plot_title <- "Power Analysis: SESOI Linear Slope"
-  heat_low_color <- "#BF0D3E"
-  heat_high_color <- "#2E7D32"
+  # Tracker heat endpoints from ContentView.swift
+  heat_low_color <- "#DE4C4C"
+  heat_high_color <- "#57C757"
 
   gcp_root <- resolve_gcp_root()
   output_dir <- file.path(gcp_root, "figures", "power_analysis")
   set.seed(seed)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # Build compact scenario grid for intercept and slope SD multipliers
+  # Build compact scenario grid for residual variance and random slope
   make_scenarios <- function() {
     scenario_df <- expand.grid(
-      ri_multiplier = ri_multipliers,
+      residual_multiplier = residual_multipliers,
       rs_multiplier = rs_multipliers,
       stringsAsFactors = FALSE
     )
     scenario_df$scenario_label <- sprintf(
-      "ri_%.2f_rs_%.2f",
-      scenario_df$ri_multiplier,
+      "res_%.2f_rs_%.2f",
+      scenario_df$residual_multiplier,
       scenario_df$rs_multiplier
     )
-    scenario_df$varied_component <- "ri_rs_grid"
+    scenario_df$varied_component <- "residual_rs_grid"
     scenario_df$multiplier <- NA_real_
-    scenario_df$random_intercept_sd_value <- baseline_random_intercept_sd * scenario_df$ri_multiplier
+    scenario_df$random_intercept_sd_value <- baseline_random_intercept_sd * ri_multiplier_fixed
     scenario_df$random_slope_sd_value <- baseline_random_slope_sd * scenario_df$rs_multiplier
-    scenario_df$residual_sd_value <- baseline_residual_sd * residual_multiplier
+    scenario_df$residual_sd_value <- baseline_residual_sd * scenario_df$residual_multiplier
     scenario_df
   }
 
@@ -233,11 +234,17 @@ runSESOI <- function() {
   power_df <- do.call(rbind, scenario_rows)
   power_df$scenario_label <- factor(power_df$scenario_label, levels = scenario_order, ordered = TRUE)
   power_df$meets_target_90 <- power_df$power >= strict_power_target
-  power_df$ri_multiplier <- factor(sprintf("%.2f", power_df$random_intercept_sd / baseline_random_intercept_sd), levels = sprintf("%.2f", ri_multipliers))
-  power_df$rs_multiplier <- factor(sprintf("%.2f", power_df$random_slope_sd / baseline_random_slope_sd), levels = rev(sprintf("%.2f", rs_multipliers)))
-  stopifnot(length(unique(power_df$scenario_label)) == length(ri_multipliers) * length(rs_multipliers))
-  stopifnot(all(power_df$residual_sd == baseline_residual_sd * residual_multiplier))
-  combo_counts <- with(power_df, table(as.character(ri_multiplier), as.character(rs_multiplier)))
+  power_df$residual_multiplier <- factor(
+    sprintf("%.2f", power_df$residual_sd / baseline_residual_sd),
+    levels = rev(sprintf("%.2f", residual_multipliers))
+  )
+  power_df$rs_multiplier <- factor(
+    sprintf("%.2f", power_df$random_slope_sd / baseline_random_slope_sd),
+    levels = sprintf("%.2f", rs_multipliers)
+  )
+  stopifnot(length(unique(power_df$scenario_label)) == length(residual_multipliers) * length(rs_multipliers))
+  stopifnot(all(power_df$random_intercept_sd == baseline_random_intercept_sd * ri_multiplier_fixed))
+  combo_counts <- with(power_df, table(as.character(residual_multiplier), as.character(rs_multiplier)))
   stopifnot(all(combo_counts > 0))
   write.csv(power_df, file.path(output_dir, paste0(output_prefix, "_curve.csv")), row.names = FALSE)
 
@@ -270,18 +277,18 @@ runSESOI <- function() {
   print(curve_plot)
   dev.off()
 
-  # Plot faceted heatmap using intercept-level blocks and slope-level rows
-  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$rs_multiplier, fill = .data$power)) +
+  # Plot faceted heatmap using RS blocks and residual-variance rows
+  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_multiplier, fill = .data$power)) +
     geom_tile(color = "white", linewidth = 1.1) +
     geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 4.6, fontface = "bold") +
-    facet_wrap(~ri_multiplier, nrow = 1, labeller = labeller(ri_multiplier = function(x) paste0("RI = ", x))) +
+    facet_wrap(~rs_multiplier, nrow = 1, labeller = labeller(rs_multiplier = function(x) paste0("RS = ", x))) +
     scale_fill_gradient(low = heat_low_color, high = heat_high_color, limits = c(0, 1)) +
+    coord_fixed() +
     labs(
       x = "Number of subjects",
-      y = "Random slope multiplier",
+      y = "Residual Variance",
       fill = "Power",
-      title = plot_title,
-      subtitle = "Power landscape across random intercept, random slope, and sample size"
+      title = plot_title
     ) +
     theme_minimal(base_size = 16) +
     theme(
@@ -295,8 +302,7 @@ runSESOI <- function() {
       legend.position = "right",
       legend.title = element_text(size = 12),
       legend.text = element_text(size = 11),
-      plot.title = element_text(size = 20, face = "plain"),
-      plot.subtitle = element_text(size = 12),
+      plot.title = element_text(size = 20, face = "plain", hjust = 0.5),
       panel.spacing = grid::unit(0.9, "lines")
     )
   png(file = file.path(output_dir, paste0(output_prefix, "_heatmap.png")), width = 2200, height = 1400, res = 300)
