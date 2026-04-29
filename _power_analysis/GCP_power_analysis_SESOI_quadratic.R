@@ -44,8 +44,11 @@ runSESOI <- function(plot_only = FALSE) {
   baseline_residual_sd <- 0.30
   ri_multiplier_fixed <- 1.00
   rs_multiplier_fixed <- 1.00
-  rqs_multipliers <- c(0.4615, 1.00, 1.6923)
-  residual_multipliers <- c(0.7667, 1.00, 1.30)
+  # Temporary: 0.5 / 1.0 / 1.5 of pilot median (baseline_*_sd); restore CI grid when done
+  rqs_multipliers <- c(0.5, 1.0, 1.5)
+  residual_multipliers <- c(0.5, 1.0, 1.5)
+  # rqs_multipliers <- c(0.4615, 1.00, 1.6923)
+  # residual_multipliers <- c(0.7667, 1.00, 1.30)
   trial_missingness_rate <- 0.20
   subject_dropout_rate <- 0.10
   parallel_workers <- 8
@@ -53,7 +56,7 @@ runSESOI <- function(plot_only = FALSE) {
   sim_col <- "gamma_power"
   model_formula_with_random_quadratic_slope_full <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 | Subject)
   model_formula_without_random_quadratic_slope_full <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c | Subject)
-  output_prefix <- "GCP_power_analysis_SESOI_quadratic"
+  output_prefix <- "GCP_power_analysis_SESOI_quadratic_fixedMultipliers"
   plot_title <- "Power Analysis: SESOI Quadratic Slope"
   power_label <- "Power"
   # Darker red-green endpoints with green onset at >= 0.8 in heatmaps
