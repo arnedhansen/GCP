@@ -21,7 +21,7 @@ runSESOI <- function() {
   alpha <- 0.05
   nsim <- 5000
   strict_power_target <- 0.90
-  subject_breaks <- seq(5, 75, by = 5)
+  subject_breaks <- c(25, 50, 75)
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
   sesoi_beta <- 0.10
@@ -29,7 +29,9 @@ runSESOI <- function() {
   baseline_random_intercept_sd <- 0.20
   baseline_random_slope_sd <- 0.18
   baseline_residual_sd <- 1.00
-  sd_multipliers <- c(0.75, 1.00, 1.25, 1.50)
+  ri_multipliers <- c(0.75, 1.00, 1.25)
+  rs_multipliers <- c(0.75, 1.00, 1.25)
+  residual_multiplier <- 1.00
   trial_missingness_rate <- 0.20
   subject_dropout_rate <- 0.10
   parallel_workers <- 8
@@ -47,48 +49,24 @@ runSESOI <- function() {
   set.seed(seed)
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # Build sensitivity scenarios by changing one variance block at a time
+  # Build compact scenario grid for intercept and slope SD multipliers
   make_scenarios <- function() {
-    baseline <- data.frame(
-      scenario_label = "baseline",
-      varied_component = "none",
-      multiplier = 1.00,
-      random_intercept_sd_value = baseline_random_intercept_sd,
-      random_slope_sd_value = baseline_random_slope_sd,
-      residual_sd_value = baseline_residual_sd,
+    scenario_df <- expand.grid(
+      ri_multiplier = ri_multipliers,
+      rs_multiplier = rs_multipliers,
       stringsAsFactors = FALSE
     )
-    scenario_rows <- list(baseline)
-    for (m in sd_multipliers[sd_multipliers != 1]) {
-      scenario_rows[[length(scenario_rows) + 1]] <- data.frame(
-        scenario_label = sprintf("random_intercept_sd_%.2fx", m),
-        varied_component = "random_intercept_sd",
-        multiplier = m,
-        random_intercept_sd_value = baseline_random_intercept_sd * m,
-        random_slope_sd_value = baseline_random_slope_sd,
-        residual_sd_value = baseline_residual_sd,
-        stringsAsFactors = FALSE
-      )
-      scenario_rows[[length(scenario_rows) + 1]] <- data.frame(
-        scenario_label = sprintf("random_slope_sd_%.2fx", m),
-        varied_component = "random_slope_sd",
-        multiplier = m,
-        random_intercept_sd_value = baseline_random_intercept_sd,
-        random_slope_sd_value = baseline_random_slope_sd * m,
-        residual_sd_value = baseline_residual_sd,
-        stringsAsFactors = FALSE
-      )
-      scenario_rows[[length(scenario_rows) + 1]] <- data.frame(
-        scenario_label = sprintf("residual_sd_%.2fx", m),
-        varied_component = "residual_sd",
-        multiplier = m,
-        random_intercept_sd_value = baseline_random_intercept_sd,
-        random_slope_sd_value = baseline_random_slope_sd,
-        residual_sd_value = baseline_residual_sd * m,
-        stringsAsFactors = FALSE
-      )
-    }
-    do.call(rbind, scenario_rows)
+    scenario_df$scenario_label <- sprintf(
+      "ri_%.2f_rs_%.2f",
+      scenario_df$ri_multiplier,
+      scenario_df$rs_multiplier
+    )
+    scenario_df$varied_component <- "ri_rs_grid"
+    scenario_df$multiplier <- NA_real_
+    scenario_df$random_intercept_sd_value <- baseline_random_intercept_sd * scenario_df$ri_multiplier
+    scenario_df$random_slope_sd_value <- baseline_random_slope_sd * scenario_df$rs_multiplier
+    scenario_df$residual_sd_value <- baseline_residual_sd * residual_multiplier
+    scenario_df
   }
 
   estimate_power_chunk <- function(
@@ -255,6 +233,12 @@ runSESOI <- function() {
   power_df <- do.call(rbind, scenario_rows)
   power_df$scenario_label <- factor(power_df$scenario_label, levels = scenario_order, ordered = TRUE)
   power_df$meets_target_90 <- power_df$power >= strict_power_target
+  power_df$ri_multiplier <- factor(sprintf("%.2f", power_df$random_intercept_sd / baseline_random_intercept_sd), levels = sprintf("%.2f", ri_multipliers))
+  power_df$rs_multiplier <- factor(sprintf("%.2f", power_df$random_slope_sd / baseline_random_slope_sd), levels = rev(sprintf("%.2f", rs_multipliers)))
+  stopifnot(length(unique(power_df$scenario_label)) == length(ri_multipliers) * length(rs_multipliers))
+  stopifnot(all(power_df$residual_sd == baseline_residual_sd * residual_multiplier))
+  combo_counts <- with(power_df, table(as.character(ri_multiplier), as.character(rs_multiplier)))
+  stopifnot(all(combo_counts > 0))
   write.csv(power_df, file.path(output_dir, paste0(output_prefix, "_curve.csv")), row.names = FALSE)
 
   # Summarize minimum sample size for target power
@@ -286,14 +270,35 @@ runSESOI <- function() {
   print(curve_plot)
   dev.off()
 
-  # Plot heatmap of power by sample size and scenario
-  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$scenario_label, fill = .data$power)) +
-    geom_tile(color = "white", linewidth = 0.5) +
-    geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3) +
+  # Plot faceted heatmap using intercept-level blocks and slope-level rows
+  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$rs_multiplier, fill = .data$power)) +
+    geom_tile(color = "white", linewidth = 1.1) +
+    geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 4.6, fontface = "bold") +
+    facet_wrap(~ri_multiplier, nrow = 1, labeller = labeller(ri_multiplier = function(x) paste0("RI = ", x))) +
     scale_fill_gradient(low = heat_low_color, high = heat_high_color, limits = c(0, 1)) +
-    labs(x = "Subjects", y = "Scenario", fill = "Power", title = paste0(plot_title, " Heatmap")) +
-    theme_minimal(base_size = 13) +
-    theme(panel.grid = element_blank())
+    labs(
+      x = "Number of subjects",
+      y = "Random slope multiplier",
+      fill = "Power",
+      title = plot_title,
+      subtitle = "Power landscape across random intercept, random slope, and sample size"
+    ) +
+    theme_minimal(base_size = 16) +
+    theme(
+      panel.grid = element_blank(),
+      panel.background = element_rect(fill = "white", color = NA),
+      plot.background = element_rect(fill = "white", color = NA),
+      strip.background = element_rect(fill = "white", color = NA),
+      strip.text = element_text(size = 13),
+      axis.title = element_text(size = 14),
+      axis.text = element_text(size = 12),
+      legend.position = "right",
+      legend.title = element_text(size = 12),
+      legend.text = element_text(size = 11),
+      plot.title = element_text(size = 20, face = "plain"),
+      plot.subtitle = element_text(size = 12),
+      panel.spacing = grid::unit(0.9, "lines")
+    )
   png(file = file.path(output_dir, paste0(output_prefix, "_heatmap.png")), width = 2200, height = 1400, res = 300)
   print(heatmap_plot)
   dev.off()
