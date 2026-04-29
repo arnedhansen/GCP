@@ -12,7 +12,7 @@ resolve_gcp_root <- function() {
   if (.Platform$OS.type == "windows") {
     return("W:/Students/Arne/GCP")
   }
-  "/Users/Arne/Documents/GitHub/GCP"
+  "/Volumes/g_psyplafor_methlab$/Students/Arne/GCP"
 }
 
 runSESOI <- function(plot_only = FALSE) {
@@ -26,8 +26,8 @@ runSESOI <- function(plot_only = FALSE) {
   trials_per_condition <- 160
   sesoi_beta <- 0.10
   outcome_mean <- 0.00
-  baseline_random_intercept_sd <- 0.25
-  baseline_random_slope_sd <- 0.2
+  baseline_random_intercept_sd <- 0.2
+  baseline_random_slope_sd <- 0.15
   baseline_residual_sd <- 1.00
   ri_multiplier_fixed <- 1.00
   rs_multipliers <- c(0.75, 1.00, 1.25)
@@ -41,9 +41,9 @@ runSESOI <- function(plot_only = FALSE) {
   model_formula <- gamma_power ~ contrast_num_c + (1 + contrast_num_c | Subject)
   output_prefix <- "GCP_power_analysis_SESOI_linear"
   plot_title <- "Power Analysis: SESOI Linear Slope"
-  # Tracker heat endpoints from ContentView.swift
-  heat_low_color <- "#C2554D"
-  heat_high_color <- "#4EA565"
+  # Refined red-green endpoints with clearer contrast
+  heat_low_color <- "#B2182B"
+  heat_high_color <- "#1A9850"
 
   gcp_root <- resolve_gcp_root()
   output_dir <- file.path(gcp_root, "figures", "power_analysis")
@@ -280,7 +280,7 @@ runSESOI <- function(plot_only = FALSE) {
     scale_x_continuous(breaks = sort(unique(subject_breaks))) +
     scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1), breaks = c(0, 0.25, 0.50, 0.75, 0.90, 1)) +
     labs(x = "Subjects", y = "Power", color = "Scenario", title = plot_title) +
-    theme_minimal(base_size = 13) +
+    theme_minimal(base_size = 13, base_family = "Arial") +
     theme(panel.grid.minor = element_blank())
   png(file = file.path(output_dir, paste0(output_prefix, ".png")), width = 2200, height = 1400, res = 300)
   print(curve_plot)
@@ -289,7 +289,7 @@ runSESOI <- function(plot_only = FALSE) {
   # Plot faceted heatmap using RS blocks and residual-variance rows
   heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_multiplier, fill = .data$power)) +
     geom_tile(color = "white", linewidth = 1.1) +
-    geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 4.2, fontface = "bold") +
+    geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3.8, fontface = "bold", family = "Arial") +
     facet_wrap(~rs_multiplier, nrow = 1, labeller = labeller(rs_multiplier = function(x) paste0("RS = ", x))) +
     scale_fill_gradient(low = heat_low_color, high = heat_high_color, limits = c(0, 1)) +
     coord_fixed() +
@@ -299,7 +299,7 @@ runSESOI <- function(plot_only = FALSE) {
       fill = "Power",
       title = plot_title
     ) +
-    theme_minimal(base_size = 16) +
+    theme_minimal(base_size = 16, base_family = "Arial") +
     theme(
       panel.grid = element_blank(),
       panel.background = element_rect(fill = "white", color = NA),
@@ -319,9 +319,4 @@ runSESOI <- function(plot_only = FALSE) {
   dev.off()
 
   power_df
-}
-
-if (sys.nframe() == 0) {
-  result <- runSESOI(plot_only = FALSE)
-  print(result)
 }
