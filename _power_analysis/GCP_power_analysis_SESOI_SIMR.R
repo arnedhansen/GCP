@@ -30,8 +30,8 @@ runSESOI <- function() {
   baseline_random_slope_sd <- 0.18
   baseline_residual_sd <- 1.00
   sd_multipliers <- c(0.75, 1.00, 1.25, 1.50)
-  trial_missingness_range <- c(0.10, 0.20)
-  subject_dropout_range <- c(0.05, 0.10)
+  trial_missingness_rate <- 0.20
+  subject_dropout_rate <- 0.10
   parallel_workers <- 8
   parallel_round_chunk_nsim <- 1
   sim_col <- "gamma_power"
@@ -104,8 +104,8 @@ runSESOI <- function() {
       random_intercept_sd,
       random_slope_sd,
       residual_sd,
-      trial_missingness_range,
-      subject_dropout_range) {
+      trial_missingness_rate,
+      subject_dropout_rate) {
     # Count significant tests for the target fixed effect
     rejects <- 0
     for (i in seq_len(chunk_nsim)) {
@@ -130,7 +130,6 @@ runSESOI <- function() {
       dat[[sim_col]] <- mu + rnorm(nrow(dat), mean = 0, sd = residual_sd)
 
       # Apply trial-level missingness
-      trial_missingness_rate <- runif(1, min = trial_missingness_range[1], max = trial_missingness_range[2])
       keep_trial <- stats::runif(nrow(dat)) > trial_missingness_rate
       dat <- dat[keep_trial, , drop = FALSE]
       if (nrow(dat) == 0) {
@@ -138,7 +137,6 @@ runSESOI <- function() {
       }
 
       # Apply subject-level dropout after trial loss
-      subject_dropout_rate <- runif(1, min = subject_dropout_range[1], max = subject_dropout_range[2])
       subject_levels <- levels(droplevels(dat$Subject))
       n_drop_subjects <- floor(length(subject_levels) * subject_dropout_rate)
       if (n_drop_subjects > 0) {
@@ -221,8 +219,8 @@ runSESOI <- function() {
           random_intercept_sd = scenario$random_intercept_sd_value,
           random_slope_sd = scenario$random_slope_sd_value,
           residual_sd = scenario$residual_sd_value,
-          trial_missingness_range = trial_missingness_range,
-          subject_dropout_range = subject_dropout_range
+          trial_missingness_rate = trial_missingness_rate,
+          subject_dropout_rate = subject_dropout_rate
         )
 
         round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
@@ -247,7 +245,7 @@ runSESOI <- function() {
         nsim = total_nsim,
         stringsAsFactors = FALSE
       )
-      cat(sprintf("[%s] DONE scenario=%s N=%d power=%.3f\n", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects, power))
+      cat(sprintf("[%s] DONE  scenario=%s N=%d power=%.3f\n", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects, power))
       flush.console()
       out
     })
