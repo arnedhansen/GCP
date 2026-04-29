@@ -32,12 +32,12 @@ runSESOI <- function(plot_only = FALSE) {
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
   sesoi_beta <- 0.10
-  true_beta <- 0.14
+  beta_infl <- 0.25
+  true_beta <- 0.14*beta_infl
   outcome_mean <- 53.75
   baseline_random_intercept_sd <- 2.96
   baseline_random_slope_sd <- 0.08
   baseline_residual_sd <- 0.75
-  extra_error_multiplier <- 0
   ri_multiplier_fixed <- 1.00
   rs_multipliers <- c(0.375, 1.00, 2.00)
   residual_multipliers <- c(0.75, 1.00, 1.25)
@@ -95,7 +95,6 @@ runSESOI <- function(plot_only = FALSE) {
       random_intercept_sd,
       random_slope_sd,
       residual_sd,
-      extra_error_multiplier,
       trial_missingness_rate,
       subject_dropout_rate) {
     # Count SESOI-decision outcomes and diagnostic metrics
@@ -125,9 +124,7 @@ runSESOI <- function(plot_only = FALSE) {
       random_slopes <- rnorm(n_subject_levels, mean = 0, sd = random_slope_sd)
       x <- dat$contrast_num_c
       mu <- outcome_mean + random_intercepts[dat$Subject] + random_slopes[dat$Subject] * x + true_beta * x
-      extra_error_sd <- extra_error_multiplier * residual_sd
-      effective_residual_sd <- sqrt(residual_sd^2 + extra_error_sd^2)
-      dat[[sim_col]] <- mu + rnorm(nrow(dat), mean = 0, sd = effective_residual_sd)
+      dat[[sim_col]] <- mu + rnorm(nrow(dat), mean = 0, sd = residual_sd)
 
       # Apply trial-level missingness
       keep_trial <- stats::runif(nrow(dat)) > trial_missingness_rate
@@ -243,7 +240,6 @@ runSESOI <- function(plot_only = FALSE) {
             random_intercept_sd = scenario$random_intercept_sd_value,
             random_slope_sd = scenario$random_slope_sd_value,
             residual_sd = scenario$residual_sd_value,
-            extra_error_multiplier = extra_error_multiplier,
             trial_missingness_rate = trial_missingness_rate,
             subject_dropout_rate = subject_dropout_rate
           )
