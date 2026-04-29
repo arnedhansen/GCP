@@ -27,13 +27,14 @@ resolve_gcp_root <- function() {
 runSESOI <- function(plot_only = FALSE) {
   # Simulation settings
   seed <- 123
-  alpha <- 0.05
+  sesoi_decision_alpha <- 0.05
   nsim <- 5000
   strict_power_target <- 0.90
   subject_breaks <- c(20, 30, 40, 50, 60)
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
   sesoi_beta <- -0.10
+  true_beta <- -0.14
   linear_nuisance_beta <- 0.048
   outcome_mean <- 0.471
   baseline_random_intercept_sd <- 0.33
@@ -54,7 +55,7 @@ runSESOI <- function(plot_only = FALSE) {
   model_formula_without_random_quadratic_slope_full <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c | Subject)
   output_prefix <- "GCP_power_analysis_SESOI_quadratic"
   plot_title <- "Power Analysis: SESOI Quadratic Slope"
-  power_label <- "SESOI decision power"
+  power_label <- "Power"
   # Darker red-green endpoints with green onset at >= 0.8 in heatmaps
   heat_low_color <- "#8E0F1F"
   heat_high_color <- "#0B6E3A"
@@ -95,9 +96,10 @@ runSESOI <- function(plot_only = FALSE) {
       sim_col,
       model_formula_with_random_quadratic_slope_full,
       model_formula_without_random_quadratic_slope_full,
-      alpha,
+      sesoi_decision_alpha,
       linear_nuisance_beta,
       beta_raw,
+      true_beta,
       outcome_mean,
       random_intercept_sd,
       random_slope_sd,
@@ -109,7 +111,6 @@ runSESOI <- function(plot_only = FALSE) {
     # Count SESOI-decision outcomes and diagnostic metrics
     valid_fits <- 0
     sesoi_successes <- 0
-    nhst_rejects <- 0
     sign_errors <- 0
     type_m_sum <- 0
     type_m_count <- 0
@@ -141,7 +142,7 @@ runSESOI <- function(plot_only = FALSE) {
         random_slopes[dat$Subject] * x +
         random_quadratic_slopes[dat$Subject] * x2 +
         linear_nuisance_beta * x +
-        beta_raw * x2
+        true_beta * x2
       extra_error_sd <- extra_error_multiplier * residual_sd
       effective_residual_sd <- sqrt(residual_sd^2 + extra_error_sd^2)
       dat[[sim_col]] <- mu + rnorm(nrow(dat), mean = 0, sd = effective_residual_sd)
@@ -178,21 +179,6 @@ runSESOI <- function(plot_only = FALSE) {
       if (is.null(fit_full)) {
         next
       }
-      model_formula_reduced <- update(model_formula_full, . ~ . - contrast_num_c2)
-      fit_reduced <- tryCatch(
-        suppressMessages(lmer(model_formula_reduced, data = dat, REML = FALSE)),
-        error = function(e) NULL
-      )
-      if (is.null(fit_reduced)) {
-        next
-      }
-      lrt_tbl <- tryCatch(
-        suppressWarnings(anova(fit_reduced, fit_full)),
-        error = function(e) NULL
-      )
-      if (is.null(lrt_tbl) || nrow(lrt_tbl) < 2 || !"Pr(>Chisq)" %in% names(lrt_tbl)) {
-        next
-      }
       coef_tbl <- tryCatch(summary(fit_full)$coefficients, error = function(e) NULL)
       if (is.null(coef_tbl) || !"contrast_num_c2" %in% rownames(coef_tbl)) {
         next
@@ -204,24 +190,21 @@ runSESOI <- function(plot_only = FALSE) {
 
       est <- as.numeric(coef_tbl["contrast_num_c2", "Estimate"])
       est_se <- as.numeric(coef_tbl["contrast_num_c2", "Std. Error"])
-      ci_low <- est - 1.96 * est_se
-      ci_high <- est + 1.96 * est_se
-      sesoi_success <- if (beta_raw >= 0) ci_low > beta_raw else ci_high < beta_raw
+      z_one_sided <- stats::qnorm(1 - sesoi_decision_alpha)
+      ci_low_one_sided <- est - z_one_sided * est_se
+      ci_high_one_sided <- est + z_one_sided * est_se
+      sesoi_success <- if (beta_raw >= 0) ci_low_one_sided > beta_raw else ci_high_one_sided < beta_raw
       sesoi_successes <- sesoi_successes + as.integer(sesoi_success)
-      sign_errors <- sign_errors + as.integer(sign(est) != sign(beta_raw))
+      sign_errors <- sign_errors + as.integer(sign(est) != sign(true_beta))
       if (isTRUE(sesoi_success)) {
-        type_m_sum <- type_m_sum + abs(est / beta_raw)
+        type_m_sum <- type_m_sum + abs(est / true_beta)
         type_m_count <- type_m_count + 1
       }
-
-      p_value <- as.numeric(lrt_tbl[2, "Pr(>Chisq)"])
-      nhst_rejects <- nhst_rejects + as.integer(is.finite(p_value) && p_value < alpha)
     }
     list(
       chunk_nsim = as.integer(chunk_nsim),
       valid_fits = as.integer(valid_fits),
       sesoi_successes = as.integer(sesoi_successes),
-      nhst_rejects = as.integer(nhst_rejects),
       sign_errors = as.integer(sign_errors),
       type_m_sum = as.numeric(type_m_sum),
       type_m_count = as.integer(type_m_count),
@@ -249,7 +232,6 @@ runSESOI <- function(plot_only = FALSE) {
         total_nsim <- 0
         total_valid_fits <- 0
         total_sesoi_successes <- 0
-        total_nhst_rejects <- 0
         total_sign_errors <- 0
         total_type_m_sum <- 0
         total_type_m_count <- 0
@@ -278,9 +260,10 @@ runSESOI <- function(plot_only = FALSE) {
             sim_col = sim_col,
             model_formula_with_random_quadratic_slope_full = model_formula_with_random_quadratic_slope_full,
             model_formula_without_random_quadratic_slope_full = model_formula_without_random_quadratic_slope_full,
-            alpha = alpha,
+            sesoi_decision_alpha = sesoi_decision_alpha,
             linear_nuisance_beta = linear_nuisance_beta,
             beta_raw = sesoi_beta,
+            true_beta = true_beta,
             outcome_mean = outcome_mean,
             random_intercept_sd = scenario$random_intercept_sd_value,
             random_slope_sd = scenario$random_slope_sd_value,
@@ -294,7 +277,6 @@ runSESOI <- function(plot_only = FALSE) {
           round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
           round_valid_fits <- sum(vapply(chunk_results, function(x) as.integer(x$valid_fits), integer(1)))
           round_sesoi_successes <- sum(vapply(chunk_results, function(x) as.integer(x$sesoi_successes), integer(1)))
-          round_nhst_rejects <- sum(vapply(chunk_results, function(x) as.integer(x$nhst_rejects), integer(1)))
           round_sign_errors <- sum(vapply(chunk_results, function(x) as.integer(x$sign_errors), integer(1)))
           round_type_m_sum <- sum(vapply(chunk_results, function(x) as.numeric(x$type_m_sum), numeric(1)))
           round_type_m_count <- sum(vapply(chunk_results, function(x) as.integer(x$type_m_count), integer(1)))
@@ -303,7 +285,6 @@ runSESOI <- function(plot_only = FALSE) {
           total_nsim <- total_nsim + round_n
           total_valid_fits <- total_valid_fits + round_valid_fits
           total_sesoi_successes <- total_sesoi_successes + round_sesoi_successes
-          total_nhst_rejects <- total_nhst_rejects + round_nhst_rejects
           total_sign_errors <- total_sign_errors + round_sign_errors
           total_type_m_sum <- total_type_m_sum + round_type_m_sum
           total_type_m_count <- total_type_m_count + round_type_m_count
@@ -316,7 +297,6 @@ runSESOI <- function(plot_only = FALSE) {
         cat(sprintf(" | SESOI POWER : %s\n", power_label_out))
         flush.console()
         se <- if (total_valid_fits > 0) sqrt(power * (1 - power) / total_valid_fits) else NA_real_
-        nhst_power <- if (total_valid_fits > 0) total_nhst_rejects / total_valid_fits else NA_real_
         out <- data.frame(
           scenario_label = scenario$scenario_label,
           varied_component = scenario$varied_component,
@@ -332,7 +312,6 @@ runSESOI <- function(plot_only = FALSE) {
           nsim = total_nsim,
           valid_fits = total_valid_fits,
           fit_success_rate = if (total_nsim > 0) total_valid_fits / total_nsim else NA_real_,
-          nhst_power = nhst_power,
           type_s = if (total_valid_fits > 0) total_sign_errors / total_valid_fits else NA_real_,
           type_m = if (total_type_m_count > 0) total_type_m_sum / total_type_m_count else NA_real_,
           singular_rate = if (total_valid_fits > 0) total_singular / total_valid_fits else NA_real_,
@@ -381,7 +360,6 @@ runSESOI <- function(plot_only = FALSE) {
       multiplier = as.numeric(df$multiplier[1]),
       N_min_for_90 = if (length(hit) > 0) min(hit) else NA_integer_,
       power_at_max_N = df$power[which.max(df$n_subjects)],
-      nhst_power_at_max_N = df$nhst_power[which.max(df$n_subjects)],
       type_s_at_max_N = df$type_s[which.max(df$n_subjects)],
       type_m_at_max_N = df$type_m[which.max(df$n_subjects)],
       singular_rate_at_max_N = df$singular_rate[which.max(df$n_subjects)],
@@ -407,7 +385,7 @@ runSESOI <- function(plot_only = FALSE) {
   # Plot faceted heatmap using random quadratic slope blocks and residual-variance rows
   heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_multiplier, fill = .data$power)) +
     geom_tile(color = "white", linewidth = 1.1) +
-    geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3.8, fontface = "bold", family = "Arial") +
+    geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3.5, fontface = "bold", family = "Arial") +
     facet_wrap(~rqs_multiplier, nrow = 1, labeller = labeller(rqs_multiplier = function(x) paste0("RQS Multiplier = ", x))) +
     scale_fill_gradientn(
       colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
@@ -429,12 +407,12 @@ runSESOI <- function(plot_only = FALSE) {
       panel.background = element_rect(fill = "white", color = NA),
       plot.background = element_rect(fill = "white", color = NA),
       strip.background = element_rect(fill = "white", color = NA),
-      strip.text = element_text(size = 13),
-      axis.title = element_text(size = 14),
-      axis.text = element_text(size = 12),
+      strip.text = element_text(size = 12),
+      axis.title = element_text(size = 13),
+      axis.text = element_text(size = 11),
       legend.position = "right",
-      legend.title = element_text(size = 12),
-      legend.text = element_text(size = 11),
+      legend.title = element_text(size = 11),
+      legend.text = element_text(size = 10),
       plot.title = element_text(size = 20, face = "plain", hjust = 0.5),
       panel.spacing = grid::unit(0.9, "lines")
     )
