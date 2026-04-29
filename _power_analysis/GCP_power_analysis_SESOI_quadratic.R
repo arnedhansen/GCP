@@ -49,14 +49,13 @@ runSESOI <- function(plot_only = FALSE) {
   parallel_workers <- 8
   parallel_round_chunk_nsim <- 1
   sim_col <- "gamma_power"
-  target_term <- "contrast_num_c2"
-  model_formula_with_random_quadratic_slope <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 | Subject)
-  model_formula_without_random_quadratic_slope <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c | Subject)
+  model_formula_with_random_quadratic_slope_full <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 | Subject)
+  model_formula_without_random_quadratic_slope_full <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c | Subject)
   output_prefix <- "GCP_power_analysis_SESOI_quadratic"
-  plot_title <- "Power Analysis: SESOI Quadratic Slope (Pilot-informed)"
-  # Refined red-green endpoints with clearer contrast
-  heat_low_color <- "#B2182B"
-  heat_high_color <- "#1A9850"
+  plot_title <- "Power Analysis: SESOI Quadratic Slope"
+  # Darker red-green endpoints with green onset at >= 0.8 in heatmaps
+  heat_low_color <- "#8E0F1F"
+  heat_high_color <- "#0B6E3A"
 
   gcp_root <- resolve_gcp_root()
   figure_output_dir <- file.path(gcp_root, "figures", "power_analysis")
@@ -92,9 +91,8 @@ runSESOI <- function(plot_only = FALSE) {
       n_subjects,
       trials_per_condition,
       sim_col,
-      model_formula_with_random_quadratic_slope,
-      model_formula_without_random_quadratic_slope,
-      target_term,
+      model_formula_with_random_quadratic_slope_full,
+      model_formula_without_random_quadratic_slope_full,
       alpha,
       linear_nuisance_beta,
       beta_raw,
@@ -105,7 +103,7 @@ runSESOI <- function(plot_only = FALSE) {
       residual_sd,
       trial_missingness_rate,
       subject_dropout_rate) {
-    # Count significant tests for the target fixed effect
+    # Count significant likelihood-ratio tests for the target fixed effect
     rejects <- 0
     for (i in seq_len(chunk_nsim)) {
       # Create balanced trial table before missingness and dropout
@@ -156,27 +154,34 @@ runSESOI <- function(plot_only = FALSE) {
       }
 
       # Use full or reduced random-effects structure based on retained data
-      fit_formula <- model_formula_without_random_quadratic_slope
+      model_formula_full <- model_formula_without_random_quadratic_slope_full
       if (nlevels(dat$Subject) >= 8 && length(unique(dat$contrast_num_c2)) >= 3) {
-        fit_formula <- model_formula_with_random_quadratic_slope
+        model_formula_full <- model_formula_with_random_quadratic_slope_full
       }
 
-      fit <- tryCatch(
-        suppressMessages(lmer(fit_formula, data = dat, REML = FALSE)),
+      fit_full <- tryCatch(
+        suppressMessages(lmer(model_formula_full, data = dat, REML = FALSE)),
         error = function(e) NULL
       )
-      if (is.null(fit)) {
+      if (is.null(fit_full)) {
         next
       }
-      cf <- as.data.frame(summary(fit)$coefficients)
-      cf$term <- rownames(cf)
-      target_row <- cf[cf$term == target_term, , drop = FALSE]
-      # Fall back to normal-approximation p-value if needed
-      if ("Pr(>|t|)" %in% names(target_row)) {
-        p_value <- as.numeric(target_row[["Pr(>|t|)"]])
-      } else {
-        p_value <- 2 * stats::pnorm(abs(as.numeric(target_row[["t value"]])), lower.tail = FALSE)
+      model_formula_reduced <- update(model_formula_full, . ~ . - contrast_num_c2)
+      fit_reduced <- tryCatch(
+        suppressMessages(lmer(model_formula_reduced, data = dat, REML = FALSE)),
+        error = function(e) NULL
+      )
+      if (is.null(fit_reduced)) {
+        next
       }
+      lrt_tbl <- tryCatch(
+        suppressWarnings(anova(fit_reduced, fit_full)),
+        error = function(e) NULL
+      )
+      if (is.null(lrt_tbl) || nrow(lrt_tbl) < 2 || !"Pr(>Chisq)" %in% names(lrt_tbl)) {
+        next
+      }
+      p_value <- as.numeric(lrt_tbl[2, "Pr(>Chisq)"])
       rejects <- rejects + as.integer(is.finite(p_value) && p_value < alpha)
     }
     list(chunk_nsim = as.integer(chunk_nsim), rejects = as.integer(rejects))
@@ -194,11 +199,8 @@ runSESOI <- function(plot_only = FALSE) {
 
     scenario_rows <- lapply(seq_len(nrow(scenario_df)), function(idx) {
       scenario <- scenario_df[idx, , drop = FALSE]
-      cat(sprintf("[%s] SCENARIO %s\n", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label))
-      flush.console()
-
       n_rows <- lapply(subject_breaks, function(n_subjects) {
-        cat(sprintf("[%s] START scenario=%s N=%d\n", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects))
+        cat(sprintf("[%s] START scenario=%s N=%d", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects))
         flush.console()
 
         total_nsim <- 0
@@ -224,9 +226,8 @@ runSESOI <- function(plot_only = FALSE) {
             n_subjects = n_subjects,
             trials_per_condition = trials_per_condition,
             sim_col = sim_col,
-            model_formula_with_random_quadratic_slope = model_formula_with_random_quadratic_slope,
-            model_formula_without_random_quadratic_slope = model_formula_without_random_quadratic_slope,
-            target_term = target_term,
+            model_formula_with_random_quadratic_slope_full = model_formula_with_random_quadratic_slope_full,
+            model_formula_without_random_quadratic_slope_full = model_formula_without_random_quadratic_slope_full,
             alpha = alpha,
             linear_nuisance_beta = linear_nuisance_beta,
             beta_raw = sesoi_beta,
@@ -246,6 +247,9 @@ runSESOI <- function(plot_only = FALSE) {
         }
 
         power <- total_rejects / total_nsim
+        power_label <- sub("^0", "", sprintf("%.3f", power))
+        cat(sprintf(" | POWER : %s\n", power_label))
+        flush.console()
         se <- sqrt(power * (1 - power) / total_nsim)
         out <- data.frame(
           scenario_label = scenario$scenario_label,
@@ -328,7 +332,11 @@ runSESOI <- function(plot_only = FALSE) {
     geom_tile(color = "white", linewidth = 1.1) +
     geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3.8, fontface = "bold", family = "Arial") +
     facet_wrap(~rqs_multiplier, nrow = 1, labeller = labeller(rqs_multiplier = function(x) paste0("RQS = ", x))) +
-    scale_fill_gradient(low = heat_low_color, high = heat_high_color, limits = c(0, 1)) +
+    scale_fill_gradientn(
+      colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
+      values = c(0.00, 0.60, 0.79, 0.80, 1.00),
+      limits = c(0, 1)
+    ) +
     coord_fixed() +
     labs(
       x = "Number of subjects",
