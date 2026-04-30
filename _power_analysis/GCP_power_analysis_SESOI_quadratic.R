@@ -8,9 +8,8 @@
 # outcome_mean = 0.471
 # baseline_random_intercept_sd = 0.33
 # baseline_random_slope_sd = 0.05 (fixed)
-# baseline_random_quadratic_slope_sd = 0.13 (levels: 0.06, 0.13, 0.22)
 # baseline_residual_sd = 0.30 (levels: 0.23, 0.30, 0.39)
-# 3-level values are centered on the bootstrap median and CI-informed bounds from pilot data.
+# Residual-SD levels are centered on the bootstrap median and CI-informed bounds from pilot data.
 # Source: /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/pilot_stats/
 
 suppressPackageStartupMessages(library(lme4))
@@ -30,7 +29,7 @@ runSESOI <- function(plot_only = FALSE) {
   sesoi_decision_alpha <- 0.05
   nsim <- 5000
   strict_power_target <- 0.90
-  subject_breaks <- c(20, 30, 40, 50, 60)
+  subject_breaks <- seq(10, 100, by = 10)
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
   sesoi_beta <- -0.10
@@ -44,10 +43,7 @@ runSESOI <- function(plot_only = FALSE) {
   baseline_residual_sd <- 0.30
   ri_multiplier_fixed <- 1.00
   rs_multiplier_fixed <- 1.00
-  rqs_multipliers <- c(0.75, 1.0, 1.25)
-  residual_multipliers <- c(0.75, 1.0, 1.25)
-  # rqs_multipliers <- c(0.4615, 1.00, 1.6923)
-  # residual_multipliers <- c(0.7667, 1.00, 1.30)
+  residual_multipliers <- c(0.23 / 0.30, 1.0, 0.39 / 0.30)
   trial_missingness_rate <- 0.20
   subject_dropout_rate <- 0.10
   parallel_workers <- 8
@@ -70,23 +66,21 @@ runSESOI <- function(plot_only = FALSE) {
   dir.create(figure_output_dir, recursive = TRUE, showWarnings = FALSE)
   dir.create(data_output_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # Build compact scenario grid for residual variance and random quadratic slope
+  # Build compact scenario grid varying only residual SD
   make_scenarios <- function() {
-    scenario_df <- expand.grid(
+    scenario_df <- data.frame(
       residual_multiplier = residual_multipliers,
-      rqs_multiplier = rqs_multipliers,
       stringsAsFactors = FALSE
     )
     scenario_df$scenario_label <- sprintf(
-      "res_%.2f_rqs_%.2f",
-      scenario_df$residual_multiplier,
-      scenario_df$rqs_multiplier
+      "res_%.2f",
+      scenario_df$residual_multiplier
     )
-    scenario_df$varied_component <- "residual_rqs_grid"
-    scenario_df$multiplier <- NA_real_
+    scenario_df$varied_component <- "residual_only"
+    scenario_df$multiplier <- scenario_df$residual_multiplier
     scenario_df$random_intercept_sd_value <- baseline_random_intercept_sd * ri_multiplier_fixed
     scenario_df$random_slope_sd_value <- baseline_random_slope_sd * rs_multiplier_fixed
-    scenario_df$random_quadratic_slope_sd_value <- baseline_random_quadratic_slope_sd * scenario_df$rqs_multiplier
+    scenario_df$random_quadratic_slope_sd_value <- baseline_random_quadratic_slope_sd
     scenario_df$residual_sd_value <- baseline_residual_sd * scenario_df$residual_multiplier
     scenario_df
   }
@@ -338,15 +332,10 @@ runSESOI <- function(plot_only = FALSE) {
     sprintf("%.2f", power_df$residual_sd / baseline_residual_sd),
     levels = rev(sprintf("%.2f", residual_multipliers))
   )
-  power_df$rqs_multiplier <- factor(
-    sprintf("%.2f", power_df$random_quadratic_slope_sd / baseline_random_quadratic_slope_sd),
-    levels = sprintf("%.2f", rqs_multipliers)
-  )
-  stopifnot(length(unique(power_df$scenario_label)) == length(residual_multipliers) * length(rqs_multipliers))
+  stopifnot(length(unique(power_df$scenario_label)) == length(residual_multipliers))
   stopifnot(all(power_df$random_intercept_sd == baseline_random_intercept_sd * ri_multiplier_fixed))
   stopifnot(all(power_df$random_slope_sd == baseline_random_slope_sd * rs_multiplier_fixed))
-  combo_counts <- with(power_df, table(as.character(residual_multiplier), as.character(rqs_multiplier)))
-  stopifnot(all(combo_counts > 0))
+  stopifnot(all(power_df$random_quadratic_slope_sd == baseline_random_quadratic_slope_sd))
 
   # Summarize minimum sample size for target power
   summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
@@ -380,11 +369,10 @@ runSESOI <- function(plot_only = FALSE) {
   print(curve_plot)
   dev.off()
 
-  # Plot faceted heatmap using random quadratic slope blocks and residual-variance rows
+  # Plot single-block heatmap with residual rows and subject columns
   heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_multiplier, fill = .data$power)) +
     geom_tile(color = "white", linewidth = 1.1) +
     geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3.5, fontface = "bold", family = "Arial") +
-    facet_wrap(~rqs_multiplier, nrow = 1, labeller = labeller(rqs_multiplier = function(x) paste0("RQS Multiplier = ", x))) +
     scale_fill_gradientn(
       colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
       values = c(0.00, 0.60, 0.79, 0.80, 1.00),
@@ -395,7 +383,7 @@ runSESOI <- function(plot_only = FALSE) {
     coord_fixed() +
     labs(
       x = "Number of subjects",
-      y = "RV Multiplier",
+      y = "Residuals",
       fill = power_label,
       title = plot_title
     ) +
@@ -404,8 +392,6 @@ runSESOI <- function(plot_only = FALSE) {
       panel.grid = element_blank(),
       panel.background = element_rect(fill = "white", color = NA),
       plot.background = element_rect(fill = "white", color = NA),
-      strip.background = element_rect(fill = "white", color = NA),
-      strip.text = element_text(size = 12),
       axis.title = element_text(size = 13),
       axis.text = element_text(size = 11),
       legend.position = "right",
