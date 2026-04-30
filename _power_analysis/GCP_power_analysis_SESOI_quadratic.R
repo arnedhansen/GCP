@@ -34,7 +34,7 @@ runSESOI <- function(plot_only = FALSE) {
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
   sesoi_beta <- -0.10
-  beta_infl <- 1.25
+  beta_infl <- 1.05
   true_beta <- -0.14*beta_infl
   linear_nuisance_beta <- 0.048
   outcome_mean <- 0.471
@@ -44,9 +44,8 @@ runSESOI <- function(plot_only = FALSE) {
   baseline_residual_sd <- 0.30
   ri_multiplier_fixed <- 1.00
   rs_multiplier_fixed <- 1.00
-  # Temporary: 0.5 / 1.0 / 1.5 of pilot median (baseline_*_sd); restore CI grid when done
-  rqs_multipliers <- c(0.5, 1.0, 1.5)
-  residual_multipliers <- c(0.5, 1.0, 1.5)
+  rqs_multipliers <- c(0.75, 1.0, 1.25)
+  residual_multipliers <- c(0.75, 1.0, 1.25)
   # rqs_multipliers <- c(0.4615, 1.00, 1.6923)
   # residual_multipliers <- c(0.7667, 1.00, 1.30)
   trial_missingness_rate <- 0.20
