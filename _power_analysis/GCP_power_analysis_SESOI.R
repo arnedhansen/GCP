@@ -25,20 +25,20 @@ runSESOI <- function(plot_only = FALSE) {
   # Simulation settings
   seed <- 123
   sesoi_decision_alpha <- 0.05
-  nsim <- 5000
+  nsim <- 1000
   strict_power_target <- 0.90
   subject_breaks <- seq(10, 100, by = 10)
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
   sesoi_beta <- 0.10
-  beta_infl <- 1.05
-  true_beta <- 0.14*beta_infl
+  true_beta <- 0.15
   outcome_mean <- 53.75
   baseline_random_intercept_sd <- 2.96
-  baseline_random_slope_sd <- 0.08
+  baseline_random_slope_sd <- 0.08*1.25 #####
   baseline_residual_sd <- 0.75
   ri_multiplier_fixed <- 1.00
-  residual_multipliers <- c(0.56 / 0.75, 1.0, 0.94 / 0.75)
+  residual_sd_levels <- c(0.56, 0.75, 0.94)
+  residual_multipliers <- residual_sd_levels / baseline_residual_sd
   trial_missingness_rate <- 0.20
   subject_dropout_rate <- 0.10
   parallel_workers <- 8
@@ -301,9 +301,9 @@ runSESOI <- function(plot_only = FALSE) {
       power_df$meets_target_90 <- power_df$power >= strict_power_target
     }
   }
-  power_df$residual_multiplier <- factor(
-    sprintf("%.2f", power_df$residual_sd / baseline_residual_sd),
-    levels = rev(sprintf("%.2f", residual_multipliers))
+  power_df$residual_sd_label <- factor(
+    sprintf("%.2f", power_df$residual_sd),
+    levels = sprintf("%.2f", residual_sd_levels)
   )
   stopifnot(length(unique(power_df$scenario_label)) == length(residual_multipliers))
   stopifnot(all(power_df$random_intercept_sd == baseline_random_intercept_sd * ri_multiplier_fixed))
@@ -328,21 +328,40 @@ runSESOI <- function(plot_only = FALSE) {
     )
   }))
   write.csv(summary_rows, file.path(data_output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
-  curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power, color = .data$scenario_label, group = .data$scenario_label)) +
-    geom_line(linewidth = 0.8) +
-    geom_point(size = 1.5) +
-    geom_hline(yintercept = strict_power_target, linetype = "dashed", color = "grey40", linewidth = 0.5) +
+  curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power, color = .data$residual_sd_label, group = .data$residual_sd_label)) +
+    geom_errorbar(aes(ymin = .data$lower, ymax = .data$upper), linewidth = 0.6, width = 1.6, alpha = 0.70) +
+    geom_line(linewidth = 0.9, linetype = "dotted") +
+    geom_point(size = 2.8) +
+    geom_hline(yintercept = strict_power_target, linetype = "dashed", color = "grey45", linewidth = 0.7) +
+    scale_color_manual(
+      values = stats::setNames(c("#1B9E77", "#D95F02", "#7570B3"), sprintf("%.2f", residual_sd_levels)),
+      breaks = sprintf("%.2f", residual_sd_levels),
+      labels = sprintf("%.2f", residual_sd_levels)
+    ) +
     scale_x_continuous(breaks = sort(unique(subject_breaks))) +
-    scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1), breaks = c(0, 0.25, 0.50, 0.75, 0.90, 1)) +
-    labs(x = "Subjects", y = power_label, color = "Scenario", title = plot_title) +
-    theme_minimal(base_size = 13, base_family = "Arial") +
-    theme(panel.grid.minor = element_blank())
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1), breaks = c(0, 0.25, 0.50, 0.75, 0.90, 1)) +
+    labs(x = "Subjects", y = power_label, color = "Residuals SD", title = plot_title) +
+    theme_classic(base_size = 18, base_family = "Arial") +
+    theme(
+      panel.background = element_rect(fill = "white", color = NA),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.grid = element_blank(),
+      axis.line = element_line(color = "black", linewidth = 1.2),
+      axis.ticks = element_line(color = "black", linewidth = 1.0),
+      axis.ticks.length = grid::unit(0.25, "cm"),
+      axis.title = element_text(size = 20),
+      axis.text = element_text(size = 16, color = "black"),
+      legend.position = "right",
+      legend.title = element_text(size = 15),
+      legend.text = element_text(size = 13),
+      plot.title = element_text(size = 24, face = "plain", hjust = 0.5)
+    )
   png(file = file.path(figure_output_dir, paste0(output_prefix, ".png")), width = 2200, height = 1400, res = 300)
   print(curve_plot)
   dev.off()
 
   # Plot single-block heatmap with residual rows and subject columns
-  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_multiplier, fill = .data$power)) +
+  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_sd_label, fill = .data$power)) +
     geom_tile(color = "white", linewidth = 1.1) +
     geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3.5, fontface = "bold", family = "Arial") +
     scale_fill_gradientn(
@@ -355,7 +374,7 @@ runSESOI <- function(plot_only = FALSE) {
     coord_fixed() +
     labs(
       x = "Number of subjects",
-      y = "Residuals",
+      y = "Residuals SD",
       fill = power_label,
       title = plot_title
     ) +
