@@ -3,12 +3,7 @@
 # install.packages("lme4", repos = "https://cloud.r-project.org")
 # install.packages("ggplot2", repos = "https://cloud.r-project.org")
 # install.packages("scales", repos = "https://cloud.r-project.org")
-# Pilot-informed settings:
-# linear_nuisance_beta = 0.048
-# outcome_mean = 0.471
-# baseline_random_intercept_sd = 0.33
-# baseline_random_slope_sd = 0.05 (fixed)
-# baseline_residual_sd = 0.30 (levels: 0.23, 0.30, 0.39)
+
 # Residual-SD levels are centered on the bootstrap median and CI-informed bounds from pilot data.
 # Source: /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/pilot_stats/
 
@@ -38,7 +33,7 @@ runSESOI <- function(plot_only = FALSE) {
   outcome_mean <- 0.471
   baseline_random_intercept_sd <- 0.33
   baseline_random_slope_sd <- 0.05
-  baseline_random_quadratic_slope_sd <- 0.13*2 #####
+  baseline_random_quadratic_slope_sd <- 0.25 ##### 0.13
   baseline_residual_sd <- 0.30
   ri_multiplier_fixed <- 1.00
   rs_multiplier_fixed <- 1.00
