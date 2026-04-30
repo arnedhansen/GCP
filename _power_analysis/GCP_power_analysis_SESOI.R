@@ -39,7 +39,7 @@ runSESOI <- function(plot_only = FALSE) {
   trial_missingness_rate <- 0.20
   subject_dropout_rate <- 0.10
   parallel_workers <- 8
-  parallel_round_chunk_nsim <- 1
+  parallel_round_chunk_nsim <- 25
   sim_col <- "gamma_power"
   model_formula_full <- gamma_power ~ contrast_num_c + (1 + contrast_num_c | Subject)
   output_prefix <- "GCP_power_analysis_SESOI_linear_fixedMultipliers"
@@ -91,6 +91,7 @@ runSESOI <- function(plot_only = FALSE) {
       trial_missingness_rate,
       subject_dropout_rate) {
     # Count SESOI-decision outcomes and diagnostic metrics
+    fit_attempts <- 0
     valid_fits <- 0
     sesoi_successes <- 0
     sign_errors <- 0
@@ -150,8 +151,13 @@ runSESOI <- function(plot_only = FALSE) {
       if (is.null(coef_tbl) || !"contrast_num_c" %in% rownames(coef_tbl)) {
         next
       }
+      fit_attempts <- fit_attempts + 1
+      is_singular_fit <- isTRUE(lme4::isSingular(fit_full, tol = 1e-4))
+      singular_count <- singular_count + as.integer(is_singular_fit)
+      if (is_singular_fit) {
+        next
+      }
       valid_fits <- valid_fits + 1
-      singular_count <- singular_count + as.integer(isTRUE(lme4::isSingular(fit_full, tol = 1e-4)))
       conv_msgs <- fit_full@optinfo$conv$lme4$messages
       convergence_warn_count <- convergence_warn_count + as.integer(length(conv_msgs) > 0)
 
@@ -170,6 +176,7 @@ runSESOI <- function(plot_only = FALSE) {
     }
     list(
       chunk_nsim = as.integer(chunk_nsim),
+      fit_attempts = as.integer(fit_attempts),
       valid_fits = as.integer(valid_fits),
       sesoi_successes = as.integer(sesoi_successes),
       sign_errors = as.integer(sign_errors),
@@ -197,6 +204,7 @@ runSESOI <- function(plot_only = FALSE) {
         flush.console()
 
         total_nsim <- 0
+        total_fit_attempts <- 0
         total_valid_fits <- 0
         total_sesoi_successes <- 0
         total_sign_errors <- 0
@@ -238,6 +246,7 @@ runSESOI <- function(plot_only = FALSE) {
           )
 
           round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
+          round_fit_attempts <- sum(vapply(chunk_results, function(x) as.integer(x$fit_attempts), integer(1)))
           round_valid_fits <- sum(vapply(chunk_results, function(x) as.integer(x$valid_fits), integer(1)))
           round_sesoi_successes <- sum(vapply(chunk_results, function(x) as.integer(x$sesoi_successes), integer(1)))
           round_sign_errors <- sum(vapply(chunk_results, function(x) as.integer(x$sign_errors), integer(1)))
@@ -246,6 +255,7 @@ runSESOI <- function(plot_only = FALSE) {
           round_singular <- sum(vapply(chunk_results, function(x) as.integer(x$singular_count), integer(1)))
           round_convergence_warn <- sum(vapply(chunk_results, function(x) as.integer(x$convergence_warn_count), integer(1)))
           total_nsim <- total_nsim + round_n
+          total_fit_attempts <- total_fit_attempts + round_fit_attempts
           total_valid_fits <- total_valid_fits + round_valid_fits
           total_sesoi_successes <- total_sesoi_successes + round_sesoi_successes
           total_sign_errors <- total_sign_errors + round_sign_errors
@@ -276,7 +286,7 @@ runSESOI <- function(plot_only = FALSE) {
           fit_success_rate = if (total_nsim > 0) total_valid_fits / total_nsim else NA_real_,
           type_s = if (total_valid_fits > 0) total_sign_errors / total_valid_fits else NA_real_,
           type_m = if (total_type_m_count > 0) total_type_m_sum / total_type_m_count else NA_real_,
-          singular_rate = if (total_valid_fits > 0) total_singular / total_valid_fits else NA_real_,
+          singular_rate = if (total_fit_attempts > 0) total_singular / total_fit_attempts else NA_real_,
           convergence_warn_rate = if (total_valid_fits > 0) total_convergence_warn / total_valid_fits else NA_real_,
           stringsAsFactors = FALSE
         )
@@ -302,9 +312,12 @@ runSESOI <- function(plot_only = FALSE) {
     sprintf("%.2f", power_df$residual_sd),
     levels = sprintf("%.2f", residual_sd_levels)
   )
+  approx_equal <- function(x, y, tol = 1e-8) {
+    abs(x - y) < tol
+  }
   stopifnot(length(unique(power_df$scenario_label)) == length(residual_multipliers))
-  stopifnot(all(power_df$random_intercept_sd == baseline_random_intercept_sd * ri_multiplier_fixed))
-  stopifnot(all(power_df$random_slope_sd == baseline_random_slope_sd))
+  stopifnot(all(approx_equal(power_df$random_intercept_sd, baseline_random_intercept_sd * ri_multiplier_fixed)))
+  stopifnot(all(approx_equal(power_df$random_slope_sd, baseline_random_slope_sd)))
 
   # Summarize minimum sample size for target power
   summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
@@ -370,7 +383,7 @@ runSESOI <- function(plot_only = FALSE) {
     ) +
     coord_fixed() +
     labs(
-      x = "Number of subjects",
+      x = "Subjects",
       y = "Residuals SD",
       fill = power_label,
       title = plot_title
