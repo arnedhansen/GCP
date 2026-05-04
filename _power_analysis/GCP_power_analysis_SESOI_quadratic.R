@@ -9,6 +9,7 @@
 # Random slope SDs are not in that export (set to 0). Outcome mean from power_parameter_manifest.csv.
 # Residual SD scenarios: bootstrap q2.5/q50/q97.5 of sigma (pilot_subject_level_residual_sigma_bootstrap.csv);
 #   many bootstrap replicates can be singular (see pilot_stats warnings).
+# Simulated quadratic effect true_beta = sesoi_beta (power under SESOI); pilot c2 estimate kept as pilot_beta_contrast_num_c2 for figure label.
 # Source: .../data/pilot_stats/
 
 suppressPackageStartupMessages(library(lme4))
@@ -31,8 +32,11 @@ runSESOI <- function() {
   subject_breaks <- seq(10, 100, by = 10)
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
+  ## TEMPORARY: |quadratic β| = 0.1 for SESOI and DGP (revert using commented line below).
   sesoi_beta <- -0.10
-  true_beta <- -0.0858938094095276 ## pilot contrast_num_c2 (PeakAmplitude)
+  pilot_beta_contrast_num_c2 <- -0.0858938094095276 ## pilot contrast_num_c2 (PeakAmplitude); plot label
+  true_beta <- -0.10
+  # true_beta <- pilot_beta_contrast_num_c2 ## pilot DGP (weaker than SESOI)
   linear_nuisance_beta <- 0.0478688311147751 ## pilot contrast_num_c (PeakAmplitude)
   outcome_mean <- 0.471001962697814 ## power_parameter_manifest.csv (PeakAmplitude)
   baseline_random_intercept_sd <- 0.328361971585703 ## pilot VarCorr Subject (Intercept); simplified lmer
@@ -55,8 +59,13 @@ runSESOI <- function() {
   model_formula_without_random_quadratic_slope_full <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c | Subject)
   min_subjects_for_full_quad_re <- 8L
   output_prefix <- "GCP_power_analysis_SESOI_quadratic"
-  figure_res_dpi <- 600L
-  plot_title <- "Power Analysis: SESOI Quadratic Slope"
+  figure_res_dpi <- 600L ## PNG saved with units="in" so theme font sizes match the physical plot size
+  plot_title <- sprintf(
+    "SESOI quadratic power (SESOI=%s; true(DGP)=%s; pilot c2=%s)",
+    format(sesoi_beta, digits = 3),
+    format(true_beta, digits = 3),
+    format(pilot_beta_contrast_num_c2, digits = 3)
+  )
   power_label <- "Power"
   # Darker red-green endpoints with green onset at >= 0.8 in heatmaps
   heat_low_color <- "#8E0F1F"
@@ -332,7 +341,7 @@ runSESOI <- function() {
         random_quadratic_slope_sd = scenario$random_quadratic_slope_sd_value,
         residual_sd = scenario$residual_sd_value,
         n_subjects = n_subjects,
-        power = power_conditional,
+        power = power_unconditional,
         power_conditional = power_conditional,
         power_unconditional = power_unconditional,
         lower = if (is.finite(se_cond)) pmax(0, power_conditional - 1.96 * se_cond) else NA_real_,
@@ -366,7 +375,6 @@ runSESOI <- function() {
 
   power_df <- do.call(rbind, scenario_rows)
   power_df$scenario_label <- factor(power_df$scenario_label, levels = scenario_order, ordered = TRUE)
-  power_df$meets_target_90 <- power_df$power_conditional >= strict_power_target
   write.csv(power_df, curve_csv_path, row.names = FALSE)
 
   power_df$residual_sd_label <- factor(
@@ -384,13 +392,15 @@ runSESOI <- function() {
   # Summarize minimum sample size for target power
   summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
     df <- df[order(df$n_subjects), , drop = FALSE]
-    hit <- df[df$meets_target_90, "n_subjects", drop = TRUE]
+    hit_c <- df[df$power_conditional >= strict_power_target, "n_subjects", drop = TRUE]
+    hit_u <- df[df$power_unconditional >= strict_power_target, "n_subjects", drop = TRUE]
     max_idx <- which.max(df$n_subjects)
     data.frame(
       scenario_label = as.character(df$scenario_label[1]),
       varied_component = as.character(df$varied_component[1]),
       multiplier = as.numeric(df$multiplier[1]),
-      N_min_for_90_conditional = if (length(hit) > 0) min(hit) else NA_integer_,
+      N_min_for_90_conditional = if (length(hit_c) > 0) min(hit_c) else NA_integer_,
+      N_min_for_90_unconditional = if (length(hit_u) > 0) min(hit_u) else NA_integer_,
       power_conditional_at_max_N = df$power_conditional[max_idx],
       power_unconditional_at_max_N = df$power_unconditional[max_idx],
       valid_fit_rate_at_max_N = df$valid_fit_rate[max_idx],
@@ -400,12 +410,13 @@ runSESOI <- function() {
       singular_rate_at_max_N = df$singular_rate[max_idx],
       convergence_warn_rate_at_max_N = df$convergence_warn_rate[max_idx],
       monotonic_non_decreasing_conditional = all(diff(df$power_conditional) >= -0.02),
+      monotonic_non_decreasing_unconditional = all(diff(df$power_unconditional) >= -0.02),
       stringsAsFactors = FALSE
     )
   }))
   write.csv(summary_rows, file.path(data_output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
-  curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power_conditional, color = .data$residual_sd_label, group = .data$residual_sd_label)) +
-    geom_errorbar(aes(ymin = .data$lower, ymax = .data$upper), linewidth = 0.6, width = 1.6, alpha = 0.70) +
+  curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power_unconditional, color = .data$residual_sd_label, group = .data$residual_sd_label)) +
+    geom_errorbar(aes(ymin = .data$lower_unconditional, ymax = .data$upper_unconditional), linewidth = 0.6, width = 1.6, alpha = 0.70) +
     geom_line(linewidth = 0.9, linetype = "dotted") +
     geom_point(size = 2.8) +
     geom_hline(yintercept = strict_power_target, linetype = "dashed", color = "grey45", linewidth = 0.7) +
@@ -432,14 +443,20 @@ runSESOI <- function() {
       legend.text = element_text(size = 13),
       plot.title = element_text(size = 24, face = "plain", hjust = 0.5)
     )
-  png(file = file.path(figure_output_dir, paste0(output_prefix, ".png")), width = 2200, height = 1400, res = figure_res_dpi)
+  png(
+    file = file.path(figure_output_dir, paste0(output_prefix, ".png")),
+    width = 10,
+    height = 6.5,
+    units = "in",
+    res = figure_res_dpi
+  )
   print(curve_plot)
   dev.off()
 
   # Plot single-block heatmap with residual rows and subject columns
-  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_sd_label, fill = .data$power_conditional)) +
+  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_sd_label, fill = .data$power_unconditional)) +
     geom_tile(color = "white", linewidth = 1.1) +
-    geom_text(aes(label = sprintf("%.2f", .data$power_conditional)), color = "white", size = 3.5, fontface = "bold", family = "Arial") +
+    geom_text(aes(label = sprintf("%.2f", .data$power_unconditional)), color = "white", size = 3.5, fontface = "bold", family = "Arial") +
     scale_fill_gradientn(
       colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
       values = c(0.00, 0.60, 0.79, 0.80, 1.00),
@@ -467,7 +484,13 @@ runSESOI <- function() {
       plot.title = element_text(size = 20, face = "plain", hjust = 0.5),
       panel.spacing = grid::unit(0.9, "lines")
     )
-  png(file = file.path(figure_output_dir, paste0(output_prefix, "_heatmap.png")), width = 2500, height = 1400, res = figure_res_dpi)
+  png(
+    file = file.path(figure_output_dir, paste0(output_prefix, "_heatmap.png")),
+    width = 11,
+    height = 6.5,
+    units = "in",
+    res = figure_res_dpi
+  )
   print(heatmap_plot)
   dev.off()
 
