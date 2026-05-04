@@ -12,6 +12,7 @@ suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(scales))
 
 ## Smallest worthwhile interaction (contrast_num_c : microsaccade_c); sign must match preregistration.
+## Simulated true interaction in runSESOI is set to SESOI (power under that alternative); pilot point estimate stays in INTERACTION_PILOT for labels/CI.
 SESOI_INTERACTION <- -0.1
 
 ## pilot_interaction_power_parameters.csv (trial-level lmer; not refit for singularity in last pilot run).
@@ -70,7 +71,8 @@ runSESOI <- function() {
   pil <- INTERACTION_PILOT
 
   sesoi_beta_interaction <- SESOI_INTERACTION
-  true_beta_interaction <- pil$beta_interaction
+  pilot_beta_interaction <- pil$beta_interaction
+  true_beta_interaction <- sesoi_beta_interaction ## DGP truth = SESOI (power under preregistered effect)
   pilot_ci_lo <- pil$beta_interaction_ci95_low
   pilot_ci_hi <- pil$beta_interaction_ci95_high
 
@@ -96,17 +98,34 @@ runSESOI <- function() {
   }
   residual_multipliers <- residual_sd_levels / baseline_residual_sd
 
+  ## One-sided SESOI on negative β: success iff upper one-sided 95% bound < SESOI (evidence β < SESOI).
+  if (is.finite(true_beta_interaction) && is.finite(sesoi_beta_interaction)) {
+    if (sesoi_beta_interaction < 0 && true_beta_interaction > sesoi_beta_interaction) {
+      message(
+        "NOTE: true_beta (DGP) is less negative than SESOI; expect ~0 SESOI power. ",
+        "Use true_beta_interaction <- sesoi_beta_interaction for power under the preregistered effect."
+      )
+    }
+    if (sesoi_beta_interaction > 0 && true_beta_interaction < sesoi_beta_interaction) {
+      message(
+        "NOTE: true_beta (DGP) is smaller than positive SESOI; expect ~0 SESOI success rate."
+      )
+    }
+  }
+
   plot_title <- sprintf(
-    "SESOI power: Contrast × Microsaccade (SESOI=%s; true=%s; pilot 95%% CI [%s, %s]; n=%s trials)",
+    "SESOI power: Contrast × Microsaccade (SESOI=%s; true(DGP)=%s; pilot=%s; pilot 95%% CI [%s, %s]; n=%s trials)",
     format(sesoi_beta_interaction, digits = 3),
     format(true_beta_interaction, digits = 3),
+    format(pilot_beta_interaction, digits = 3),
     format(pilot_ci_lo, digits = 3),
     format(pilot_ci_hi, digits = 3),
     pil$n_trials
   )
   message(
     "Interaction simulation: SESOI=", format(sesoi_beta_interaction, digits = 5),
-    " true_beta (pilot)=", format(true_beta_interaction, digits = 5),
+    " true_beta(DGP)=", format(true_beta_interaction, digits = 5),
+    " pilot_beta=", format(pilot_beta_interaction, digits = 5),
     " pilot 95% CI [", format(pilot_ci_lo, digits = 5), ", ", format(pilot_ci_hi, digits = 5), "]",
     " | residual sigma (q2.5 / q50 / q97.5): ",
     paste(format(residual_sd_levels, digits = 4), collapse = ", ")

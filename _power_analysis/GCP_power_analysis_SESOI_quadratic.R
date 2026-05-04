@@ -39,6 +39,9 @@ runSESOI <- function() {
   baseline_random_slope_sd <- 0 ## no linear slope variance in pilot RI-only refit
   baseline_random_quadratic_slope_sd <- 0 ## no quadratic slope variance in pilot RI-only refit
   residual_sd_levels <- c(0.0226836146363545, 0.297725678624043, 0.474582315010526) ## pilot_subject_level_residual_sigma_bootstrap.csv (PeakAmplitude)
+  ## Bootstrap q025 can be extremely small; (1+c+c2|Subject) then fits as singular almost always.
+  ## Floor low scenario to 1/3 of bootstrap median σ for stable lmer (still a low-noise sensitivity case).
+  residual_sd_levels[1L] <- max(residual_sd_levels[1L], residual_sd_levels[2L] / 3)
   baseline_residual_sd <- residual_sd_levels[2L] ## bootstrap median sigma
   ri_multiplier_fixed <- 1.00
   rs_multiplier_fixed <- 1.00
