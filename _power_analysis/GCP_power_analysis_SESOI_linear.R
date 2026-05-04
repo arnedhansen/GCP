@@ -4,8 +4,12 @@
 # install.packages("ggplot2", repos = "https://cloud.r-project.org")
 # install.packages("scales", repos = "https://cloud.r-project.org")
 
-# Residual-SD levels are centered on the bootstrap median and CI-informed bounds from pilot data.
-# Source: /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/pilot_stats/
+# PeakFrequency pilot (GCP_power_analysis_pilot_stats.R): fixed effects from pilot_mixed_model_fixed_effects_*;
+# VarCorr from pilot_mixed_model_random_effects_* after refit with (1|Subject) because (1+contrast|Subject) was singular.
+# Random slope SD is therefore not identified in that export (set to 0 in the DGP below).
+# Residual SD scenarios: bootstrap q2.5/q50/q97.5 of sigma (subject resampling, same lmer formula as final pilot model);
+#   see pilot_subject_level_residual_sigma_bootstrap.csv (sync after rerunning pilot_stats).
+# Source: .../data/pilot_stats/
 
 suppressPackageStartupMessages(library(lme4))
 suppressPackageStartupMessages(library(ggplot2))
@@ -18,23 +22,23 @@ resolve_gcp_root <- function() {
   "/Volumes/g_psyplafor_methlab$/Students/Arne/GCP"
 }
 
-runSESOI <- function(plot_only = FALSE) {
+runSESOI <- function() {
   # Simulation settings
   seed <- 123
   sesoi_decision_alpha <- 0.05
-  nsim <- 1000
+  nsim <- 100
   strict_power_target <- 0.90
   subject_breaks <- seq(10, 100, by = 10)
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
   sesoi_beta <- 0.10
-  true_beta <- 0.15
-  outcome_mean <- 53.75
-  baseline_random_intercept_sd <- 2.96
-  baseline_random_slope_sd <- 0.1 ##### 0.08
-  baseline_residual_sd <- 0.75
+  true_beta <- 0.247639934007685 ## pilot contrast_num_c (PeakFrequency), simplified lmer
+  outcome_mean <- 53.7513302255983 ## power_parameter_manifest.csv (PeakFrequency)
+  baseline_random_intercept_sd <- 2.95596738123282 ## pilot VarCorr Subject (Intercept); simplified lmer
+  baseline_random_slope_sd <- 0 ## no slope variance in pilot RI-only refit
+  residual_sd_levels <- c(0.507149145838165, 0.719094938085036, 0.893798456396689) ## pilot_subject_level_residual_sigma_bootstrap.csv (PeakFrequency)
+  baseline_residual_sd <- residual_sd_levels[2L] ## bootstrap median sigma (scenarios are q2.5/median/q97.5)
   ri_multiplier_fixed <- 1.00
-  residual_sd_levels <- c(0.56, 0.75, 0.94)
   residual_multipliers <- residual_sd_levels / baseline_residual_sd
   trial_missingness_rate <- 0.20
   subject_dropout_rate <- 0.10
@@ -42,7 +46,8 @@ runSESOI <- function(plot_only = FALSE) {
   parallel_round_chunk_nsim <- 25
   sim_col <- "gamma_power"
   model_formula_full <- gamma_power ~ contrast_num_c + (1 + contrast_num_c | Subject)
-  output_prefix <- "GCP_power_analysis_SESOI_linear_fixedMultipliers"
+  output_prefix <- "GCP_power_analysis_SESOI_linear"
+  figure_res_dpi <- 600L
   plot_title <- "Power Analysis: SESOI Linear Slope"
   power_label <- "Power"
   # Darker red-green endpoints with green onset at >= 0.8 in heatmaps
@@ -187,127 +192,150 @@ runSESOI <- function(plot_only = FALSE) {
     )
   }
 
-  if (!plot_only) {
-    cl <- parallel::makeCluster(as.integer(parallel_workers), type = "PSOCK")
-    on.exit(parallel::stopCluster(cl), add = TRUE)
-    parallel::clusterEvalQ(cl, suppressPackageStartupMessages(library(lme4)))
-    parallel::clusterSetRNGStream(cl, iseed = seed)
-    parallel::clusterExport(cl, varlist = c("estimate_power_chunk", "contrast_levels"), envir = environment())
+  cl <- parallel::makeCluster(as.integer(parallel_workers), type = "PSOCK")
+  on.exit(parallel::stopCluster(cl), add = TRUE)
+  parallel::clusterEvalQ(cl, suppressPackageStartupMessages(library(lme4)))
+  parallel::clusterSetRNGStream(cl, iseed = seed)
+  parallel::clusterExport(cl, varlist = c("estimate_power_chunk", "contrast_levels"), envir = environment())
 
-    scenario_df <- make_scenarios()
-    scenario_order <- scenario_df$scenario_label
+  scenario_df <- make_scenarios()
+  scenario_order <- scenario_df$scenario_label
 
-    scenario_rows <- lapply(seq_len(nrow(scenario_df)), function(idx) {
-      scenario <- scenario_df[idx, , drop = FALSE]
-      n_rows <- lapply(subject_breaks, function(n_subjects) {
-        cat(sprintf("[%s] START scenario=%s N=%d", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects))
-        flush.console()
+  scenario_rows <- lapply(seq_len(nrow(scenario_df)), function(idx) {
+    scenario <- scenario_df[idx, , drop = FALSE]
+    n_rows <- lapply(subject_breaks, function(n_subjects) {
+      cat(sprintf("[%s] START scenario=%s N=%d", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects))
+      flush.console()
 
-        total_nsim <- 0
-        total_fit_attempts <- 0
-        total_valid_fits <- 0
-        total_sesoi_successes <- 0
-        total_sign_errors <- 0
-        total_type_m_sum <- 0
-        total_type_m_count <- 0
-        total_singular <- 0
-        total_convergence_warn <- 0
-        # Run chunks in parallel until nsim is reached
-        while (total_nsim < nsim) {
-          remaining <- nsim - total_nsim
-          workers_this_round <- min(length(cl), remaining)
-          chunk_sizes <- rep(parallel_round_chunk_nsim, workers_this_round)
-          overflow <- (workers_this_round * parallel_round_chunk_nsim) - remaining
-          if (overflow > 0) {
-            for (k in seq_len(overflow)) {
-              idx2 <- ((k - 1) %% workers_this_round) + 1
-              chunk_sizes[idx2] <- chunk_sizes[idx2] - 1
-            }
+      total_nsim <- 0
+      total_fit_attempts <- 0
+      total_valid_fits <- 0
+      total_sesoi_successes <- 0
+      total_sign_errors <- 0
+      total_type_m_sum <- 0
+      total_type_m_count <- 0
+      total_singular <- 0
+      total_convergence_warn <- 0
+      # Run chunks in parallel until nsim is reached
+      while (total_nsim < nsim) {
+        remaining <- nsim - total_nsim
+        workers_this_round <- min(length(cl), remaining)
+        chunk_sizes <- rep(parallel_round_chunk_nsim, workers_this_round)
+        overflow <- (workers_this_round * parallel_round_chunk_nsim) - remaining
+        if (overflow > 0) {
+          for (k in seq_len(overflow)) {
+            idx2 <- ((k - 1) %% workers_this_round) + 1
+            chunk_sizes[idx2] <- chunk_sizes[idx2] - 1
           }
-          chunk_sizes <- chunk_sizes[chunk_sizes > 0]
-
-          chunk_results <- parallel::parLapply(
-            cl = cl,
-            X = chunk_sizes,
-            fun = estimate_power_chunk,
-            n_subjects = n_subjects,
-            trials_per_condition = trials_per_condition,
-            sim_col = sim_col,
-            model_formula_full = model_formula_full,
-            sesoi_decision_alpha = sesoi_decision_alpha,
-            beta_raw = sesoi_beta,
-            true_beta = true_beta,
-            outcome_mean = outcome_mean,
-            random_intercept_sd = scenario$random_intercept_sd_value,
-            random_slope_sd = scenario$random_slope_sd_value,
-            residual_sd = scenario$residual_sd_value,
-            trial_missingness_rate = trial_missingness_rate,
-            subject_dropout_rate = subject_dropout_rate
-          )
-
-          round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
-          round_fit_attempts <- sum(vapply(chunk_results, function(x) as.integer(x$fit_attempts), integer(1)))
-          round_valid_fits <- sum(vapply(chunk_results, function(x) as.integer(x$valid_fits), integer(1)))
-          round_sesoi_successes <- sum(vapply(chunk_results, function(x) as.integer(x$sesoi_successes), integer(1)))
-          round_sign_errors <- sum(vapply(chunk_results, function(x) as.integer(x$sign_errors), integer(1)))
-          round_type_m_sum <- sum(vapply(chunk_results, function(x) as.numeric(x$type_m_sum), numeric(1)))
-          round_type_m_count <- sum(vapply(chunk_results, function(x) as.integer(x$type_m_count), integer(1)))
-          round_singular <- sum(vapply(chunk_results, function(x) as.integer(x$singular_count), integer(1)))
-          round_convergence_warn <- sum(vapply(chunk_results, function(x) as.integer(x$convergence_warn_count), integer(1)))
-          total_nsim <- total_nsim + round_n
-          total_fit_attempts <- total_fit_attempts + round_fit_attempts
-          total_valid_fits <- total_valid_fits + round_valid_fits
-          total_sesoi_successes <- total_sesoi_successes + round_sesoi_successes
-          total_sign_errors <- total_sign_errors + round_sign_errors
-          total_type_m_sum <- total_type_m_sum + round_type_m_sum
-          total_type_m_count <- total_type_m_count + round_type_m_count
-          total_singular <- total_singular + round_singular
-          total_convergence_warn <- total_convergence_warn + round_convergence_warn
         }
+        chunk_sizes <- chunk_sizes[chunk_sizes > 0]
 
-        power <- if (total_valid_fits > 0) total_sesoi_successes / total_valid_fits else NA_real_
-        power_label_out <- if (is.finite(power)) sub("^0", "", sprintf("%.3f", power)) else "NA"
-        cat(sprintf(" | SESOI POWER : %s\n", power_label_out))
-        flush.console()
-        se <- if (total_valid_fits > 0) sqrt(power * (1 - power) / total_valid_fits) else NA_real_
-        out <- data.frame(
-          scenario_label = scenario$scenario_label,
-          varied_component = scenario$varied_component,
-          multiplier = scenario$multiplier,
+        chunk_results <- parallel::parLapply(
+          cl = cl,
+          X = chunk_sizes,
+          fun = estimate_power_chunk,
+          n_subjects = n_subjects,
+          trials_per_condition = trials_per_condition,
+          sim_col = sim_col,
+          model_formula_full = model_formula_full,
+          sesoi_decision_alpha = sesoi_decision_alpha,
+          beta_raw = sesoi_beta,
+          true_beta = true_beta,
+          outcome_mean = outcome_mean,
           random_intercept_sd = scenario$random_intercept_sd_value,
           random_slope_sd = scenario$random_slope_sd_value,
           residual_sd = scenario$residual_sd_value,
-          n_subjects = n_subjects,
-          power = power,
-          lower = if (is.finite(se)) pmax(0, power - 1.96 * se) else NA_real_,
-          upper = if (is.finite(se)) pmin(1, power + 1.96 * se) else NA_real_,
-          nsim = total_nsim,
-          valid_fits = total_valid_fits,
-          fit_success_rate = if (total_nsim > 0) total_valid_fits / total_nsim else NA_real_,
-          type_s = if (total_valid_fits > 0) total_sign_errors / total_valid_fits else NA_real_,
-          type_m = if (total_type_m_count > 0) total_type_m_sum / total_type_m_count else NA_real_,
-          singular_rate = if (total_fit_attempts > 0) total_singular / total_fit_attempts else NA_real_,
-          convergence_warn_rate = if (total_valid_fits > 0) total_convergence_warn / total_valid_fits else NA_real_,
-          stringsAsFactors = FALSE
+          trial_missingness_rate = trial_missingness_rate,
+          subject_dropout_rate = subject_dropout_rate
         )
-        out
-      })
-      do.call(rbind, n_rows)
-    })
 
-    power_df <- do.call(rbind, scenario_rows)
-    power_df$scenario_label <- factor(power_df$scenario_label, levels = scenario_order, ordered = TRUE)
-    power_df$meets_target_90 <- power_df$power >= strict_power_target
-    write.csv(power_df, curve_csv_path, row.names = FALSE)
-  } else {
-    if (!file.exists(curve_csv_path)) {
-      stop("plot_only=TRUE requested but curve CSV not found: ", curve_csv_path)
-    }
-    power_df <- read.csv(curve_csv_path, stringsAsFactors = FALSE)
-    if (!"meets_target_90" %in% names(power_df)) {
-      power_df$meets_target_90 <- power_df$power >= strict_power_target
-    }
-  }
+        round_n <- sum(vapply(chunk_results, function(x) as.integer(x$chunk_nsim), integer(1)))
+        round_fit_attempts <- sum(vapply(chunk_results, function(x) as.integer(x$fit_attempts), integer(1)))
+        round_valid_fits <- sum(vapply(chunk_results, function(x) as.integer(x$valid_fits), integer(1)))
+        round_sesoi_successes <- sum(vapply(chunk_results, function(x) as.integer(x$sesoi_successes), integer(1)))
+        round_sign_errors <- sum(vapply(chunk_results, function(x) as.integer(x$sign_errors), integer(1)))
+        round_type_m_sum <- sum(vapply(chunk_results, function(x) as.numeric(x$type_m_sum), numeric(1)))
+        round_type_m_count <- sum(vapply(chunk_results, function(x) as.integer(x$type_m_count), integer(1)))
+        round_singular <- sum(vapply(chunk_results, function(x) as.integer(x$singular_count), integer(1)))
+        round_convergence_warn <- sum(vapply(chunk_results, function(x) as.integer(x$convergence_warn_count), integer(1)))
+        total_nsim <- total_nsim + round_n
+        total_fit_attempts <- total_fit_attempts + round_fit_attempts
+        total_valid_fits <- total_valid_fits + round_valid_fits
+        total_sesoi_successes <- total_sesoi_successes + round_sesoi_successes
+        total_sign_errors <- total_sign_errors + round_sign_errors
+        total_type_m_sum <- total_type_m_sum + round_type_m_sum
+        total_type_m_count <- total_type_m_count + round_type_m_count
+        total_singular <- total_singular + round_singular
+        total_convergence_warn <- total_convergence_warn + round_convergence_warn
+      }
+
+      power_conditional <- if (total_valid_fits > 0) total_sesoi_successes / total_valid_fits else NA_real_
+      power_unconditional <- if (total_nsim > 0) total_sesoi_successes / total_nsim else NA_real_
+      valid_fit_rate <- if (total_nsim > 0) total_valid_fits / total_nsim else NA_real_
+      fit_failure_rate <- if (total_nsim > 0) 1 - valid_fit_rate else NA_real_
+      se_cond <- if (total_valid_fits > 0) {
+        sqrt(power_conditional * (1 - power_conditional) / total_valid_fits)
+      } else {
+        NA_real_
+      }
+      se_uncond <- if (total_nsim > 0) {
+        sqrt(power_unconditional * (1 - power_unconditional) / total_nsim)
+      } else {
+        NA_real_
+      }
+      cat(sprintf(
+        " | cond=%s uncond=%s valid_fit=%.3f fit_fail=%.3f\n",
+        if (is.finite(power_conditional)) sub("^0", "", sprintf("%.3f", power_conditional)) else "NA",
+        if (is.finite(power_unconditional)) sub("^0", "", sprintf("%.3f", power_unconditional)) else "NA",
+        valid_fit_rate,
+        fit_failure_rate
+      ))
+      flush.console()
+      out <- data.frame(
+        scenario_label = scenario$scenario_label,
+        varied_component = scenario$varied_component,
+        multiplier = scenario$multiplier,
+        random_intercept_sd = scenario$random_intercept_sd_value,
+        random_slope_sd = scenario$random_slope_sd_value,
+        residual_sd = scenario$residual_sd_value,
+        n_subjects = n_subjects,
+        power = power_conditional,
+        power_conditional = power_conditional,
+        power_unconditional = power_unconditional,
+        lower = if (is.finite(se_cond)) pmax(0, power_conditional - 1.96 * se_cond) else NA_real_,
+        upper = if (is.finite(se_cond)) pmin(1, power_conditional + 1.96 * se_cond) else NA_real_,
+        lower_unconditional = if (is.finite(se_uncond)) {
+          pmax(0, power_unconditional - 1.96 * se_uncond)
+        } else {
+          NA_real_
+        },
+        upper_unconditional = if (is.finite(se_uncond)) {
+          pmin(1, power_unconditional + 1.96 * se_uncond)
+        } else {
+          NA_real_
+        },
+        nsim = total_nsim,
+        valid_fits = total_valid_fits,
+        valid_fit_rate = valid_fit_rate,
+        fit_failure_rate = fit_failure_rate,
+        fit_success_rate = valid_fit_rate,
+        type_s = if (total_valid_fits > 0) total_sign_errors / total_valid_fits else NA_real_,
+        type_m = if (total_type_m_count > 0) total_type_m_sum / total_type_m_count else NA_real_,
+        singular_rate = if (total_fit_attempts > 0) total_singular / total_fit_attempts else NA_real_,
+        fit_attempt_rate = if (total_nsim > 0) total_fit_attempts / total_nsim else NA_real_,
+        convergence_warn_rate = if (total_valid_fits > 0) total_convergence_warn / total_valid_fits else NA_real_,
+        stringsAsFactors = FALSE
+      )
+      out
+    })
+    do.call(rbind, n_rows)
+  })
+
+  power_df <- do.call(rbind, scenario_rows)
+  power_df$scenario_label <- factor(power_df$scenario_label, levels = scenario_order, ordered = TRUE)
+  power_df$meets_target_90 <- power_df$power_conditional >= strict_power_target
+  write.csv(power_df, curve_csv_path, row.names = FALSE)
+
   power_df$residual_sd_label <- factor(
     sprintf("%.2f", power_df$residual_sd),
     levels = sprintf("%.2f", residual_sd_levels)
@@ -323,22 +351,26 @@ runSESOI <- function(plot_only = FALSE) {
   summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
     df <- df[order(df$n_subjects), , drop = FALSE]
     hit <- df[df$meets_target_90, "n_subjects", drop = TRUE]
+    max_idx <- which.max(df$n_subjects)
     data.frame(
       scenario_label = as.character(df$scenario_label[1]),
       varied_component = as.character(df$varied_component[1]),
       multiplier = as.numeric(df$multiplier[1]),
-      N_min_for_90 = if (length(hit) > 0) min(hit) else NA_integer_,
-      power_at_max_N = df$power[which.max(df$n_subjects)],
-      type_s_at_max_N = df$type_s[which.max(df$n_subjects)],
-      type_m_at_max_N = df$type_m[which.max(df$n_subjects)],
-      singular_rate_at_max_N = df$singular_rate[which.max(df$n_subjects)],
-      convergence_warn_rate_at_max_N = df$convergence_warn_rate[which.max(df$n_subjects)],
-      monotonic_non_decreasing = all(diff(df$power) >= -0.02),
+      N_min_for_90_conditional = if (length(hit) > 0) min(hit) else NA_integer_,
+      power_conditional_at_max_N = df$power_conditional[max_idx],
+      power_unconditional_at_max_N = df$power_unconditional[max_idx],
+      valid_fit_rate_at_max_N = df$valid_fit_rate[max_idx],
+      fit_failure_rate_at_max_N = df$fit_failure_rate[max_idx],
+      type_s_at_max_N = df$type_s[max_idx],
+      type_m_at_max_N = df$type_m[max_idx],
+      singular_rate_at_max_N = df$singular_rate[max_idx],
+      convergence_warn_rate_at_max_N = df$convergence_warn_rate[max_idx],
+      monotonic_non_decreasing_conditional = all(diff(df$power_conditional) >= -0.02),
       stringsAsFactors = FALSE
     )
   }))
   write.csv(summary_rows, file.path(data_output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
-  curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power, color = .data$residual_sd_label, group = .data$residual_sd_label)) +
+  curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power_conditional, color = .data$residual_sd_label, group = .data$residual_sd_label)) +
     geom_errorbar(aes(ymin = .data$lower, ymax = .data$upper), linewidth = 0.6, width = 1.6, alpha = 0.70) +
     geom_line(linewidth = 0.9, linetype = "dotted") +
     geom_point(size = 2.8) +
@@ -366,14 +398,14 @@ runSESOI <- function(plot_only = FALSE) {
       legend.text = element_text(size = 13),
       plot.title = element_text(size = 24, face = "plain", hjust = 0.5)
     )
-  png(file = file.path(figure_output_dir, paste0(output_prefix, ".png")), width = 2200, height = 1400, res = 300)
+  png(file = file.path(figure_output_dir, paste0(output_prefix, ".png")), width = 2200, height = 1400, res = figure_res_dpi)
   print(curve_plot)
   dev.off()
 
   # Plot single-block heatmap with residual rows and subject columns
-  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_sd_label, fill = .data$power)) +
+  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_sd_label, fill = .data$power_conditional)) +
     geom_tile(color = "white", linewidth = 1.1) +
-    geom_text(aes(label = sprintf("%.2f", .data$power)), color = "white", size = 3.5, fontface = "bold", family = "Arial") +
+    geom_text(aes(label = sprintf("%.2f", .data$power_conditional)), color = "white", size = 3.5, fontface = "bold", family = "Arial") +
     scale_fill_gradientn(
       colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
       values = c(0.00, 0.60, 0.79, 0.80, 1.00),
@@ -401,11 +433,11 @@ runSESOI <- function(plot_only = FALSE) {
       plot.title = element_text(size = 20, face = "plain", hjust = 0.5),
       panel.spacing = grid::unit(0.9, "lines")
     )
-  png(file = file.path(figure_output_dir, paste0(output_prefix, "_heatmap.png")), width = 2500, height = 1400, res = 300)
+  png(file = file.path(figure_output_dir, paste0(output_prefix, "_heatmap.png")), width = 2500, height = 1400, res = figure_res_dpi)
   print(heatmap_plot)
   dev.off()
 
   power_df
 }
 
-result <- runSESOI(plot_only = FALSE)
+result <- runSESOI()

@@ -1,19 +1,38 @@
-## Simulates SESOI-based quadratic power with mixed models and saves a CSV power curve plus PNG figure
+## SESOI power: outcome ~ Contrast * Microsaccades + (1|Subject)
+## - SESOI on the interaction is fixed in SESOI_INTERACTION below (smallest worthwhile effect).
+## - DGP and pilot Wald 95% CI on the interaction are hardcoded in INTERACTION_PILOT (sync with
+##   pilot_interaction_power_parameters.csv after GCP_power_analysis_pilot_stats.R).
 
 # install.packages("lme4", repos = "https://cloud.r-project.org")
 # install.packages("ggplot2", repos = "https://cloud.r-project.org")
 # install.packages("scales", repos = "https://cloud.r-project.org")
 
-# PeakAmplitude pilot: fixed effects from pilot_mixed_model_fixed_effects_*; VarCorr from
-# pilot_mixed_model_random_effects_* after refit with (1|Subject) because (1+contrast|Subject) was singular.
-# Random slope SDs are not in that export (set to 0). Outcome mean from power_parameter_manifest.csv.
-# Residual SD scenarios: bootstrap q2.5/q50/q97.5 of sigma (pilot_subject_level_residual_sigma_bootstrap.csv);
-#   many bootstrap replicates can be singular (see pilot_stats warnings).
-# Source: .../data/pilot_stats/
-
 suppressPackageStartupMessages(library(lme4))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(scales))
+
+## Smallest worthwhile interaction (contrast_num_c : microsaccade_c); sign must match preregistration.
+SESOI_INTERACTION <- -0.1
+
+## pilot_interaction_power_parameters.csv (trial-level lmer; not refit for singularity in last pilot run).
+## Residual sigma q’s: bootstrap of sigma; pilot run had many singular bootstrap replicates (see pilot script).
+INTERACTION_PILOT <- list(
+  n_trials = 4873L,
+  beta_contrast = 0.0571699956984791,
+  beta_microsaccade_scaled = -0.0772666601017382,
+  beta_interaction = -0.0315725610848192,
+  beta_interaction_ci95_low = -0.183807070288692,
+  beta_interaction_ci95_high = 0.120661948119054,
+  outcome_mean = 0.474613144549082,
+  microsaccade_grand_mean = -9.0142360443939,
+  random_intercept_sd = 0.282581432289417,
+  residual_sd_q025 = 0.303770018078857,
+  residual_sd_q50 = 5.2641544665137,
+  residual_sd_q975 = 9.63919403465419,
+  ms_beta_contrast_raw = -5.85634481768995,
+  ms_random_intercept_sd = 27.9570496381504,
+  ms_residual_sd = 90.1140441784987
+)
 
 resolve_gcp_root <- function() {
   if (.Platform$OS.type == "windows") {
@@ -23,7 +42,6 @@ resolve_gcp_root <- function() {
 }
 
 runSESOI <- function() {
-  # Simulation settings
   seed <- 123
   sesoi_decision_alpha <- 0.05
   nsim <- 100
@@ -31,35 +49,68 @@ runSESOI <- function() {
   subject_breaks <- seq(10, 100, by = 10)
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
-  sesoi_beta <- -0.10
-  true_beta <- -0.0858938094095276 ## pilot contrast_num_c2 (PeakAmplitude)
-  linear_nuisance_beta <- 0.0478688311147751 ## pilot contrast_num_c (PeakAmplitude)
-  outcome_mean <- 0.471001962697814 ## power_parameter_manifest.csv (PeakAmplitude)
-  baseline_random_intercept_sd <- 0.328361971585703 ## pilot VarCorr Subject (Intercept); simplified lmer
-  baseline_random_slope_sd <- 0 ## no linear slope variance in pilot RI-only refit
-  baseline_random_quadratic_slope_sd <- 0 ## no quadratic slope variance in pilot RI-only refit
-  residual_sd_levels <- c(0.0226836146363545, 0.297725678624043, 0.474582315010526) ## pilot_subject_level_residual_sigma_bootstrap.csv (PeakAmplitude)
-  baseline_residual_sd <- residual_sd_levels[2L] ## bootstrap median sigma
+
   ri_multiplier_fixed <- 1.00
-  rs_multiplier_fixed <- 1.00
-  residual_multipliers <- residual_sd_levels / baseline_residual_sd
   trial_missingness_rate <- 0.20
   subject_dropout_rate <- 0.10
   parallel_workers <- 8
   parallel_round_chunk_nsim <- 25
+
   sim_col <- "gamma_power"
-  model_formula_with_random_quadratic_slope_full <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 | Subject)
-  model_formula_without_random_quadratic_slope_full <- gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c | Subject)
-  min_subjects_for_full_quad_re <- 8L
-  output_prefix <- "GCP_power_analysis_SESOI_quadratic"
+  model_formula_full <- gamma_power ~ contrast_num_c * microsaccade_c + (1 | Subject)
+  coef_name_interaction <- "contrast_num_c:microsaccade_c"
+
+  output_prefix <- "GCP_power_analysis_SESOI_interaction"
   figure_res_dpi <- 600L
-  plot_title <- "Power Analysis: SESOI Quadratic Slope"
-  power_label <- "Power"
-  # Darker red-green endpoints with green onset at >= 0.8 in heatmaps
+  power_label <- "Power (conditional)"
   heat_low_color <- "#8E0F1F"
   heat_high_color <- "#0B6E3A"
 
   gcp_root <- resolve_gcp_root()
+  pil <- INTERACTION_PILOT
+
+  sesoi_beta_interaction <- SESOI_INTERACTION
+  true_beta_interaction <- pil$beta_interaction
+  pilot_ci_lo <- pil$beta_interaction_ci95_low
+  pilot_ci_hi <- pil$beta_interaction_ci95_high
+
+  true_beta_contrast <- pil$beta_contrast
+  true_beta_microsaccade <- pil$beta_microsaccade_scaled
+  outcome_mean <- pil$outcome_mean
+  microsaccade_mean <- pil$microsaccade_grand_mean
+  baseline_ms_subject_sd <- max(pil$ms_random_intercept_sd, 1e-6, na.rm = TRUE)
+  baseline_ms_residual_sd <- max(pil$ms_residual_sd, 1e-6, na.rm = TRUE)
+  true_ms_effect_contrast <- pil$ms_beta_contrast_raw
+  if (!is.finite(true_ms_effect_contrast)) {
+    stop("INTERACTION_PILOT$ms_beta_contrast_raw must be finite.", call. = FALSE)
+  }
+
+  baseline_random_intercept_sd <- max(pil$random_intercept_sd, 1e-6, na.rm = TRUE)
+  baseline_residual_sd <- pil$residual_sd_q50
+  residual_sd_levels <- c(pil$residual_sd_q025, pil$residual_sd_q50, pil$residual_sd_q975)
+  if (any(!is.finite(residual_sd_levels)) || !is.finite(baseline_residual_sd) || baseline_residual_sd <= 0) {
+    stop("Invalid INTERACTION_PILOT residual_sd_q025 / residual_sd_q50 / residual_sd_q975.", call. = FALSE)
+  }
+  if (!is.finite(pilot_ci_lo) || !is.finite(pilot_ci_hi)) {
+    stop("Invalid INTERACTION_PILOT beta_interaction_ci95_low / beta_interaction_ci95_high.", call. = FALSE)
+  }
+  residual_multipliers <- residual_sd_levels / baseline_residual_sd
+
+  plot_title <- sprintf(
+    "SESOI power: Contrast × Microsaccade (SESOI=%s; true=%s; pilot 95%% CI [%s, %s]; n=%s trials)",
+    format(sesoi_beta_interaction, digits = 3),
+    format(true_beta_interaction, digits = 3),
+    format(pilot_ci_lo, digits = 3),
+    format(pilot_ci_hi, digits = 3),
+    pil$n_trials
+  )
+  message(
+    "Interaction simulation: SESOI=", format(sesoi_beta_interaction, digits = 5),
+    " true_beta (pilot)=", format(true_beta_interaction, digits = 5),
+    " pilot 95% CI [", format(pilot_ci_lo, digits = 5), ", ", format(pilot_ci_hi, digits = 5), "]",
+    " | residual sigma (q2.5 / q50 / q97.5): ",
+    paste(format(residual_sd_levels, digits = 4), collapse = ", ")
+  )
   figure_output_dir <- file.path(gcp_root, "figures", "power_analysis")
   data_output_dir <- file.path(gcp_root, "data", "power_analysis")
   curve_csv_path <- file.path(data_output_dir, paste0(output_prefix, "_curve.csv"))
@@ -67,21 +118,15 @@ runSESOI <- function() {
   dir.create(figure_output_dir, recursive = TRUE, showWarnings = FALSE)
   dir.create(data_output_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # Build compact scenario grid varying only residual SD
   make_scenarios <- function() {
     scenario_df <- data.frame(
       residual_multiplier = residual_multipliers,
       stringsAsFactors = FALSE
     )
-    scenario_df$scenario_label <- sprintf(
-      "res_%.2f",
-      scenario_df$residual_multiplier
-    )
+    scenario_df$scenario_label <- sprintf("res_%.2f", scenario_df$residual_multiplier)
     scenario_df$varied_component <- "residual_only"
     scenario_df$multiplier <- scenario_df$residual_multiplier
     scenario_df$random_intercept_sd_value <- baseline_random_intercept_sd * ri_multiplier_fixed
-    scenario_df$random_slope_sd_value <- baseline_random_slope_sd * rs_multiplier_fixed
-    scenario_df$random_quadratic_slope_sd_value <- baseline_random_quadratic_slope_sd
     scenario_df$residual_sd_value <- baseline_residual_sd * scenario_df$residual_multiplier
     scenario_df
   }
@@ -91,31 +136,32 @@ runSESOI <- function() {
       n_subjects,
       trials_per_condition,
       sim_col,
-      model_formula_with_random_quadratic_slope_full,
-      model_formula_without_random_quadratic_slope_full,
-      min_subjects_for_full_quad_re,
+      model_formula_full,
+      coef_name_interaction,
       sesoi_decision_alpha,
-      linear_nuisance_beta,
       beta_raw,
       true_beta,
       outcome_mean,
+      microsaccade_mean,
+      baseline_ms_subject_sd,
+      baseline_ms_residual_sd,
+      true_ms_effect_contrast,
+      true_beta_contrast,
+      true_beta_microsaccade,
       random_intercept_sd,
-      random_slope_sd,
-      random_quadratic_slope_sd,
       residual_sd,
       trial_missingness_rate,
       subject_dropout_rate) {
-    # Count SESOI-decision outcomes and diagnostic metrics
-    fit_attempts <- 0
-    valid_fits <- 0
-    sesoi_successes <- 0
-    sign_errors <- 0
+    fit_attempts <- 0L
+    valid_fits <- 0L
+    sesoi_successes <- 0L
+    sign_errors <- 0L
     type_m_sum <- 0
-    type_m_count <- 0
-    singular_count <- 0
-    convergence_warn_count <- 0
+    type_m_count <- 0L
+    singular_count <- 0L
+    convergence_warn_count <- 0L
+
     for (i in seq_len(chunk_nsim)) {
-      # Create balanced trial table before missingness and dropout
       Subject <- factor(rep(seq_len(n_subjects), each = length(contrast_levels) * trials_per_condition))
       contrast <- factor(
         rep(rep(contrast_levels, each = trials_per_condition), times = n_subjects),
@@ -123,34 +169,37 @@ runSESOI <- function() {
         ordered = TRUE
       )
       contrast_num <- as.numeric(as.character(contrast))
-      # Build standardized linear and quadratic predictors
       contrast_num_c <- as.numeric(scale(contrast_num, center = TRUE, scale = TRUE))
-      contrast_num_c2 <- contrast_num_c^2
-      dat <- data.frame(Subject = Subject, contrast_num_c = contrast_num_c, contrast_num_c2 = contrast_num_c2)
 
-      # Generate outcome with fixed effects, random effects, and residual noise
-      n_subject_levels <- nlevels(dat$Subject)
-      random_intercepts <- rnorm(n_subject_levels, mean = 0, sd = random_intercept_sd)
-      random_slopes <- rnorm(n_subject_levels, mean = 0, sd = random_slope_sd)
-      random_quadratic_slopes <- rnorm(n_subject_levels, mean = 0, sd = random_quadratic_slope_sd)
+      n_subj <- nlevels(Subject)
+      ms_intercept_subj <- rnorm(n_subj, mean = 0, sd = baseline_ms_subject_sd)
+      ms_lin <- microsaccade_mean + true_ms_effect_contrast * contrast_num_c +
+        ms_intercept_subj[Subject] +
+        rnorm(length(Subject), mean = 0, sd = baseline_ms_residual_sd)
+      microsaccade_c <- as.numeric(scale(ms_lin, center = TRUE, scale = TRUE))
+
+      dat <- data.frame(
+        Subject = Subject,
+        contrast_num_c = contrast_num_c,
+        microsaccade_c = microsaccade_c
+      )
+
+      random_intercepts <- rnorm(n_subj, mean = 0, sd = random_intercept_sd)
       x <- dat$contrast_num_c
-      x2 <- dat$contrast_num_c2
+      m <- dat$microsaccade_c
       mu <- outcome_mean +
         random_intercepts[dat$Subject] +
-        random_slopes[dat$Subject] * x +
-        random_quadratic_slopes[dat$Subject] * x2 +
-        linear_nuisance_beta * x +
-        true_beta * x2
+        true_beta_contrast * x +
+        true_beta_microsaccade * m +
+        true_beta * x * m
       dat[[sim_col]] <- mu + rnorm(nrow(dat), mean = 0, sd = residual_sd)
 
-      # Apply trial-level missingness
       keep_trial <- stats::runif(nrow(dat)) > trial_missingness_rate
       dat <- dat[keep_trial, , drop = FALSE]
       if (nrow(dat) == 0) {
         next
       }
 
-      # Apply subject-level dropout after trial loss
       subject_levels <- levels(droplevels(dat$Subject))
       n_drop_subjects <- floor(length(subject_levels) * subject_dropout_rate)
       if (n_drop_subjects > 0) {
@@ -162,14 +211,6 @@ runSESOI <- function() {
         next
       }
 
-      # Match DGP (random linear + quadratic slopes) whenever N supports the full RE structure.
-      # Note: scaled contrast^2 is constant within contrast level; the faulty unique(x2)>=3 gate never fired.
-      model_formula_full <- if (nlevels(dat$Subject) >= min_subjects_for_full_quad_re) {
-        model_formula_with_random_quadratic_slope_full
-      } else {
-        model_formula_without_random_quadratic_slope_full
-      }
-
       fit_full <- tryCatch(
         suppressMessages(lmer(model_formula_full, data = dat, REML = FALSE)),
         error = function(e) NULL
@@ -178,21 +219,21 @@ runSESOI <- function() {
         next
       }
       coef_tbl <- tryCatch(summary(fit_full)$coefficients, error = function(e) NULL)
-      if (is.null(coef_tbl) || !"contrast_num_c2" %in% rownames(coef_tbl)) {
+      if (is.null(coef_tbl) || !coef_name_interaction %in% rownames(coef_tbl)) {
         next
       }
-      fit_attempts <- fit_attempts + 1
+      fit_attempts <- fit_attempts + 1L
       is_singular_fit <- isTRUE(lme4::isSingular(fit_full, tol = 1e-4))
       singular_count <- singular_count + as.integer(is_singular_fit)
       if (is_singular_fit) {
         next
       }
-      valid_fits <- valid_fits + 1
+      valid_fits <- valid_fits + 1L
       conv_msgs <- fit_full@optinfo$conv$lme4$messages
       convergence_warn_count <- convergence_warn_count + as.integer(length(conv_msgs) > 0)
 
-      est <- as.numeric(coef_tbl["contrast_num_c2", "Estimate"])
-      est_se <- as.numeric(coef_tbl["contrast_num_c2", "Std. Error"])
+      est <- as.numeric(coef_tbl[coef_name_interaction, "Estimate"])
+      est_se <- as.numeric(coef_tbl[coef_name_interaction, "Std. Error"])
       z_one_sided <- stats::qnorm(1 - sesoi_decision_alpha)
       ci_low_one_sided <- est - z_one_sided * est_se
       ci_high_one_sided <- est + z_one_sided * est_se
@@ -201,9 +242,10 @@ runSESOI <- function() {
       sign_errors <- sign_errors + as.integer(sign(est) != sign(true_beta))
       if (isTRUE(sesoi_success)) {
         type_m_sum <- type_m_sum + abs(est / true_beta)
-        type_m_count <- type_m_count + 1
+        type_m_count <- type_m_count + 1L
       }
     }
+
     list(
       chunk_nsim = as.integer(chunk_nsim),
       fit_attempts = as.integer(fit_attempts),
@@ -221,7 +263,11 @@ runSESOI <- function() {
   on.exit(parallel::stopCluster(cl), add = TRUE)
   parallel::clusterEvalQ(cl, suppressPackageStartupMessages(library(lme4)))
   parallel::clusterSetRNGStream(cl, iseed = seed)
-  parallel::clusterExport(cl, varlist = c("estimate_power_chunk", "contrast_levels"), envir = environment())
+  parallel::clusterExport(
+    cl,
+    varlist = c("estimate_power_chunk", "contrast_levels"),
+    envir = environment()
+  )
 
   scenario_df <- make_scenarios()
   scenario_order <- scenario_df$scenario_label
@@ -232,16 +278,16 @@ runSESOI <- function() {
       cat(sprintf("[%s] START scenario=%s N=%d", format(Sys.time(), "%H:%M:%S"), scenario$scenario_label, n_subjects))
       flush.console()
 
-      total_nsim <- 0
-      total_fit_attempts <- 0
-      total_valid_fits <- 0
-      total_sesoi_successes <- 0
-      total_sign_errors <- 0
+      total_nsim <- 0L
+      total_fit_attempts <- 0L
+      total_valid_fits <- 0L
+      total_sesoi_successes <- 0L
+      total_sign_errors <- 0L
       total_type_m_sum <- 0
-      total_type_m_count <- 0
-      total_singular <- 0
-      total_convergence_warn <- 0
-      # Run chunks in parallel until nsim is reached
+      total_type_m_count <- 0L
+      total_singular <- 0L
+      total_convergence_warn <- 0L
+
       while (total_nsim < nsim) {
         remaining <- nsim - total_nsim
         workers_this_round <- min(length(cl), remaining)
@@ -262,17 +308,19 @@ runSESOI <- function() {
           n_subjects = n_subjects,
           trials_per_condition = trials_per_condition,
           sim_col = sim_col,
-          model_formula_with_random_quadratic_slope_full = model_formula_with_random_quadratic_slope_full,
-          model_formula_without_random_quadratic_slope_full = model_formula_without_random_quadratic_slope_full,
-          min_subjects_for_full_quad_re = min_subjects_for_full_quad_re,
+          model_formula_full = model_formula_full,
+          coef_name_interaction = coef_name_interaction,
           sesoi_decision_alpha = sesoi_decision_alpha,
-          linear_nuisance_beta = linear_nuisance_beta,
-          beta_raw = sesoi_beta,
-          true_beta = true_beta,
+          beta_raw = sesoi_beta_interaction,
+          true_beta = true_beta_interaction,
           outcome_mean = outcome_mean,
+          microsaccade_mean = microsaccade_mean,
+          baseline_ms_subject_sd = baseline_ms_subject_sd,
+          baseline_ms_residual_sd = baseline_ms_residual_sd,
+          true_ms_effect_contrast = true_ms_effect_contrast,
+          true_beta_contrast = true_beta_contrast,
+          true_beta_microsaccade = true_beta_microsaccade,
           random_intercept_sd = scenario$random_intercept_sd_value,
-          random_slope_sd = scenario$random_slope_sd_value,
-          random_quadratic_slope_sd = scenario$random_quadratic_slope_sd_value,
           residual_sd = scenario$residual_sd_value,
           trial_missingness_rate = trial_missingness_rate,
           subject_dropout_rate = subject_dropout_rate
@@ -302,16 +350,10 @@ runSESOI <- function() {
       power_unconditional <- if (total_nsim > 0) total_sesoi_successes / total_nsim else NA_real_
       valid_fit_rate <- if (total_nsim > 0) total_valid_fits / total_nsim else NA_real_
       fit_failure_rate <- if (total_nsim > 0) 1 - valid_fit_rate else NA_real_
-      se_cond <- if (total_valid_fits > 0) {
-        sqrt(power_conditional * (1 - power_conditional) / total_valid_fits)
-      } else {
-        NA_real_
-      }
-      se_uncond <- if (total_nsim > 0) {
-        sqrt(power_unconditional * (1 - power_unconditional) / total_nsim)
-      } else {
-        NA_real_
-      }
+
+      se_cond <- if (total_valid_fits > 0) sqrt(power_conditional * (1 - power_conditional) / total_valid_fits) else NA_real_
+      se_uncond <- if (total_nsim > 0) sqrt(power_unconditional * (1 - power_unconditional) / total_nsim) else NA_real_
+
       cat(sprintf(
         " | cond=%s uncond=%s valid_fit=%.3f fit_fail=%.3f\n",
         if (is.finite(power_conditional)) sub("^0", "", sprintf("%.3f", power_conditional)) else "NA",
@@ -320,13 +362,12 @@ runSESOI <- function() {
         fit_failure_rate
       ))
       flush.console()
-      out <- data.frame(
+
+      data.frame(
         scenario_label = scenario$scenario_label,
         varied_component = scenario$varied_component,
         multiplier = scenario$multiplier,
         random_intercept_sd = scenario$random_intercept_sd_value,
-        random_slope_sd = scenario$random_slope_sd_value,
-        random_quadratic_slope_sd = scenario$random_quadratic_slope_sd_value,
         residual_sd = scenario$residual_sd_value,
         n_subjects = n_subjects,
         power = power_conditional,
@@ -334,16 +375,8 @@ runSESOI <- function() {
         power_unconditional = power_unconditional,
         lower = if (is.finite(se_cond)) pmax(0, power_conditional - 1.96 * se_cond) else NA_real_,
         upper = if (is.finite(se_cond)) pmin(1, power_conditional + 1.96 * se_cond) else NA_real_,
-        lower_unconditional = if (is.finite(se_uncond)) {
-          pmax(0, power_unconditional - 1.96 * se_uncond)
-        } else {
-          NA_real_
-        },
-        upper_unconditional = if (is.finite(se_uncond)) {
-          pmin(1, power_unconditional + 1.96 * se_uncond)
-        } else {
-          NA_real_
-        },
+        lower_unconditional = if (is.finite(se_uncond)) pmax(0, power_unconditional - 1.96 * se_uncond) else NA_real_,
+        upper_unconditional = if (is.finite(se_uncond)) pmin(1, power_unconditional + 1.96 * se_uncond) else NA_real_,
         nsim = total_nsim,
         valid_fits = total_valid_fits,
         valid_fit_rate = valid_fit_rate,
@@ -356,7 +389,6 @@ runSESOI <- function() {
         convergence_warn_rate = if (total_valid_fits > 0) total_convergence_warn / total_valid_fits else NA_real_,
         stringsAsFactors = FALSE
       )
-      out
     })
     do.call(rbind, n_rows)
   })
@@ -375,19 +407,16 @@ runSESOI <- function() {
   }
   stopifnot(length(unique(power_df$scenario_label)) == length(residual_multipliers))
   stopifnot(all(approx_equal(power_df$random_intercept_sd, baseline_random_intercept_sd * ri_multiplier_fixed)))
-  stopifnot(all(approx_equal(power_df$random_slope_sd, baseline_random_slope_sd * rs_multiplier_fixed)))
-  stopifnot(all(approx_equal(power_df$random_quadratic_slope_sd, baseline_random_quadratic_slope_sd)))
 
-  # Summarize minimum sample size for target power
   summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
     df <- df[order(df$n_subjects), , drop = FALSE]
-    hit <- df[df$meets_target_90, "n_subjects", drop = TRUE]
+    hit_cond <- df[df$meets_target_90, "n_subjects", drop = TRUE]
     max_idx <- which.max(df$n_subjects)
     data.frame(
       scenario_label = as.character(df$scenario_label[1]),
       varied_component = as.character(df$varied_component[1]),
       multiplier = as.numeric(df$multiplier[1]),
-      N_min_for_90_conditional = if (length(hit) > 0) min(hit) else NA_integer_,
+      N_min_for_90_conditional = if (length(hit_cond) > 0) min(hit_cond) else NA_integer_,
       power_conditional_at_max_N = df$power_conditional[max_idx],
       power_unconditional_at_max_N = df$power_unconditional[max_idx],
       valid_fit_rate_at_max_N = df$valid_fit_rate[max_idx],
@@ -401,6 +430,7 @@ runSESOI <- function() {
     )
   }))
   write.csv(summary_rows, file.path(data_output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
+
   curve_plot <- ggplot(power_df, aes(x = .data$n_subjects, y = .data$power_conditional, color = .data$residual_sd_label, group = .data$residual_sd_label)) +
     geom_errorbar(aes(ymin = .data$lower, ymax = .data$upper), linewidth = 0.6, width = 1.6, alpha = 0.70) +
     geom_line(linewidth = 0.9, linetype = "dotted") +
@@ -433,7 +463,6 @@ runSESOI <- function() {
   print(curve_plot)
   dev.off()
 
-  # Plot single-block heatmap with residual rows and subject columns
   heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_sd_label, fill = .data$power_conditional)) +
     geom_tile(color = "white", linewidth = 1.1) +
     geom_text(aes(label = sprintf("%.2f", .data$power_conditional)), color = "white", size = 3.5, fontface = "bold", family = "Arial") +
@@ -445,12 +474,7 @@ runSESOI <- function() {
       labels = sprintf("%.2f", seq(0, 1, by = 0.2))
     ) +
     coord_fixed() +
-    labs(
-      x = "Subjects",
-      y = "Residuals SD",
-      fill = power_label,
-      title = plot_title
-    ) +
+    labs(x = "Subjects", y = "Residuals SD", fill = power_label, title = plot_title) +
     theme_minimal(base_size = 16, base_family = "Arial") +
     theme(
       panel.grid = element_blank(),
