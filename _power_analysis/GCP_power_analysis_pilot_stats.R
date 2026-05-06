@@ -102,6 +102,17 @@ summary_stats <- function(x) {
   )
 }
 
+winsorize_quantile <- function(x, probs = c(0.01, 0.99)) {
+  x <- as.numeric(x)
+  ok <- is.finite(x)
+  if (!any(ok)) {
+    return(x)
+  }
+  qq <- stats::quantile(x[ok], probs = probs, names = FALSE, na.rm = TRUE)
+  x[ok] <- pmin(pmax(x[ok], qq[1]), qq[2])
+  x
+}
+
 paired_contrasts <- function(df_subject_means, value_col) {
   cond_levels <- levels(df_subject_means$Contrast)
   pairs <- utils::combn(cond_levels, 2, simplify = FALSE)
@@ -198,6 +209,45 @@ safe_random_slope_sd <- function(model_obj, term_name) {
     return(0)
   }
   as.numeric(hit[1])
+}
+
+fit_subject_level_model_stable <- function(formula_correlated, formula_uncorrelated, formula_linear_uncorrelated, data, outcome_label) {
+  fit <- tryCatch(
+    suppressMessages(lmer(formula_correlated, data = data, REML = FALSE)),
+    error = function(e) NULL
+  )
+  if (!is.null(fit) && !isSingular(fit, tol = 1e-4)) {
+    return(fit)
+  }
+  note_pilot_warning(paste0(outcome_label, ": correlated random-slopes model singular/failed; trying uncorrelated random effects (||)."))
+
+  fit <- tryCatch(
+    suppressMessages(lmer(formula_uncorrelated, data = data, REML = FALSE)),
+    error = function(e) NULL
+  )
+  if (!is.null(fit) && !isSingular(fit, tol = 1e-4)) {
+    return(fit)
+  }
+  note_pilot_warning(paste0(outcome_label, ": full uncorrelated random-slopes model singular/failed; trying linear-slope-only uncorrelated model."))
+
+  fit <- tryCatch(
+    suppressMessages(lmer(formula_linear_uncorrelated, data = data, REML = FALSE)),
+    error = function(e) NULL
+  )
+  if (!is.null(fit) && !isSingular(fit, tol = 1e-4)) {
+    return(fit)
+  }
+  note_pilot_warning(paste0(outcome_label, ": linear-slope-only model singular/failed; falling back to random-intercept-only model."))
+
+  fit <- suppressMessages(lmer(
+    update(formula_linear_uncorrelated, . ~ . - (1 + contrast_num_c || Subject) + (1 | Subject)),
+    data = data,
+    REML = FALSE
+  ))
+  if (isSingular(fit, tol = 1e-4)) {
+    note_pilot_warning(paste0(outcome_label, ": random-intercept-only fallback is still singular."))
+  }
+  fit
 }
 
 build_triangulated_manifest <- function(subject_level_means, mm_freq, mm_power) {
@@ -299,7 +349,12 @@ bootstrap_interaction_residual_sigma <- function(take, B = 500L, rng_seed = 123L
       next
     }
     fit <- tryCatch(
-      suppressMessages(lmer(form, data = take_b, REML = FALSE)),
+      suppressMessages(lmer(
+        form,
+        data = take_b,
+        REML = FALSE,
+        control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+      )),
       error = function(e) NULL
     )
     if (!is.null(fit)) {
@@ -365,7 +420,12 @@ bootstrap_subject_level_residual_sigma <- function(subject_level_means, formula_
       next
     }
     fit <- tryCatch(
-      suppressMessages(lmer(formula_obj, data = take_b, REML = FALSE)),
+      suppressMessages(lmer(
+        formula_obj,
+        data = take_b,
+        REML = FALSE,
+        control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+      )),
       error = function(e) NULL
     )
     if (!is.null(fit)) {
@@ -425,6 +485,8 @@ fit_and_export_interaction_pilot <- function(merged_path, output_dir) {
   take <- mt[, c(id_col, "Condition", y_col, ms_col), drop = FALSE]
   names(take) <- c("Subject", "Condition", "gamma_power", "microsaccade_raw")
   take <- take[is.finite(take$gamma_power) & is.finite(take$microsaccade_raw), , drop = FALSE]
+  take$gamma_power <- winsorize_quantile(take$gamma_power, probs = c(0.01, 0.99))
+  take$microsaccade_raw <- winsorize_quantile(take$microsaccade_raw, probs = c(0.01, 0.99))
   take$Subject <- factor(take$Subject)
   take$contrast_num <- normalize_pilot_contrast_numbers(take$Condition)
   take <- take[is.finite(take$contrast_num), , drop = FALSE]
@@ -436,11 +498,21 @@ fit_and_export_interaction_pilot <- function(merged_path, output_dir) {
   take$microsaccade_c <- as.numeric(scale(take$microsaccade_raw, center = TRUE, scale = TRUE))
 
   mm_ms <- tryCatch(
-    suppressMessages(lmer(microsaccade_raw ~ contrast_num_c + (1 | Subject), data = take, REML = FALSE)),
+    suppressMessages(lmer(
+      microsaccade_raw ~ contrast_num_c + (1 | Subject),
+      data = take,
+      REML = FALSE,
+      control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+    )),
     error = function(e) NULL
   )
   mm_int <- tryCatch(
-    suppressMessages(lmer(gamma_power ~ contrast_num_c * microsaccade_c + (1 | Subject), data = take, REML = FALSE)),
+    suppressMessages(lmer(
+      gamma_power ~ contrast_num_c * microsaccade_c + (1 | Subject),
+      data = take,
+      REML = FALSE,
+      control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+    )),
     error = function(e) NULL
   )
   if (is.null(mm_int)) {
@@ -645,43 +717,21 @@ pairwise_power <- paired_contrasts(subject_level_means, "PeakAmplitude")
 pairwise_contrasts <- rbind(pairwise_frequency, pairwise_power)
 
 message("Fitting mixed models for parameterization guidance.")
-mm_freq <- lmer(
-  PeakFrequency ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c | Subject),
+mm_freq <- fit_subject_level_model_stable(
+  formula_correlated = PeakFrequency ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 | Subject),
+  formula_uncorrelated = PeakFrequency ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 || Subject),
+  formula_linear_uncorrelated = PeakFrequency ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c || Subject),
   data = subject_level_means,
-  REML = FALSE
+  outcome_label = "PeakFrequency (subject-level means)"
 )
-if (isSingular(mm_freq, tol = 1e-4)) {
-  note_pilot_warning(
-    "PeakFrequency (subject-level means): initial model singular; refitting with (1 | Subject) only."
-  )
-  mm_freq <- lmer(
-    PeakFrequency ~ contrast_num_c + contrast_num_c2 + (1 | Subject),
-    data = subject_level_means,
-    REML = FALSE
-  )
-  if (isSingular(mm_freq, tol = 1e-4)) {
-    note_pilot_warning("PeakFrequency (subject-level means): refitted random-intercept-only model is still singular.")
-  }
-}
 
-mm_power <- lmer(
-  PeakAmplitude ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c | Subject),
+mm_power <- fit_subject_level_model_stable(
+  formula_correlated = PeakAmplitude ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 | Subject),
+  formula_uncorrelated = PeakAmplitude ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 || Subject),
+  formula_linear_uncorrelated = PeakAmplitude ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c || Subject),
   data = subject_level_means,
-  REML = FALSE
+  outcome_label = "PeakAmplitude (subject-level means)"
 )
-if (isSingular(mm_power, tol = 1e-4)) {
-  note_pilot_warning(
-    "PeakAmplitude (subject-level means): initial model singular; refitting with (1 | Subject) only."
-  )
-  mm_power <- lmer(
-    PeakAmplitude ~ contrast_num_c + contrast_num_c2 + (1 | Subject),
-    data = subject_level_means,
-    REML = FALSE
-  )
-  if (isSingular(mm_power, tol = 1e-4)) {
-    note_pilot_warning("PeakAmplitude (subject-level means): refitted random-intercept-only model is still singular.")
-  }
-}
 
 mixed_model_stats <- rbind(
   extract_mixed_model_stats(mm_freq, "PeakFrequency"),
