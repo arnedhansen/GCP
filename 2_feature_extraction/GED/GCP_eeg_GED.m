@@ -3,7 +3,7 @@
 % Extracts trial-level gamma-band (30-90 Hz) peak frequencies from EEG data
 % recorded during a visual grating task with four contrast conditions
 % (25%, 50%, 75%, 100%). Generalized eigendecomposition is used to derive
-% spatial filters that maximise the stimulus-vs-baseline gamma power ratio,
+% spatial filters that maximise stimulus-vs-baseline gamma power,
 % replacing conventional channel-level analyses with a component-space
 % approach that improves the signal-to-noise ratio of narrow-band
 % gamma oscillations.
@@ -11,64 +11,39 @@
 % Pipeline overview
 % -----------------
 % Phase 1 — Broadband GED and component selection (per subject)
-%   1. Pool trials across all four conditions.
-%   2. Bandpass-filter the continuous data into the broadband gamma range
-%      (30-90 Hz, FIR) and compute per-trial covariance matrices for three
-%      stimulus windows (full 0-2 s, early 0-0.6 s, late 1-2 s) and a
-%      shared pre-stimulus baseline (-1.5 to -0.25 s).
-%   3. Average covariance matrices across trials and apply Tikhonov
-%      regularisation (lambda = 0.05).
-%   4. Solve the generalised eigenvalue problem S_stim * w = lambda * S_base * w
-%      separately for each time window, yielding up to 20 candidate
-%      spatial filters ranked by eigenvalue.
-%   5. For each candidate, compute the forward-model topography and score it
-%      against a simulated signed occipital template (Gaussian-weighted
-%      posterior positive lobe, frontal negative lobe).
-%   6. Classify components as occipital, EMG, mixed, or unclear using a
-%      two-dimensional adaptive scoring system (occipital evidence vs.
-%      EMG artifact score).
-%   7. Apply hard selection gates: minimum eigenvalue, minimum gamma
-%      increase (>= 10%), and dominant-peak spectral form quality
-%      (raw-spectrum dominant-peak scoring, >= 0.45).
-%   8. Apply artifact rejection gates: frontal/temporal leakage, line-
-%      harmonic dominance, trial-wise stationarity, burst ratio,
-%      high-frequency spectral slope (EMG proxy), condition locking.
-%      Adaptive thresholds are derived from the per-subject component
-%      distribution (robust median +/- MAD).
-%   9. Exclude dominant eigenvalue outliers (lambda1/lambda2 ratio + MAD).
-%  10. Combine eligible occipital-classified components into an eigenvalue-
-%      weighted spatial filter; apply cross-window consistency matching
-%      (full <-> early <-> late) and award a score bonus for components
-%      that are stable across windows.
+%   1. Pool trials across conditions and compute gamma-band covariances
+%      (30-90 Hz FIR) for three stimulus windows (full/early/late) and
+%      one shared pre-stimulus baseline.
+%   2. Solve window-specific GED (S_stim * w = lambda * S_base * w) with
+%      regularisation and rank candidate components by eigenvalue.
+%   3. Score candidates using topography (occipital template agreement,
+%      posterior concentration), spectral peak-form quality, and artifact
+%      proxy metrics (front/temporal leak, line-harmonic ratio, stationarity,
+%      burst ratio, HF slope, condition locking).
+%   4. Apply adaptive hard rejection and dominant-outlier exclusion, then
+%      build an eigenvalue-weighted combined occipital component set.
 %
-% Phase 2 — Trial-level narrowband scanning (per subject, condition, trial)
-%   1. Sweep a 3-Hz-wide FIR bandpass filter across 30-90 Hz in 1-Hz
-%      steps. For each frequency, compute the trial-level power ratio
-%      (stimulus / baseline) in component space using three benchmark
-%      methods: (a) raw posterior-ROI channel average, (b) top-eigenvalue
-%      GED component, (c) combined artifact-screened weighted GED.
-%   2. Trim the power-ratio spectrum to the 30-90 Hz analysis band.
-%   3. Detect peaks on each raw trial spectrum:
-%        - Single peak: tallest prominent peak in 30-90 Hz.
-%        - Dual peaks: tallest peaks below and above 50 Hz.
-%        - Spectral centroid: positive-mass centroid in 40-80 Hz.
+% Phase 2 — Trial-level spectral scanning (per subject, condition, trial)
+%   1. Project each trial to raw/top-eig/combined spaces and compute
+%      spectrum-based power scans on a 30-90 Hz grid (default 0.5 Hz).
+%      Scans are derived from spectral bins (FFT), not per-frequency FIR reruns.
+%   2. Express power as robust dB ratio:
+%      10*log10((p_stim + floor)/(p_base + floor)).
+%   3. Flag numerical-instability cases (near-floor baseline power across
+%      many frequencies/components) and exclude unstable trials automatically.
+%   4. Detect per-trial spectral features (single-peak, low/high peaks,
+%      centroid) and compute peak-centered gamma power.
 %
 % Outputs
 % -------
-%   - Per-condition, per-subject: mean/median single-peak frequency,
-%     dual-peak frequencies, centroid frequency, peak detection rates.
-%   - Three-way benchmark comparison: detectability, prominence,
-%     trial-level reliability (CV), condition separation (linear slope
-%     across contrast levels, delta 100%-25%).
-%   - Grand-average raw power spectra and condition-separation
-%     statistics (one-sample t-test on subject-level slopes/deltas).
-%   - Simulation validation: ground-truth sensitivity, specificity,
-%     and localisation error across SNR, depth, overlap, and artifact
-%     parameter sweeps.
-%   - Trial-level GLMM: GammaFrequency ~ Condition + (1|subjectID).
-%   - Diagnostic figures per subject (topographies, spectra, heatmaps,
-%     EMG exclusion scatter, selected/rejected component panels) and
-%     group-level summary dashboards.
+%   - Per-condition/per-subject peak frequency and power summaries
+%     (full, early, late windows).
+%   - Three-method benchmark summaries (raw, top-eig GED, combined GED):
+%     detectability, prominence, trial CV, and condition separation.
+%   - Subject diagnostics (component selection, rejection reasons,
+%     topographies, spectra), group summary figures, and GLMM check.
+%   - Optional ground-truth simulation validation.
+%   - Optional subject-level parallel execution (toggle in setup section).
 
 %% Setup
 startup
@@ -89,9 +64,12 @@ gamma_peak_power_halfwidth_hz = 2.5;
 
 % Narrowband scanning parameters (direct analysis-band scan only)
 analysis_freq_range = [30, 90];
-scan_freqs = analysis_freq_range(1):1:analysis_freq_range(2);
+scan_freq_step_hz = 0.5;            % analysis grid resolution (Hz)
+scan_freqs = analysis_freq_range(1):scan_freq_step_hz:analysis_freq_range(2);
 nFreqs = length(scan_freqs);
 scan_width = 3;
+use_parallel_subject_loop = false;  % optional subject-level parallelization
+max_parallel_workers = [];          % [] = automatic, otherwise positive integer
 
 % GED parameters
 % Trial-limited per-subject setting:
@@ -207,7 +185,7 @@ simulation_depth_levels = [0.6 1.0 1.4];
 simulation_overlap_levels = [0.15 0.35 0.55];
 simulation_artifact_levels = [0.0 0.25 0.5];
 
-% Raw power-ratio peak detection parameters (no detrending/normalization)
+% Raw dB-spectrum peak detection parameters (no detrending/normalization)
 peak_min_prom_frac = 0.15;         % MinPeakProminence as fraction of current-spectrum max
 peak_min_distance_hz = 5;          % MinPeakDistance in Hz
 peak_min_prom_abs = 0.02;          % absolute prominence floor (robustness in low-amplitude trials)
@@ -328,7 +306,26 @@ primary_slope_stats = struct();
 primary_delta_stats = struct();
 
 %% Process each subject
-for subj = 1:nSubj
+if use_parallel_subject_loop
+    try
+        if isempty(gcp('nocreate'))
+            parpool('threads');
+        end
+    catch
+        warning('Parallel pool could not be started. Falling back to serial subject loop.');
+        use_parallel_subject_loop = false;
+    end
+end
+if use_parallel_subject_loop
+    if isempty(max_parallel_workers) || ~isfinite(max_parallel_workers) || max_parallel_workers < 1
+        parfor_workers = Inf;
+    else
+        parfor_workers = round(max_parallel_workers);
+    end
+else
+    parfor_workers = 1;
+end
+parfor (subj = 1:nSubj, parfor_workers)
     close all
     tic
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
@@ -1357,9 +1354,9 @@ for subj = 1:nSubj
     end
 
     %% ================================================================
-    %  PHASE 2: Per condition — trial-level narrowband scanning
+    %  PHASE 2: Per condition — trial-level spectral scanning
     %  ================================================================
-    % Use window-specific filters for each power-ratio output
+    % Use window-specific filters for each dB-spectrum output
     for wi = 1:3
         if wi == 1
             W_comb = W_combined_full;
@@ -1461,37 +1458,27 @@ for subj = 1:nSubj
         valid_freq_counts_early = zeros(nTrl, 1);
         valid_freq_counts_late = zeros(nTrl, 1);
 
-        for fi = 1:nFreqs
-            clc
-            fprintf('Subject    %s (%d/%d)\nCondition  %d/4\nFrequency  %d/%d\n', ...
-                subjects{subj}, subj, nSubj, cond, fi, nFreqs);
-            cf = scan_freqs(fi);
-            bpfreq = [max(cf - scan_width/2, 1), cf + scan_width/2];
-
-            cfg_filt = [];
-            cfg_filt.bpfilter   = 'yes';
-            cfg_filt.bpfreq     = bpfreq;
-            cfg_filt.bpfilttype = 'fir';
-            cfg_filt.bpfiltord  = round(3 * fsample / bpfreq(1));
-            dat_nb = ft_preprocessing(cfg_filt, dat);
-
-            % Baseline quality gate (per frequency): reject trials with implausibly
-            % low/high baseline power (log-domain robust outlier detection).
-            baseline_power_raw = nan(nTrl, 1);
-            baseline_power_comb_full = nan(nTrl, 1);
-            baseline_power_comb_early = nan(nTrl, 1);
-            baseline_power_comb_late = nan(nTrl, 1);
-            for trl = 1:nTrl
-                x_nb = double(dat_nb.trial{trl});
-                t_nb = dat_nb.time{trl};
-                idx_base = t_nb >= baseline_window(1) & t_nb <= baseline_window(2);
-                x_base = x_nb(:, idx_base);
-                if isempty(x_base)
-                    continue;
-                end
+        % Baseline quality gate computed once per trial (not per frequency).
+        baseline_power_raw = nan(nTrl, 1);
+        baseline_power_comb_full = nan(nTrl, 1);
+        baseline_power_comb_early = nan(nTrl, 1);
+        baseline_power_comb_late = nan(nTrl, 1);
+        trial_cache = cell(nTrl, 1);
+        for trl = 1:nTrl
+            x = double(dat.trial{trl});
+            t = dat.time{trl};
+            idx_base = t >= baseline_window(1) & t <= baseline_window(2);
+            idx_full = t >= full_window(1) & t <= full_window(2);
+            idx_early = t >= early_window(1) & t <= early_window(2);
+            idx_late = t >= late_window(1) & t <= late_window(2);
+            x_base = x(:, idx_base);
+            x_full = x(:, idx_full);
+            x_early = x(:, idx_early);
+            x_late = x(:, idx_late);
+            trial_cache{trl} = struct('x_base', x_base, 'x_full', x_full, 'x_early', x_early, 'x_late', x_late);
+            if ~isempty(x_base)
                 pow_base_chan = mean(x_base.^2, 2);
                 baseline_power_raw(trl) = sum(raw_w(:) .* pow_base_chan(:));
-
                 if adequate_full && ~isempty(filters.full.W_combined)
                     x_base_full = filters.full.W_combined' * x_base;
                     baseline_power_comb_full(trl) = mean(x_base_full(:).^2);
@@ -1505,107 +1492,120 @@ for subj = 1:nSubj
                     baseline_power_comb_late(trl) = mean(x_base_late(:).^2);
                 end
             end
+        end
 
-            bad_base_raw = flag_unreliable_baseline_trials( ...
-                baseline_power_raw, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
-            bad_base_full = bad_base_raw;
-            bad_base_early = bad_base_raw;
-            bad_base_late = bad_base_raw;
-            if adequate_full
-                bad_base_full = bad_base_full | flag_unreliable_baseline_trials( ...
-                    baseline_power_comb_full, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
+        bad_base_raw = flag_unreliable_baseline_trials( ...
+            baseline_power_raw, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
+        bad_base_full = bad_base_raw;
+        bad_base_early = bad_base_raw;
+        bad_base_late = bad_base_raw;
+        if adequate_full
+            bad_base_full = bad_base_full | flag_unreliable_baseline_trials( ...
+                baseline_power_comb_full, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
+        end
+        if adequate_early
+            bad_base_early = bad_base_early | flag_unreliable_baseline_trials( ...
+                baseline_power_comb_early, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
+        end
+        if adequate_late
+            bad_base_late = bad_base_late | flag_unreliable_baseline_trials( ...
+                baseline_power_comb_late, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
+        end
+        [base_floor_raw, ~] = compute_baseline_floor_stats(baseline_power_raw, ratio_floor_prctile, ratio_floor_frac);
+        [base_floor_full, ~] = compute_baseline_floor_stats(baseline_power_comb_full, ratio_floor_prctile, ratio_floor_frac);
+        [base_floor_early, ~] = compute_baseline_floor_stats(baseline_power_comb_early, ratio_floor_prctile, ratio_floor_frac);
+        [base_floor_late, ~] = compute_baseline_floor_stats(baseline_power_comb_late, ratio_floor_prctile, ratio_floor_frac);
+
+        for trl = 1:nTrl
+            tc = trial_cache{trl};
+            x_base = tc.x_base;
+            x_full = tc.x_full;
+            x_early = tc.x_early;
+            x_late = tc.x_late;
+            if isempty(x_base)
+                continue;
             end
-            if adequate_early
-                bad_base_early = bad_base_early | flag_unreliable_baseline_trials( ...
-                    baseline_power_comb_early, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
-            end
-            if adequate_late
-                bad_base_late = bad_base_late | flag_unreliable_baseline_trials( ...
-                    baseline_power_comb_late, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
-            end
-            [base_floor_raw, ~] = compute_baseline_floor_stats( ...
-                baseline_power_raw, ratio_floor_prctile, ratio_floor_frac);
-            [base_floor_full, ~] = compute_baseline_floor_stats( ...
-                baseline_power_comb_full, ratio_floor_prctile, ratio_floor_frac);
-            [base_floor_early, ~] = compute_baseline_floor_stats( ...
-                baseline_power_comb_early, ratio_floor_prctile, ratio_floor_frac);
-            [base_floor_late, ~] = compute_baseline_floor_stats( ...
-                baseline_power_comb_late, ratio_floor_prctile, ratio_floor_frac);
 
-            for trl = 1:nTrl
-                x_nb = double(dat_nb.trial{trl});
-                t_nb = dat_nb.time{trl};
-                idx_base = t_nb >= baseline_window(1) & t_nb <= baseline_window(2);
-                idx_full = t_nb >= full_window(1) & t_nb <= full_window(2);
-                idx_early = t_nb >= early_window(1) & t_nb <= early_window(2);
-                idx_late = t_nb >= late_window(1) & t_nb <= late_window(2);
-
-                x_base = x_nb(:, idx_base);
-                x_full = x_nb(:, idx_full);
-                x_early = x_nb(:, idx_early);
-                x_late = x_nb(:, idx_late);
-
-                if adequate_full && ~bad_base_full(trl)
-                    valid_freq_counts_full(trl) = valid_freq_counts_full(trl) + 1;
-                    nSearch_full = size(filters.full.searchFilters, 2);
-                    comp_base_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_base;
-                    pow_base_all_full = mean(comp_base_all_full.^2, 2);
-                    comp_stim_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_full;
-                    pow_stim_all_full = mean(comp_stim_all_full.^2, 2);
-                    [ratio_all_full, near_floor_full] = compute_trial_ratio_metrics( ...
-                        pow_stim_all_full, pow_base_all_full, base_floor_full, instability_near_floor_mult);
-                    if near_floor_full >= instability_component_frac_thr
-                        unstable_freq_counts_full(trl) = unstable_freq_counts_full(trl) + 1;
-                        continue;
+            if adequate_full && ~bad_base_full(trl)
+                comp_base = filters.full.searchFilters' * x_base;
+                comp_stim = filters.full.searchFilters' * x_full;
+                [ratio_mat_full, near_floor_mask_full] = compute_scan_ratio_from_timeseries( ...
+                    comp_stim, comp_base, fsample, scan_freqs, scan_width, base_floor_full, instability_near_floor_mult);
+                powratio_components(:, trl, :) = ratio_mat_full;
+                raw_ratio = compute_scan_ratio_from_timeseries( ...
+                    raw_w' * x_full, raw_w' * x_base, fsample, scan_freqs, scan_width, base_floor_raw, instability_near_floor_mult);
+                powratio_methods_full(1, trl, :) = raw_ratio;
+                if ~isempty(ratio_mat_full)
+                    powratio_methods_full(2, trl, :) = ratio_mat_full(1, :);
+                    if ~isempty(filters.full.selected_idx)
+                        w_use = filters.full.w_combined(:);
+                        if numel(w_use) ~= numel(filters.full.selected_idx)
+                            w_use = ones(numel(filters.full.selected_idx), 1) / max(numel(filters.full.selected_idx), 1);
+                        end
+                        w_use = w_use / max(sum(w_use), eps);
+                        sel_ratio = ratio_mat_full(filters.full.selected_idx, :);
+                        powratio_methods_full(3, trl, :) = (w_use' * sel_ratio);
                     end
-                    powratio_components(:, trl, fi) = ratio_all_full;
-                    powratio_methods_full(:, trl, fi) = compute_method_ratios_from_components( ...
-                        ratio_all_full, x_full, x_base, raw_w, filters.full.W_top, filters.full.W_combined, ...
-                        filters.full.selected_idx, filters.full.w_combined, nBenchmarkMethods, ...
-                        base_floor_raw);
                 end
-
-                if adequate_early && ~bad_base_early(trl)
-                    valid_freq_counts_early(trl) = valid_freq_counts_early(trl) + 1;
-                    nSearch_early = size(filters.early.searchFilters, 2);
-                    comp_base_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_base;
-                    pow_base_all_early = mean(comp_base_all_early.^2, 2);
-                    comp_stim_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_early;
-                    pow_stim_all_early = mean(comp_stim_all_early.^2, 2);
-                    [ratio_all_early, near_floor_early] = compute_trial_ratio_metrics( ...
-                        pow_stim_all_early, pow_base_all_early, base_floor_early, instability_near_floor_mult);
-                    if near_floor_early >= instability_component_frac_thr
-                        unstable_freq_counts_early(trl) = unstable_freq_counts_early(trl) + 1;
-                        continue;
-                    end
-                    powratio_components_early(1:nSearch_early, trl, fi) = ratio_all_early;
-                    powratio_methods_early(:, trl, fi) = compute_method_ratios_from_components( ...
-                        ratio_all_early, x_early, x_base, raw_w, filters.early.W_top, filters.early.W_combined, ...
-                        filters.early.selected_idx, filters.early.w_combined, nBenchmarkMethods, ...
-                        base_floor_raw);
-                end
-
-                if adequate_late && ~bad_base_late(trl)
-                    valid_freq_counts_late(trl) = valid_freq_counts_late(trl) + 1;
-                    nSearch_late = size(filters.late.searchFilters, 2);
-                    comp_base_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_base;
-                    pow_base_all_late = mean(comp_base_all_late.^2, 2);
-                    comp_stim_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_late;
-                    pow_stim_all_late = mean(comp_stim_all_late.^2, 2);
-                    [ratio_all_late, near_floor_late] = compute_trial_ratio_metrics( ...
-                        pow_stim_all_late, pow_base_all_late, base_floor_late, instability_near_floor_mult);
-                    if near_floor_late >= instability_component_frac_thr
-                        unstable_freq_counts_late(trl) = unstable_freq_counts_late(trl) + 1;
-                        continue;
-                    end
-                    powratio_components_late(1:nSearch_late, trl, fi) = ratio_all_late;
-                    powratio_methods_late(:, trl, fi) = compute_method_ratios_from_components( ...
-                        ratio_all_late, x_late, x_base, raw_w, filters.late.W_top, filters.late.W_combined, ...
-                        filters.late.selected_idx, filters.late.w_combined, nBenchmarkMethods, ...
-                        base_floor_raw);
+                valid_freq_counts_full(trl) = sum(any(isfinite(ratio_mat_full), 1));
+                if any(any(isfinite(ratio_mat_full), 1))
+                    unstable_freq_counts_full(trl) = sum(near_floor_mask_full);
                 end
             end
-            clear dat_nb
+
+            if adequate_early && ~bad_base_early(trl)
+                comp_base = filters.early.searchFilters' * x_base;
+                comp_stim = filters.early.searchFilters' * x_early;
+                [ratio_mat_early, near_floor_mask_early] = compute_scan_ratio_from_timeseries( ...
+                    comp_stim, comp_base, fsample, scan_freqs, scan_width, base_floor_early, instability_near_floor_mult);
+                powratio_components_early(:, trl, :) = ratio_mat_early;
+                raw_ratio = compute_scan_ratio_from_timeseries( ...
+                    raw_w' * x_early, raw_w' * x_base, fsample, scan_freqs, scan_width, base_floor_raw, instability_near_floor_mult);
+                powratio_methods_early(1, trl, :) = raw_ratio;
+                if ~isempty(ratio_mat_early)
+                    powratio_methods_early(2, trl, :) = ratio_mat_early(1, :);
+                    if ~isempty(filters.early.selected_idx)
+                        w_use = filters.early.w_combined(:);
+                        if numel(w_use) ~= numel(filters.early.selected_idx)
+                            w_use = ones(numel(filters.early.selected_idx), 1) / max(numel(filters.early.selected_idx), 1);
+                        end
+                        w_use = w_use / max(sum(w_use), eps);
+                        sel_ratio = ratio_mat_early(filters.early.selected_idx, :);
+                        powratio_methods_early(3, trl, :) = (w_use' * sel_ratio);
+                    end
+                end
+                valid_freq_counts_early(trl) = sum(any(isfinite(ratio_mat_early), 1));
+                if any(any(isfinite(ratio_mat_early), 1))
+                    unstable_freq_counts_early(trl) = sum(near_floor_mask_early);
+                end
+            end
+
+            if adequate_late && ~bad_base_late(trl)
+                comp_base = filters.late.searchFilters' * x_base;
+                comp_stim = filters.late.searchFilters' * x_late;
+                [ratio_mat_late, near_floor_mask_late] = compute_scan_ratio_from_timeseries( ...
+                    comp_stim, comp_base, fsample, scan_freqs, scan_width, base_floor_late, instability_near_floor_mult);
+                powratio_components_late(:, trl, :) = ratio_mat_late;
+                raw_ratio = compute_scan_ratio_from_timeseries( ...
+                    raw_w' * x_late, raw_w' * x_base, fsample, scan_freqs, scan_width, base_floor_raw, instability_near_floor_mult);
+                powratio_methods_late(1, trl, :) = raw_ratio;
+                if ~isempty(ratio_mat_late)
+                    powratio_methods_late(2, trl, :) = ratio_mat_late(1, :);
+                    if ~isempty(filters.late.selected_idx)
+                        w_use = filters.late.w_combined(:);
+                        if numel(w_use) ~= numel(filters.late.selected_idx)
+                            w_use = ones(numel(filters.late.selected_idx), 1) / max(numel(filters.late.selected_idx), 1);
+                        end
+                        w_use = w_use / max(sum(w_use), eps);
+                        sel_ratio = ratio_mat_late(filters.late.selected_idx, :);
+                        powratio_methods_late(3, trl, :) = (w_use' * sel_ratio);
+                    end
+                end
+                valid_freq_counts_late(trl) = sum(any(isfinite(ratio_mat_late), 1));
+                if any(any(isfinite(ratio_mat_late), 1))
+                    unstable_freq_counts_late(trl) = sum(near_floor_mask_late);
+                end
+            end
         end
         unstable_trial_frac_full = unstable_freq_counts_full ./ max(valid_freq_counts_full, 1);
         unstable_trial_frac_early = unstable_freq_counts_early ./ max(valid_freq_counts_early, 1);
@@ -2035,7 +2035,7 @@ for subj = 1:nSubj
                 ylim([y_lo y_hi]);
             end
             xlabel('Freq [Hz]');
-            ylabel('Power Change from Baseline [dB]');
+            ylabel('Power [dB]');
             det_lo = detrate_low_source(cond, subj);
             det_hi = detrate_high_source(cond, subj);
             title(sprintf('%s Dual (L:%.0f%% H:%.0f%%)', condLabels{cond}, det_lo*100, det_hi*100), 'FontSize', 10);
@@ -2338,7 +2338,7 @@ for cwi = 1:numel(comparison_windows)
             end
             yline(0, 'k-', 'LineWidth', 0.5);
             title(bench_method_labels{mi}, 'FontSize', 12, 'Color', bench_method_colors(mi,:));
-            xlabel('Frequency [Hz]'); ylabel('Power Change from Baseline [dB]');
+            xlabel('Frequency [Hz]'); ylabel('Power [dB]');
             xlim([30 90]);  box on; set(gca, 'FontSize', 10);
             if mi == 1
                 valid_handles = isgraphics(cond_line_handles);
@@ -2519,7 +2519,7 @@ end
         end
         yline(0, 'k-', 'LineWidth', 0.5);
         title(bench_method_labels{mi}, 'FontSize', 12, 'Color', bench_method_colors(mi,:));
-        xlabel('Frequency [Hz]'); ylabel('Power Change from Baseline [dB]');
+        xlabel('Frequency [Hz]'); ylabel('Power [dB]');
         panel_maxabs = max(panel_maxabs, eps);
         panel_maxabs = max(panel_maxabs, 5);
         ylim([-panel_maxabs panel_maxabs]);
@@ -2697,7 +2697,7 @@ fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('GED Trials Summary Dashboard (component selection backprojected)', ...
     'FontSize', 16, 'FontWeight', 'bold');
 gamma_metric_full = all_trial_gamma_power;
-gamma_metric_label = 'Gamma Power Change [dB]';
+gamma_metric_label = 'Gamma Power [dB]';
 
 summary_metrics = { ...
     all_trial_median_single, ...
@@ -3137,7 +3137,7 @@ title('Subject Shift', 'FontWeight', 'bold');
 save_figure_png(fig_main_gamma_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq_timeSplit.png'));
 
 %% ====================================================================
-%  POWER INCREASE FIGURE: gamma-band power ratio over conditions
+%  POWER FIGURE: gamma-band dB power over conditions
 %  ====================================================================
 fig_power_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
@@ -3186,7 +3186,7 @@ yline(0, 'k--', 'LineWidth', 1.2);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 15, 'Box', 'off');
 xlim([0.5 4.5]);
-ylabel('Gamma Power Change from Baseline [dB]');
+ylabel('Power [dB]');
 title('Gamma Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
 save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaPower_statsStyle.png'));
 
@@ -3300,8 +3300,8 @@ xlim([30 90]);
 grand_panel_maxabs = max(grand_panel_maxabs, 5);
 ylim([-grand_panel_maxabs grand_panel_maxabs]);
 xlabel('Frequency [Hz]');
-ylabel('Power Change from Baseline [dB]');
-title(sprintf('Grand Average Raw Power Spectrum (%% Change)'), 'FontSize', 25, 'FontWeight', 'bold');
+ylabel('Power [dB]');
+title(sprintf('Grand Average Raw Power Spectrum (dB)'), 'FontSize', 25, 'FontWeight', 'bold');
 set(gca, 'FontSize', 15);
 valid_handles = isgraphics(grand_line_handles);
 if any(valid_handles)
@@ -3349,7 +3349,7 @@ for s = 1:nSubj
     yline(0, 'k-', 'LineWidth', 0.5);
     subj_panel_maxabs = max(subj_panel_maxabs, eps);
     xlabel('Freq [Hz]');
-    ylabel('Power Change [dB]');
+    ylabel('Power [dB]');
     title(sprintf('Subj %s', subjects{s}), 'FontSize', 11);
     if ~isfinite(subj_panel_min), subj_panel_min = -10; end
     if ~isfinite(subj_panel_max), subj_panel_max = 10; end
@@ -3466,7 +3466,7 @@ for s = 1:nSubj
             ylim([panel_min - 0.08 * yr, panel_max + 0.12 * yr]);
         end
         xlabel('Frequency [Hz]');
-        ylabel('Power Change [dB]');
+        ylabel('Power [dB]');
         title(sprintf('%s window', upper(time_windows{wi})), 'Interpreter', 'none');
         set(gca, 'FontSize', 11, 'Box', 'on');
     end
@@ -3636,41 +3636,6 @@ else
     end
 end
 
-function method_ratios = compute_method_ratios_from_components(ratio_all, x_stim, x_base, raw_w, W_top, W_combined, selected_idx, w_combined, nBenchmarkMethods, base_floor_raw)
-% ratio_all: trial-level dB values indexed by component
-method_ratios = nan(nBenchmarkMethods, 1);
-
-pow_stim_chan = mean(x_stim.^2, 2);
-pow_base_chan = mean(x_base.^2, 2);
-raw_pow_stim = sum(raw_w(:) .* pow_stim_chan(:));
-raw_pow_base = sum(raw_w(:) .* pow_base_chan(:));
-if isfinite(raw_pow_stim) && isfinite(raw_pow_base)
-    floor_raw = max(base_floor_raw, eps);
-    method_ratios(1) = 10 * log10((raw_pow_stim + floor_raw) / (raw_pow_base + floor_raw));
-end
-
-if ~isempty(W_top)
-    ratio_top = ratio_all(1);
-    if isfinite(ratio_top)
-        method_ratios(2) = ratio_top;
-    end
-end
-
-if ~isempty(W_combined)
-    ratio_vec = ratio_all(selected_idx);
-    valid_comp = isfinite(ratio_vec);
-    if any(valid_comp)
-        w_use = w_combined(valid_comp);
-        if sum(w_use) <= 0
-            w_use = ones(1, sum(valid_comp)) / sum(valid_comp);
-        else
-            w_use = w_use / sum(w_use);
-        end
-        method_ratios(3) = sum(ratio_vec(valid_comp)' .* w_use);
-    end
-end
-end
-
 function trl_peaks_single = detect_single_peaks_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, smooth_n, peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz)
 nTrl = size(powratio_trials_fullscan, 1);
 trl_peaks_single = nan(nTrl, 1);
@@ -3817,6 +3782,47 @@ for trl = 1:nTrl
 end
 end
 
+function [ratio_db, near_floor_freq_mask] = compute_scan_ratio_from_timeseries(sig_stim, sig_base, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult)
+if isvector(sig_stim)
+    sig_stim = sig_stim(:)';
+end
+if isvector(sig_base)
+    sig_base = sig_base(:)';
+end
+nSig = size(sig_stim, 1);
+ratio_db = nan(nSig, numel(scan_freqs));
+near_floor_freq_mask = false(1, numel(scan_freqs));
+if isempty(sig_stim) || isempty(sig_base) || fs <= 0 || size(sig_stim, 1) ~= size(sig_base, 1)
+    return;
+end
+if nargin < 7 || ~isfinite(near_floor_mult) || near_floor_mult <= 0
+    near_floor_mult = 1.5;
+end
+n_fft = 2^nextpow2(max([size(sig_stim, 2), size(sig_base, 2), 256]));
+f_axis = fs * (0:(n_fft/2)) / n_fft;
+px_stim = abs(fft(sig_stim, n_fft, 2)).^2;
+px_base = abs(fft(sig_base, n_fft, 2)).^2;
+px_stim = px_stim(:, 1:numel(f_axis));
+px_base = px_base(:, 1:numel(f_axis));
+floor_use = max(base_floor, eps);
+for fi = 1:numel(scan_freqs)
+    f0 = scan_freqs(fi);
+    f_mask = f_axis >= max(0, f0 - scan_width_hz) & f_axis <= (f0 + scan_width_hz);
+    if ~any(f_mask)
+        continue;
+    end
+    p_stim = mean(px_stim(:, f_mask), 2, 'omitnan');
+    p_base = mean(px_base(:, f_mask), 2, 'omitnan');
+    valid = isfinite(p_stim) & isfinite(p_base) & (p_base > 0);
+    ratio_col = nan(nSig, 1);
+    ratio_col(valid) = 10 * log10((p_stim(valid) + floor_use) ./ (p_base(valid) + floor_use));
+    ratio_db(:, fi) = ratio_col;
+    if any(valid)
+        near_floor_freq_mask(fi) = mean(p_base(valid) <= near_floor_mult * floor_use) >= 0.5;
+    end
+end
+end
+
 function [base_floor, base_median] = compute_baseline_floor_stats(base_power_vals, floor_prctile, floor_frac)
 base_floor = eps;
 base_median = eps;
@@ -3844,33 +3850,6 @@ if ~isfinite(base_median) || base_median <= 0
 end
 base_floor = max(anchor * max(floor_frac, 0), eps);
 base_median = max(base_median, base_floor);
-end
-
-function [ratio_db, near_floor_fraction] = compute_trial_ratio_metrics(pow_stim, pow_base, base_floor, near_floor_mult)
-ratio_db = nan(size(pow_stim));
-near_floor_fraction = NaN;
-if isempty(pow_stim) || isempty(pow_base) || numel(pow_stim) ~= numel(pow_base)
-    return;
-end
-if nargin < 4 || ~isfinite(near_floor_mult) || near_floor_mult <= 0
-    near_floor_mult = 1.5;
-end
-floor_use = max(base_floor, eps);
-valid = isfinite(pow_stim) & isfinite(pow_base);
-if ~any(valid)
-    near_floor_fraction = 1.0;
-    return;
-end
-pow_stim = pow_stim(:);
-pow_base = pow_base(:);
-valid = valid(:) & (pow_base > 0);
-ratio_db(valid) = 10 * log10((pow_stim(valid) + floor_use) ./ (pow_base(valid) + floor_use));
-base_near_floor = pow_base(valid) <= (near_floor_mult * floor_use);
-if any(valid)
-    near_floor_fraction = mean(base_near_floor);
-else
-    near_floor_fraction = 1.0;
-end
 end
 
 function apply_dynamic_summary_ylims()
@@ -4216,8 +4195,8 @@ for k = 1:nCols
         [info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2] = ...
             build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec);
         plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2);
-        format_power_change_percent_axis(gca);
-        xlabel('Hz'); ylabel('Power Change [dB]');
+        format_power_change_db_axis(gca);
+        xlabel('Hz'); ylabel('Power [dB]');
         title(sprintf('\\lambda=%.2f, PF=%.2f', ...
             eigval_vec(ci), peak_form_score(ci)), 'FontSize', 7);
         box on;
@@ -4270,8 +4249,8 @@ for k = 1:nCols
         [info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2] = ...
             build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec);
         plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2);
-        format_power_change_percent_axis(gca);
-        xlabel('Hz'); ylabel('Power Change [dB]');
+        format_power_change_db_axis(gca);
+        xlabel('Hz'); ylabel('Power [dB]');
         title(sprintf('\\lambda=%.2f, PF=%.2f', ...
             eigval_vec(ci), peak_form_score(ci)), 'FontSize', 7);
         box on;
@@ -4504,8 +4483,8 @@ for wi = 1:3
             ylim([sp_min - 0.12 * sp_range, sp_max + 0.20 * sp_range]);
         end
     end
-    format_power_change_percent_axis(gca);
-    xlabel('Hz'); ylabel('Power Change [dB]');
+    format_power_change_db_axis(gca);
+    xlabel('Hz'); ylabel('Power [dB]');
     box on;
     text(0.02, 0.98, sprintf('PF = %.2f | peak = %.1f Hz (+/- 2.5 Hz)', ...
         pf_score, pf_peak_hz), ...
@@ -4670,7 +4649,7 @@ if ~isfinite(pf_peak_hz)
 end
 end
 
-function format_power_change_percent_axis(axh)
+function format_power_change_db_axis(axh)
 if nargin < 1 || isempty(axh) || ~isgraphics(axh, 'axes')
     axh = gca;
 end
