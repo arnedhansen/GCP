@@ -310,7 +310,7 @@ for subj = 1:nSubj
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
     if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
     fig_save_dir_emg_exclusion = comp_sel_save_dir;
-    datapath = fullfile(path, subjects{subj}, 'eeg');
+    datapath = fullfile(gcp_root_path, subjects{subj}, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
         'dataEEG_c25', 'dataEEG_c50', 'dataEEG_c75', 'dataEEG_c100');
     dataEEG_c25 = eeg_data.dataEEG_c25;
