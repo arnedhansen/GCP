@@ -61,6 +61,10 @@ runSESOI <- function() {
   residual_sd_levels <- c(0.10, 0.30, 0.47)
   baseline_residual_sd <- residual_sd_levels[2L]
   residual_multipliers <- residual_sd_levels / baseline_residual_sd
+  log_msg <- function(...) {
+    cat(sprintf("[%s] ", format(Sys.time(), "%H:%M:%S")), ..., "\n", sep = "")
+    flush.console()
+  }
 
   output_prefix <- "GCP_power_analysis_SESOI_quadratic"
   figure_res_dpi <- 600L
@@ -102,6 +106,7 @@ runSESOI <- function() {
   }
 
   set.seed(seed)
+  log_msg("Building simulation template and base model.")
   template_dat <- make_template(max(subject_breaks))
   template_dat$gamma_power <- simulate_response(
     template_dat,
@@ -145,6 +150,7 @@ runSESOI <- function() {
 
   power_rows <- lapply(seq_len(nrow(scenario_df)), function(i) {
     sc <- scenario_df[i, , drop = FALSE]
+    log_msg(sprintf("Running scenario %d/%d | residual SD=%s | nsim=%d", i, nrow(scenario_df), sc$residual_sd_label, nsim))
     model_sc <- base_model
     sigma(model_sc) <- sc$residual_sd
     pc <- suppressWarnings(powerCurve(
@@ -153,7 +159,7 @@ runSESOI <- function() {
       along = "Subject",
       breaks = subject_breaks,
       nsim = nsim,
-      progress = FALSE
+      progress = TRUE
     ))
     out <- extract_powercurve_df(pc, subject_breaks)
     out$scenario_label <- sc$scenario_label
@@ -168,6 +174,7 @@ runSESOI <- function() {
   power_df$upper_unconditional <- power_df$upper
 
   write.csv(power_df, file.path(data_output_dir, paste0(output_prefix, "_curve.csv")), row.names = FALSE)
+  log_msg("Saved curve CSV.")
 
   summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
     df <- df[order(df$n_subjects), , drop = FALSE]
@@ -181,6 +188,7 @@ runSESOI <- function() {
     )
   }))
   write.csv(summary_rows, file.path(data_output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
+  log_msg("Saved summary CSV.")
 
   curve_plot <- ggplot(
     power_df,
@@ -220,6 +228,7 @@ runSESOI <- function() {
   )
   print(curve_plot)
   dev.off()
+  log_msg("Saved line plot PNG.")
 
   heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_sd_label, fill = .data$power_unconditional)) +
     geom_tile(color = "white", linewidth = 1.1) +
@@ -252,6 +261,7 @@ runSESOI <- function() {
   )
   print(heatmap_plot)
   dev.off()
+  log_msg("Saved heatmap PNG.")
 
   baseline_model <- base_model
   sigma(baseline_model) <- baseline_residual_sd
@@ -261,7 +271,7 @@ runSESOI <- function() {
     along = "Subject",
     breaks = subject_breaks,
     nsim = nsim,
-    progress = FALSE
+    progress = TRUE
   ))
   png(
     file = file.path(figure_output_dir, paste0(output_prefix, "_simr_powercurve.png")),
@@ -269,6 +279,7 @@ runSESOI <- function() {
   )
   plot(baseline_pc)
   dev.off()
+  log_msg("Saved SIMR default powerCurve PNG.")
 
   power_df
 }
