@@ -202,6 +202,10 @@ condLabels = {'25%', '50%', '75%', '100%'};
 
 % Figure save directories
 gcp_root_path = paths.root;
+gcp_feature_data_path = fullfile(gcp_root_path, 'data', 'features');
+if ~exist(gcp_feature_data_path, 'dir')
+    gcp_feature_data_path = gcp_root_path;
+end
 fig_save_dir_ged = fullfile(gcp_root_path, 'figures', 'eeg', 'ged');
 fig_save_dir_component_comparison = fullfile(fig_save_dir_ged, 'component_comparison');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
@@ -310,7 +314,7 @@ for subj = 1:nSubj
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
     if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
     fig_save_dir_emg_exclusion = comp_sel_save_dir;
-    datapath = fullfile(gcp_root_path, subjects{subj}, 'eeg');
+    datapath = fullfile(gcp_feature_data_path, subjects{subj}, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
         'dataEEG_c25', 'dataEEG_c50', 'dataEEG_c75', 'dataEEG_c100');
     dataEEG_c25 = eeg_data.dataEEG_c25;
