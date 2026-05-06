@@ -275,7 +275,7 @@ for subj = 1:nSubj
 
     nChans = length(dataEEG_c25.label);
 
-    occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|PPO)', 'once')), dataEEG_c25.label);
+    occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|PPO|P10|P9)', 'once')), dataEEG_c25.label);
     occ_idx  = find(occ_mask);
     nOcc     = length(occ_idx);
     front_mask = cellfun(@(l) ~isempty(regexp(l, '^(Fp|AF|F)', 'once')), dataEEG_c25.label);
@@ -383,15 +383,9 @@ for subj = 1:nSubj
     searchCorrs_full = []; searchCorrs_early = []; searchCorrs_late = [];
     searchTopos_full = []; searchTopos_early = []; searchTopos_late = [];
     searchMeanPrSpectrum_full = []; searchMeanPrSpectrum_early = []; searchMeanPrSpectrum_late = [];
-    occipital_evidence_full = []; occipital_evidence_early = []; occipital_evidence_late = [];
-    emg_artifact_score_full = []; emg_artifact_score_early = []; emg_artifact_score_late = [];
     searchEmgClass_full = {}; searchEmgClass_early = {}; searchEmgClass_late = {};
-    unknown_proxy_full = []; unknown_proxy_early = []; unknown_proxy_late = [];
-    hard_reject_full = []; hard_reject_early = []; hard_reject_late = [];
-    soft_warn_full = []; soft_warn_early = []; soft_warn_late = [];
     rejection_flags_full = struct(); rejection_flags_early = struct(); rejection_flags_late = struct();
     soft_warn_flags_full = struct(); soft_warn_flags_early = struct(); soft_warn_flags_late = struct();
-    adaptive_thr_full = struct(); adaptive_thr_early = struct(); adaptive_thr_late = struct();
     candidate_table_full = struct(); candidate_table_early = struct(); candidate_table_late = struct();
 
     % Simulated signed occipital template (same for all windows)
@@ -1013,15 +1007,9 @@ for subj = 1:nSubj
             searchCorrs_full = searchCorrs;
             searchTopos_full = searchTopos;
             searchMeanPrSpectrum_full = searchMeanPrSpectrum;
-            occipital_evidence_full = occipital_evidence;
-            emg_artifact_score_full = emg_artifact_score;
             searchEmgClass_full = searchEmgClass;
-            unknown_proxy_full = unknown_proxy_vec;
-            hard_reject_full = artifact_flags;
-            soft_warn_full = soft_warn_flags.any;
             rejection_flags_full = rejection_flags;
             soft_warn_flags_full = soft_warn_flags;
-            adaptive_thr_full = adaptive_thr;
             candidate_table_full = candidate_table;
         elseif w == 2
             searchFilters_early = searchFilters;
@@ -1033,15 +1021,9 @@ for subj = 1:nSubj
             searchCorrs_early = searchCorrs;
             searchTopos_early = searchTopos;
             searchMeanPrSpectrum_early = searchMeanPrSpectrum;
-            occipital_evidence_early = occipital_evidence;
-            emg_artifact_score_early = emg_artifact_score;
             searchEmgClass_early = searchEmgClass;
-            unknown_proxy_early = unknown_proxy_vec;
-            hard_reject_early = artifact_flags;
-            soft_warn_early = soft_warn_flags.any;
             rejection_flags_early = rejection_flags;
             soft_warn_flags_early = soft_warn_flags;
-            adaptive_thr_early = adaptive_thr;
             candidate_table_early = candidate_table;
         else
             searchFilters_late = searchFilters;
@@ -1053,15 +1035,9 @@ for subj = 1:nSubj
             searchCorrs_late = searchCorrs;
             searchTopos_late = searchTopos;
             searchMeanPrSpectrum_late = searchMeanPrSpectrum;
-            occipital_evidence_late = occipital_evidence;
-            emg_artifact_score_late = emg_artifact_score;
             searchEmgClass_late = searchEmgClass;
-            unknown_proxy_late = unknown_proxy_vec;
-            hard_reject_late = artifact_flags;
-            soft_warn_late = soft_warn_flags.any;
             rejection_flags_late = rejection_flags;
             soft_warn_flags_late = soft_warn_flags;
-            adaptive_thr_late = adaptive_thr;
             candidate_table_late = candidate_table;
         end
 
@@ -1176,36 +1152,36 @@ for subj = 1:nSubj
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(candidate_table_full.comp_idx)), ...
-        occipital_evidence_full, emg_artifact_score_full, searchEmgClass_full, unknown_proxy_full, ...
+        searchEmgClass_full, ...
         candidate_table_full.hard_eligible, candidate_table_full.force_include_occipital, ...
-        hard_reject_full, soft_warn_full, rejection_flags_full, ...
+        rejection_flags_full, ...
         candidate_table_full.front_leak, candidate_table_full.temp_leak, ...
         candidate_table_full.lineharm_ratio, candidate_table_full.hf_slope, ...
-        adaptive_thr_full, cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
+        cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
         candidate_table_full.peak_form_mode, candidate_table_full.peak_form_best_center_hz, ...
         candidate_table_full.peak_form_dominant_penalty, ...
         selected_idx_full, get_candidate_table_fallback_idx(candidate_table_full));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(candidate_table_early.comp_idx)), ...
-        occipital_evidence_early, emg_artifact_score_early, searchEmgClass_early, unknown_proxy_early, ...
+        searchEmgClass_early, ...
         candidate_table_early.hard_eligible, candidate_table_early.force_include_occipital, ...
-        hard_reject_early, soft_warn_early, rejection_flags_early, ...
+        rejection_flags_early, ...
         candidate_table_early.front_leak, candidate_table_early.temp_leak, ...
         candidate_table_early.lineharm_ratio, candidate_table_early.hf_slope, ...
-        adaptive_thr_early, cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
+        cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
         candidate_table_early.peak_form_mode, candidate_table_early.peak_form_best_center_hz, ...
         candidate_table_early.peak_form_dominant_penalty, ...
         selected_idx_early, get_candidate_table_fallback_idx(candidate_table_early));
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(candidate_table_late.comp_idx)), ...
-        occipital_evidence_late, emg_artifact_score_late, searchEmgClass_late, unknown_proxy_late, ...
+        searchEmgClass_late, ...
         candidate_table_late.hard_eligible, candidate_table_late.force_include_occipital, ...
-        hard_reject_late, soft_warn_late, rejection_flags_late, ...
+        rejection_flags_late, ...
         candidate_table_late.front_leak, candidate_table_late.temp_leak, ...
         candidate_table_late.lineharm_ratio, candidate_table_late.hf_slope, ...
-        adaptive_thr_late, cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
+        cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
         candidate_table_late.peak_form_mode, candidate_table_late.peak_form_best_center_hz, ...
         candidate_table_late.peak_form_dominant_penalty, ...
         selected_idx_late, get_candidate_table_fallback_idx(candidate_table_late));
@@ -2430,7 +2406,7 @@ xlim([0.5 4.5]);
 ylabel('Gamma Frequency [Hz]');
 title('Gamma Frequency', 'FontSize', 30, 'FontWeight', 'bold');
 
-save_figure_png(fig_box1_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaFreq_statsStyle.png'));
+save_figure_png(fig_box1_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaFreq.png'));
 
 %% Main figure: gamma frequency over contrast (mean+-SEM and trajectories)
 close all
@@ -2597,7 +2573,41 @@ set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
 xlim([0.5 4.5]);
 ylabel('Power [dB]');
 title('Gamma Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
-save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaPower_statsStyle.png'));
+save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaPower.png'));
+
+%% Condition-shift figure: normalized gamma power trajectories
+fig_condition_shift_power = figure('Position', [0 0 1512 982], 'Color', 'w');
+hold on;
+
+dat_power_shift = all_trial_gamma_power - all_trial_gamma_power(1, :);  % Anchor each subject at 25% condition
+
+for s = 1:nSubj
+    y_subj = dat_power_shift(:, s);
+    valid_subj = isfinite(y_subj);
+    if sum(valid_subj) >= 2
+        plot(find(valid_subj), y_subj(valid_subj), '-o', ...
+            'Color', [0.75 0.75 0.75], 'LineWidth', 1.2, ...
+            'MarkerFaceColor', [0.75 0.75 0.75], 'MarkerSize', 6);
+    end
+end
+
+mu_power_shift = nanmean(dat_power_shift, 2);
+sem_power_shift = nanstd(dat_power_shift, [], 2) ./ sqrt(sum(isfinite(dat_power_shift), 2));
+errorbar(1:4, mu_power_shift, sem_power_shift, '-o', ...
+    'Color', colors(4, :), 'LineWidth', 2.8, 'CapSize', 10, ...
+    'MarkerFaceColor', colors(4, :), 'MarkerSize', 8);
+
+yline(0, 'k--', 'LineWidth', 1.5);
+set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
+    'FontSize', 18, 'Box', 'off');
+xlim([0.5 4.5]);
+xlabel('Contrast condition');
+ylabel('\Delta Gamma Power vs 25% [dB]');
+title('Gamma Power Shift (Subject-normalized to 25%)', ...
+    'FontSize', 24, 'FontWeight', 'bold');
+
+cond_shift_power_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_GammaPower.png');
+save_figure_png(fig_condition_shift_power, cond_shift_power_path);
 
 
 if simulation_validation_enable
@@ -3177,88 +3187,16 @@ out.pf_median = median(scores(isfinite(scores)));
 end
 
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
-    searchMeanPrSpectrum, eigval_vec, occ_evidence, emg_score, emg_class, unknown_high_risk, ...
-    hard_eligible, force_include_occipital, hard_reject_flags, soft_warn_flags, rejection_flags, ...
+    searchMeanPrSpectrum, eigval_vec, emg_class, ...
+    hard_eligible, force_include_occipital, rejection_flags, ...
     front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec, ...
-    adaptive_thr, cfg_topo, topo_labels, ...
+    cfg_topo, topo_labels, ...
     peak_form_score, peak_form_mode, peak_form_best_center_hz, peak_form_dominant_penalty, ...
     selected_idx, fallback_selected_idx)
 nComp = numel(eigval_vec);
 if nComp < 1
     return;
 end
-figA = figure('Position', [0 0 1512 982], 'Color', 'w');
-scatter_size = 60 + 80 * max(eigval_vec - min(eigval_vec), 0) / max(max(eigval_vec) - min(eigval_vec), eps);
-eig_color_vals = eigval_vec(:);
-eig_color_vals(~isfinite(eig_color_vals)) = 1.1;
-scatter(occ_evidence, emg_score, scatter_size, eig_color_vals, 'filled', ...
-    'MarkerEdgeColor', 'k', 'LineWidth', 0.8); hold on;
-eig_max = max(eig_color_vals);
-if ~isfinite(eig_max) || eig_max <= 1.1
-    eig_max = 1.1001;
-end
-caxis([1.1 eig_max]);
-t = linspace(0, 1, 256)';
-anchor_t = [0; 0.25; 0.6; 1.0];
-anchor_rgb = [1.00 1.00 1.00;   % white
-              1.00 1.00 0.00;   % yellow
-              1.00 0.65 0.00;   % orange
-              1.00 0.00 0.00];  % red
-eig_cmap = [interp1(anchor_t, anchor_rgb(:, 1), t, 'linear'), ...
-            interp1(anchor_t, anchor_rgb(:, 2), t, 'linear'), ...
-            interp1(anchor_t, anchor_rgb(:, 3), t, 'linear')];
-colormap(gca, eig_cmap);
-cb = colorbar;
-cb.Label.String = 'Eigenvalue';
-cb.FontSize = 11;
-xline(adaptive_thr.occ_class_thr, 'k--', 'LineWidth', 1.0);
-yline(adaptive_thr.emg_class_thr, 'k--', 'LineWidth', 1.0);
-xline(0, '-', 'Color', [0.45 0.45 0.45], 'LineWidth', 0.8);
-yline(0, '-', 'Color', [0.45 0.45 0.45], 'LineWidth', 0.8);
-idx_unknown = find(unknown_high_risk);
-if ~isempty(idx_unknown)
-    scatter(occ_evidence(idx_unknown), emg_score(idx_unknown), 130, 'rx', 'LineWidth', 2.0);
-end
-x_vals = occ_evidence(isfinite(occ_evidence));
-y_vals = emg_score(isfinite(emg_score));
-if isempty(x_vals)
-    x_absmax = 1;
-else
-    x_absmax = max(abs(x_vals));
-end
-if isempty(y_vals)
-    y_absmax = 1;
-else
-    y_absmax = max(abs(y_vals));
-end
-x_absmax = max([x_absmax, abs(adaptive_thr.occ_class_thr), 0.1]);
-y_absmax = max([y_absmax, abs(adaptive_thr.emg_class_thr), 0.1]);
-x_lim_absmax = 1.10 * x_absmax;
-y_lim_absmax = 1.10 * y_absmax;
-xlim([-x_lim_absmax x_lim_absmax]);
-ylim([-y_lim_absmax y_lim_absmax]);
-% Light-green bracket highlighting the selected-component region:
-% occipital evidence >= threshold and EMG score <= threshold.
-bracket_color = [0.70 0.90 0.70];
-plot([adaptive_thr.occ_class_thr, x_lim_absmax], [adaptive_thr.emg_class_thr, adaptive_thr.emg_class_thr], ...
-    '-', 'Color', bracket_color, 'LineWidth', 2.2);
-plot([adaptive_thr.occ_class_thr, adaptive_thr.occ_class_thr], [-y_lim_absmax, adaptive_thr.emg_class_thr], ...
-    '-', 'Color', bracket_color, 'LineWidth', 2.2);
-for ci = 1:nComp
-    if isfinite(occ_evidence(ci)) && isfinite(emg_score(ci))
-        lbl = sprintf('C%d', ci);
-        text(occ_evidence(ci) + 0.015 * x_lim_absmax, emg_score(ci) + 0.015 * y_lim_absmax, ...
-            lbl, 'FontSize', 9, 'Color', [0.15 0.15 0.15], 'Interpreter', 'none');
-    end
-end
-set(gca, 'FontSize', 13, 'LineWidth', 1.0);
-xlabel('OccipitalScore', 'FontSize', 14);
-ylabel('EMGArtifactScore', 'FontSize', 14);
-title(sprintf('EMG-vs-Occipital Separation: %s (%s)', subject_id, win_name), 'FontSize', 16, 'FontWeight', 'bold');
-box on;
-save_figure_png(figA, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_scatter_%s.png', subject_id, win_name)));
-close(figA);
-
 selected_mask = false(nComp, 1);
 if ~isempty(selected_idx)
     selected_idx = unique(selected_idx(:));
@@ -3333,9 +3271,9 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        [info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2] = ...
+        [info_lines, info_viol] = ...
             build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec);
-        plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2);
+        plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
         title(sprintf('\\lambda=%.2f, PF=%.2f', ...
@@ -3387,9 +3325,9 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        [info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2] = ...
+        [info_lines, info_viol] = ...
             build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec);
-        plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2);
+        plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
         title(sprintf('\\lambda=%.2f, PF=%.2f', ...
@@ -3419,104 +3357,32 @@ sgtitle(sprintf('Top 5 Selected and Rejected Components: %s (%s)', subject_id, w
 save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected_%s.png', subject_id, win_name)));
 close(figSel);
 
-figC = figure('Position', [0 0 1512 982], 'Color', 'w');
-tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
-nexttile;
-counts = [numel(sel_idx), sum(logical(soft_warn_flags)), sum(logical(hard_reject_flags & ~selected_mask)), numel(eigval_vec)];
-cats = {'Selected', 'SoftWarn', 'RejectedFinal', 'Candidates'};
-bar(counts, 0.6, 'FaceColor', [0.3 0.4 0.7]); hold on;
-set(gca, 'XTick', 1:numel(cats), 'XTickLabel', cats, 'XTickLabelRotation', 20);
-ylabel('Count');
-title('Component counts');
-box on;
-nexttile;
-reason_names = {'unknown_proxy', 'front_leak', 'temp_leak', 'corr', ...
-    'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin', ...
-    'topo_flat', 'topo_nonposterior', 'topo_fragmented'};
-reason_counts = zeros(1, numel(reason_names));
-for ri = 1:numel(reason_names)
-    rname = reason_names{ri};
-    if isfield(rejection_flags, rname)
-        reason_counts(ri) = sum(hard_reject_flags & rejection_flags.(rname));
-    end
-end
-bar(reason_counts, 0.65, 'FaceColor', [0.72 0.40 0.30]); hold on;
-set(gca, 'XTick', 1:numel(reason_names), 'XTickLabel', reason_names, 'XTickLabelRotation', 35);
-ylabel('Rejected components');
-title('Rejection reasons (criterion-level)');
-box on;
-sgtitle(sprintf('EMG Exclusion Summary: %s (%s)', subject_id, win_name), 'FontSize', 14, 'FontWeight', 'bold');
-save_figure_png(figC, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_summary_%s.png', subject_id, win_name)));
-close(figC);
 end
 
-function [info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2] = ...
+function [info_lines, info_viol] = ...
     build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec)
-primary_lines = { ...
+info_lines = { ...
     sprintf('lineharm: %.2f', lineharm_vec(ci)), ...
     sprintf('hf_slope: %.2f', hf_slope_vec(ci)), ...
     sprintf('front_leak: %.2f', front_leak_vec(ci)), ...
     sprintf('temp_leak: %.2f', temp_leak_vec(ci))};
-primary_viol = [ ...
+info_viol = [ ...
     get_flag_value(rejection_flags, 'lineharm', ci), ...
     get_flag_value(rejection_flags, 'hf_slope', ci), ...
     get_flag_value(rejection_flags, 'front_leak', ci), ...
     get_flag_value(rejection_flags, 'temp_leak', ci)];
-secondary_lines = { ...
-    sprintf('unknown_proxy: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'unknown_proxy', ci))), ...
-    sprintf('corr: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'corr', ci))), ...
-    sprintf('stationarity: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'stationarity', ci))), ...
-    sprintf('burst: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'burst', ci))), ...
-    sprintf('condlock: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'condlock', ci))), ...
-    sprintf('emg_score: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'emg_score', ci))), ...
-    sprintf('severe_emg: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'severe_emg_score', ci))), ...
-    sprintf('occ_margin: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'occ_margin', ci))), ...
-    sprintf('severe_front: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'severe_front_leak', ci))), ...
-    sprintf('severe_temp: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'severe_temp_leak', ci))), ...
-    sprintf('topo_flat: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'topo_flat', ci))), ...
-    sprintf('topo_nonpost: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'topo_nonposterior', ci))), ...
-    sprintf('topo_frag: %s', logical_to_yes_no(get_flag_value(rejection_flags, 'topo_fragmented', ci)))};
-secondary_viol = [ ...
-    get_flag_value(rejection_flags, 'unknown_proxy', ci), ...
-    get_flag_value(rejection_flags, 'corr', ci), ...
-    get_flag_value(rejection_flags, 'stationarity', ci), ...
-    get_flag_value(rejection_flags, 'burst', ci), ...
-    get_flag_value(rejection_flags, 'condlock', ci), ...
-    get_flag_value(rejection_flags, 'emg_score', ci), ...
-    get_flag_value(rejection_flags, 'severe_emg_score', ci), ...
-    get_flag_value(rejection_flags, 'occ_margin', ci), ...
-    get_flag_value(rejection_flags, 'severe_front_leak', ci), ...
-    get_flag_value(rejection_flags, 'severe_temp_leak', ci), ...
-    get_flag_value(rejection_flags, 'topo_flat', ci), ...
-    get_flag_value(rejection_flags, 'topo_nonposterior', ci), ...
-    get_flag_value(rejection_flags, 'topo_fragmented', ci)];
-info_lines_col1 = primary_lines;
-info_viol_col1 = primary_viol;
-info_lines_col2 = secondary_lines;
-info_viol_col2 = secondary_viol;
 end
 
-function plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2)
+function plot_rejection_info_text_columns(info_lines, info_viol)
 y0 = 1.52;
 dy = 0.11;
-for li = 1:numel(info_lines_col1)
-    if info_viol_col1(li)
+for li = 1:numel(info_lines)
+    if info_viol(li)
         txt_col = [0.82 0.10 0.10];
     else
         txt_col = [0.10 0.10 0.10];
     end
-    text(0.02, y0 - (li - 1) * dy, info_lines_col1{li}, ...
-        'Units', 'normalized', 'Clipping', 'off', ...
-        'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
-        'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
-end
-for li = 1:numel(info_lines_col2)
-    if info_viol_col2(li)
-        txt_col = [0.82 0.10 0.10];
-    else
-        txt_col = [0.10 0.10 0.10];
-    end
-    text(0.62, y0 - (li - 1) * dy, info_lines_col2{li}, ...
+    text(0.02, y0 - (li - 1) * dy, info_lines{li}, ...
         'Units', 'normalized', 'Clipping', 'off', ...
         'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
         'FontSize', 6.5, 'Color', txt_col, 'Interpreter', 'none');
@@ -3530,14 +3396,6 @@ if isfield(flags_struct, field_name)
     if numel(field_val) >= idx && isfinite(field_val(idx))
         val = logical(field_val(idx));
     end
-end
-end
-
-function str = logical_to_yes_no(flag)
-if flag
-    str = 'Y';
-else
-    str = 'N';
 end
 end
 
