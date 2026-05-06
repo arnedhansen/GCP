@@ -93,7 +93,7 @@ max_minor_peaks_hard = 2;           % allow at most this many minor peaks for PF
 max_minor_peak_rel_hard = 0.60;     % largest minor peak must stay below this fraction of dominant peak
 occipital_pf_lenient_override = true;      % for occipital-labeled components, relax non-critical gates under lenient PF
 occipital_pf_lenient_min = 0.60;           % lenient PF threshold for force-inclusion path
-occipital_pf_fallback_min = 0.50;          % fallback PF threshold when regular pool is empty
+occipital_pf_fallback_min = 0.65;          % fallback PF threshold when regular pool is empty
 max_frontleak_hard = 1.25;          % artifact guard: frontal leakage (front/occ)
 max_templeak_hard = 1.35;           % artifact guard: temporal leakage (temp/occ)
 min_corr_hard = -0.10;              % artifact guard: strongly anti-template components
@@ -965,38 +965,11 @@ for subj = 1:nSubj
     fallback_occipital_idx = NaN;
     fallback_selected_mask = false(nSearch, 1);
     if isempty(combined_idx)
-        fallback_occipital_mask = occipital_class_mask & ~selection_pool_mask & ...
-            (peak_form_score_vec >= occipital_pf_fallback_min) & ...
-            (eval_raw_vec >= min_eigval_hard);
-        fallback_candidates = find(fallback_occipital_mask);
-        if ~isempty(fallback_candidates)
-            [~, fallback_ord] = sort(eval_raw_vec(fallback_candidates), 'descend');
-            fallback_occipital_idx = fallback_candidates(fallback_ord(1));
-            fallback_selected_mask(fallback_occipital_idx) = true;
-            combined_idx = fallback_occipital_idx;
-            searchScores(fallback_occipital_idx) = eval_raw_vec(fallback_occipital_idx) + ...
-                peak_form_weight * peak_form_score_vec(fallback_occipital_idx) + ...
-                peak_bonus_weight * peak_bonus_vec(fallback_occipital_idx);
-            msg = sprintf(['No regular occipital components available for subject %s. ', ...
-                'Using fallback occipital component C%d (eig=%.3f).'], ...
-                subjects{subj}, fallback_occipital_idx, eval_raw_vec(fallback_occipital_idx));
-            warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'FALLBACK_OCCIPITAL_COMPONENT_USED', msg, ...
-                struct('fallback_idx', fallback_occipital_idx, ...
-                'fallback_eig', eval_raw_vec(fallback_occipital_idx), ...
-                'fallback_pf', peak_form_score_vec(fallback_occipital_idx), ...
-                'fallback_min_pf', occipital_pf_fallback_min, ...
-                'fallback_min_eig', min_eigval_hard));
-        else
-            msg = sprintf(['No occipital-labeled artifact-screened finite components available for subject %s, ', ...
-                'and no fallback occipital component passed PF>=%.2f and eig>=%.1f. ', ...
-                'This window will be marked as NaN for downstream metrics.'], ...
-                subjects{subj}, occipital_pf_fallback_min, min_eigval_hard);
-            warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCCIPITAL_COMPONENTS', msg, ...
-                struct('n_hard_eligible', sum(hard_eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
-                'n_finite_scores', sum(isfinite(searchScores)), 'fallback_idx', bestIdx, ...
-                'n_fallback_candidates', numel(fallback_candidates), ...
-                'fallback_min_pf', occipital_pf_fallback_min));
-        end
+        msg = sprintf(['No occipital-labeled artifact-screened finite components available for subject %s. ', ...
+            'This window will be marked as NaN for downstream metrics.'], subjects{subj});
+        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCCIPITAL_COMPONENTS', msg, ...
+            struct('n_hard_eligible', sum(hard_eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
+            'n_finite_scores', sum(isfinite(searchScores))));
     end
     if isempty(combined_idx)
         combined_weights = [];
@@ -1014,10 +987,6 @@ for subj = 1:nSubj
             combined_weights = ones(1, numel(combined_idx));
         end
         combined_weights = combined_weights / sum(combined_weights);
-        if isfinite(fallback_occipital_idx)
-            combined_idx = fallback_occipital_idx;
-            combined_weights = 1;
-        end
     end
     candidate_table.fallback_selected = fallback_selected_mask;
     candidate_table.score_base = searchScores;
@@ -3219,142 +3188,6 @@ title('Single Peak: All Trials (pooled across subjects)', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
 save_figure_png(fig_trl1, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_alltrials_GammaFreq.png'));
-
-%% ====================================================================
-%  GRAND AVERAGE: Mean raw power spectrum
-%  ====================================================================
-close all
-fig_grand_psd = figure('Position', [0 0 1512 982], 'Color', 'w');
-hold on;
-grand_line_handles = gobjects(1, 4);
-grand_panel_maxabs = 0;
-grand_panel_max = -inf;
-
-for cond = 1:4
-    subj_curves = nan(nSubj, nFreqs);
-    for s = 1:nSubj
-        pr_mat_full = all_trial_powratio{cond, s};
-        if isempty(pr_mat_full)
-            continue;
-        end
-        subj_curves(s, :) = nanmean(pr_mat_full, 1);
-    end
-
-    mu = nanmean(subj_curves, 1);
-    n_valid_subj = sum(~isnan(subj_curves(:,1)));
-    if n_valid_subj > 0
-        se = nanstd(subj_curves, [], 1) ./ sqrt(n_valid_subj);
-    else
-        se = nan(size(mu));
-    end
-
-    if any(isfinite(mu))
-        env_vals = [mu - se, mu + se];
-        env_vals = env_vals(isfinite(env_vals));
-        if ~isempty(env_vals)
-            grand_panel_maxabs = max(grand_panel_maxabs, max(abs(env_vals)));
-        end
-        grand_panel_max = max(grand_panel_max, max(mu, [], 'omitnan'));
-
-        faceC = 0.8 * colors(cond,:) + 0.2 * [1 1 1];
-        % SEB
-        % patch([scan_freqs, fliplr(scan_freqs)], ...
-        %    [mu - se, fliplr(mu + se)], ...
-        %    colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.25);
-
-        % Stronger edge-only smoothing for 30-39 Hz and 81-90 Hz.
-        mu_plot = smooth_reflective_edges(mu, scan_freqs, [40 80], 5, 11);
-        grand_line_handles(cond) = plot(scan_freqs, mu_plot, '-', ...
-            'Color', colors(cond,:), 'LineWidth', 5);
-
-        % Xlines for highest peak in the plotted grand-average curve (per condition)
-        if any(isfinite(mu_plot))
-            [~, peak_idx] = max(mu_plot);
-            if ~isempty(peak_idx) && isfinite(scan_freqs(peak_idx))
-                xline(scan_freqs(peak_idx), '--', 'Color', colors(cond,:), 'LineWidth', 2.4, 'Alpha', 0.85);
-            end
-        end
-    end
-end
-
-yline(0, 'k--', 'LineWidth', 0.5);
-grand_panel_maxabs = max(grand_panel_maxabs, eps);
-xlim([30 90]);
-grand_panel_maxabs = max(grand_panel_maxabs, 5);
-ylim([-grand_panel_maxabs grand_panel_maxabs]);
-xlabel('Frequency [Hz]');
-ylabel('Power [dB]');
-title(sprintf('Grand Average Raw Power Spectrum (dB)'), 'FontSize', 25, 'FontWeight', 'bold');
-set(gca, 'FontSize', 15);
-valid_handles = isgraphics(grand_line_handles);
-if any(valid_handles)
-    legend(grand_line_handles(valid_handles), condLabels(valid_handles), ...
-        'Location', 'best', 'FontSize', 15);
-end
-save_figure_png(fig_grand_psd, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_grand_average_power_spectrum.png'));
-
-%% ====================================================================
-%  GRAND AVERAGE: All-subjects subplot (mean raw trial spectra)
-%  ====================================================================
-nRows = ceil(nSubj / 5);
-fig_all = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle(sprintf('Trial-Level Mean Raw Spectra: All Subjects (N=%d)', nSubj), ...
-    'FontSize', 16, 'FontWeight', 'bold');
-fig_all_legend_handles = gobjects(1, 4);
-
-for s = 1:nSubj
-    subplot(nRows, 5, s); hold on;
-    subj_panel_maxabs = 0;
-    subj_panel_min = inf;
-    subj_panel_max = -inf;
-    peak_freq_txt = strings(4,1);
-    for cond = 1:4
-        pr_mat_full = all_trial_powratio{cond, s};
-        if ~isempty(pr_mat_full)
-            mu_raw = nanmean(pr_mat_full, 1);
-            subj_panel_maxabs = max(subj_panel_maxabs, max(abs(mu_raw), [], 'omitnan'));
-            subj_panel_min = min(subj_panel_min, min(mu_raw, [], 'omitnan'));
-            subj_panel_max = max(subj_panel_max, max(mu_raw, [], 'omitnan'));
-            h_cond = plot(scan_freqs, movmean(mu_raw, 5), '-', ...
-                'Color', colors(cond,:), 'LineWidth', 2);
-            if s == 1
-                fig_all_legend_handles(cond) = h_cond;
-            end
-            md_pf = all_trial_median_single(cond, s);
-            if ~isnan(md_pf)
-                xline(md_pf, '--', 'Color', colors(cond,:), 'LineWidth', 1.2);
-                peak_freq_txt(cond) = sprintf('%s: %.0fHz', condLabels{cond}, md_pf);
-            else
-                peak_freq_txt(cond) = sprintf('%s: n/a', condLabels{cond});
-            end
-        end
-    end
-    yline(0, 'k-', 'LineWidth', 0.5);
-    subj_panel_maxabs = max(subj_panel_maxabs, eps);
-    xlabel('Freq [Hz]');
-    ylabel('Power [dB]');
-    title(sprintf('Subj %s', subjects{s}), 'FontSize', 11);
-    if ~isfinite(subj_panel_min), subj_panel_min = -10; end
-    if ~isfinite(subj_panel_max), subj_panel_max = 10; end
-    y_lo = subj_panel_min - 0.05 * abs(subj_panel_max - subj_panel_min);
-    y_hi = subj_panel_max + 0.05 * abs(subj_panel_max - subj_panel_min);
-    if ~isfinite(y_lo) || ~isfinite(y_hi) || y_hi <= y_lo
-        y_lo = -10;
-        y_hi = 10;
-    end
-    set(gca, 'FontSize', 10); xlim([30 90]); ylim([y_lo y_hi]); box on;
-    text(0.97, 0.97, strjoin(cellstr(peak_freq_txt), newline), ...
-        'Units', 'normalized', 'HorizontalAlignment', 'right', ...
-        'VerticalAlignment', 'top', 'Color', 'k', 'FontSize', 8);
-    if s == 1
-        valid_handles = isgraphics(fig_all_legend_handles);
-        if any(valid_handles)
-            legend(fig_all_legend_handles(valid_handles), condLabels(valid_handles), ...
-                'FontSize', 8, 'Location', 'northwest');
-        end
-    end
-end
-save_figure_png(fig_all, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_all_subjects.png'));
 
 %% ====================================================================
 %  DETECTION RATE FIGURE (single + dual peaks)
