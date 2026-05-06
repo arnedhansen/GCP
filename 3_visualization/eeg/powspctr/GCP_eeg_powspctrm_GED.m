@@ -69,14 +69,16 @@ end
 nSubj = min(numel(subj_labels), numel(subjects));
 subj_labels = subj_labels(1:nSubj);
 
-%% Grand-average raw spectra (condition-wise)
+%% Grand-average raw spectrum
+close all
 fig_grand_psd = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
 grand_line_handles = gobjects(1, nCond);
-grand_panel_maxabs = 0;
-
-for cond = 1:nCond
+smooth_n = 3; % mild, uniform smoothing across full spectrum
+plot_order = nCond:-1:1; % 100%, 75%, 50%, 25%
+for oi = 1:numel(plot_order)
+    cond = plot_order(oi);
     subj_curves = nan(nSubj, numel(scan_freqs));
     for s = 1:nSubj
         pr_mat_full = S.all_trial_powratio{cond, s};
@@ -94,39 +96,40 @@ for cond = 1:nCond
     end
 
     if any(isfinite(mu))
-        env_vals = [mu - se, mu + se];
-        env_vals = env_vals(isfinite(env_vals));
-        if ~isempty(env_vals)
-            grand_panel_maxabs = max(grand_panel_maxabs, max(abs(env_vals)));
+        mu_plot = movmean(mu, smooth_n, 'omitnan');
+        se_plot = movmean(se, smooth_n, 'omitnan');
+        good = isfinite(scan_freqs) & isfinite(mu_plot) & isfinite(se_plot);
+        if sum(good) < 3
+            continue;
         end
 
-        % Stronger edge-only smoothing for 30-39 Hz and 81-90 Hz.
-        mu_plot = smooth_reflective_edges(mu, scan_freqs, [40 80], 5, 11);
-        grand_line_handles(cond) = plot(scan_freqs, mu_plot, '-', ...
-            'Color', colors(cond, :), 'LineWidth', 5);
+        hse = shadedErrorBar(scan_freqs(good), mu_plot(good), se_plot(good));
+        set(hse.mainLine, 'Color', colors(cond, :), 'LineWidth', 5);
+        set(hse.patch, 'FaceColor', colors(cond, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none');
+        set(hse.edge, 'Visible', 'off');
+        grand_line_handles(cond) = hse.mainLine;
 
         if any(isfinite(mu_plot))
             [~, peak_idx] = max(mu_plot);
             if ~isempty(peak_idx) && isfinite(scan_freqs(peak_idx))
-                xline(scan_freqs(peak_idx), '--', 'Color', colors(cond, :), 'LineWidth', 2.4, 'Alpha', 0.85);
+                xline(scan_freqs(peak_idx), '--', 'Color', colors(cond, :), 'LineWidth', 2.4);
             end
         end
     end
 end
-
-yline(0, 'k--', 'LineWidth', 0.5);
-grand_panel_maxabs = max(grand_panel_maxabs, 5);
 xlim([30 90]);
-ylim([0 grand_panel_maxabs]);
+ylim([0 2.5]);
 xlabel('Frequency [Hz]');
 ylabel('Power [dB]');
-title('Grand Average Raw Power Spectrum (dB)', 'FontSize', 25, 'FontWeight', 'bold');
-set(gca, 'FontSize', 15);
+title('Grand Average Power Spectrum (dB)', 'FontSize', 25, 'FontWeight', 'bold');
+set(gca, 'FontSize', 20);
 valid_handles = isgraphics(grand_line_handles);
 if any(valid_handles)
-    legend(grand_line_handles(valid_handles), condLabels(valid_handles), ...
-        'Location', 'best', 'FontSize', 15);
+    legend_order = plot_order(isgraphics(grand_line_handles(plot_order)));
+    legend(grand_line_handles(legend_order), condLabels(legend_order), ...
+        'Location', 'best', 'FontSize', 20, 'Box','off');
 end
+drawnow
 exportgraphics(fig_grand_psd, fullfile(fig_dir, 'GCP_eeg_GED_grand_average_power_spectrum.png'), 'Resolution', 600);
 
 %% All-subject raw spectra subplots
