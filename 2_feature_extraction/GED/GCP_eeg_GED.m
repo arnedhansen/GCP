@@ -140,8 +140,13 @@ outlier_min_rest = 0;               % minimum non-top eligible components for do
 baseline_outlier_exclusion_enable = true; % reject trials with unreliable baseline power estimates
 baseline_outlier_mad_mult = 3.5;    % robust log-power cutoff (MAD units) for baseline outliers
 baseline_outlier_min_trials = 12;   % minimum trial count before baseline outlier screening is applied
+ratio_floor_prctile = 20;           % robust baseline-power percentile used as floor anchor
+ratio_floor_frac = 0.25;            % floor is this fraction of the robust baseline-power anchor
+instability_near_floor_mult = 1.5;  % mark as near-floor when baseline <= this multiple of floor
+instability_component_frac_thr = 0.50; % unstable if >= this fraction of components are near-floor
+instability_trial_freq_frac_thr = 0.35; % exclude trial when unstable at >= this frequency fraction
 peak_form_weight = 3.00;            % strongly prioritize shift-invariant gamma peak form during ranking
-peak_bonus_weight = 0.5;            % legacy peak bonus weight (ranking disabled; retained for diagnostics/rescue)
+peak_bonus_weight = 0.5;            % auxiliary peak clarity weight
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
 peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
 peak_form_shift_max_hz = 10;        % max template-shift alignment range for shift-invariant matching
@@ -159,7 +164,6 @@ peak_form_edge_ratio_hard = 1.75;   % hard edge-artifact penalty threshold
 peak_form_edge_run_soft = 0.025;    % soft monotonic edge-run threshold
 peak_form_edge_run_hard = 0.060;    % hard monotonic edge-run threshold
 peak_form_enable_selfcheck = true;  % synthetic shift-invariance diagnostic
-pf_scoring_variant = 'current';      % {'current','legacy'}; legacy keeps fallback A/B diagnostics
 peak_form_selfcheck_centers = [40 50 60 70 80];
 peak_form_selfcheck_width_hz = 5;
 peak_form_selfcheck_tol = 0.03;
@@ -212,7 +216,7 @@ centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centro
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
 centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
 
-% Scalar normalization path disabled (analysis/plots use percent change directly).
+% Scalar normalization path disabled (analysis/plots use dB ratio directly).
 plotstats_scalar_norm_enable = false;
 plotstats_scalar_ref_bands_hz = [30 40; 80 90];
 
@@ -226,9 +230,11 @@ fig_save_dir_ged = fullfile(gcp_root_path, 'figures', 'eeg', 'ged');
 fig_save_dir_component_comparison = fullfile(fig_save_dir_ged, 'component_comparison');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
 fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
+fig_save_dir_powspctrm = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/powspctrm';
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_comparison, 'dir'), mkdir(fig_save_dir_component_comparison); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
+if ~exist(fig_save_dir_powspctrm, 'dir'), mkdir(fig_save_dir_powspctrm); end
 comp_sel_save_dir = fig_save_dir_component_selection;
 
 %% Preallocate storage
@@ -655,10 +661,6 @@ for subj = 1:nSubj
         peak_form_min_similarity, peak_form_smooth_n, ...
         peak_form_prom_abs_floor, peak_form_peak_width_min_hz, peak_form_peak_width_max_hz, ...
         peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, peak_form_edge_run_soft, peak_form_edge_run_hard);
-    if strcmpi(pf_scoring_variant, 'legacy')
-        peak_form_score_vec = peak_bonus_vec;
-        peak_form_mode_vec = repmat({'legacy'}, nSearch, 1);
-    end
     topo_posterior_vec = searchTopoPosteriorConcentration;
     topo_flat_fail_vec = (searchTopoSpatialStd < topo_flat_std_min) | (searchTopoDynamicRange < topo_flat_range_min);
     topo_nonposterior_fail_vec = topo_posterior_vec < topo_nonposterior_max;
@@ -900,7 +902,7 @@ for subj = 1:nSubj
     candidate_table.peak_count = peak_count_vec;
     candidate_table.peak_form_score = peak_form_score_vec;
     candidate_table.peak_form_mode = peak_form_mode_vec;
-    candidate_table.peak_form_basis = repmat({sprintf('raw_only_%s', lower(pf_scoring_variant))}, nSearch, 1);
+    candidate_table.peak_form_basis = repmat({'raw_only_current'}, nSearch, 1);
     candidate_table.peak_form_best_single_similarity = peak_form_diag.best_single_similarity;
     candidate_table.peak_form_best_double_similarity = peak_form_diag.best_double_similarity;
     candidate_table.peak_form_similarity_raw = peak_form_diag.best_similarity_raw;
@@ -939,7 +941,6 @@ for subj = 1:nSubj
     candidate_table.pass_lenient_eig_gate = pass_lenient_eig_gate;
     candidate_table.lenient_occipital_pf = lenient_occipital_pf_mask;
     candidate_table.force_include_occipital = force_include_occipital_mask;
-    candidate_table.consistency_bonus = zeros(nSearch, 1);
     candidate_table.artifact_flag = artifact_flags;
     candidate_table.hard_reject_raw = hard_reject_flags_raw;
     candidate_table.hard_reject = hard_reject_flags;
@@ -1401,6 +1402,8 @@ for subj = 1:nSubj
         if ~isempty(W_comb)
             w_comb = w_comb(:)' / sum(w_comb);
         end
+        W_t = normalize_filters_to_noise_metric(W_t, covBase_full);
+        W_comb = normalize_filters_to_noise_metric(W_comb, covBase_full);
         if wi == 1
             W_combined_full_norm = W_comb;
             w_combined_full_norm = w_comb;
@@ -1420,17 +1423,17 @@ for subj = 1:nSubj
     end
     % Per-window filters struct for Phase 2
     filters = struct('full', struct(), 'early', struct(), 'late', struct());
-    filters.full.searchFilters = searchFilters_full;
+    filters.full.searchFilters = normalize_filters_to_noise_metric(searchFilters_full, covBase_full);
     filters.full.W_top = W_top_full_norm;
     filters.full.W_combined = W_combined_full_norm;
     filters.full.selected_idx = selected_idx_full_norm;
     filters.full.w_combined = w_combined_full_norm;
-    filters.early.searchFilters = searchFilters_early;
+    filters.early.searchFilters = normalize_filters_to_noise_metric(searchFilters_early, covBase_full);
     filters.early.W_top = W_top_early_norm;
     filters.early.W_combined = W_combined_early_norm;
     filters.early.selected_idx = selected_idx_early_norm;
     filters.early.w_combined = w_combined_early_norm;
-    filters.late.searchFilters = searchFilters_late;
+    filters.late.searchFilters = normalize_filters_to_noise_metric(searchFilters_late, covBase_full);
     filters.late.W_top = W_top_late_norm;
     filters.late.W_combined = W_combined_late_norm;
     filters.late.selected_idx = selected_idx_late_norm;
@@ -1451,6 +1454,12 @@ for subj = 1:nSubj
         powratio_components       = nan(nSearch_full, nTrl, nFreqs);
         powratio_components_early = nan(nSearch_early, nTrl, nFreqs);
         powratio_components_late  = nan(nSearch_late, nTrl, nFreqs);
+        unstable_freq_counts_full = zeros(nTrl, 1);
+        unstable_freq_counts_early = zeros(nTrl, 1);
+        unstable_freq_counts_late = zeros(nTrl, 1);
+        valid_freq_counts_full = zeros(nTrl, 1);
+        valid_freq_counts_early = zeros(nTrl, 1);
+        valid_freq_counts_late = zeros(nTrl, 1);
 
         for fi = 1:nFreqs
             clc
@@ -1514,6 +1523,14 @@ for subj = 1:nSubj
                 bad_base_late = bad_base_late | flag_unreliable_baseline_trials( ...
                     baseline_power_comb_late, baseline_outlier_mad_mult, baseline_outlier_min_trials, baseline_outlier_exclusion_enable);
             end
+            [base_floor_raw, ~] = compute_baseline_floor_stats( ...
+                baseline_power_raw, ratio_floor_prctile, ratio_floor_frac);
+            [base_floor_full, ~] = compute_baseline_floor_stats( ...
+                baseline_power_comb_full, ratio_floor_prctile, ratio_floor_frac);
+            [base_floor_early, ~] = compute_baseline_floor_stats( ...
+                baseline_power_comb_early, ratio_floor_prctile, ratio_floor_frac);
+            [base_floor_late, ~] = compute_baseline_floor_stats( ...
+                baseline_power_comb_late, ratio_floor_prctile, ratio_floor_frac);
 
             for trl = 1:nTrl
                 x_nb = double(dat_nb.trial{trl});
@@ -1529,51 +1546,97 @@ for subj = 1:nSubj
                 x_late = x_nb(:, idx_late);
 
                 if adequate_full && ~bad_base_full(trl)
+                    valid_freq_counts_full(trl) = valid_freq_counts_full(trl) + 1;
                     nSearch_full = size(filters.full.searchFilters, 2);
                     comp_base_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_base;
                     pow_base_all_full = mean(comp_base_all_full.^2, 2);
-                    ratio_all_full = nan(nSearch_full, 1);
                     comp_stim_all_full = filters.full.searchFilters(:, 1:nSearch_full)' * x_full;
                     pow_stim_all_full = mean(comp_stim_all_full.^2, 2);
-                    valid_all_full = isfinite(pow_stim_all_full) & isfinite(pow_base_all_full) & (pow_base_all_full > 0);
-                    ratio_all_full(valid_all_full) = ...
-                        100 * (pow_stim_all_full(valid_all_full) - pow_base_all_full(valid_all_full)) ./ pow_base_all_full(valid_all_full);
+                    [ratio_all_full, near_floor_full] = compute_trial_ratio_metrics( ...
+                        pow_stim_all_full, pow_base_all_full, base_floor_full, instability_near_floor_mult);
+                    if near_floor_full >= instability_component_frac_thr
+                        unstable_freq_counts_full(trl) = unstable_freq_counts_full(trl) + 1;
+                        continue;
+                    end
                     powratio_components(:, trl, fi) = ratio_all_full;
                     powratio_methods_full(:, trl, fi) = compute_method_ratios_from_components( ...
-                        ratio_all_full, x_full, x_base, raw_w, filters.full.W_top, filters.full.W_combined, filters.full.selected_idx, filters.full.w_combined, nBenchmarkMethods);
+                        ratio_all_full, x_full, x_base, raw_w, filters.full.W_top, filters.full.W_combined, ...
+                        filters.full.selected_idx, filters.full.w_combined, nBenchmarkMethods, ...
+                        base_floor_raw);
                 end
 
                 if adequate_early && ~bad_base_early(trl)
+                    valid_freq_counts_early(trl) = valid_freq_counts_early(trl) + 1;
                     nSearch_early = size(filters.early.searchFilters, 2);
                     comp_base_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_base;
                     pow_base_all_early = mean(comp_base_all_early.^2, 2);
-                    ratio_all_early = nan(nSearch_early, 1);
                     comp_stim_all_early = filters.early.searchFilters(:, 1:nSearch_early)' * x_early;
                     pow_stim_all_early = mean(comp_stim_all_early.^2, 2);
-                    valid_all_early = isfinite(pow_stim_all_early) & isfinite(pow_base_all_early) & (pow_base_all_early > 0);
-                    ratio_all_early(valid_all_early) = ...
-                        100 * (pow_stim_all_early(valid_all_early) - pow_base_all_early(valid_all_early)) ./ pow_base_all_early(valid_all_early);
+                    [ratio_all_early, near_floor_early] = compute_trial_ratio_metrics( ...
+                        pow_stim_all_early, pow_base_all_early, base_floor_early, instability_near_floor_mult);
+                    if near_floor_early >= instability_component_frac_thr
+                        unstable_freq_counts_early(trl) = unstable_freq_counts_early(trl) + 1;
+                        continue;
+                    end
                     powratio_components_early(1:nSearch_early, trl, fi) = ratio_all_early;
                     powratio_methods_early(:, trl, fi) = compute_method_ratios_from_components( ...
-                        ratio_all_early, x_early, x_base, raw_w, filters.early.W_top, filters.early.W_combined, filters.early.selected_idx, filters.early.w_combined, nBenchmarkMethods);
+                        ratio_all_early, x_early, x_base, raw_w, filters.early.W_top, filters.early.W_combined, ...
+                        filters.early.selected_idx, filters.early.w_combined, nBenchmarkMethods, ...
+                        base_floor_raw);
                 end
 
                 if adequate_late && ~bad_base_late(trl)
+                    valid_freq_counts_late(trl) = valid_freq_counts_late(trl) + 1;
                     nSearch_late = size(filters.late.searchFilters, 2);
                     comp_base_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_base;
                     pow_base_all_late = mean(comp_base_all_late.^2, 2);
-                    ratio_all_late = nan(nSearch_late, 1);
                     comp_stim_all_late = filters.late.searchFilters(:, 1:nSearch_late)' * x_late;
                     pow_stim_all_late = mean(comp_stim_all_late.^2, 2);
-                    valid_all_late = isfinite(pow_stim_all_late) & isfinite(pow_base_all_late) & (pow_base_all_late > 0);
-                    ratio_all_late(valid_all_late) = ...
-                        100 * (pow_stim_all_late(valid_all_late) - pow_base_all_late(valid_all_late)) ./ pow_base_all_late(valid_all_late);
+                    [ratio_all_late, near_floor_late] = compute_trial_ratio_metrics( ...
+                        pow_stim_all_late, pow_base_all_late, base_floor_late, instability_near_floor_mult);
+                    if near_floor_late >= instability_component_frac_thr
+                        unstable_freq_counts_late(trl) = unstable_freq_counts_late(trl) + 1;
+                        continue;
+                    end
                     powratio_components_late(1:nSearch_late, trl, fi) = ratio_all_late;
                     powratio_methods_late(:, trl, fi) = compute_method_ratios_from_components( ...
-                        ratio_all_late, x_late, x_base, raw_w, filters.late.W_top, filters.late.W_combined, filters.late.selected_idx, filters.late.w_combined, nBenchmarkMethods);
+                        ratio_all_late, x_late, x_base, raw_w, filters.late.W_top, filters.late.W_combined, ...
+                        filters.late.selected_idx, filters.late.w_combined, nBenchmarkMethods, ...
+                        base_floor_raw);
                 end
             end
             clear dat_nb
+        end
+        unstable_trial_frac_full = unstable_freq_counts_full ./ max(valid_freq_counts_full, 1);
+        unstable_trial_frac_early = unstable_freq_counts_early ./ max(valid_freq_counts_early, 1);
+        unstable_trial_frac_late = unstable_freq_counts_late ./ max(valid_freq_counts_late, 1);
+        trial_unstable_full = unstable_trial_frac_full >= instability_trial_freq_frac_thr;
+        trial_unstable_early = unstable_trial_frac_early >= instability_trial_freq_frac_thr;
+        trial_unstable_late = unstable_trial_frac_late >= instability_trial_freq_frac_thr;
+        if any(trial_unstable_full)
+            powratio_methods_full(:, trial_unstable_full, :) = NaN;
+            powratio_components(:, trial_unstable_full, :) = NaN;
+        end
+        if any(trial_unstable_early)
+            powratio_methods_early(:, trial_unstable_early, :) = NaN;
+            powratio_components_early(:, trial_unstable_early, :) = NaN;
+        end
+        if any(trial_unstable_late)
+            powratio_methods_late(:, trial_unstable_late, :) = NaN;
+            powratio_components_late(:, trial_unstable_late, :) = NaN;
+        end
+        if any(trial_unstable_full) || any(trial_unstable_early) || any(trial_unstable_late)
+            msg = sprintf(['Numerical instability exclusion for subject %s condition %s: ', ...
+                'full=%d/%d, early=%d/%d, late=%d/%d trials removed (near-floor baseline).'], ...
+                subjects{subj}, condLabels{cond}, ...
+                sum(trial_unstable_full), nTrl, sum(trial_unstable_early), nTrl, sum(trial_unstable_late), nTrl);
+            warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, ...
+                'NUMERICAL_INSTABILITY_TRIAL_EXCLUSION', msg, struct( ...
+                'condition', condLabels{cond}, ...
+                'n_removed_full', sum(trial_unstable_full), ...
+                'n_removed_early', sum(trial_unstable_early), ...
+                'n_removed_late', sum(trial_unstable_late), ...
+                'threshold_trial_freq_fraction', instability_trial_freq_frac_thr));
         end
         powratio_methods_full_analysis = powratio_methods_full;
         powratio_methods_early_analysis = powratio_methods_early;
@@ -1735,7 +1798,7 @@ for subj = 1:nSubj
         all_trial_median_single_late(cond, subj) = median(trl_peaks_single_late(valid_s_late));
         all_trial_detrate_single_late(cond, subj) = sum(valid_s_late) / nTrl;
 
-        % Peak-centered gamma power: mean percent change from baseline within peak +/- 2.5 Hz.
+        % Peak-centered gamma power: mean dB change from baseline within peak +/- 2.5 Hz.
         [trial_gamma_power_full, all_trial_gamma_power(cond, subj)] = compute_peak_centered_gamma_power( ...
             powratio_trials_full, scan_freqs, trl_peaks_single, gamma_peak_power_halfwidth_hz);
         [trial_gamma_power_early, all_trial_gamma_power_early(cond, subj)] = compute_peak_centered_gamma_power( ...
@@ -1972,7 +2035,7 @@ for subj = 1:nSubj
                 ylim([y_lo y_hi]);
             end
             xlabel('Freq [Hz]');
-            ylabel('Power Change from Baseline [%]');
+            ylabel('Power Change from Baseline [dB]');
             det_lo = detrate_low_source(cond, subj);
             det_hi = detrate_high_source(cond, subj);
             title(sprintf('%s Dual (L:%.0f%% H:%.0f%%)', condLabels{cond}, det_lo*100, det_hi*100), 'FontSize', 10);
@@ -2197,7 +2260,7 @@ for cwi = 1:numel(comparison_windows)
         end
     end
 
-    % Keep full-window benchmark metrics in legacy variables for downstream analyses.
+    % Keep full-window benchmark metrics in canonical variables for downstream analyses.
     if strcmp(win_name, 'full')
         benchmark_metric_detectability = benchmark_metric_detectability_window;
         benchmark_metric_prominence = benchmark_metric_prominence_window;
@@ -2275,7 +2338,7 @@ for cwi = 1:numel(comparison_windows)
             end
             yline(0, 'k-', 'LineWidth', 0.5);
             title(bench_method_labels{mi}, 'FontSize', 12, 'Color', bench_method_colors(mi,:));
-            xlabel('Frequency [Hz]'); ylabel('Power Change from Baseline [%]');
+            xlabel('Frequency [Hz]'); ylabel('Power Change from Baseline [dB]');
             xlim([30 90]);  box on; set(gca, 'FontSize', 10);
             if mi == 1
                 valid_handles = isgraphics(cond_line_handles);
@@ -2456,7 +2519,7 @@ end
         end
         yline(0, 'k-', 'LineWidth', 0.5);
         title(bench_method_labels{mi}, 'FontSize', 12, 'Color', bench_method_colors(mi,:));
-        xlabel('Frequency [Hz]'); ylabel('Power Change from Baseline [%]');
+        xlabel('Frequency [Hz]'); ylabel('Power Change from Baseline [dB]');
         panel_maxabs = max(panel_maxabs, eps);
         panel_maxabs = max(panel_maxabs, 5);
         ylim([-panel_maxabs panel_maxabs]);
@@ -2608,7 +2671,7 @@ save_figure_png(fig_cond_slope, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_conditio
 
 %% Mean gamma frequency shift bar plot
 close all
-fig_cond_shift_bar = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_cond_shift_bar = figure('Position', [0 0 1512 982], 'Color', 'w');
 valid_delta = isfinite(delta_post);
 subj_idx = find(valid_delta);
 delta_vals = delta_post(valid_delta);
@@ -2634,7 +2697,7 @@ fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('GED Trials Summary Dashboard (component selection backprojected)', ...
     'FontSize', 16, 'FontWeight', 'bold');
 gamma_metric_full = all_trial_gamma_power;
-gamma_metric_label = 'Gamma Power Change [%]';
+gamma_metric_label = 'Gamma Power Change [dB]';
 
 summary_metrics = { ...
     all_trial_median_single, ...
@@ -2814,7 +2877,7 @@ save_figure_png(fig_summary_late, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metric
 close all
 fprintf('\nCreating grand average figures...\n');
 
-fig_box1 = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_box1 = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
 dat = all_trial_median_single;
@@ -2852,7 +2915,7 @@ save_figure_png(fig_box1, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaF
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak with subject trajectories + ID labels
 %  ====================================================================
-fig_box1_traj = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_box1_traj = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
 dat = all_trial_median_single;
@@ -2912,7 +2975,7 @@ save_figure_png(fig_box1_traj, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_G
 %% ====================================================================
 %  GRAND AVERAGE: Single Peak (stats-style boxplot, non-baselined freq)
 %  ====================================================================
-fig_box1_statsstyle = figure('Position', [0 0 1512/2 982], 'Color', 'W');
+fig_box1_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
 dat = all_trial_median_single;  % [condition x subject], absolute frequency (Hz)
@@ -2956,7 +3019,7 @@ save_figure_png(fig_box1_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_box
 %  MAIN FIGURE: Gamma frequency over contrast (mean+-SEM + trajectories)
 %  ====================================================================
 close all
-fig_main_gamma = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_main_gamma = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
 dat = all_trial_median_single;  % [condition x subject]
@@ -3076,7 +3139,7 @@ save_figure_png(fig_main_gamma_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_
 %% ====================================================================
 %  POWER INCREASE FIGURE: gamma-band power ratio over conditions
 %  ====================================================================
-fig_power_statsstyle = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_power_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
 dat_power = all_trial_gamma_power;
@@ -3123,7 +3186,7 @@ yline(0, 'k--', 'LineWidth', 1.2);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 15, 'Box', 'off');
 xlim([0.5 4.5]);
-ylabel('Gamma Power Change from Baseline [%]');
+ylabel('Gamma Power Change from Baseline [dB]');
 title('Gamma Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
 save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaPower_statsStyle.png'));
 
@@ -3178,7 +3241,7 @@ save_figure_png(fig_trl1, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_alltri
 %  GRAND AVERAGE: Mean raw power spectrum
 %  ====================================================================
 close all
-fig_grand_psd = figure('Position', [0 0 1512/2 982], 'Color', 'w');
+fig_grand_psd = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 grand_line_handles = gobjects(1, 4);
 grand_panel_maxabs = 0;
@@ -3237,7 +3300,7 @@ xlim([30 90]);
 grand_panel_maxabs = max(grand_panel_maxabs, 5);
 ylim([-grand_panel_maxabs grand_panel_maxabs]);
 xlabel('Frequency [Hz]');
-ylabel('Power Change from Baseline [%]');
+ylabel('Power Change from Baseline [dB]');
 title(sprintf('Grand Average Raw Power Spectrum (%% Change)'), 'FontSize', 25, 'FontWeight', 'bold');
 set(gca, 'FontSize', 15);
 valid_handles = isgraphics(grand_line_handles);
@@ -3286,7 +3349,7 @@ for s = 1:nSubj
     yline(0, 'k-', 'LineWidth', 0.5);
     subj_panel_maxabs = max(subj_panel_maxabs, eps);
     xlabel('Freq [Hz]');
-    ylabel('Power Change [%]');
+    ylabel('Power Change [dB]');
     title(sprintf('Subj %s', subjects{s}), 'FontSize', 11);
     if ~isfinite(subj_panel_min), subj_panel_min = -10; end
     if ~isfinite(subj_panel_max), subj_panel_max = 10; end
@@ -3359,6 +3422,93 @@ if simulation_validation_enable
         headmodel, simulation_reps, simulation_snr_levels, simulation_depth_levels, ...
         simulation_overlap_levels, simulation_artifact_levels, min_eigval_hard, ...
         max_frontleak_hard, max_templeak_hard);
+end
+
+%% ====================================================================
+%  FINAL POWERSPECTRA EXPORTS (combined GED branch)
+%  ====================================================================
+combined_method_idx = find(strcmpi(benchmark_methods, 'ged_combined_artifact_weighted'), 1, 'first');
+if isempty(combined_method_idx)
+    combined_method_idx = min(3, nBenchmarkMethods);
+end
+time_windows = {'early', 'full', 'late'};
+time_cells = {all_trial_powratio_bench_early, all_trial_powratio_bench, all_trial_powratio_bench_late};
+for s = 1:nSubj
+    fig_ps = figure('Position', [0 0 1512 982], 'Color', 'w');
+    for wi = 1:3
+        subplot(1, 3, wi); hold on;
+        panel_min = inf;
+        panel_max = -inf;
+        for cond = 1:4
+            pr_mat = time_cells{wi}{combined_method_idx, cond, s};
+            if isempty(pr_mat)
+                continue;
+            end
+            mu = mean(pr_mat, 1, 'omitnan');
+            sem = std(pr_mat, 0, 1, 'omitnan') ./ sqrt(max(1, sum(isfinite(pr_mat), 1)));
+            good = isfinite(mu) & isfinite(sem);
+            if sum(good) < 3
+                continue;
+            end
+            x = scan_freqs(good);
+            y = mu(good);
+            e = sem(good);
+            patch([x, fliplr(x)], [y - e, fliplr(y + e)], colors(cond,:), ...
+                'FaceAlpha', 0.18, 'EdgeColor', 'none');
+            plot(x, y, '-', 'Color', colors(cond,:), 'LineWidth', 2.0);
+            panel_min = min(panel_min, min(y - e));
+            panel_max = max(panel_max, max(y + e));
+        end
+        yline(0, 'k--', 'LineWidth', 0.8);
+        xlim(analysis_freq_range);
+        if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
+            yr = panel_max - panel_min;
+            ylim([panel_min - 0.08 * yr, panel_max + 0.12 * yr]);
+        end
+        xlabel('Frequency [Hz]');
+        ylabel('Power Change [dB]');
+        title(sprintf('%s window', upper(time_windows{wi})), 'Interpreter', 'none');
+        set(gca, 'FontSize', 11, 'Box', 'on');
+    end
+    legend(condLabels, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off');
+    sgtitle(sprintf('Final Combined GED Power Spectra: Subject %s', subjects{s}), ...
+        'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+    save_figure_png(fig_ps, fullfile(fig_save_dir_powspctrm, sprintf('GCP_eeg_GED_powspctrm_subj%s.png', subjects{s})));
+end
+
+for wi = 1:3
+    fig_all_win = figure('Position', [0 0 1512 982], 'Color', 'w');
+    for s = 1:nSubj
+        subplot(ceil(nSubj / 5), 5, s); hold on;
+        panel_min = inf;
+        panel_max = -inf;
+        for cond = 1:4
+            pr_mat = time_cells{wi}{combined_method_idx, cond, s};
+            if isempty(pr_mat)
+                continue;
+            end
+            mu = mean(pr_mat, 1, 'omitnan');
+            if ~any(isfinite(mu))
+                continue;
+            end
+            plot(scan_freqs, mu, '-', 'Color', colors(cond,:), 'LineWidth', 1.8);
+            panel_min = min(panel_min, min(mu, [], 'omitnan'));
+            panel_max = max(panel_max, max(mu, [], 'omitnan'));
+        end
+        yline(0, 'k--', 'LineWidth', 0.6);
+        xlim(analysis_freq_range);
+        if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
+            yr = panel_max - panel_min;
+            ylim([panel_min - 0.08 * yr, panel_max + 0.12 * yr]);
+        end
+        title(sprintf('Subj %s', subjects{s}), 'FontSize', 10, 'Interpreter', 'none');
+        xlabel('Hz');
+        ylabel('dB');
+        set(gca, 'FontSize', 9, 'Box', 'on');
+    end
+    sgtitle(sprintf('Final Combined GED Power Spectra (%s, all subjects)', upper(time_windows{wi})), ...
+        'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+    save_figure_png(fig_all_win, fullfile(fig_save_dir_powspctrm, sprintf('GCP_eeg_GED_powspctrm_%s_ALL.png', time_windows{wi})));
 end
 
 %% Save results
@@ -3486,16 +3636,17 @@ else
     end
 end
 
-function method_ratios = compute_method_ratios_from_components(ratio_all, x_stim, x_base, raw_w, W_top, W_combined, selected_idx, w_combined, nBenchmarkMethods)
-% ratio_all: baseline-percent-change values indexed by component
+function method_ratios = compute_method_ratios_from_components(ratio_all, x_stim, x_base, raw_w, W_top, W_combined, selected_idx, w_combined, nBenchmarkMethods, base_floor_raw)
+% ratio_all: trial-level dB values indexed by component
 method_ratios = nan(nBenchmarkMethods, 1);
 
 pow_stim_chan = mean(x_stim.^2, 2);
 pow_base_chan = mean(x_base.^2, 2);
 raw_pow_stim = sum(raw_w(:) .* pow_stim_chan(:));
 raw_pow_base = sum(raw_w(:) .* pow_base_chan(:));
-if isfinite(raw_pow_stim) && isfinite(raw_pow_base) && raw_pow_base > 0
-    method_ratios(1) = 100 * (raw_pow_stim - raw_pow_base) / raw_pow_base;
+if isfinite(raw_pow_stim) && isfinite(raw_pow_base)
+    floor_raw = max(base_floor_raw, eps);
+    method_ratios(1) = 10 * log10((raw_pow_stim + floor_raw) / (raw_pow_base + floor_raw));
 end
 
 if ~isempty(W_top)
@@ -3663,6 +3814,62 @@ for trl = 1:nTrl
             (pos_mass / max(total_abs_mass, eps)) >= centroid_posfrac_min
         trl_centroid(trl) = sum(freq_band .* w_pos) / pos_mass;
     end
+end
+end
+
+function [base_floor, base_median] = compute_baseline_floor_stats(base_power_vals, floor_prctile, floor_frac)
+base_floor = eps;
+base_median = eps;
+if nargin < 2 || ~isfinite(floor_prctile)
+    floor_prctile = 20;
+end
+if nargin < 3 || ~isfinite(floor_frac)
+    floor_frac = 0.25;
+end
+if isempty(base_power_vals)
+    return;
+end
+valid = isfinite(base_power_vals) & (base_power_vals > 0);
+if ~any(valid)
+    return;
+end
+vals = base_power_vals(valid);
+base_median = median(vals, 'omitnan');
+anchor = prctile(vals, floor_prctile);
+if ~isfinite(anchor) || anchor <= 0
+    anchor = base_median;
+end
+if ~isfinite(base_median) || base_median <= 0
+    base_median = anchor;
+end
+base_floor = max(anchor * max(floor_frac, 0), eps);
+base_median = max(base_median, base_floor);
+end
+
+function [ratio_db, near_floor_fraction] = compute_trial_ratio_metrics(pow_stim, pow_base, base_floor, near_floor_mult)
+ratio_db = nan(size(pow_stim));
+near_floor_fraction = NaN;
+if isempty(pow_stim) || isempty(pow_base) || numel(pow_stim) ~= numel(pow_base)
+    return;
+end
+if nargin < 4 || ~isfinite(near_floor_mult) || near_floor_mult <= 0
+    near_floor_mult = 1.5;
+end
+floor_use = max(base_floor, eps);
+valid = isfinite(pow_stim) & isfinite(pow_base);
+if ~any(valid)
+    near_floor_fraction = 1.0;
+    return;
+end
+pow_stim = pow_stim(:);
+pow_base = pow_base(:);
+valid = valid(:) & (pow_base > 0);
+ratio_db(valid) = 10 * log10((pow_stim(valid) + floor_use) ./ (pow_base(valid) + floor_use));
+base_near_floor = pow_base(valid) <= (near_floor_mult * floor_use);
+if any(valid)
+    near_floor_fraction = mean(base_near_floor);
+else
+    near_floor_fraction = 1.0;
 end
 end
 
@@ -3860,7 +4067,7 @@ nComp = numel(eigval_vec);
 if nComp < 1
     return;
 end
-figA = figure('Position', [0 0 1512 982]);
+figA = figure('Position', [0 0 1512 982], 'Color', 'w');
 scatter_size = 60 + 80 * max(eigval_vec - min(eigval_vec), 0) / max(max(eigval_vec) - min(eigval_vec), eps);
 eig_color_vals = eigval_vec(:);
 eig_color_vals(~isfinite(eig_color_vals)) = 1.1;
@@ -3956,7 +4163,7 @@ rej_idx = rej_idx(ro);
 nCols = 5;
 nShowSel = min(nCols, numel(sel_idx));
 nShowRej = min(nCols, numel(rej_idx));
-figSel = figure('Position', [0 0 1512 982]);
+figSel = figure('Position', [0 0 1512 982], 'Color', 'w');
 for k = 1:nCols
     % Row 1: selected topographies
     subplot(4, nCols, k);
@@ -4010,7 +4217,7 @@ for k = 1:nCols
             build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec);
         plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2);
         format_power_change_percent_axis(gca);
-        xlabel('Hz'); ylabel('Power Change [%]');
+        xlabel('Hz'); ylabel('Power Change [dB]');
         title(sprintf('\\lambda=%.2f, PF=%.2f', ...
             eigval_vec(ci), peak_form_score(ci)), 'FontSize', 7);
         box on;
@@ -4064,7 +4271,7 @@ for k = 1:nCols
             build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, lineharm_vec, hf_slope_vec);
         plot_rejection_info_text_columns(info_lines_col1, info_viol_col1, info_lines_col2, info_viol_col2);
         format_power_change_percent_axis(gca);
-        xlabel('Hz'); ylabel('Power Change [%]');
+        xlabel('Hz'); ylabel('Power Change [dB]');
         title(sprintf('\\lambda=%.2f, PF=%.2f', ...
             eigval_vec(ci), peak_form_score(ci)), 'FontSize', 7);
         box on;
@@ -4092,7 +4299,7 @@ sgtitle(sprintf('Top 5 Selected and Rejected Components: %s (%s)', subject_id, w
 save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected_%s.png', subject_id, win_name)));
 close(figSel);
 
-figC = figure('Position', [0 0 756 982]);
+figC = figure('Position', [0 0 1512 982], 'Color', 'w');
 tiledlayout(2, 1, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile;
 counts = [numel(sel_idx), sum(logical(soft_warn_flags)), sum(logical(hard_reject_flags & ~selected_mask)), numel(eigval_vec)];
@@ -4298,7 +4505,7 @@ for wi = 1:3
         end
     end
     format_power_change_percent_axis(gca);
-    xlabel('Hz'); ylabel('Power Change [%]');
+    xlabel('Hz'); ylabel('Power Change [dB]');
     box on;
     text(0.02, 0.98, sprintf('PF = %.2f | peak = %.1f Hz (+/- 2.5 Hz)', ...
         pf_score, pf_peak_hz), ...
@@ -4460,25 +4667,6 @@ if ~isfinite(pf_peak_hz)
             pf_peak_hz = x_peak(idx_max);
         end
     end
-end
-end
-
-function v = safe_cellstr_at(c, idx, fallback)
-if nargin < 3 || isempty(fallback)
-    fallback = '';
-end
-v = fallback;
-if isempty(c) || ~iscell(c) || idx < 1 || idx > numel(c)
-    return;
-end
-ci = c{idx};
-if ischar(ci)
-    v = ci;
-elseif isstring(ci) && isscalar(ci)
-    v = char(ci);
-end
-if isempty(v)
-    v = fallback;
 end
 end
 
@@ -5318,6 +5506,7 @@ px_stim = abs(fft(x_stim, n_fft)).^2;
 px_base = abs(fft(x_base, n_fft)).^2;
 px_stim = px_stim(1:numel(f_axis));
 px_base = px_base(1:numel(f_axis));
+base_band_scan = nan(size(scan_freqs));
 for fi = 1:numel(scan_freqs)
     f0 = scan_freqs(fi);
     f_lo = max(0, f0 - scan_width);
@@ -5328,7 +5517,32 @@ for fi = 1:numel(scan_freqs)
     end
     p_stim = mean(px_stim(f_mask));
     p_base = mean(px_base(f_mask));
-    pr_scan(fi) = 100 * (p_stim - p_base) / max(p_base, eps);
+    base_band_scan(fi) = p_base;
+    pr_scan(fi) = p_stim;
+end
+valid_base = isfinite(base_band_scan) & (base_band_scan > 0);
+if ~any(valid_base)
+    pr_scan(:) = NaN;
+    return;
+end
+base_anchor = prctile(base_band_scan(valid_base), 20);
+base_median = median(base_band_scan(valid_base), 'omitnan');
+if ~isfinite(base_anchor) || base_anchor <= 0
+    base_anchor = base_median;
+end
+if ~isfinite(base_median) || base_median <= 0
+    base_median = base_anchor;
+end
+base_floor = max(0.25 * base_anchor, eps);
+for fi = 1:numel(scan_freqs)
+    p_stim = pr_scan(fi);
+    p_base = base_band_scan(fi);
+    if ~isfinite(p_stim) || ~isfinite(p_base) || p_base <= 0
+        pr_scan(fi) = NaN;
+        continue;
+    end
+    % dB ratio with robust additive floor for numerical stability.
+    pr_scan(fi) = 10 * log10((p_stim + base_floor) / (p_base + base_floor));
 end
 end
 
@@ -5428,6 +5642,24 @@ sim_results.summary = struct( ...
 fprintf('Simulation summary: sens=%.3f, spec=%.3f, fpr=%.3f, locErr=%.3f\n', ...
     sim_results.summary.sensitivity, sim_results.summary.specificity, ...
     sim_results.summary.false_positive_rate, sim_results.summary.mean_localization_error);
+end
+
+function Wn = normalize_filters_to_noise_metric(W, covBase)
+Wn = W;
+if isempty(W) || isempty(covBase)
+    return;
+end
+for ci = 1:size(W, 2)
+    w = W(:, ci);
+    if ~all(isfinite(w))
+        continue;
+    end
+    denom = real(w' * covBase * w);
+    if ~isfinite(denom) || denom <= eps
+        continue;
+    end
+    Wn(:, ci) = w / sqrt(denom);
+end
 end
 
 function [eligible_mask_out, dominant_outlier_idx] = exclude_dominant_top_outlier(eigvals_sorted, eligible_mask_in, ratio_thr, mad_mult, min_rest_n)
@@ -5620,7 +5852,7 @@ pause(0.05);
 try
     exportgraphics(fig_handle, out_path, 'Resolution', 300);
 catch
-    saveas(fig_handle, out_path);
+    exportgraphics(fig_handle, out_path, 'Resolution', 600);
 end
 end
 
