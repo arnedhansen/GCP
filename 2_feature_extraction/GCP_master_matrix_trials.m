@@ -1,27 +1,16 @@
 %% GCP Master Matrix (Trial-Level)
 %
-% Builds one trial-level merged table across behavioral, gaze, and GED
-% metrics. Legacy subject-level script remains untouched:
-%   - GCP_master_matrix.m
+% Builds trial-level merged table across behavioral, gaze, and GED metrics
 %
 % Output:
-%   - /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_merged_data_trials.mat
-%   - /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_merged_data_trials.csv
-%
-% Keys:
-%   ID, Condition, Trial
+%   /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_merged_data_trials.mat
+%   /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_merged_data_trials.csv
 
 %% Setup
-clear
-clc
-close all
 [subjects, paths] = setup('GCP', 0);
 features_root = paths.features;
 dirs = dir(features_root);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
-subjects = {folders.name};
-subjects = subjects(cellfun(@(s) ~isnan(str2double(s)), subjects));
-
 fprintf('Building trial-level merged matrix for %d subjects.\n', numel(subjects));
 
 %% Load trial-level behavioral data
