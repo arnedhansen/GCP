@@ -68,8 +68,6 @@ scan_freq_step_hz = 0.5;            % analysis grid resolution (Hz)
 scan_freqs = analysis_freq_range(1):scan_freq_step_hz:analysis_freq_range(2);
 nFreqs = length(scan_freqs);
 scan_width = 3;
-use_parallel_subject_loop = false;  % optional subject-level parallelization
-max_parallel_workers = [];          % [] = automatic, otherwise positive integer
 
 % GED parameters
 % Trial-limited per-subject setting:
@@ -305,27 +303,8 @@ simulation_validation_results = struct();
 primary_slope_stats = struct();
 primary_delta_stats = struct();
 
-%% Process each subject
-if use_parallel_subject_loop
-    try
-        if isempty(gcp('nocreate'))
-            parpool('threads');
-        end
-    catch
-        warning('Parallel pool could not be started. Falling back to serial subject loop.');
-        use_parallel_subject_loop = false;
-    end
-end
-if use_parallel_subject_loop
-    if isempty(max_parallel_workers) || ~isfinite(max_parallel_workers) || max_parallel_workers < 1
-        parfor_workers = Inf;
-    else
-        parfor_workers = round(max_parallel_workers);
-    end
-else
-    parfor_workers = 1;
-end
-parfor (subj = 1:nSubj, parfor_workers)
+%% Subject loop
+for subj = 1:nSubj
     close all
     tic
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
@@ -2085,8 +2064,8 @@ parfor (subj = 1:nSubj, parfor_workers)
                             [d_sorted, d_ord] = sort(d, 'ascend');
                             k_use = min(viz_interp_k, numel(d_sorted));
                             nbr_idx = valid_interp(d_ord(1:k_use));
-                            w = 1 ./ max(d_sorted(1:k_use), 1e-6);
-                            topo_plot_common(oi) = sum(w .* topo_plot_common(nbr_idx)) / sum(w);
+                            interp_w = 1 ./ max(d_sorted(1:k_use), 1e-6);
+                            topo_plot_common(oi) = sum(interp_w .* topo_plot_common(nbr_idx)) / sum(interp_w);
                         else
                             topo_plot_common(oi) = sign(topo_plot_common(oi)) * amp_thr_common;
                         end
