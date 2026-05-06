@@ -275,31 +275,15 @@ for subj = 1:nSubj
 
     nChans = length(dataEEG_c25.label);
 
-    occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO)', 'once')), dataEEG_c25.label);
+    occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|PPO)', 'once')), dataEEG_c25.label);
     occ_idx  = find(occ_mask);
     nOcc     = length(occ_idx);
-    if nOcc == 0
-        msg = sprintf('No occipital channels matched for subject %s. Using all channels as template fallback.', subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCC_CHANNELS', msg, struct('nChans', nChans));
-        occ_idx = 1:nChans;
-        nOcc = nChans;
-    end
     front_mask = cellfun(@(l) ~isempty(regexp(l, '^(Fp|AF|F)', 'once')), dataEEG_c25.label);
     front_idx  = find(front_mask);
-    if isempty(front_idx)
-        msg = sprintf('No frontal channels matched for subject %s. Frontal penalty disabled for this subject.', subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_FRONT_CHANNELS', msg, struct('nChans', nChans));
-    end
-    post_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|P)', 'once')), dataEEG_c25.label);
+    post_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|PPO|P)', 'once')), dataEEG_c25.label);
     post_idx  = find(post_mask);
-    if isempty(post_idx)
-        post_idx = occ_idx;
-    end
     temp_mask = cellfun(@(l) ~isempty(regexp(l, '^(T|TP|FT)', 'once')), dataEEG_c25.label);
     temp_idx = find(temp_mask);
-    if isempty(temp_idx)
-        temp_idx = setdiff(1:nChans, union(occ_idx, front_idx));
-    end
     post_w = zeros(nChans, 1);
     post_w(post_idx) = 1;
     if sum(post_w) > 0
