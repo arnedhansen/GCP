@@ -1,14 +1,18 @@
-%% GCP GED Backprojected Power Spectra Visualization
+%% GCP GED Final Power Spectrum Visualizations
 %
-% Visualizes trial-level GED backprojected power-ratio spectra from
-% 2_feature_extraction/GED/GCP_eeg_GED.m outputs.
+% Recreates the final GED power-spectrum figures from the saved feature file.
+% Only the final combined GED branch is visualized (early/full/late windows).
 %
-% Included visualizations:
-%   1) Grand-average spectra with SEM:
-%      - pre-Perm+CV weighted GED (method 3)
-%      - post-Perm+CV weighted GED (method 4)
-%      - raw and detrended variants
-%   2) Subject-level detrended spectra (post-Perm+CV).
+% Data source:
+%   data/features/GCP_eeg_GED.mat
+%
+% Outputs:
+%   1) Subject-wise figures with 3 window panels
+%      - GCP_eeg_GED_powspctrm_subj<id>.png
+%   2) Window-wise all-subject overview figures
+%      - GCP_eeg_GED_powspctrm_early_ALL.png
+%      - GCP_eeg_GED_powspctrm_full_ALL.png
+%      - GCP_eeg_GED_powspctrm_late_ALL.png
 
 %% Setup
 startup
@@ -21,164 +25,148 @@ if ~exist(fig_dir, 'dir')
     mkdir(fig_dir);
 end
 
-%% Load GED features
+%% Load GED feature file
 if ~isfile(data_path)
     error('GED feature file not found: %s', data_path);
 end
 S = load(data_path);
 
-required_vars = {'all_trial_powratio_bench', 'all_trial_powratio_dt_bench', 'benchmark_methods'};
+required_vars = { ...
+    'all_trial_powratio_bench', ...
+    'all_trial_powratio_bench_early', ...
+    'all_trial_powratio_bench_late', ...
+    'benchmark_methods'};
 for vi = 1:numel(required_vars)
     if ~isfield(S, required_vars{vi})
         error('Variable "%s" is missing in %s', required_vars{vi}, data_path);
     end
 end
 
-if isfield(S, 'scan_freqs')
+if isfield(S, 'scan_freqs') && ~isempty(S.scan_freqs)
     scan_freqs = S.scan_freqs;
 else
     scan_freqs = 30:90;
 end
+analysis_freq_range = [scan_freqs(1), scan_freqs(end)];
 
-if isfield(S, 'condLabels')
+if isfield(S, 'condLabels') && ~isempty(S.condLabels)
     condLabels = S.condLabels;
 else
     condLabels = {'25%', '50%', '75%', '100%'};
 end
+nCond = numel(condLabels);
 
-nSubj = numel(subjects);
-nCond = 4;
-nFreq = numel(scan_freqs);
+if isfield(S, 'subjects') && ~isempty(S.subjects)
+    subj_labels = S.subjects;
+else
+    subj_labels = subjects;
+end
+nSubj = min(numel(subj_labels), numel(subjects));
+subj_labels = subj_labels(1:nSubj);
 
-idx_pre = find(strcmpi(S.benchmark_methods, 'ged_preperm_hard_weighted'), 1, 'first');
-idx_post = find(strcmpi(S.benchmark_methods, 'ged_permcv_weighted'), 1, 'first');
-
-if isempty(idx_pre) || isempty(idx_post)
-    error(['Could not identify benchmark methods "ged_preperm_hard_weighted" and ', ...
-        '"ged_permcv_weighted" in benchmark_methods.']);
+%% Final combined GED method index
+combined_method_idx = find(strcmpi(S.benchmark_methods, 'ged_combined_artifact_weighted'), 1, 'first');
+if isempty(combined_method_idx)
+    nBenchmarkMethods = numel(S.benchmark_methods);
+    combined_method_idx = min(3, nBenchmarkMethods);
 end
 
-%% Aggregate subject means (condition x subject x frequency)
-mu_pre_raw = nan(nCond, nSubj, nFreq);
-mu_post_raw = nan(nCond, nSubj, nFreq);
-mu_pre_dt = nan(nCond, nSubj, nFreq);
-mu_post_dt = nan(nCond, nSubj, nFreq);
+time_windows = {'early', 'full', 'late'};
+time_cells = {S.all_trial_powratio_bench_early, S.all_trial_powratio_bench, S.all_trial_powratio_bench_late};
 
-for subj = 1:nSubj
-    for cond = 1:nCond
-        pr_pre = S.all_trial_powratio_bench{idx_pre, cond, subj};
-        pr_post = S.all_trial_powratio_bench{idx_post, cond, subj};
-        dt_pre = S.all_trial_powratio_dt_bench{idx_pre, cond, subj};
-        dt_post = S.all_trial_powratio_dt_bench{idx_post, cond, subj};
+%% Subject-wise figures (three windows per subject)
+for s = 1:nSubj
+    fig_ps = figure('Position', [0 0 1512 982], 'Color', 'w');
+    for wi = 1:3
+        subplot(1, 3, wi); hold on;
+        panel_min = inf;
+        panel_max = -inf;
 
-        if ~isempty(pr_pre)
-            mu_pre_raw(cond, subj, :) = mean(pr_pre, 1, 'omitnan');
+        for cond = 1:nCond
+            pr_mat = time_cells{wi}{combined_method_idx, cond, s};
+            if isempty(pr_mat)
+                continue;
+            end
+
+            mu = mean(pr_mat, 1, 'omitnan');
+            sem = std(pr_mat, 0, 1, 'omitnan') ./ sqrt(max(1, sum(isfinite(pr_mat), 1)));
+            good = isfinite(mu) & isfinite(sem);
+            if sum(good) < 3
+                continue;
+            end
+
+            x = scan_freqs(good);
+            y = mu(good);
+            e = sem(good);
+            patch([x, fliplr(x)], [y - e, fliplr(y + e)], colors(cond, :), ...
+                'FaceAlpha', 0.18, 'EdgeColor', 'none');
+            plot(x, y, '-', 'Color', colors(cond, :), 'LineWidth', 2.0);
+
+            panel_min = min(panel_min, min(y - e));
+            panel_max = max(panel_max, max(y + e));
         end
-        if ~isempty(pr_post)
-            mu_post_raw(cond, subj, :) = mean(pr_post, 1, 'omitnan');
+
+        yline(0, 'k--', 'LineWidth', 0.8);
+        xlim(analysis_freq_range);
+        if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
+            yr = panel_max - panel_min;
+            ylim([panel_min - 0.08 * yr, panel_max + 0.12 * yr]);
         end
-        if ~isempty(dt_pre)
-            mu_pre_dt(cond, subj, :) = mean(dt_pre, 1, 'omitnan');
-        end
-        if ~isempty(dt_post)
-            mu_post_dt(cond, subj, :) = mean(dt_post, 1, 'omitnan');
-        end
+        xlabel('Frequency [Hz]');
+        ylabel('Power [dB]');
+        title(sprintf('%s window', upper(time_windows{wi})), 'Interpreter', 'none');
+        set(gca, 'FontSize', 11, 'Box', 'on');
     end
+
+    legend(condLabels, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off');
+    sgtitle(sprintf('Final Combined GED Power Spectra: Subject %s', subj_labels{s}), ...
+        'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+
+    out_subj = fullfile(fig_dir, sprintf('GCP_eeg_GED_powspctrm_subj%s.png', subj_labels{s}));
+    exportgraphics(fig_ps, out_subj, 'Resolution', 600);
 end
 
-%% Grand-average plot (raw + detrended, pre + post)
-fig_grand = figure('Position', [0 0 1512 982], 'Color', 'w');
-set(fig_grand, 'Color', 'w');
-sgtitle('GED Backprojected Spectra (Grand Average)', 'FontSize', 18, 'FontWeight', 'bold');
+%% Window-wise all-subject figures
+for wi = 1:3
+    fig_all_win = figure('Position', [0 0 1512 982], 'Color', 'w');
+    for s = 1:nSubj
+        subplot(ceil(nSubj / 5), 5, s); hold on;
+        panel_min = inf;
+        panel_max = -inf;
 
-subplot(2, 2, 1);
-plot_group_curves(scan_freqs, mu_pre_raw, colors, condLabels, 'Pre-Perm+CV weighted (raw)', 'Power ratio');
+        for cond = 1:nCond
+            pr_mat = time_cells{wi}{combined_method_idx, cond, s};
+            if isempty(pr_mat)
+                continue;
+            end
 
-subplot(2, 2, 2);
-plot_group_curves(scan_freqs, mu_post_raw, colors, condLabels, 'Post-Perm+CV weighted (raw)', 'Power ratio');
+            mu = mean(pr_mat, 1, 'omitnan');
+            if ~any(isfinite(mu))
+                continue;
+            end
 
-subplot(2, 2, 3);
-plot_group_curves(scan_freqs, mu_pre_dt, colors, condLabels, 'Pre-Perm+CV weighted (detrended)', '\Delta power ratio');
-
-subplot(2, 2, 4);
-plot_group_curves(scan_freqs, mu_post_dt, colors, condLabels, 'Post-Perm+CV weighted (detrended)', '\Delta power ratio');
-
-exportgraphics(fig_grand, fullfile(fig_dir, 'GCP_eeg_powspctrm_GED_grand_average.png'), 'Resolution', 600);
-
-%% Subject-level detrended post-Perm+CV plot
-nCols = 5;
-nRows = ceil(nSubj / nCols);
-fig_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
-set(fig_subj, 'Color', 'w');
-sgtitle('GED Backprojected Spectra: Subject Means (Post-Perm+CV, detrended)', ...
-    'FontSize', 16, 'FontWeight', 'bold');
-
-legend_handles = gobjects(1, nCond);
-for subj = 1:nSubj
-    subplot(nRows, nCols, subj); hold on;
-    y_abs = 0;
-    for cond = 1:nCond
-        y = squeeze(mu_post_dt(cond, subj, :))';
-        if all(~isfinite(y))
-            continue;
+            plot(scan_freqs, mu, '-', 'Color', colors(cond, :), 'LineWidth', 1.8);
+            panel_min = min(panel_min, min(mu, [], 'omitnan'));
+            panel_max = max(panel_max, max(mu, [], 'omitnan'));
         end
-        h = plot(scan_freqs, movmean(y, 5), '-', 'Color', colors(cond, :), 'LineWidth', 1.8);
-        if subj == 1
-            legend_handles(cond) = h;
+
+        yline(0, 'k--', 'LineWidth', 0.6);
+        xlim(analysis_freq_range);
+        if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
+            yr = panel_max - panel_min;
+            ylim([panel_min - 0.08 * yr, panel_max + 0.12 * yr]);
         end
-        y_abs = max(y_abs, max(abs(y), [], 'omitnan'));
+        title(sprintf('Subj %s', subj_labels{s}), 'FontSize', 10, 'Interpreter', 'none');
+        xlabel('Hz');
+        ylabel('dB');
+        set(gca, 'FontSize', 9, 'Box', 'on');
     end
-    yline(0, 'k-', 'LineWidth', 0.5);
-    xlim([scan_freqs(1), scan_freqs(end)]);
-    if y_abs > 0 && isfinite(y_abs)
-        ylim([-y_abs, y_abs]);
-    end
-    set(gca, 'FontSize', 9, 'Box', 'on');
-    title(sprintf('Subj %s', subjects{subj}), 'FontSize', 10);
-    xlabel('Hz'); ylabel('\DeltaPR');
-end
 
-valid_h = isgraphics(legend_handles);
-if any(valid_h)
-    legend(legend_handles(valid_h), condLabels(valid_h), 'Location', 'bestoutside');
+    sgtitle(sprintf('Final Combined GED Power Spectra (%s, all subjects)', upper(time_windows{wi})), ...
+        'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+    out_all = fullfile(fig_dir, sprintf('GCP_eeg_GED_powspctrm_%s_ALL.png', time_windows{wi}));
+    exportgraphics(fig_all_win, out_all, 'Resolution', 600);
 end
-
-exportgraphics(fig_subj, fullfile(fig_dir, 'GCP_eeg_powspctrm_GED_subjects_postPermCV_detrended.png'), 'Resolution', 600);
 
 clc
-fprintf('Saved GED backprojected power-spectrum figures:\n');
-fprintf('  %s\n', fullfile(fig_dir, 'GCP_eeg_powspctrm_GED_grand_average.png'));
-fprintf('  %s\n', fullfile(fig_dir, 'GCP_eeg_powspctrm_GED_subjects_postPermCV_detrended.png'));
-
-%% Local function
-function plot_group_curves(freqs, data_csf, colors, condLabels, ttl, ylab)
-    hold on;
-    nCond = size(data_csf, 1);
-    h = gobjects(1, nCond);
-    for cond = 1:nCond
-        y_subj = squeeze(data_csf(cond, :, :)); % subjects x freqs
-        mu = mean(y_subj, 1, 'omitnan');
-        sem = std(y_subj, 0, 1, 'omitnan') ./ sqrt(sum(isfinite(y_subj), 1));
-        valid = isfinite(mu) & isfinite(sem);
-        if ~any(valid)
-            continue;
-        end
-        x = freqs(valid);
-        y1 = mu(valid) - sem(valid);
-        y2 = mu(valid) + sem(valid);
-        fill([x, fliplr(x)], [y1, fliplr(y2)], colors(cond, :), ...
-            'FaceAlpha', 0.16, 'EdgeColor', 'none');
-        h(cond) = plot(freqs, movmean(mu, 5), '-', ...
-            'Color', colors(cond, :), 'LineWidth', 2.4);
-    end
-    yline(0, 'k-', 'LineWidth', 0.5);
-    xlim([freqs(1), freqs(end)]);
-    xlabel('Frequency [Hz]');
-    ylabel(ylab);
-    title(ttl, 'FontSize', 12, 'FontWeight', 'bold');
-    set(gca, 'FontSize', 11, 'Box', 'on');
-    valid_h = isgraphics(h);
-    if any(valid_h)
-        legend(h(valid_h), condLabels(valid_h), 'Location', 'best', 'FontSize', 9);
-    end
-end
+fprintf('Saved final GED power-spectrum figures in:\n  %s\n', fig_dir);
