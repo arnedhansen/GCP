@@ -4445,7 +4445,7 @@ for wi = 1:3
         continue;
     end
     spec_vec = sel_w(:)' * spec_mat(sel_idx, :);
-    [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
+    [pf_score, pf_peak_hz, pf_plot] = compute_combined_peak_form_metrics( ...
         spec_vec, scan_freqs, analysis_freq_range, ...
         peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
         peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
@@ -4453,7 +4453,30 @@ for wi = 1:3
         peak_form_peak_width_max_hz, peak_form_edge_ratio_soft, peak_form_edge_ratio_hard, ...
         peak_form_edge_run_soft, peak_form_edge_run_hard);
     add_peak_band_overlay(scan_freqs, spec_vec, pf_peak_hz, 2.5, false, [1 0 0], 1.0, true, false);
-    plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0);
+    h_raw = plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0, ...
+        'DisplayName', 'Raw combined spectrum');
+    h_pfproc = gobjects(1);
+    h_pfcand = gobjects(1);
+    h_rawmax = gobjects(1);
+    h_pfcenter = gobjects(1);
+    if isfield(pf_plot, 'x_band') && ~isempty(pf_plot.x_band) && isfield(pf_plot, 'y_band') && ~isempty(pf_plot.y_band)
+        h_pfproc = plot(pf_plot.x_band, pf_plot.y_band, '-', 'Color', [0.10 0.45 0.90], ...
+            'LineWidth', 1.4, 'DisplayName', 'PF input (smoothed)');
+    end
+    if isfield(pf_plot, 'cand_locs_hz') && ~isempty(pf_plot.cand_locs_hz) && ...
+            isfield(pf_plot, 'cand_vals') && ~isempty(pf_plot.cand_vals)
+        h_pfcand = plot(pf_plot.cand_locs_hz, pf_plot.cand_vals, 'o', ...
+            'Color', [0.10 0.45 0.90], 'MarkerFaceColor', [0.10 0.45 0.90], ...
+            'MarkerSize', 4.5, 'LineWidth', 0.9, 'DisplayName', 'PF candidates');
+    end
+    if isfield(pf_plot, 'raw_peak_hz') && isfinite(pf_plot.raw_peak_hz)
+        h_rawmax = xline(pf_plot.raw_peak_hz, '-', 'Color', [0.10 0.45 0.90], 'LineWidth', 1.2, ...
+            'DisplayName', 'Raw max (40-80 Hz)');
+    end
+    if isfinite(pf_peak_hz)
+        h_pfcenter = xline(pf_peak_hz, '--', 'Color', [0.90 0.20 0.10], 'LineWidth', 1.4, ...
+            'DisplayName', 'PF center');
+    end
     add_peak_band_overlay(scan_freqs, spec_vec, pf_peak_hz, 2.5, true, [1 0 0], 0.35, false, true);
     yline(0, 'k--', 'LineWidth', 0.8);
     xlim([analysis_freq_range(1) analysis_freq_range(2)]);
@@ -4469,10 +4492,19 @@ for wi = 1:3
     format_power_change_db_axis(gca);
     xlabel('Hz'); ylabel('Power [dB]');
     box on;
-    text(0.02, 0.98, sprintf('PF = %.2f | peak = %.1f Hz (+/- 2.5 Hz)', ...
-        pf_score, pf_peak_hz), ...
+    raw_peak_hz = NaN;
+    if isfield(pf_plot, 'raw_peak_hz')
+        raw_peak_hz = pf_plot.raw_peak_hz;
+    end
+    text(0.02, 0.98, sprintf('PF = %.2f | PF center = %.1f Hz | Raw max = %.1f Hz (+/- 2.5 Hz)', ...
+        pf_score, pf_peak_hz, raw_peak_hz), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
         'FontSize', 9, 'Interpreter', 'none', 'Color', [0.1 0.1 0.1]);
+    legend_handles = [h_raw, h_pfproc, h_pfcand, h_rawmax, h_pfcenter];
+    valid_legend = isgraphics(legend_handles);
+    if any(valid_legend)
+        legend(legend_handles(valid_legend), 'Location', 'southwest', 'Box', 'off', 'FontSize', 8);
+    end
     title(sprintf('Combined Spectrum (%s)', upper(win_names{wi})), ...
         'FontSize', 11, 'Interpreter', 'none');
     set(gca, 'FontSize', 10);
@@ -4582,7 +4614,7 @@ end
 sel_w = sel_w / sum(sel_w);
 end
 
-function [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
+function [pf_score, pf_peak_hz, pf_plot] = compute_combined_peak_form_metrics( ...
     spec_vec, scan_freqs, analysis_freq_range, ...
     peak_form_shift_max_hz, peak_form_single_widths, peak_form_double_widths, ...
     peak_form_double_separations, peak_form_min_trough_depth, peak_form_min_similarity, ...
@@ -4591,6 +4623,13 @@ function [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
     peak_form_edge_run_soft, peak_form_edge_run_hard)
 pf_score = NaN;
 pf_peak_hz = NaN;
+pf_plot = struct( ...
+    'x_band', [], ...
+    'y_band', [], ...
+    'y_shape', [], ...
+    'cand_locs_hz', [], ...
+    'cand_vals', [], ...
+    'raw_peak_hz', NaN);
 if isempty(spec_vec) || isempty(scan_freqs) || numel(spec_vec) ~= numel(scan_freqs)
     return;
 end
@@ -4606,14 +4645,64 @@ end
 if isfield(pf_diag, 'best_center_hz') && ~isempty(pf_diag.best_center_hz) && isfinite(pf_diag.best_center_hz(1))
     pf_peak_hz = pf_diag.best_center_hz(1);
 end
+freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
+if any(freq_mask)
+    x = scan_freqs(freq_mask);
+    y = spec_vec(freq_mask);
+    valid = isfinite(x) & isfinite(y);
+    x = x(valid);
+    y = y(valid);
+    if numel(y) >= 3
+        y_band = movmean(y, max(1, round(peak_form_smooth_n)), 'omitnan');
+        y_shape = max(y_band - median(y_band(isfinite(y_band))), 0);
+        pf_plot.x_band = x;
+        pf_plot.y_band = y_band;
+        pf_plot.y_shape = y_shape;
+
+        peak_lo = max(40, analysis_freq_range(1));
+        peak_hi = min(80, analysis_freq_range(2));
+        inner_mask = x >= peak_lo & x <= peak_hi;
+        if sum(inner_mask) >= 3
+            x_peak = x(inner_mask);
+            y_peak = y(inner_mask);
+        else
+            x_peak = x;
+            y_peak = y;
+        end
+        [~, idx_max] = max(y_peak);
+        pf_plot.raw_peak_hz = x_peak(idx_max);
+
+        y_floor = prctile(y_band(isfinite(y_band)), 20);
+        if ~isfinite(y_floor)
+            y_floor = median(y_band(isfinite(y_band)));
+        end
+        if ~isfinite(y_floor)
+            y_floor = 0;
+        end
+        y_pos = max(y_band - y_floor, 0);
+        robust_scale = robust_mad(y_pos);
+        if ~isfinite(robust_scale) || robust_scale <= eps
+            robust_scale = iqr(y_pos);
+        end
+        if ~isfinite(robust_scale) || robust_scale <= eps
+            robust_scale = std(y_pos(isfinite(y_pos)));
+        end
+        if ~isfinite(robust_scale) || robust_scale <= eps
+            robust_scale = 1;
+        end
+        rel_prom = 0.08 * max(y_pos);
+        min_prom = max([0, rel_prom, peak_form_prom_abs_floor, 0.15 * robust_scale]);
+        [cand_vals, cand_locs] = findpeaks(y_pos, x, 'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
+        pf_plot.cand_locs_hz = cand_locs(:)';
+        if ~isempty(cand_locs)
+            pf_plot.cand_vals = interp1(x, y, cand_locs, 'linear', NaN);
+        else
+            pf_plot.cand_vals = cand_vals(:)';
+        end
+    end
+end
 if ~isfinite(pf_peak_hz)
-    freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
     if sum(freq_mask) >= 3
-        x = scan_freqs(freq_mask);
-        y = spec_vec(freq_mask);
-        valid = isfinite(x) & isfinite(y);
-        x = x(valid);
-        y = y(valid);
         if numel(y) >= 3
             peak_lo = max(40, analysis_freq_range(1));
             peak_hi = min(80, analysis_freq_range(2));
