@@ -293,8 +293,8 @@ for subj = 1:nSubj
     end
     %% Build pooled covariance per window
     clc
-    fprintf('Subject %s (%d/%d) — Per-window GED (full, early, late) (%d occ / %d ch)\n', ...
-        subjects{subj}, subj, nSubj, nOcc, nChans);
+    fprintf('Subject %s (%d/%d) GED (early, full, late) (%d occ channels)\n', ...
+        subjects{subj}, subj, nSubj, nOcc);
     rng(random_seed + subj, 'twister');
 
     stim_windows = {full_window, early_window, late_window};
@@ -2474,9 +2474,10 @@ yline(0, 'k--', 'LineWidth', 1.5);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 18, 'Box', 'off');
 xlim([0.5 4.5]);
+ylim([-4 4]);
 xlabel('Contrast condition');
 ylabel('\Delta Gamma Frequency vs 25% [Hz]');
-title('Gamma Frequency Shift (Subject-normalized to 25%)', ...
+title('Gamma Frequency Shift', ...
     'FontSize', 24, 'FontWeight', 'bold');
 
 cond_shift_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift.png');
@@ -2601,9 +2602,10 @@ yline(0, 'k--', 'LineWidth', 1.5);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 18, 'Box', 'off');
 xlim([0.5 4.5]);
+ylim([-0.75 0.75]);
 xlabel('Contrast condition');
 ylabel('\Delta Gamma Power vs 25% [dB]');
-title('Gamma Power Shift (Subject-normalized to 25%)', ...
+title('Gamma Power Shift', ...
     'FontSize', 24, 'FontWeight', 'bold');
 
 cond_shift_power_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_GammaPower.png');
