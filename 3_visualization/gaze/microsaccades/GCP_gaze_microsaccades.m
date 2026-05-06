@@ -215,7 +215,6 @@ figure('Color', 'w', 'Position', [0 0 1512 982]);
 hold on
 
 % Per-condition lines with SEM shading
-h = gobjects(nConds, 1);
 for c = 1:nConds
     mu  = grandMean(:, c);
     sem = grandSEM(:, c);
@@ -226,15 +225,19 @@ for c = 1:nConds
          colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
          'HandleVisibility', 'off');
 
-    h(c) = plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
+    plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
 end
 
 xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
 xlim(t_win);
 xlabel('Time [s]');
 ylabel('Microsaccade Rate [Hz]');
-title('GCP — Microsaccade Rate Time Course');
-legend(h, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4);
+title('Microsaccade Rate Time Course');
+leg_p = gobjects(nConds, 1);
+for c = 1:nConds
+    leg_p(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
+end
+legend(leg_p, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
 set(gca, 'FontSize', fontSize);
 hold off
 
@@ -247,7 +250,6 @@ figure('Color', 'w', 'Position', [0 0 1512 982]);
 hold on
 
 % Per-condition lines with SEM shading
-h_pct = gobjects(nConds, 1);
 for c = 1:nConds
     mu  = grandMean_pct(:, c);
     sem = grandSEM_pct(:, c);
@@ -258,16 +260,20 @@ for c = 1:nConds
          colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
          'HandleVisibility', 'off');
 
-    h_pct(c) = plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
+    plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
 end
 
 xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
 yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
 xlim(t_win);
 xlabel('Time [s]');
-ylabel('Microsaccade Rate [% change]');
-title('GCP — Microsaccade Rate Time Course (Percentage Change)');
-legend(h_pct, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4);
+ylabel('Microsaccade Rate [%]');
+title('Microsaccade Rate Time Course');
+leg_p_pct = gobjects(nConds, 1);
+for c = 1:nConds
+    leg_p_pct(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
+end
+legend(leg_p_pct, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
 set(gca, 'FontSize', fontSize);
 hold off
 
@@ -316,7 +322,7 @@ for c = 1:nConds
     hold off
 end
 
-sgtitle('GCP — Microsaccade Raster', 'FontSize', fontSize + 2);
+sgtitle('Microsaccade Raster', 'FontSize', fontSize + 2);
 
 saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_raster.png'));
 
@@ -358,7 +364,7 @@ xlim(t_win);
 ylim([0 nR + 1]);
 xlabel('Time [s]');
 ylabel('Trial');
-title('GCP — Microsaccade Raster (All Conditions)');
+title('Microsaccade Raster (All Conditions)');
 set(gca, 'FontSize', fontSize, 'YDir', 'reverse');
 hold off
 
@@ -384,8 +390,12 @@ end
 xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
 xlim(t_win);
 ylabel('MS Rate [Hz]');
-title('GCP — Microsaccade Dynamics');
-legend(condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4);
+title('Microsaccade Dynamics');
+leg_p_comb = gobjects(nConds, 1);
+for c = 1:nConds
+    leg_p_comb(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
+end
+legend(leg_p_comb, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
 set(gca, 'FontSize', fontSize, 'XTickLabel', []);
 hold off
 
@@ -448,9 +458,13 @@ end
 xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
 yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
 xlim(t_win);
-ylabel('MS Rate [% change]');
-title('GCP — Microsaccade Dynamics (Percentage Change)');
-legend(condLabels, 'Location', 'southeast', 'FontSize', fontSize - 4);
+ylabel('MS Rate [%]');
+title('Microsaccade Dynamics');
+leg_p_comb_pct = gobjects(nConds, 1);
+for c = 1:nConds
+    leg_p_comb_pct(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
+end
+legend(leg_p_comb_pct, condLabels, 'Location', 'southeast', 'FontSize', fontSize - 4, 'Box', 'off');
 set(gca, 'FontSize', fontSize, 'XTickLabel', []);
 hold off
 
