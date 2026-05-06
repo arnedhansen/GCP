@@ -392,7 +392,7 @@ for subj = 1:length(subjects)
     % end
     % 
     % saveName = sprintf('GCP_controls_FOOOF_powspctrm_stern_subj%s.png', subjects{subj});
-    % saveas(gcf, fullfile(savePathControls, saveName));
+    % exportgraphics(gcf, fullfile(savePathControls, saveName), 'Resolution', 600);
 
     %% Baseline (FOOOFed TFR)
     cfg              = [];

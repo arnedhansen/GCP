@@ -390,8 +390,8 @@ for subj = 1:nSubj
     legend(condLabels, 'FontSize', 10, 'Location', 'best');
     set(gca, 'FontSize', 11); xlim([30 90]); grid on; box on;
 
-    saveas(fig, fullfile(fig_save_dir, ...
-        sprintf('GCP_peak_explorer_subj%s.png', subjects{subj})));
+    exportgraphics(fig, fullfile(fig_save_dir, ...
+        sprintf('GCP_peak_explorer_subj%s.png', subjects{subj})), 'Resolution', 600);
 
 end % subject loop
 
@@ -489,7 +489,7 @@ txt = [txt, sprintf('Overall: %.1f peaks/trial\n', sum(total_peaks)/max(sum(tota
 text(0.1, 0.5, txt, 'FontSize', 14, 'FontName', 'FixedWidth', ...
     'VerticalAlignment', 'middle');
 
-saveas(fig1, fullfile(fig_save_dir, 'GCP_peak_explorer_grand_histogram.png'));
+exportgraphics(fig1, fullfile(fig_save_dir, 'GCP_peak_explorer_grand_histogram.png'), 'Resolution', 600);
 
 %% --- Figure 2: 2-D density — frequency x subject ---
 fig2 = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -536,7 +536,7 @@ set(gca, 'YTick', 1:nSubj, 'YTickLabel', subjects, 'FontSize', 11);
 title('Peak Density (row-normalized per subject)', 'FontSize', 14);
 set(gca, 'YDir', 'normal'); box on;
 
-saveas(fig2, fullfile(fig_save_dir, 'GCP_peak_explorer_density_heatmap.png'));
+exportgraphics(fig2, fullfile(fig_save_dir, 'GCP_peak_explorer_density_heatmap.png'), 'Resolution', 600);
 
 %% --- Figure 3: Per-subject overview (mean spectra + detected peaks) ---
 nRows = ceil(nSubj / 5);
@@ -587,7 +587,7 @@ for s = 1:nSubj
     end
 end
 
-saveas(fig3, fullfile(fig_save_dir, 'GCP_peak_explorer_all_subjects.png'));
+exportgraphics(fig3, fullfile(fig_save_dir, 'GCP_peak_explorer_all_subjects.png'), 'Resolution', 600);
 
 %% --- Figure 4: Per-condition peak frequency distributions (violin-style) ---
 fig4 = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -620,7 +620,7 @@ for cond = 1:4
     grid on; box on;
 end
 
-saveas(fig4, fullfile(fig_save_dir, 'GCP_peak_explorer_violin_by_cond.png'));
+exportgraphics(fig4, fullfile(fig_save_dir, 'GCP_peak_explorer_violin_by_cond.png'), 'Resolution', 600);
 
 %% --- Figure 5: Raincloud plot — all conditions in one plot (vertical) ---
 close all
@@ -702,7 +702,7 @@ h_mu  = plot(nan, nan, 'kd', 'MarkerSize', 7, 'MarkerFaceColor', 'w', 'LineWidth
 legend([h_leg, h_med, h_mu], [condLabels, {'Median', 'Mean'}], ...
     'FontSize', 11, 'Location', 'best');
 
-saveas(fig5, fullfile(fig_save_dir, 'GCP_peak_explorer_raincloud.png'));
+exportgraphics(fig5, fullfile(fig_save_dir, 'GCP_peak_explorer_raincloud.png'), 'Resolution', 600);
 
 %% --- Figure 6: Raincloud split by low / high gamma (50 Hz cutoff) ---
 close all
@@ -822,7 +822,7 @@ legend([h_lo, h_hi, h_med, h_mu], ...
      'Median', 'Mean'}, ...
     'FontSize', 11, 'Location', 'best');
 
-saveas(fig6, fullfile(fig_save_dir, 'GCP_peak_explorer_raincloud_split.png'));
+exportgraphics(fig6, fullfile(fig_save_dir, 'GCP_peak_explorer_raincloud_split.png'), 'Resolution', 600);
 
 %% Save data
 save_path = fullfile(paths.features, 'GCP_eeg_GED_peak_explorer.mat');

@@ -87,7 +87,7 @@ for subj = 1:nSubj
 end
 
 %% Grand-average plot (raw + detrended, pre + post)
-fig_grand = figure('Position', [0 0 1512 982]);
+fig_grand = figure('Position', [0 0 1512 982], 'Color', 'w');
 set(fig_grand, 'Color', 'w');
 sgtitle('GED Backprojected Spectra (Grand Average)', 'FontSize', 18, 'FontWeight', 'bold');
 
@@ -103,12 +103,12 @@ plot_group_curves(scan_freqs, mu_pre_dt, colors, condLabels, 'Pre-Perm+CV weight
 subplot(2, 2, 4);
 plot_group_curves(scan_freqs, mu_post_dt, colors, condLabels, 'Post-Perm+CV weighted (detrended)', '\Delta power ratio');
 
-saveas(fig_grand, fullfile(fig_dir, 'GCP_eeg_powspctrm_GED_grand_average.png'));
+exportgraphics(fig_grand, fullfile(fig_dir, 'GCP_eeg_powspctrm_GED_grand_average.png'), 'Resolution', 600);
 
 %% Subject-level detrended post-Perm+CV plot
 nCols = 5;
 nRows = ceil(nSubj / nCols);
-fig_subj = figure('Position', [0 0 1512 982]);
+fig_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
 set(fig_subj, 'Color', 'w');
 sgtitle('GED Backprojected Spectra: Subject Means (Post-Perm+CV, detrended)', ...
     'FontSize', 16, 'FontWeight', 'bold');
@@ -143,7 +143,7 @@ if any(valid_h)
     legend(legend_handles(valid_h), condLabels(valid_h), 'Location', 'bestoutside');
 end
 
-saveas(fig_subj, fullfile(fig_dir, 'GCP_eeg_powspctrm_GED_subjects_postPermCV_detrended.png'));
+exportgraphics(fig_subj, fullfile(fig_dir, 'GCP_eeg_powspctrm_GED_subjects_postPermCV_detrended.png'), 'Resolution', 600);
 
 clc
 fprintf('Saved GED backprojected power-spectrum figures:\n');

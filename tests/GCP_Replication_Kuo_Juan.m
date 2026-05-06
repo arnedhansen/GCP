@@ -394,7 +394,7 @@ for cond = 1:n_contrasts
 end
 
 % Main sequence (peak velocity vs amplitude)
-figure('Position', [0, 0, 1512, 982], 'Color', 'w');
+figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Figure 2: Effect of Contrast on Microsaccadic Metrics', 'FontSize', 16, 'FontWeight', 'bold');
 
 % Panel A: Microsaccade rate across time
@@ -461,12 +461,12 @@ title('D: Main sequence', 'FontSize', 12);
 legend({'25%', '50%', '75%', '100%'}, 'Location', 'best');
 grid on;
 
-saveas(gcf, fullfile(fig_save_dir, 'Figure2_Microsaccade_Metrics.png'));
+exportgraphics(gcf, fullfile(fig_save_dir, 'Figure2_Microsaccade_Metrics.png'), 'Resolution', 600);
 
 %% FIGURE 3: Averaged metrics during pre-target and target epochs
 fprintf('Creating Figure 3...\n');
 
-figure('Position', [0, 0, 1400, 800], 'Color', 'w');
+figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Figure 3: Effect of Contrast on Microsaccadic Metrics', 'FontSize', 16, 'FontWeight', 'bold');
 
 % Pre-target epoch averages
@@ -535,12 +535,12 @@ ylabel('Amplitude (deg)', 'FontSize', 12);
 title('Target: Amplitude', 'FontSize', 12);
 grid on;
 
-saveas(gcf, fullfile(fig_save_dir, 'Figure3_Epoch_Averages.png'));
+exportgraphics(gcf, fullfile(fig_save_dir, 'Figure3_Epoch_Averages.png'), 'Resolution', 600);
 
 %% FIGURE 4: Effect of contrast and microsaccade occurrence on saccadic performance
 fprintf('Creating Figure 4...\n');
 
-figure('Position', [0, 0, 1512, 982], 'Color', 'w');
+figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Figure 4: Effect of Contrast and Microsaccade Occurrence on Saccadic Performance', 'FontSize', 16, 'FontWeight', 'bold');
 
 % Separate trials with and without peri-target microsaccades
@@ -625,12 +625,12 @@ title('E: Endpoint deviation', 'FontSize', 12);
 legend('Location', 'best');
 grid on;
 
-saveas(gcf, fullfile(fig_save_dir, 'Figure4_Contrast_MS_Suppression.png'));
+exportgraphics(gcf, fullfile(fig_save_dir, 'Figure4_Contrast_MS_Suppression.png'), 'Resolution', 600);
 
 %% FIGURE 5: Effect of target contrast on microsaccades during target epoch
 fprintf('Creating Figure 5...\n');
 
-figure('Position', [0, 0, 1400, 800], 'Color', 'w');
+figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Figure 5: Effect of Target Contrast on Microsaccades During Target Epoch', 'FontSize', 16, 'FontWeight', 'bold');
 
 % Panel A: Microsaccade rate across time (target epoch highlighted)
@@ -720,12 +720,12 @@ ylabel('Amplitude (deg)', 'FontSize', 12);
 title('F: Averaged amplitude (target epoch)', 'FontSize', 12);
 grid on;
 
-saveas(gcf, fullfile(fig_save_dir, 'Figure5_Contrast_Target_Epoch.png'));
+exportgraphics(gcf, fullfile(fig_save_dir, 'Figure5_Contrast_Target_Epoch.png'), 'Resolution', 600);
 
 %% FIGURE 6: Effect of target contrast and microsaccade occurrence on saccadic performance
 fprintf('Creating Figure 6...\n');
 
-figure('Position', [0, 0, 1512, 982], 'Color', 'w');
+figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Figure 6: Effect of Target Contrast and Microsaccade Occurrence on Saccadic Performance', 'FontSize', 16, 'FontWeight', 'bold');
 
 % Define x positions for bars
@@ -786,7 +786,7 @@ title('E: Endpoint deviation', 'FontSize', 12);
 legend('Location', 'best');
 grid on;
 
-saveas(gcf, fullfile(fig_save_dir, 'Figure6_Contrast_MS_Saccadic_Performance.png'));
+exportgraphics(gcf, fullfile(fig_save_dir, 'Figure6_Contrast_MS_Saccadic_Performance.png'), 'Resolution', 600);
 
 fprintf('All figures created successfully!\n');
 fprintf('Figures saved in: %s\n', fig_save_dir);

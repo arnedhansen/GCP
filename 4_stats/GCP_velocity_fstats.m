@@ -104,7 +104,7 @@ for m = 1:numel(modes)
     %% Visualise F-statistics for eye velocity
     close all
 
-    figF = figure('Color', 'w');
+    figF = figure('Position', [0 0 1512 982], 'Color', 'w');
     set(figF, 'Position', [0 0 1512 982]);
 
     tl = tiledlayout(figF, 3, 1, ...
@@ -173,6 +173,6 @@ for m = 1:numel(modes)
 
     % Save
     outdir_stats = fullfile(paths.figures, 'stats', 'velocity_f-tests');
-    saveas(figF, fullfile(outdir_stats, ...
-        sprintf('GCP_gaze_velocity_overview_%s_Ftest.png', suffix)));
+    exportgraphics(figF, fullfile(outdir_stats, ...
+        sprintf('GCP_gaze_velocity_overview_%s_Ftest.png', suffix)), 'Resolution', 600);
 end

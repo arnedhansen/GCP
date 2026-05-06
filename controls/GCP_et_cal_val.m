@@ -94,7 +94,7 @@ for subjIdx = 1:numSubjects
         mkdir(savepath)
         cd(savepath)
         saveName = fullfile(savepath, [num2str(subjects{subjIdx}) '_Validations.png']);
-        saveas(gcf, saveName)
+        exportgraphics(gcf, saveName)
     catch
         disp(['Could not create VALIDATION overview for subject ' num2str(subjects{subjIdx})])
     end
@@ -107,7 +107,7 @@ calibrationData = {};
 validationData = {};
 
 % Open the file for reading
-fid = fopen(filePath, 'rt');
+fid = fopen(filePath, 'rt', 'Resolution', 600);
 
 if fid == -1
     error('Cannot open file: %s', filePath);

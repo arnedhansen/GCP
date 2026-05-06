@@ -324,7 +324,7 @@ parfor subj = 1:length(subjects)
     % Control figure
     colors = color_def('GCP');
     close all
-    figure('Position',  [0 0 1512 982], 'Color', 'W');
+    figure('Position', [0 0 1512 982], 'Color', 'w');
     plot(pow_c25_fooof_bl_smooth.freq(freq_idx), c25_gamma_power, 'Color', colors(1, :), 'LineWidth', 5)
     xlabel('Frequency')
     ylabel('Power [dB]')
@@ -350,10 +350,10 @@ parfor subj = 1:length(subjects)
     text(38, -maxylim*0.65, [num2str(round(c50_pow, 4)) ], 'FontSize', 25, 'Color', colors(2, :))
     text(46, -maxylim*0.65, [num2str(round(c75_pow, 4)) ], 'FontSize', 25, 'Color', colors(3, :))
     text(54, -maxylim*0.65, [num2str(round(c100_pow, 4))], 'FontSize', 25, 'Color', colors(4, :))
-    saveas(gcf, fullfile('/Users/Arne/Documents/GitHub/GCP', 'controls', 'powspctrm', ['GCP_controls_powscptrm_subj' num2str(subjects{subj}) '.png']))
+    exportgraphics(gcf, fullfile('/Users/Arne/Documents/GitHub/GCP', 'controls', 'powspctrm', ['GCP_controls_powscptrm_subj' num2str(subjects{subj}) '.png']))
 
     % Create across condition structure
-    subject_id = repmat(str2num(subjects{subj}), 4, 1);
+    subject_id = repmat(str2num(subjects{subj}), 4, 1, 'Resolution', 600);
     conditions = [1; 2; 3; 4];
     powers = [c25_pow; c50_pow; c75_pow; c100_pow];
     frequencies = [c25_freq; c50_freq; c75_freq; c100_freq];

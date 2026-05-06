@@ -283,7 +283,7 @@ title('Contrast Response'); set(gca, 'FontSize', fontSize - 2);
 
 r_trend = report_trend('H1 MS Rate (% change)', pctMSRate_subj, contrast_vals, nSubj);
 
-saveas(fig1, fullfile(fig_dir, 'GCP_H1_microsaccade_rate.png'));
+exportgraphics(fig1, fullfile(fig_dir, 'GCP_H1_microsaccade_rate.png'), 'Resolution', 600);
 
 %% ====================================================================
 %  FIGURE 2: H2 — Eye Velocity Post-Stimulus Dynamics
@@ -325,7 +325,7 @@ title('Contrast Response'); set(gca, 'FontSize', fontSize - 2);
 
 report_trend('H2 Eye Velocity (% change)', pctVel2D_subj, contrast_vals, nSubj);
 
-saveas(fig2, fullfile(fig_dir, 'GCP_H2_eye_velocity.png'));
+exportgraphics(fig2, fullfile(fig_dir, 'GCP_H2_eye_velocity.png'), 'Resolution', 600);
 
 %% ====================================================================
 %  FIGURE 3: H3 — Pupil Constriction Scales with Contrast
@@ -382,7 +382,7 @@ title('Constriction Amplitude'); set(gca, 'FontSize', fontSize - 2);
 
 report_trend('H3 Pupil Constriction', constriction, contrast_vals, nSubj);
 
-saveas(fig3, fullfile(fig_dir, 'GCP_H3_pupil_constriction.png'));
+exportgraphics(fig3, fullfile(fig_dir, 'GCP_H3_pupil_constriction.png'), 'Resolution', 600);
 
 %% ====================================================================
 %  FIGURE 4: H4 — Gaze Dispersion Increases with Contrast
@@ -407,7 +407,7 @@ title('BCEA (raw)'); set(gca, 'FontSize', fontSize - 2);
 report_trend('H4 BCEA (% change)', pctBCEA_subj, contrast_vals, nSubj);
 report_trend('H4 BCEA (raw)', bcea_subj, contrast_vals, nSubj);
 
-saveas(fig4, fullfile(fig_dir, 'GCP_H4_gaze_dispersion.png'));
+exportgraphics(fig4, fullfile(fig_dir, 'GCP_H4_gaze_dispersion.png'), 'Resolution', 600);
 
 %% ====================================================================
 %  FIGURE 5: H5 + H6 — Gamma Peak Frequency & Power (GED + FOOOF)
@@ -477,7 +477,7 @@ for pp = 1:3
 end
 fprintf('\n');
 
-saveas(fig5, fullfile(fig_dir, 'GCP_H5H6_gamma_freq_amp.png'));
+exportgraphics(fig5, fullfile(fig_dir, 'GCP_H5H6_gamma_freq_amp.png'), 'Resolution', 600);
 
 %% ====================================================================
 %  FIGURE 6: H7 — Gamma Frequency as Index of Visual Gain
@@ -562,7 +562,7 @@ if sum(valid) > 5
 end
 fprintf('\n');
 
-saveas(fig6, fullfile(fig_dir, 'GCP_H7_gamma_oculomotor.png'));
+exportgraphics(fig6, fullfile(fig_dir, 'GCP_H7_gamma_oculomotor.png'), 'Resolution', 600);
 
 %% ====================================================================
 %  FIGURE 7: Grand Summary Dashboard
@@ -607,7 +607,7 @@ for mi = 1:6
     box on; grid on;
 end
 
-saveas(fig7, fullfile(fig_dir, 'GCP_hypotheses_summary.png'));
+exportgraphics(fig7, fullfile(fig_dir, 'GCP_hypotheses_summary.png'), 'Resolution', 600);
 
 %% Done
 fprintf('\n=== GCP Hypothesis Testing Complete ===\n');

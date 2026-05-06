@@ -308,7 +308,7 @@ labels = {'25%','50%','75%','100%'};
 lineCs = [1 0 0; 1 .5 0; .6 0.2 .8; 0 0 1];
 faceCs = 0.8*lineCs + 0.2;                 
 
-figure('Color','w');
+figure('Position', [0 0 1512 982], 'Color', 'w');
 tl = tiledlayout(2,1,'TileSpacing','compact','Padding','compact');
 
 

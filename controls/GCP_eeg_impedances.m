@@ -62,7 +62,7 @@ for i = 1%:length(cntFiles)
     impData{i}.imps_bipolar = imps_bipolar;
 
     %% Visualise impedances for the current subject/block
-    figure('Name', ['Impedances - ' subjectID], 'NumberTitle', 'off', 'Color', 'w');
+    figure('Name', ['Impedances - ' subjectID], 'NumberTitle', 'off', 'Position', [0 0 1512 982], 'Color', 'w');
     
     % Plot impedances before task
     subplot(1, 2, 1);
@@ -84,7 +84,7 @@ for i = 1%:length(cntFiles)
 
     % Save figure
     saveFileName = fullfile(saveDir, [subjectID '_impedances.png']);
-    saveas(gcf, saveFileName);
+    exportgraphics(gcf, saveFileName, 'Resolution', 600);
     close(gcf);
 end
 

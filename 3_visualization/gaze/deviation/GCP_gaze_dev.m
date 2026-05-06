@@ -57,7 +57,7 @@ title('Sternberg Mean Euclidean Gaze Deviation', 'FontName', 'Arial', 'FontSize'
 hold off;
 
 % Save the plot
-saveas(gcf, fullfile(paths.figures, 'gaze', 'deviation', 'GCP_dev_boxplot_euclidean.png'));
+exportgraphics(gcf, fullfile(paths.figures, 'gaze', 'deviation', 'GCP_dev_boxplot_euclidean.png'), 'Resolution', 600);
 
 % Stats
 means = mean(dataDeviation, 'omitnan');

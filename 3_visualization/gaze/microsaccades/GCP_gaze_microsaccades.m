@@ -211,7 +211,7 @@ grandSEM_pct  = squeeze(nanstd(subjRates_pct_disp, 0, 1)) ./ sqrt(nValid_pct'); 
 %  FIGURE 1: Smoothed MS Rate Time Courses per Condition (raw Hz)
 %  ================================================================
 close all
-figure('Color', 'w', 'Position', [0 0 1512 982]);
+figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on
 
 % Per-condition lines with SEM shading
@@ -241,12 +241,12 @@ legend(leg_p, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Bo
 set(gca, 'FontSize', fontSize);
 hold off
 
-saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate.png'));
+exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate.png'), 'Resolution', 600);
 
 %% ================================================================
 %  FIGURE 1b: Percentage-Change MS Rate Time Courses per Condition
 %  ================================================================
-figure('Color', 'w', 'Position', [0 0 1512 982]);
+figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on
 
 % Per-condition lines with SEM shading
@@ -277,12 +277,12 @@ legend(leg_p_pct, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4,
 set(gca, 'FontSize', fontSize);
 hold off
 
-saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate_pct.png'));
+exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate_pct.png'), 'Resolution', 600);
 
 %% ================================================================
 %  FIGURE 2: Raster Plots per Condition
 %  ================================================================
-figure('Color', 'w', 'Position', [0 0 1512 982]);
+figure('Position', [0 0 1512 982], 'Color', 'w');
 
 for c = 1:nConds
     subplot(1, nConds, c);
@@ -324,12 +324,12 @@ end
 
 sgtitle('Microsaccade Raster', 'FontSize', fontSize + 2);
 
-saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_raster.png'));
+exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_raster.png'), 'Resolution', 600);
 
 %% ================================================================
 %  FIGURE 2b: Collapsed Raster (all conditions pooled)
 %  ================================================================
-figure('Color', 'w', 'Position', [0 0 1512 982]);
+figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on
 
 % Pool all conditions
@@ -368,12 +368,12 @@ title('Microsaccade Raster (All Conditions)');
 set(gca, 'FontSize', fontSize, 'YDir', 'reverse');
 hold off
 
-saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_raster_collapsed.png'));
+exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_raster_collapsed.png'), 'Resolution', 600);
 
 %% ================================================================
 %  FIGURE 3: Combined (Rate on top + Raster on bottom)
 %  ================================================================
-figure('Color', 'w', 'Position', [0 0 1512 982]);
+figure('Position', [0 0 1512 982], 'Color', 'w');
 
 % --- Top panel: Smoothed rate ---
 ax1 = subplot(2, 1, 1);
@@ -436,12 +436,12 @@ hold off
 
 linkaxes([ax1, ax2], 'x');
 
-saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_combined.png'));
+exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_combined.png'), 'Resolution', 600);
 
 %% ================================================================
 %  FIGURE 3b: Combined Percentage-Change (Rate on top + Raster on bottom)
 %  ================================================================
-figure('Color', 'w', 'Position', [0 0 1512 982]);
+figure('Position', [0 0 1512 982], 'Color', 'w');
 
 % --- Top panel: Percentage-change rate ---
 ax1p = subplot(2, 1, 1);
@@ -505,6 +505,6 @@ hold off
 
 linkaxes([ax1p, ax2p], 'x');
 
-saveas(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_combined_pct.png'));
+exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_combined_pct.png'), 'Resolution', 600);
 
 fprintf('\n=== All figures saved to %s ===\n', figpath);

@@ -26,8 +26,7 @@ nCols = ceil(sqrt(nVars));
 nRows = ceil(nVars / nCols);
 
 % Prepare figure
-figure;
-set(gcf, 'Position', [0 0 1512 982]);
+figure('Position', [0 0 1512 982], 'Color', 'w');
 
 % Loop through variables
 for i = 1:nVars
@@ -48,4 +47,4 @@ for i = 1:nVars
 end
 
 sgtitle('Merged Data Overview: Boxplots per Condition');
-saveas(gcf, fullfile(paths.figures, 'stats', 'overview', 'GCP_stats_overview.png'))
+exportgraphics(gcf, fullfile(paths.figures, 'stats', 'overview', 'GCP_stats_overview.png'), 'Resolution', 600);

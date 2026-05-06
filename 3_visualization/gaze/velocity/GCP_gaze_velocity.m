@@ -87,7 +87,7 @@ for m = 1:numel(modes)
     % assume equal n_subj across contrasts
     n_subj = size(ga25et.individual, 1);
 
-    fig_ga = figure('Color','w');
+    fig_ga = figure('Position', [0 0 1512 982], 'Color', 'w');
     set(fig_ga, "Position", [0 0 1512 982])
 
     ax = gobjects(1, numel(channels));  % store axes handles
@@ -156,11 +156,11 @@ for m = 1:numel(modes)
     end
 
     saveName = fullfile(paths.figures, 'gaze', 'velocity', sprintf('GCP_gaze_velocity_overview_%s.png', suffix));
-    saveas(gcf, saveName);
+    exportgraphics(gcf, saveName, 'Resolution', 600);
 
     % Also save individual channel plots for this mode
     for c = 1:numel(channels)
-        fig_single = figure('Color', 'w');
+        fig_single = figure('Position', [0 0 1512 982], 'Color', 'w');
         set(fig_single, 'Position', [0 0 1512 982]);
 
         % copy this subplot's axes into its own figure
@@ -188,7 +188,7 @@ for m = 1:numel(modes)
         % build single plots filename
         outdir_single = fullfile(paths.figures, 'gaze', 'velocity');
         saveName_single = fullfile(outdir_single, sprintf('GCP_gaze_velocity_%s_%s.png', channels{c}, suffix));
-        saveas(fig_single, saveName_single);
+        exportgraphics(fig_single, saveName_single, 'Resolution', 600);
         close(fig_single);
     end
 end

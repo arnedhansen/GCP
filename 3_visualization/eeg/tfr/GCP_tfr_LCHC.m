@@ -65,7 +65,7 @@ ylabel('Frequency [Hz]');
 title('TFR LOW CONTRAST ', 'FontSize', 30);
 
 % Save
-saveas(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_lc.png'));
+exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_lc.png'), 'Resolution', 600);
 
 % HIGH CONTRAST
 figure;
@@ -83,7 +83,7 @@ ylabel('Frequency [Hz]');
 title('TFR HIGH CONTRAST ', 'FontSize', 30);
 
 % Save
-saveas(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_hc.png'));
+exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_hc.png'), 'Resolution', 600);
 
 %% Difference
 diff = gatfr_hc_baselined;
@@ -104,4 +104,4 @@ ylabel('Frequency [Hz]');
 title('TFR DIFFERENCE (HC-LC) ', 'FontSize', 30);
 
 % Save
-saveas(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_diff.png'));
+exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_diff.png'), 'Resolution', 600);

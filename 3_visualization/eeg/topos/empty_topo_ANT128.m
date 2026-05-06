@@ -1,8 +1,7 @@
 %% Empty ANT128 Neuro Topoplot for Channel Locations
 close all
 [~, paths] = setup('GCP', 0);
-figure;
-set(gcf, 'Position', [100, 100, 1000, 800], 'Color', 'w');
+figure('Position', [0 0 1512 982], 'Color', 'w');
 title('Electrodes ANT 128', 'FontSize', 25);
 load(fullfile(paths.base_students, 'toolboxes', 'headmodel', 'layANThead.mat'));
 load(fullfile(paths.features, '601', 'eeg', 'power_spectra'));
@@ -24,4 +23,4 @@ cfg.ylim = [1000 1005];
 try
  ft_topoplotER(cfg, pow_c25_fooof_bl_smooth);
 end
-saveas(gcf, fullfile(paths.figures, 'eeg', 'topos', 'ANT128_channel_locations.png'))
+exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'topos', 'ANT128_channel_locations.png'), 'Resolution', 600);

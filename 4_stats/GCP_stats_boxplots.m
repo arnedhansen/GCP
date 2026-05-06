@@ -40,8 +40,7 @@ for iVar = 3%%%%%1:numel(numericVars)
     y       = T.(varName);
 
     % New figure for this variable
-    figure;
-    set(gcf, 'Position', [0 0 1200 982]);
+    figure('Position', [0 0 1512 982], 'Color', 'w');
     hold on
 
     % First: subject-wise lines across conditions (light grey)
@@ -120,5 +119,5 @@ for iVar = 3%%%%%1:numel(numericVars)
     end
 
     % Save
-    saveas(gcf, fullfile(paths.figures, 'stats', 'boxplots', ['GCP_stats_boxplot_' varName '.png']))
+    exportgraphics(gcf, fullfile(paths.figures, 'stats', 'boxplots', ['GCP_stats_boxplot_' varName '.png']), 'Resolution', 600);
 end

@@ -117,7 +117,7 @@ cb.FontSize = 20;
 ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
 % Save figure
-saveas(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_eeg_topos_ga.png'));
+exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_eeg_topos_ga.png'), 'Resolution', 600);
 
 %% Topoplots for Individual Subjects
 close all;
@@ -203,5 +203,5 @@ for subj = 1:length(subjects)
     ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
     % Save individual figure
-    saveas(gcf, fullfile(paths.figures, 'eeg', 'topos', sprintf('GCP_eeg_topos_subj%s.png', subjects{subj})));
+    exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'topos', sprintf('GCP_eeg_topos_subj%s.png', subjects{subj})), 'Resolution', 600);
 end

@@ -158,9 +158,9 @@ hold off;
 
 % Save the plot
 if analysis_period == 1
-    saveas(gcf, fullfile(paths.figures, 'eeg', 'powspctrm', 'GCP_powspctrm_fooof_bl_smooth_300.png'));
+    exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'powspctrm', 'GCP_powspctrm_fooof_bl_smooth_300.png'), 'Resolution', 600);
 else
-    saveas(gcf, fullfile(paths.figures, 'eeg', 'powspctrm', 'GCP_powspctrm_fooof_bl_smooth_extra.png'));
+    exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'powspctrm', 'GCP_powspctrm_fooof_bl_smooth_extra.png'), 'Resolution', 600);
 end
 
 %% Plot GRAND AVERAGE power spectrum PERCENTAGE CHANGE
@@ -230,9 +230,9 @@ end
 % 
 % % Save the plot
 % if analysis_period == 1
-%     saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_percentage_300.png');
+%     exportgraphics(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/powspctrm_analysis_period_300/GCP_powspctrm_percentage_300.png', 'Resolution', 600);
 % else
-%     saveas(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png');
+%     exportgraphics(gcf, '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/powspctrm/GCP_powspctrm_percentage.png', 'Resolution', 600);
 % end
 
 %% Plot INDIVIDUAL powerspectra
@@ -323,7 +323,7 @@ end
 %     else
 %         save_path = fullfile(output_dir, sprintf('GCP_powspctrm_subj%s_baselined.png', subjects{subj}));
 %     end
-%     saveas(gcf, save_path);
+%     exportgraphics(gcf, save_path, 'Resolution', 600);
 % end
 
 %% Subplot with all INDIVIDUAL power spectra
@@ -424,4 +424,4 @@ if analysis_period == 1
 else
     save_path = fullfile(output_dir, 'GCP_powspctrm_all_subjects_subplot.png');
 end
-saveas(gcf, save_path);
+exportgraphics(gcf, save_path, 'Resolution', 600);

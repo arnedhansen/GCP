@@ -10,8 +10,7 @@ load(fullfile(paths.figures, 'paradigm', 'grating_hc.mat'))
 colors = color_def('GCP'); % Get colours: Beige and Purple
 
 % Create a figure
-figure;
-set(gcf, 'Position', [100, 200, 1000, 800], 'Color', 'w'); % Adjust size for each individual plot
+figure('Position', [0 0 1512 982], 'Color', 'w');
 set(gca, 'FontSize', 20)
 hold on;
 
@@ -61,4 +60,4 @@ legend({'Low Contrast', 'High Contrast'}); % Show legend
 % grid on;
 hold off;
 
-saveas(gcf, fullfile(paths.figures, 'paradigm', 'GCP_gratings_rgb_distribution.png'))
+exportgraphics(gcf, fullfile(paths.figures, 'paradigm', 'GCP_gratings_rgb_distribution.png'), 'Resolution', 600);

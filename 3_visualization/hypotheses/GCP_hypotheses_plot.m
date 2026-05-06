@@ -40,7 +40,7 @@ for k = 1:size(curves,1)
 end
 
 % Plot
-fig = figure('Color','w', 'Position', [0 0 1512 982]);
+fig = figure('Position', [0 0 1512 982], 'Color', 'w');
 ax = axes('Position',[0.12 0.14 0.78 0.76]); hold(ax,'on')
 
 % Dashed vertical lines at peaks
