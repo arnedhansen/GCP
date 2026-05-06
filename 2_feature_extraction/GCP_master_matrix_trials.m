@@ -89,17 +89,8 @@ end
 %% Load GED trial-level table
 T_ged = table();
 ged_mat = fullfile(features_root, 'GCP_eeg_GED_gamma_metrics_trials.mat');
-ged_csv = fullfile(features_root, 'GCP_eeg_GED_gamma_metrics_trials.csv');
-
-if isfile(ged_mat)
-    S = load(ged_mat);
-    if isfield(S, 'T') && istable(S.T)
-        T_ged = S.T;
-    end
-elseif isfile(ged_csv)
-    T_ged = readtable(ged_csv);
-end
-
+S = load(ged_mat);
+T_ged = S.T;
 if ~isempty(T_ged)
     T_ged = standardize_id_condition_trial(T_ged);
 end
