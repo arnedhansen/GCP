@@ -75,6 +75,9 @@ template_sigma_occ = 0.20;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
 min_eigval = 1.1;              % minimum GED eigenvalue (lambda >= 1.1)
 min_peak_form = 0.6;    % minimum PF score for candidate eligibility
+pf_multi_peak_sep_min_hz = 15;       % penalize PF when another peak sits at least this far from the dominant (Hz)
+pf_multi_peak_height_ratio_min = 0.80; % rival peak height must reach this fraction of the dominant peak amplitude
+pf_multi_peak_penalty_mult = 0.62;    % multiplier applied with edge/HF/roughness penalties when the rule fires
 max_combined_leak = 1.30;      % artifact guard: mean(front leak, temporal leak)
 max_lineharm_ratio = 0.60;     % artifact guard: line-harmonic dominance ratio
 max_hf_slope = -0.15;          % artifact guard: EMG-like high-frequency slope
@@ -499,7 +502,8 @@ for subj = 1:nSubj
     [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
     [peak_form_score_vec, peak_form_mode_vec, peak_form_diag] = compute_peak_form_template_score_from_spectra( ...
-        searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
+        searchMeanPrSpectrum, scan_freqs, analysis_freq_range, ...
+        pf_multi_peak_sep_min_hz, pf_multi_peak_height_ratio_min, pf_multi_peak_penalty_mult);
     topo_posterior_vec = searchTopoPosteriorConcentration;
     topo_flat_fail_vec = (searchTopoSpatialStd < topo_flat_std_min) | (searchTopoDynamicRange < topo_flat_range_min);
     topo_nonposterior_fail_vec = topo_posterior_vec < topo_nonposterior_max;
@@ -662,6 +666,8 @@ for subj = 1:nSubj
     candidate_table.peak_form_similarity_pre_penalty = peak_form_diag.pre_penalty_similarity;
     candidate_table.peak_form_total_penalty_raw = peak_form_diag.total_penalty_raw;
     candidate_table.peak_form_total_penalty_used = peak_form_diag.total_penalty_used;
+    candidate_table.peak_form_multi_peak_penalty = peak_form_diag.multi_peak_penalty;
+    candidate_table.peak_form_multi_peak_flag = peak_form_diag.multi_peak_flag;
     candidate_table.peak_form_dominant_penalty = peak_form_diag.dominant_penalty_tag;
     candidate_table.pf_quality_band = assign_pf_quality_band_labels(peak_form_score_vec);
     candidate_table.pf_rank = compute_descending_rank(peak_form_score_vec);
@@ -3413,7 +3419,17 @@ end
 end
 
 function [peak_form_score_vec, peak_form_mode_vec, diag] = compute_peak_form_template_score_from_spectra( ...
-    mean_pr_spectrum, scan_freqs, analysis_freq_range)
+    mean_pr_spectrum, scan_freqs, analysis_freq_range, multi_peak_sep_min_hz, multi_peak_height_ratio_min, multi_peak_penalty_mult)
+if nargin < 4 || isempty(multi_peak_sep_min_hz) || ~isfinite(multi_peak_sep_min_hz)
+    multi_peak_sep_min_hz = 15;
+end
+if nargin < 5 || isempty(multi_peak_height_ratio_min) || ~isfinite(multi_peak_height_ratio_min)
+    multi_peak_height_ratio_min = 0.80;
+end
+if nargin < 6 || isempty(multi_peak_penalty_mult) || ~isfinite(multi_peak_penalty_mult)
+    multi_peak_penalty_mult = 0.62;
+end
+multi_peak_penalty_mult = max(0, min(1, multi_peak_penalty_mult));
 shift_max_hz = 10;
 single_widths_hz = [5 7 9 12];
 double_separations_hz = [8 12 16 20];
@@ -3451,6 +3467,8 @@ diag = struct( ...
     'edge_artifact_flag', false(nComp, 1), ...
     'roughness_ratio', nan(nComp, 1), ...
     'roughness_penalty', nan(nComp, 1), ...
+    'multi_peak_penalty', nan(nComp, 1), ...
+    'multi_peak_flag', false(nComp, 1), ...
     'dominant_penalty_tag', {repmat({'none'}, nComp, 1)});
 if isempty(mean_pr_spectrum) || isempty(scan_freqs)
     return;
@@ -3512,10 +3530,25 @@ for ci = 1:nComp
     if isempty(pks)
         continue;
     end
+    pks = pks(:);
+    locs = locs(:);
+    widths = widths(:);
     [~, dom_idx] = max(pks);
     dom_amp = pks(dom_idx);
     dom_width = widths(dom_idx);
     dom_loc = locs(dom_idx);
+
+    multi_peak_pen = 1;
+    multi_peak_hit = false;
+    if numel(pks) >= 2 && isfinite(dom_amp) && dom_amp > eps
+        sep_ok = abs(locs - dom_loc) >= multi_peak_sep_min_hz;
+        height_ok = pks >= multi_peak_height_ratio_min * dom_amp;
+        rival_mask = ((1:numel(pks))' ~= dom_idx) & sep_ok & height_ok;
+        if any(rival_mask)
+            multi_peak_hit = true;
+            multi_peak_pen = multi_peak_penalty_mult;
+        end
+    end
 
     width_low = peak_width_min_hz;
     width_high = peak_width_max_hz;
@@ -3623,13 +3656,13 @@ for ci = 1:nComp
         end
     end
 
-    penalty_raw = edge_pen * dominance_pen * hf_pen * roughness_pen;
+    penalty_raw = edge_pen * dominance_pen * hf_pen * roughness_pen * multi_peak_pen;
     penalty_floor = 0.20;
     penalty_used = max(penalty_floor, penalty_raw);
     best_raw = best_pre_penalty * penalty_used;
 
-    penalty_names = {'edge', 'dominance', 'hf_rise', 'roughness'};
-    penalty_vals = [edge_pen, dominance_pen, hf_pen, roughness_pen];
+    penalty_names = {'edge', 'dominance', 'hf_rise', 'roughness', 'multi_peak'};
+    penalty_vals = [edge_pen, dominance_pen, hf_pen, roughness_pen, multi_peak_pen];
     [worst_pen, worst_idx] = min(penalty_vals);
     if isfinite(worst_pen) && (worst_pen < 0.999)
         dominant_penalty_tag = penalty_names{worst_idx};
@@ -3653,6 +3686,8 @@ for ci = 1:nComp
     diag.best_trough_depth(ci) = best_trough;
     diag.roughness_ratio(ci) = roughness_ratio;
     diag.roughness_penalty(ci) = roughness_pen;
+    diag.multi_peak_penalty(ci) = multi_peak_pen;
+    diag.multi_peak_flag(ci) = multi_peak_hit;
     diag.dominant_penalty_tag{ci} = dominant_penalty_tag;
 
     if ~isfinite(best_raw)
@@ -4026,10 +4061,21 @@ end
 proxy.burst_ratio = mean(abs(trial_gamma) >= max(burst_thr, eps));
 
 if sum(hf_mask) >= 3
-    xh = log(scan_freqs(hf_mask));
-    yh = log(abs(proxy.mean_pr_spectrum(hf_mask)) + eps);
-    p = polyfit(xh(:), yh(:), 1);
-    proxy.hf_slope = p(1);
+    f_hf = scan_freqs(hf_mask);
+    spec_hf = proxy.mean_pr_spectrum(hf_mask);
+    xh_full = log(f_hf(:));
+    yh_full = log(abs(spec_hf(:)) + eps);
+    valid_hf = isfinite(xh_full) & isfinite(yh_full) & ...
+        isfinite(spec_hf(:)) & (spec_hf(:) > -inf);
+    n_hf = nnz(valid_hf);
+    if n_hf >= 3
+        xh = xh_full(valid_hf);
+        yh = yh_full(valid_hf);
+        p = polyfit(xh, yh, 1);
+        if isfinite(p(1))
+            proxy.hf_slope = p(1);
+        end
+    end
 end
 
 end
