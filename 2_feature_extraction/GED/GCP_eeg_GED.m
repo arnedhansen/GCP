@@ -74,7 +74,7 @@ template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.20;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
 min_eigval = 1.1;              % minimum GED eigenvalue (lambda >= 1.1)
-min_peak_form_single = 0.7;    % normal minimum PF score for candidate eligibility
+min_peak_form = 0.6;    % normal minimum PF score for candidate eligibility
 max_minor_peaks = 2;           % allow at most this many minor peaks for PF gate
 max_minor_peak_rel = 0.60;     % largest minor peak must stay below this fraction of dominant peak
 max_combined_leak = 1.30;      % artifact guard: mean(front leak, temporal leak)
@@ -514,19 +514,19 @@ for subj = 1:nSubj
     enforced_min_eigval = min_eigval;
     pass_eig_gate = finite_metrics & (eval_raw_vec >= enforced_min_eigval);
     single_peak_mode_mask = strcmpi(peak_form_mode_vec, 'single') | strcmpi(peak_form_mode_vec, 'dominant');
-    pass_single_peak_gate = finite_metrics & (peak_form_score_vec >= min_peak_form_single) & ...
+    pass_single_peak_gate = finite_metrics & (peak_form_score_vec >= min_peak_form) & ...
         (peak_form_diag.minor_peak_count <= max_minor_peaks) & ...
         (peak_form_diag.minor_peak_relmax <= max_minor_peak_rel);
     fail_leak = finite_metrics & (combined_leak_vec > max_combined_leak);
     fail_lineharm = finite_metrics & (lineharm_vec > max_lineharm_ratio);
     fail_hf_slope = finite_metrics & (hf_slope_vec > max_hf_slope);
     fail_emg_score = finite_metrics & (emg_artifact_score > max_emg_score);
-    hard_reject_flags_raw = fail_leak | fail_lineharm | fail_hf_slope | fail_emg_score | ...
+    hard_reject_flags_raw = fail_leak | fail_hf_slope | fail_emg_score | ...
         unknown_proxy_vec | topo_flat_fail_vec | topo_nonposterior_fail_vec | topo_fragmented_fail_vec;
-    soft_warn_any = false(nSearch, 1);
+    soft_warn_any = fail_lineharm;
     soft_warn_flags = struct( ...
         'combined_leak', false(nSearch, 1), ...
-        'lineharm', false(nSearch, 1), ...
+        'lineharm', fail_lineharm, ...
         'hf_slope', false(nSearch, 1), ...
         'emg_score', false(nSearch, 1), ...
         'any', soft_warn_any);
@@ -534,7 +534,7 @@ for subj = 1:nSubj
     rejection_flags = struct( ...
         'unknown_proxy', unknown_proxy_vec, ...
         'combined_leak', fail_leak, ...
-        'lineharm', fail_lineharm, ...
+        'lineharm', false(nSearch, 1), ...
         'hf_slope', fail_hf_slope, ...
         'emg_score', fail_emg_score, ...
         'topo_flat', topo_flat_fail_vec, ...
@@ -593,7 +593,7 @@ for subj = 1:nSubj
         pf_msg = sprintf('Subject %s has no components passing PF gate.', subjects{subj});
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_COMPONENTS_PASS_PF_GATE', pf_msg, ...
             struct('n_search', nSearch, 'n_pass_pf', sum(pass_single_peak_gate), ...
-                   'thr_single_peak_pf', min_peak_form_single, ...
+                   'thr_single_peak_pf', min_peak_form, ...
                    'thr_max_minor_peaks', max_minor_peaks, ...
                    'thr_max_minor_peak_rel', max_minor_peak_rel));
     end
@@ -620,14 +620,15 @@ for subj = 1:nSubj
             'n_pass_eig', sum(pass_eig_gate), ...
             'n_pass_single_peak_pf', sum(pass_single_peak_gate), ...
             'n_artifact_flagged', sum(artifact_flags), ...
+            'n_lineharm_exceeds_soft_thr', sum(fail_lineharm), ...
             'n_unknown_high_risk', sum(unknown_proxy_vec), ...
             'n_pass_all_raw', sum(hard_eligible), ...
             'n_occipital_class', sum(occipital_class_mask), ...
             'n_excluded_extreme_component_outlier', sum(extreme_component_outlier_mask), ...
             'thr_eig', enforced_min_eigval, ...
-            'thr_single_peak_pf', min_peak_form_single, ...
+            'thr_single_peak_pf', min_peak_form, ...
             'thr_combined_leak', max_combined_leak, ...
-            'thr_lineharm', max_lineharm_ratio, ...
+            'thr_lineharm_soft_warn', max_lineharm_ratio, ...
             'thr_hf_slope', max_hf_slope, ...
             'thr_emg_score', max_emg_score);
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_HARD_ELIGIBLE_COMPONENTS', msg, hard_metrics);
@@ -708,6 +709,7 @@ for subj = 1:nSubj
     candidate_table.fail_unknown_proxy = rejection_flags.unknown_proxy;
     candidate_table.fail_combined_leak = rejection_flags.combined_leak;
     candidate_table.fail_lineharm = rejection_flags.lineharm;
+    candidate_table.lineharm_exceeds_soft_thr = fail_lineharm;
     candidate_table.fail_hf_slope = rejection_flags.hf_slope;
     candidate_table.fail_emg_score = rejection_flags.emg_score;
     candidate_table.fail_topo_flat = rejection_flags.topo_flat;
@@ -721,7 +723,7 @@ for subj = 1:nSubj
     candidate_table.extreme_component_outlier = extreme_component_outlier_mask;
     candidate_table.hard_eligible = hard_eligible;
     candidate_table.thr_min_eigval = repmat(enforced_min_eigval, nSearch, 1);
-    candidate_table.thr_min_single_peak_pf = repmat(min_peak_form_single, nSearch, 1);
+    candidate_table.thr_min_single_peak_pf = repmat(min_peak_form, nSearch, 1);
     candidate_table.thr_max_minor_peaks = repmat(max_minor_peaks, nSearch, 1);
     candidate_table.thr_max_minor_peak_rel = repmat(max_minor_peak_rel, nSearch, 1);
     candidate_table.thr_max_combined_leak = repmat(max_combined_leak, nSearch, 1);
@@ -3341,6 +3343,7 @@ function [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
 nComp = size(mean_pr_spectrum, 1);
 peak_bonus_vec = zeros(nComp, 1);
 peak_count_vec = zeros(nComp, 1);
+peak_prom_abs_floor = 0.02;
 if isempty(mean_pr_spectrum) || isempty(scan_freqs)
     return;
 end
@@ -3364,9 +3367,20 @@ for ci = 1:nComp
     if ~isfinite(peak_scale) || peak_scale <= eps
         continue;
     end
-    [pks, ~] = findpeaks(y_shape, x_band, 'MinPeakDistance', 5);
+    robust_scale = robust_mad(y_shape);
+    if ~isfinite(robust_scale) || robust_scale <= eps
+        robust_scale = iqr(y_shape);
+    end
+    if ~isfinite(robust_scale) || robust_scale <= eps
+        robust_scale = std(y_shape(isfinite(y_shape)));
+    end
+    if ~isfinite(robust_scale) || robust_scale <= eps
+        robust_scale = 1;
+    end
+    min_prom = max([0, 0.10 * peak_scale, peak_prom_abs_floor, 0.15 * robust_scale]);
+    [pks, ~] = findpeaks(y_shape, x_band, 'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
     if isempty(pks)
-        pks = peak_scale;
+        continue;
     end
     pks = sort(pks(:), 'descend');
     n_keep = min(2, numel(pks));
@@ -3392,6 +3406,7 @@ edge_ratio_soft = 1.25;
 edge_ratio_limit = 1.75;
 edge_run_soft = 0.025;
 edge_run_limit = 0.060;
+peak_form_prom_abs_floor = 0.02;
 nComp = size(mean_pr_spectrum, 1);
 peak_form_score_vec = zeros(nComp, 1);
 peak_form_mode_vec = repmat({'none'}, nComp, 1);
@@ -3472,17 +3487,11 @@ for ci = 1:nComp
     if ~isfinite(robust_scale) || robust_scale <= eps
         robust_scale = 1;
     end
-    [pks, locs, widths] = findpeaks(y_pos, x_band, 'MinPeakDistance', 5);
+    rel_prom = 0.08 * max(y_pos);
+    min_prom = max([0, rel_prom, peak_form_prom_abs_floor, 0.15 * robust_scale]);
+    [pks, locs, widths] = findpeaks(y_pos, x_band, 'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
     if isempty(pks)
-        % Fallback: keep best local maximum to avoid collapsing valid-but-noisy traces to PF=0.
-        [dom_amp, dom_idx] = max(y_pos);
-        if ~isfinite(dom_amp) || dom_amp <= eps
-            continue;
-        end
-        dom_loc = x_band(dom_idx);
-        widths = 6;
-        pks = dom_amp;
-        locs = dom_loc;
+        continue;
     end
     [~, dom_idx] = max(pks);
     dom_amp = pks(dom_idx);
@@ -4192,7 +4201,7 @@ cfg = [];
 cfg.method = 'mtmfft';
 cfg.output = 'pow';
 cfg.taper = 'dpss';
-cfg.foi = scan_freqs;
+cfg.foilim = [min(scan_freqs) max(scan_freqs)];
 cfg.tapsmofrq = scan_width_hz;
 cfg.pad = 'nextpow2';
 cfg.keeptrials = 'yes';
