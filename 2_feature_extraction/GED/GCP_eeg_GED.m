@@ -129,6 +129,9 @@ centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centro
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
 centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
 trial_peak_smooth_n = 1;     % moving-average smoothing for trial-level peak detection
+trial_metric_outlier_enable = true;      % apply trial-level outlier rejection on extracted frequency/power metrics
+trial_metric_outlier_iqr_mult = 1.5;     % outlier threshold in IQR units around Q1/Q3
+trial_metric_outlier_min_trials = 30;    % minimum finite trials to run IQR-based outlier rejection
 
 % Condition info
 condNames  = {'c25', 'c50', 'c75', 'c100'};
@@ -163,6 +166,12 @@ all_trial_peaks_low    = cell(4, nSubj);
 all_trial_peaks_high   = cell(4, nSubj);
 all_trial_peaks_single_early = cell(4, nSubj);
 all_trial_peaks_single_late  = cell(4, nSubj);
+all_trial_outlier_mask_freq_full = cell(4, nSubj);
+all_trial_outlier_mask_freq_early = cell(4, nSubj);
+all_trial_outlier_mask_freq_late = cell(4, nSubj);
+all_trial_outlier_mask_power_full = cell(4, nSubj);
+all_trial_outlier_mask_power_early = cell(4, nSubj);
+all_trial_outlier_mask_power_late = cell(4, nSubj);
 all_trial_centroid     = cell(4, nSubj);
 
 all_trial_mean_single   = nan(4, nSubj);
@@ -1557,6 +1566,41 @@ for subj = 1:nSubj
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_late_fullscan, scan_freqs, true(size(scan_freqs)), ...
             centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min);
+        % Trial-level metric outlier rejection (subject-condition specific).
+        if trial_metric_outlier_enable
+            [outlier_mask_freq_full, ~] = detect_trial_metric_outliers_iqr( ...
+                trl_peaks_single, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+            [outlier_mask_freq_early, ~] = detect_trial_metric_outliers_iqr( ...
+                trl_peaks_single_early, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+            [outlier_mask_freq_late, ~] = detect_trial_metric_outliers_iqr( ...
+                trl_peaks_single_late, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+            [outlier_mask_power_full, ~] = detect_trial_metric_outliers_iqr( ...
+                trial_peak_power_full, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+            [outlier_mask_power_early, ~] = detect_trial_metric_outliers_iqr( ...
+                trial_peak_power_early, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+            [outlier_mask_power_late, ~] = detect_trial_metric_outliers_iqr( ...
+                trial_peak_power_late, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+        else
+            outlier_mask_freq_full = false(size(trl_peaks_single));
+            outlier_mask_freq_early = false(size(trl_peaks_single_early));
+            outlier_mask_freq_late = false(size(trl_peaks_single_late));
+            outlier_mask_power_full = false(size(trial_peak_power_full));
+            outlier_mask_power_early = false(size(trial_peak_power_early));
+            outlier_mask_power_late = false(size(trial_peak_power_late));
+        end
+        trl_peaks_single(outlier_mask_freq_full) = NaN;
+        trl_peaks_single_early(outlier_mask_freq_early) = NaN;
+        trl_peaks_single_late(outlier_mask_freq_late) = NaN;
+        trial_peak_power_full(outlier_mask_power_full) = NaN;
+        trial_peak_power_early(outlier_mask_power_early) = NaN;
+        trial_peak_power_late(outlier_mask_power_late) = NaN;
+        all_trial_peaks_single{cond, subj} = trl_peaks_single;
+        all_trial_outlier_mask_freq_full{cond, subj} = outlier_mask_freq_full;
+        all_trial_outlier_mask_freq_early{cond, subj} = outlier_mask_freq_early;
+        all_trial_outlier_mask_freq_late{cond, subj} = outlier_mask_freq_late;
+        all_trial_outlier_mask_power_full{cond, subj} = outlier_mask_power_full;
+        all_trial_outlier_mask_power_early{cond, subj} = outlier_mask_power_early;
+        all_trial_outlier_mask_power_late{cond, subj} = outlier_mask_power_late;
         all_trial_peaks_single_early{cond, subj} = trl_peaks_single_early;
         all_trial_peaks_single_late{cond, subj} = trl_peaks_single_late;
 
@@ -2407,21 +2451,6 @@ hold on;
 dat_power = all_trial_gamma_power;
 dat_power_plot = dat_power;
 
-% Figure-only outlier suppression (per condition): Tukey-style extreme outliers.
-for c = 1:4
-    vals = dat_power_plot(c, :);
-    vals = vals(isfinite(vals));
-    if numel(vals) < 4
-        continue;
-    end
-    q = quantile(vals, [0.25 0.75]);
-    iqr_val = q(2) - q(1);
-    lo_thr = q(1) - 3 * iqr_val;
-    hi_thr = q(2) + 3 * iqr_val;
-    outlier_mask = dat_power_plot(c, :) < lo_thr | dat_power_plot(c, :) > hi_thr;
-    dat_power_plot(c, outlier_mask) = NaN;
-end
-
 for s = 1:nSubj
     y_subj = dat_power_plot(:, s);
     valid_subj = ~isnan(y_subj);
@@ -2521,6 +2550,8 @@ save(save_path, ...
     'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
     'warning_log', ...
     'all_trial_powratio_components_full', 'all_trial_powratio_components_early', 'all_trial_powratio_components_late', ...
+    'all_trial_outlier_mask_freq_full', 'all_trial_outlier_mask_freq_early', 'all_trial_outlier_mask_freq_late', ...
+    'all_trial_outlier_mask_power_full', 'all_trial_outlier_mask_power_early', 'all_trial_outlier_mask_power_late', ...
     'benchmark_metric_detectability', ...
     'benchmark_metric_separation_slope', 'benchmark_metric_separation_delta', ...
     'benchmark_metric_reliability_trialcv', 'benchmark_metric_reliability_subjspread', ...
@@ -4014,6 +4045,34 @@ val = prctile(x, pctl);
 if ~isfinite(val)
     val = default_val;
 end
+end
+
+function [outlier_mask, stats] = detect_trial_metric_outliers_iqr(x, iqr_mult, min_trials)
+x = x(:);
+outlier_mask = false(size(x));
+stats = struct('n_finite', 0, 'q1', NaN, 'q3', NaN, 'iqr_val', NaN, 'lo', NaN, 'hi', NaN, 'n_outliers', 0);
+valid = isfinite(x);
+n_finite = sum(valid);
+stats.n_finite = n_finite;
+if n_finite < max(3, min_trials)
+    return;
+end
+q = quantile(x(valid), [0.25 0.75]);
+q1 = q(1);
+q3 = q(2);
+iqr_val = q3 - q1;
+stats.q1 = q1;
+stats.q3 = q3;
+stats.iqr_val = iqr_val;
+if ~isfinite(q1) || ~isfinite(q3) || ~isfinite(iqr_val) || iqr_val <= eps
+    return;
+end
+lo = q1 - iqr_mult * iqr_val;
+hi = q3 + iqr_mult * iqr_val;
+stats.lo = lo;
+stats.hi = hi;
+outlier_mask = valid & (x < lo | x > hi);
+stats.n_outliers = sum(outlier_mask);
 end
 
 function m = robust_trial_mean(x)
