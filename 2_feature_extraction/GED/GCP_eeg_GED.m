@@ -211,8 +211,6 @@ primary_delta_stats = struct();
 %% Subject loop
 for subj = 1:nSubj
     subj_runtime_tic = tic;
-    clc;
-    fprintf('[GED] Subject %s (%d/%d) started\n', subjects{subj}, subj, nSubj);
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
     if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
     fig_save_dir_emg_exclusion = comp_sel_save_dir;
@@ -493,9 +491,11 @@ for subj = 1:nSubj
     stationarity_vec = searchStationarityCV;
     burst_vec = searchBurstRatio;
     hf_slope_vec = searchHFSlope;
+    hf_slope_for_score = hf_slope_vec;
+    hf_slope_for_score(~isfinite(hf_slope_for_score)) = 0;
     finite_metrics = isfinite(corr_vec) & isfinite(ratio_vec) & ...
         isfinite(eval_raw_vec) & isfinite(leak_vec) & isfinite(temp_leak_vec) & ...
-        isfinite(combined_leak_vec) & isfinite(lineharm_vec) & isfinite(hf_slope_vec);
+        isfinite(combined_leak_vec) & isfinite(lineharm_vec);
     [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
     [peak_form_score_vec, peak_form_mode_vec, peak_form_diag] = compute_peak_form_template_score_from_spectra( ...
@@ -510,7 +510,7 @@ for subj = 1:nSubj
     emg_artifact_score = 0.30 * normalize_robust(leak_vec) + ...
         0.20 * normalize_robust(temp_leak_vec) + ...
         0.30 * normalize_robust(lineharm_vec) + ...
-        0.20 * normalize_robust(max(hf_slope_vec, 0));
+        0.20 * normalize_robust(max(hf_slope_for_score, 0));
     enforced_min_eigval = min_eigval;
     pass_eig_gate = finite_metrics & (eval_raw_vec >= enforced_min_eigval);
     single_peak_mode_mask = strcmpi(peak_form_mode_vec, 'single') | strcmpi(peak_form_mode_vec, 'dominant');
