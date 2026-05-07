@@ -211,8 +211,8 @@ primary_delta_stats = struct();
 %% Subject loop
 for subj = 1:nSubj
     subj_runtime_tic = tic;
+    clc;
     fprintf('[GED] Subject %s (%d/%d) started\n', subjects{subj}, subj, nSubj);
-    ged_freq_progress_reset(subjects{subj}, subj, nSubj);
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
     if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
     fig_save_dir_emg_exclusion = comp_sel_save_dir;
@@ -235,6 +235,9 @@ for subj = 1:nSubj
     dataStructs = {dataEEG_c25, dataEEG_c50, dataEEG_c75, dataEEG_c100};
 
     nChans = length(dataEEG_c25.label);
+    nSearch_plan = min(ged_search_n, nChans);
+    n_freq_calls_est = 3 * nSearch_plan + 3; % 3 windows of proxy spectra + up to 3 trial-scan batches
+    ged_freq_progress_reset(subjects{subj}, subj, nSubj, n_freq_calls_est);
 
     occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|PPO|P10|P9)', 'once')), dataEEG_c25.label);
     occ_idx  = find(occ_mask);
@@ -259,6 +262,7 @@ for subj = 1:nSubj
 
     stim_windows = {full_window, early_window, late_window};
     win_names   = {'full', 'early', 'late'};
+    win_names_cap = {'Full', 'Early', 'Late'};
     lambdas     = [lambda, lambda, lambda];
 
     covStim_full  = zeros(nChans);
@@ -393,7 +397,7 @@ for subj = 1:nSubj
         W_full = W_full(:, sortIdx);
 
         nSearch = min(ged_search_n, size(W_full, 2));
-        ged_freq_progress_plan_calls(nSearch);
+        ged_freq_progress_set_phase(sprintf('%s ProxySpectra Batch', win_names_cap{w}));
         searchFilters = nan(nChans, nSearch);
         searchTopos = nan(nChans, nSearch);
         searchCorrs = nan(nSearch, 1);
@@ -1218,7 +1222,7 @@ for subj = 1:nSubj
 
         if adequate_full
             trial_mask_full = has_base & has_full & ~bad_base_full;
-            ged_freq_progress_plan_calls(1);
+            ged_freq_progress_set_phase('Full TrialScan Batch');
             [ratio_cube_full, near_floor_count_full] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.full.searchFilters, 'x_full', trial_mask_full, ...
                 fsample, scan_freqs, scan_width, base_floor_full, instability_near_floor_mult);
@@ -1254,7 +1258,7 @@ for subj = 1:nSubj
             fprintf('[GED] Subject %s (%d/%d) Trial 0/%d Early Window\n', ...
                 subjects{subj}, subj, nSubj, nTrl);
             trial_mask_early = has_base & has_early & ~bad_base_early;
-            ged_freq_progress_plan_calls(1);
+            ged_freq_progress_set_phase('Early TrialScan Batch');
             [ratio_cube_early, near_floor_count_early] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.early.searchFilters, 'x_early', trial_mask_early, ...
                 fsample, scan_freqs, scan_width, base_floor_early, instability_near_floor_mult);
@@ -1289,7 +1293,7 @@ for subj = 1:nSubj
             fprintf('[GED] Subject %s (%d/%d) Trial 0/%d Late Window\n', ...
                 subjects{subj}, subj, nSubj, nTrl);
             trial_mask_late = has_base & has_late & ~bad_base_late;
-            ged_freq_progress_plan_calls(1);
+            ged_freq_progress_set_phase('Late TrialScan Batch');
             [ratio_cube_late, near_floor_count_late] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.late.searchFilters, 'x_late', trial_mask_late, ...
                 fsample, scan_freqs, scan_width, base_floor_late, instability_near_floor_mult);
@@ -4193,9 +4197,10 @@ cfg.pad = 'nextpow2';
 cfg.keeptrials = 'yes';
 cfg.feedback = 'none';
 progress_state = ged_freq_progress_next_call();
-fprintf('[GED] Subject %s (%d/%d) Freqanalysis %d/%d\n', ...
+clc;
+fprintf('[GED] Subject %s (%d/%d) %s %d/%d\n', ...
     progress_state.subject, progress_state.subj_idx, progress_state.subj_total, ...
-    progress_state.call_idx, progress_state.call_total);
+    progress_state.phase, progress_state.call_idx, progress_state.call_total);
 try
     freq = ft_freqanalysis(cfg, dat);
 catch
@@ -4286,19 +4291,23 @@ p_stim_scan = p_all(1:nStim, :);
 p_base_scan = p_all((nStim + 1):(2 * nStim), :);
 end
 
-function ged_freq_progress_reset(subject_label, subj_idx, subj_total)
+function ged_freq_progress_reset(subject_label, subj_idx, subj_total, call_total_estimate)
 global GED_FREQ_PROGRESS;
+if nargin < 4 || ~isfinite(call_total_estimate) || call_total_estimate < 1
+    call_total_estimate = 0;
+end
 GED_FREQ_PROGRESS = struct( ...
     'subject', subject_label, ...
     'subj_idx', subj_idx, ...
     'subj_total', subj_total, ...
     'call_idx', 0, ...
-    'call_total', 0);
+    'call_total', round(call_total_estimate), ...
+    'phase', 'Spectral Batch');
 end
 
-function ged_freq_progress_plan_calls(n_calls)
+function ged_freq_progress_set_phase(phase_label)
 global GED_FREQ_PROGRESS;
-if nargin < 1 || ~isfinite(n_calls) || n_calls <= 0
+if nargin < 1 || isempty(phase_label)
     return;
 end
 if isempty(GED_FREQ_PROGRESS) || ~isstruct(GED_FREQ_PROGRESS)
@@ -4307,9 +4316,10 @@ if isempty(GED_FREQ_PROGRESS) || ~isstruct(GED_FREQ_PROGRESS)
         'subj_idx', 0, ...
         'subj_total', 0, ...
         'call_idx', 0, ...
-        'call_total', 0);
+        'call_total', 0, ...
+        'phase', 'Spectral Batch');
 end
-GED_FREQ_PROGRESS.call_total = GED_FREQ_PROGRESS.call_total + round(n_calls);
+GED_FREQ_PROGRESS.phase = phase_label;
 end
 
 function state = ged_freq_progress_next_call()
@@ -4320,7 +4330,8 @@ if isempty(GED_FREQ_PROGRESS) || ~isstruct(GED_FREQ_PROGRESS)
         'subj_idx', 0, ...
         'subj_total', 0, ...
         'call_idx', 0, ...
-        'call_total', 0);
+        'call_total', 0, ...
+        'phase', 'Spectral Batch');
 end
 GED_FREQ_PROGRESS.call_idx = GED_FREQ_PROGRESS.call_idx + 1;
 if GED_FREQ_PROGRESS.call_total < GED_FREQ_PROGRESS.call_idx
