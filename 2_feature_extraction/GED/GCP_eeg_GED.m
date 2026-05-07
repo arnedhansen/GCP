@@ -1140,17 +1140,6 @@ parfor subj = 1:nSubj
     subj_peaks_early = cell(1, 4);
     subj_peaks_late = cell(1, 4);
     subj_centroid_full = cell(1, 4);
-    cond_trial_counts = zeros(1, 4);
-    for cond_count_i = 1:4
-        dat_count = dat_per_cond{cond_count_i};
-        if ~isempty(dat_count) && isfield(dat_count, 'trial') && ~isempty(dat_count.trial)
-            cond_trial_counts(cond_count_i) = numel(dat_count.trial);
-        end
-    end
-    total_trials_subject = sum(cond_trial_counts);
-    cond_trial_offsets = [0, cumsum(cond_trial_counts(1:end-1))];
-    window_labels = {'Full Window', 'Early Window', 'Late Window'};
-    window_ranges_ms = [full_window; early_window; late_window] * 1000;
     for cond = 1:4
 
         dat = dat_per_cond{cond};
@@ -1230,95 +1219,95 @@ parfor subj = 1:nSubj
         [base_floor_early, ~] = compute_baseline_floor_stats(baseline_power_comb_early, ratio_floor_prctile, ratio_floor_frac);
         [base_floor_late, ~] = compute_baseline_floor_stats(baseline_power_comb_late, ratio_floor_prctile, ratio_floor_frac);
 
+        has_base = false(nTrl, 1);
+        has_full = false(nTrl, 1);
+        has_early = false(nTrl, 1);
+        has_late = false(nTrl, 1);
         for trl = 1:nTrl
             tc = trial_cache{trl};
-            x_base = tc.x_base;
-            x_full = tc.x_full;
-            x_early = tc.x_early;
-            x_late = tc.x_late;
-            trial_global_idx = cond_trial_offsets(cond) + trl;
-            if isempty(x_base)
-                continue;
-            end
+            has_base(trl) = ~isempty(tc.x_base);
+            has_full(trl) = ~isempty(tc.x_full);
+            has_early(trl) = ~isempty(tc.x_early);
+            has_late(trl) = ~isempty(tc.x_late);
+        end
 
-            if adequate_full && ~bad_base_full(trl)
-                clc;
-                fprintf('[GED] Subject %s (%d/%d) Trial %d/%d %s (%d-%dms)\n', ...
-                    subjects{subj}, subj, nSubj, trial_global_idx, total_trials_subject, ...
-                    window_labels{1}, round(window_ranges_ms(1, 1)), round(window_ranges_ms(1, 2)));
-                comp_base = filters.full.searchFilters' * x_base;
-                comp_stim = filters.full.searchFilters' * x_full;
-                [ratio_mat_full, near_floor_mask_full] = compute_scan_ratio_from_timeseries( ...
-                    comp_stim, comp_base, fsample, scan_freqs, scan_width, base_floor_full, instability_near_floor_mult);
-                powratio_components(:, trl, :) = ratio_mat_full;
-                if ~isempty(ratio_mat_full)
-                    if ~isempty(filters.full.selected_idx)
-                        w_use = filters.full.w_combined(:);
-                        if numel(w_use) ~= numel(filters.full.selected_idx)
-                            w_use = ones(numel(filters.full.selected_idx), 1) / max(numel(filters.full.selected_idx), 1);
-                        end
-                        w_use = w_use / max(sum(w_use), eps);
-                        sel_ratio = ratio_mat_full(filters.full.selected_idx, :);
-                        powratio_methods_full(1, trl, :) = (w_use' * sel_ratio);
+        if adequate_full
+            trial_mask_full = has_base & has_full & ~bad_base_full;
+            [ratio_cube_full, near_floor_count_full] = compute_scan_ratio_for_window_batch( ...
+                trial_cache, filters.full.searchFilters, 'x_full', trial_mask_full, ...
+                fsample, scan_freqs, scan_width, base_floor_full, instability_near_floor_mult);
+            powratio_components = ratio_cube_full;
+            for trl = 1:nTrl
+                ratio_mat_full = squeeze(powratio_components(:, trl, :));
+                if isvector(ratio_mat_full)
+                    ratio_mat_full = reshape(ratio_mat_full, size(powratio_components, 1), []);
+                end
+                if ~isempty(ratio_mat_full) && ~isempty(filters.full.selected_idx)
+                    w_use = filters.full.w_combined(:);
+                    if numel(w_use) ~= numel(filters.full.selected_idx)
+                        w_use = ones(numel(filters.full.selected_idx), 1) / max(numel(filters.full.selected_idx), 1);
                     end
+                    w_use = w_use / max(sum(w_use), eps);
+                    sel_ratio = ratio_mat_full(filters.full.selected_idx, :);
+                    powratio_methods_full(1, trl, :) = (w_use' * sel_ratio);
                 end
                 valid_freq_counts_full(trl) = sum(any(isfinite(ratio_mat_full), 1));
                 if any(any(isfinite(ratio_mat_full), 1))
-                    unstable_freq_counts_full(trl) = sum(near_floor_mask_full);
+                    unstable_freq_counts_full(trl) = near_floor_count_full(trl);
                 end
             end
+        end
 
-            if adequate_early && ~bad_base_early(trl)
-                clc;
-                fprintf('[GED] Subject %s (%d/%d) Trial %d/%d %s (%d-%dms)\n', ...
-                    subjects{subj}, subj, nSubj, trial_global_idx, total_trials_subject, ...
-                    window_labels{2}, round(window_ranges_ms(2, 1)), round(window_ranges_ms(2, 2)));
-                comp_base = filters.early.searchFilters' * x_base;
-                comp_stim = filters.early.searchFilters' * x_early;
-                [ratio_mat_early, near_floor_mask_early] = compute_scan_ratio_from_timeseries( ...
-                    comp_stim, comp_base, fsample, scan_freqs, scan_width, base_floor_early, instability_near_floor_mult);
-                powratio_components_early(:, trl, :) = ratio_mat_early;
-                if ~isempty(ratio_mat_early)
-                    if ~isempty(filters.early.selected_idx)
-                        w_use = filters.early.w_combined(:);
-                        if numel(w_use) ~= numel(filters.early.selected_idx)
-                            w_use = ones(numel(filters.early.selected_idx), 1) / max(numel(filters.early.selected_idx), 1);
-                        end
-                        w_use = w_use / max(sum(w_use), eps);
-                        sel_ratio = ratio_mat_early(filters.early.selected_idx, :);
-                        powratio_methods_early(1, trl, :) = (w_use' * sel_ratio);
+        if adequate_early
+            trial_mask_early = has_base & has_early & ~bad_base_early;
+            [ratio_cube_early, near_floor_count_early] = compute_scan_ratio_for_window_batch( ...
+                trial_cache, filters.early.searchFilters, 'x_early', trial_mask_early, ...
+                fsample, scan_freqs, scan_width, base_floor_early, instability_near_floor_mult);
+            powratio_components_early = ratio_cube_early;
+            for trl = 1:nTrl
+                ratio_mat_early = squeeze(powratio_components_early(:, trl, :));
+                if isvector(ratio_mat_early)
+                    ratio_mat_early = reshape(ratio_mat_early, size(powratio_components_early, 1), []);
+                end
+                if ~isempty(ratio_mat_early) && ~isempty(filters.early.selected_idx)
+                    w_use = filters.early.w_combined(:);
+                    if numel(w_use) ~= numel(filters.early.selected_idx)
+                        w_use = ones(numel(filters.early.selected_idx), 1) / max(numel(filters.early.selected_idx), 1);
                     end
+                    w_use = w_use / max(sum(w_use), eps);
+                    sel_ratio = ratio_mat_early(filters.early.selected_idx, :);
+                    powratio_methods_early(1, trl, :) = (w_use' * sel_ratio);
                 end
                 valid_freq_counts_early(trl) = sum(any(isfinite(ratio_mat_early), 1));
                 if any(any(isfinite(ratio_mat_early), 1))
-                    unstable_freq_counts_early(trl) = sum(near_floor_mask_early);
+                    unstable_freq_counts_early(trl) = near_floor_count_early(trl);
                 end
             end
+        end
 
-            if adequate_late && ~bad_base_late(trl)
-                clc;
-                fprintf('[GED] Subject %s (%d/%d) Trial %d/%d %s (%d-%dms)\n', ...
-                    subjects{subj}, subj, nSubj, trial_global_idx, total_trials_subject, ...
-                    window_labels{3}, round(window_ranges_ms(3, 1)), round(window_ranges_ms(3, 2)));
-                comp_base = filters.late.searchFilters' * x_base;
-                comp_stim = filters.late.searchFilters' * x_late;
-                [ratio_mat_late, near_floor_mask_late] = compute_scan_ratio_from_timeseries( ...
-                    comp_stim, comp_base, fsample, scan_freqs, scan_width, base_floor_late, instability_near_floor_mult);
-                powratio_components_late(:, trl, :) = ratio_mat_late;
-                if ~isempty(ratio_mat_late)
-                    if ~isempty(filters.late.selected_idx)
-                        w_use = filters.late.w_combined(:);
-                        if numel(w_use) ~= numel(filters.late.selected_idx)
-                            w_use = ones(numel(filters.late.selected_idx), 1) / max(numel(filters.late.selected_idx), 1);
-                        end
-                        w_use = w_use / max(sum(w_use), eps);
-                        sel_ratio = ratio_mat_late(filters.late.selected_idx, :);
-                        powratio_methods_late(1, trl, :) = (w_use' * sel_ratio);
+        if adequate_late
+            trial_mask_late = has_base & has_late & ~bad_base_late;
+            [ratio_cube_late, near_floor_count_late] = compute_scan_ratio_for_window_batch( ...
+                trial_cache, filters.late.searchFilters, 'x_late', trial_mask_late, ...
+                fsample, scan_freqs, scan_width, base_floor_late, instability_near_floor_mult);
+            powratio_components_late = ratio_cube_late;
+            for trl = 1:nTrl
+                ratio_mat_late = squeeze(powratio_components_late(:, trl, :));
+                if isvector(ratio_mat_late)
+                    ratio_mat_late = reshape(ratio_mat_late, size(powratio_components_late, 1), []);
+                end
+                if ~isempty(ratio_mat_late) && ~isempty(filters.late.selected_idx)
+                    w_use = filters.late.w_combined(:);
+                    if numel(w_use) ~= numel(filters.late.selected_idx)
+                        w_use = ones(numel(filters.late.selected_idx), 1) / max(numel(filters.late.selected_idx), 1);
                     end
+                    w_use = w_use / max(sum(w_use), eps);
+                    sel_ratio = ratio_mat_late(filters.late.selected_idx, :);
+                    powratio_methods_late(1, trl, :) = (w_use' * sel_ratio);
                 end
                 valid_freq_counts_late(trl) = sum(any(isfinite(ratio_mat_late), 1));
                 if any(any(isfinite(ratio_mat_late), 1))
-                    unstable_freq_counts_late(trl) = sum(near_floor_mask_late);
+                    unstable_freq_counts_late(trl) = near_floor_count_late(trl);
                 end
             end
         end
@@ -2497,17 +2486,37 @@ else
 end
 end
 
-function [ratio_db, near_floor_freq_mask] = compute_scan_ratio_from_timeseries(sig_stim, sig_base, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult)
-if isvector(sig_stim)
+function [ratio_db, near_floor_freq_mask, near_floor_row_mask] = compute_scan_ratio_from_timeseries(sig_stim, sig_base, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult)
+if ~iscell(sig_stim) && isvector(sig_stim)
     sig_stim = sig_stim(:)';
 end
-if isvector(sig_base)
+if ~iscell(sig_base) && isvector(sig_base)
     sig_base = sig_base(:)';
 end
-nSig = size(sig_stim, 1);
+if iscell(sig_stim)
+    nSig = numel(sig_stim);
+else
+    nSig = size(sig_stim, 1);
+end
 ratio_db = nan(nSig, numel(scan_freqs));
 near_floor_freq_mask = false(1, numel(scan_freqs));
-if isempty(sig_stim) || isempty(sig_base) || fs <= 0 || size(sig_stim, 1) ~= size(sig_base, 1)
+near_floor_row_mask = false(nSig, numel(scan_freqs));
+if isempty(sig_stim) || isempty(sig_base) || fs <= 0
+    return;
+end
+if iscell(sig_stim) ~= iscell(sig_base)
+    return;
+end
+if iscell(sig_stim)
+    if numel(sig_stim) ~= numel(sig_base)
+        return;
+    end
+else
+    if size(sig_stim, 1) ~= size(sig_base, 1)
+        return;
+    end
+end
+if nSig == 0
     return;
 end
 if nargin < 7 || ~isfinite(near_floor_mult) || near_floor_mult <= 0
@@ -2526,9 +2535,62 @@ for fi = 1:numel(scan_freqs)
     ratio_col = nan(nSig, 1);
     ratio_col(valid) = 10 * log10((p_stim(valid) + floor_use) ./ (p_base(valid) + floor_use));
     ratio_db(:, fi) = ratio_col;
+    near_floor_row_mask(valid, fi) = p_base(valid) <= near_floor_mult * floor_use;
     if any(valid)
-        near_floor_freq_mask(fi) = mean(p_base(valid) <= near_floor_mult * floor_use) >= 0.5;
+        near_floor_freq_mask(fi) = mean(near_floor_row_mask(valid, fi)) >= 0.5;
     end
+end
+end
+
+function [ratio_cube, near_floor_freq_count_per_trial] = compute_scan_ratio_for_window_batch(trial_cache, search_filters, stim_field, trial_mask, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult)
+nTrl = numel(trial_cache);
+nComp = size(search_filters, 2);
+nFreq = numel(scan_freqs);
+ratio_cube = nan(nComp, nTrl, nFreq);
+near_floor_freq_count_per_trial = zeros(nTrl, 1);
+if nComp == 0 || nTrl == 0 || ~any(trial_mask)
+    return;
+end
+
+sig_stim_cells = cell(0, 1);
+sig_base_cells = cell(0, 1);
+row_comp_idx = zeros(0, 1);
+row_trial_idx = zeros(0, 1);
+for trl = 1:nTrl
+    if ~trial_mask(trl)
+        continue;
+    end
+    tc = trial_cache{trl};
+    x_base = tc.x_base;
+    x_stim = tc.(stim_field);
+    if isempty(x_base) || isempty(x_stim)
+        continue;
+    end
+    comp_base = search_filters' * x_base;
+    comp_stim = search_filters' * x_stim;
+    for ci = 1:nComp
+        sig_base_cells{end+1, 1} = comp_base(ci, :); %#ok<AGROW>
+        sig_stim_cells{end+1, 1} = comp_stim(ci, :); %#ok<AGROW>
+        row_comp_idx(end+1, 1) = ci; %#ok<AGROW>
+        row_trial_idx(end+1, 1) = trl; %#ok<AGROW>
+    end
+end
+if isempty(sig_stim_cells)
+    return;
+end
+
+[ratio_rows, ~, near_floor_row_mask] = compute_scan_ratio_from_timeseries( ...
+    sig_stim_cells, sig_base_cells, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult);
+for ri = 1:size(ratio_rows, 1)
+    ratio_cube(row_comp_idx(ri), row_trial_idx(ri), :) = ratio_rows(ri, :);
+end
+for trl = 1:nTrl
+    rows = row_trial_idx == trl;
+    if ~any(rows)
+        continue;
+    end
+    near_floor_trial_mask = mean(near_floor_row_mask(rows, :), 1) >= 0.5;
+    near_floor_freq_count_per_trial(trl) = sum(near_floor_trial_mask);
 end
 end
 
@@ -4030,15 +4092,19 @@ end
 end
 
 function p_scan = compute_scan_power_mtmfft_ft(sig, fs, scan_freqs, scan_width_hz)
-if isvector(sig)
+if ~iscell(sig) && isvector(sig)
     sig = sig(:)';
 end
-nSig = size(sig, 1);
+if iscell(sig)
+    nSig = numel(sig);
+else
+    nSig = size(sig, 1);
+end
 p_scan = nan(nSig, numel(scan_freqs));
 if isempty(sig) || fs <= 0 || isempty(scan_freqs) || ~isfinite(scan_width_hz) || scan_width_hz <= 0
     return;
 end
-if size(sig, 2) < 8
+if ~iscell(sig) && size(sig, 2) < 8
     return;
 end
 
@@ -4049,7 +4115,14 @@ dat.fsample = fs;
 dat.trial = {};
 dat.time = {};
 for si = 1:nSig
-    x = double(sig(si, :));
+    if iscell(sig)
+        x = double(sig{si});
+    else
+        x = double(sig(si, :));
+    end
+    if iscolumn(x)
+        x = x';
+    end
     if any(~isfinite(x))
         continue;
     end
