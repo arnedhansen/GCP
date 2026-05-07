@@ -1234,9 +1234,6 @@ for subj = 1:nSubj
         end
 
         if adequate_full
-            clc;
-            fprintf('[GED] Subject %s (%d/%d) Trial 0/%d Full Window\n', ...
-                subjects{subj}, subj, nSubj, nTrl);
             trial_mask_full = has_base & has_full & ~bad_base_full;
             [ratio_cube_full, near_floor_count_full] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.full.searchFilters, 'x_full', trial_mask_full, ...
@@ -1244,6 +1241,7 @@ for subj = 1:nSubj
             powratio_components = ratio_cube_full;
             for trl = 1:nTrl
                 if mod(trl-1, trial_print_step) == 0 || trl == nTrl
+                    clc
                     fprintf('[GED] Subject %s (%d/%d) Trial %d/%d Full Window\n', ...
                         subjects{subj}, subj, nSubj, trl, nTrl);
                 end
@@ -3948,6 +3946,8 @@ trial_pr = [];
 lineharm_acc = [];
 trial_count = 0;
 trial_seen = 0;
+stim_sig_cells = {};
+base_sig_cells = {};
 total_trials_available = 0;
 for ci = 1:numel(dat_per_cond)
     if ~isempty(dat_per_cond{ci}) && isfield(dat_per_cond{ci}, 'trial')
@@ -3973,26 +3973,8 @@ for cond = 1:numel(dat_per_cond)
         if sum(idx_base) < 5 || sum(idx_stim) < 5
             continue;
         end
-        pr_full = compute_simple_power_ratio_scan(x_proj(idx_stim), x_proj(idx_base), dat.fsample, scan_freqs, scan_width);
-        if isempty(pr_full) || all(~isfinite(pr_full))
-            continue;
-        end
-        pr_full = pr_full(:)';
-        if ~any(band_mask)
-            continue;
-        end
-        pr_band = pr_full(band_mask);
-        if all(~isfinite(pr_band))
-            continue;
-        end
-        nonharm_val = nanmean(pr_full(band_mask & ~harm_mask));
-        harm_val = nanmean(pr_full(band_mask & harm_mask));
-        if ~isfinite(nonharm_val) || abs(nonharm_val) <= eps || ~isfinite(harm_val)
-            continue;
-        end
-        trial_gamma(end+1, 1) = nanmean(pr_band); %#ok<AGROW>
-        trial_pr(end+1, :) = pr_full; %#ok<AGROW>
-        lineharm_acc(end+1, 1) = max(harm_val, 0) / max(abs(nonharm_val), eps); %#ok<AGROW>
+        base_sig_cells{end+1, 1} = x_proj(idx_base); %#ok<AGROW>
+        stim_sig_cells{end+1, 1} = x_proj(idx_stim); %#ok<AGROW>
         trial_count = trial_count + 1;
         if trial_count >= max_trials
             break;
@@ -4004,6 +3986,31 @@ for cond = 1:numel(dat_per_cond)
 end
 proxy.n_trials_used = trial_count;
 if trial_count < 4
+    return;
+end
+
+trial_pr = compute_simple_power_ratio_scan_batch(stim_sig_cells, base_sig_cells, dat.fsample, scan_freqs, scan_width);
+if isempty(trial_pr)
+    return;
+end
+for ri = 1:size(trial_pr, 1)
+    pr_full = trial_pr(ri, :);
+    if all(~isfinite(pr_full)) || ~any(band_mask)
+        continue;
+    end
+    pr_band = pr_full(band_mask);
+    if all(~isfinite(pr_band))
+        continue;
+    end
+    nonharm_val = nanmean(pr_full(band_mask & ~harm_mask));
+    harm_val = nanmean(pr_full(band_mask & harm_mask));
+    if ~isfinite(nonharm_val) || abs(nonharm_val) <= eps || ~isfinite(harm_val)
+        continue;
+    end
+    trial_gamma(end+1, 1) = nanmean(pr_band); %#ok<AGROW>
+    lineharm_acc(end+1, 1) = max(harm_val, 0) / max(abs(nonharm_val), eps); %#ok<AGROW>
+end
+if isempty(trial_gamma) || isempty(lineharm_acc)
     return;
 end
 proxy.mean_pr_spectrum = nanmean(trial_pr, 1);
@@ -4087,6 +4094,40 @@ for fi = 1:numel(scan_freqs)
     end
     % dB ratio with robust additive floor for numerical stability.
     pr_scan(fi) = 10 * log10((p_stim + base_floor) / (p_base + base_floor));
+end
+end
+
+function pr_mat = compute_simple_power_ratio_scan_batch(sig_stim_cells, sig_base_cells, fs, scan_freqs, scan_width)
+nRows = numel(sig_stim_cells);
+pr_mat = nan(nRows, numel(scan_freqs));
+if nRows == 0 || numel(sig_base_cells) ~= nRows || fs <= 0
+    return;
+end
+p_stim_scan = compute_scan_power_mtmfft_ft(sig_stim_cells, fs, scan_freqs, scan_width);
+p_base_scan = compute_scan_power_mtmfft_ft(sig_base_cells, fs, scan_freqs, scan_width);
+if isempty(p_stim_scan) || isempty(p_base_scan)
+    return;
+end
+for ri = 1:nRows
+    p_stim_row = p_stim_scan(ri, :);
+    p_base_row = p_base_scan(ri, :);
+    valid_base = isfinite(p_base_row) & (p_base_row > 0);
+    if ~any(valid_base)
+        continue;
+    end
+    base_anchor = prctile(p_base_row(valid_base), 20);
+    base_median = median(p_base_row(valid_base), 'omitnan');
+    if ~isfinite(base_anchor) || base_anchor <= 0
+        base_anchor = base_median;
+    end
+    if ~isfinite(base_median) || base_median <= 0
+        base_median = base_anchor;
+    end
+    base_floor = max(0.25 * base_anchor, eps);
+    valid = isfinite(p_stim_row) & isfinite(p_base_row) & (p_base_row > 0);
+    ratio_row = nan(1, numel(scan_freqs));
+    ratio_row(valid) = 10 * log10((p_stim_row(valid) + base_floor) ./ (p_base_row(valid) + base_floor));
+    pr_mat(ri, :) = ratio_row;
 end
 end
 
