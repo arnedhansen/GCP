@@ -270,7 +270,7 @@ for subj = 1:nSubj
     end
     %% Build pooled covariance per window
     clc
-    fprintf('Subject %s (%d/%d) GED (early, full, late) (%d occ channels)\n', ...
+    fprintf('[GED] Subject %s (%d/%d) GED (early, full, late) (%d occ channels)\n', ...
         subjects{subj}, subj, nSubj, nOcc);
     rng(random_seed + subj, 'twister');
 
@@ -467,7 +467,8 @@ for subj = 1:nSubj
         topo_hotspot_rel_ci = hotspot_mass_ci / max(median(topo_finite), eps);
         % Lightweight artifact proxies from trial-level component spectra.
         proxy_ci = estimate_component_artifact_proxies( ...
-            w_ci, dat_per_cond, stim_windows{w}, baseline_window, scan_freqs, scan_width, artifact_proxy_max_trials);
+            w_ci, dat_per_cond, stim_windows{w}, baseline_window, scan_freqs, scan_width, artifact_proxy_max_trials, ...
+            subjects{subj}, subj, nSubj);
 
         searchFilters(:, ci) = w_ci;
         searchTopos(:, ci) = topo_ci;
@@ -3887,7 +3888,7 @@ for ci = 1:nComp
 end
 end
 
-function proxy = estimate_component_artifact_proxies(filter_w, dat_per_cond, stim_window, base_window, scan_freqs, scan_width, max_trials)
+function proxy = estimate_component_artifact_proxies(filter_w, dat_per_cond, stim_window, base_window, scan_freqs, scan_width, max_trials, subj_id, subj_idx, nSubj)
 proxy = struct( ...
     'lineharm_ratio', NaN, ...
     'stationarity_cv', NaN, ...
@@ -3902,6 +3903,15 @@ end
 if nargin < 8 || isempty(max_trials)
     max_trials = inf;
 end
+if nargin < 9 || isempty(subj_id)
+    subj_id = 'NA';
+end
+if nargin < 10 || isempty(subj_idx)
+    subj_idx = 0;
+end
+if nargin < 11 || isempty(nSubj)
+    nSubj = 0;
+end
 
 band_mask = scan_freqs >= 30 & scan_freqs <= 90;
 hf_mask = scan_freqs >= 70 & scan_freqs <= min(110, max(scan_freqs));
@@ -3915,12 +3925,26 @@ trial_gamma = [];
 trial_pr = [];
 lineharm_acc = [];
 trial_count = 0;
+trial_seen = 0;
+total_trials_available = 0;
+for ci = 1:numel(dat_per_cond)
+    if ~isempty(dat_per_cond{ci}) && isfield(dat_per_cond{ci}, 'trial')
+        total_trials_available = total_trials_available + numel(dat_per_cond{ci}.trial);
+    end
+end
+total_trials_target = min(total_trials_available, max_trials);
 for cond = 1:numel(dat_per_cond)
     dat = dat_per_cond{cond};
     if isempty(dat) || ~isfield(dat, 'trial')
         continue;
     end
     for trl = 1:numel(dat.trial)
+        trial_seen = trial_seen + 1;
+        if total_trials_target > 0
+            clc;
+            fprintf('[GED] Subject %s (%d/%d) FFT Trial %d/%d\n', ...
+                subj_id, subj_idx, nSubj, min(trial_seen, total_trials_target), total_trials_target);
+        end
         x = double(dat.trial{trl});
         t = dat.time{trl};
         if isempty(x) || isempty(t)
@@ -3961,7 +3985,6 @@ for cond = 1:numel(dat_per_cond)
         break;
     end
 end
-
 proxy.n_trials_used = trial_count;
 if trial_count < 4
     return;
