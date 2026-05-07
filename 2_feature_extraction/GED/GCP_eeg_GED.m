@@ -18,7 +18,7 @@
 %      regularisation and rank candidate components by eigenvalue.
 %   3. Score candidates using occipital evidence, spectral peak-form quality,
 %      and artifact metrics (combined front/temporal leak, line-harmonic
-%      ratio, HF slope, EMG artifact score, posterior/topography checks).
+%      ratio, EMG artifact score (includes HF slope), posterior/topography checks).
 %   4. Apply fixed preregistered eligibility thresholds (no adaptive,
 %      force-include, or rescue paths), exclude extreme-component outliers,
 %      and build an eigenvalue-weighted combined occipital component set.
@@ -80,7 +80,7 @@ pf_multi_peak_height_ratio_min = 0.80; % rival peak height must reach this fract
 pf_multi_peak_penalty_mult = 0.62;    % multiplier applied with edge/HF/roughness penalties when the rule fires
 max_combined_leak = 1.30;      % artifact guard: mean(front leak, temporal leak)
 max_lineharm_ratio = 0.60;     % artifact guard: line-harmonic dominance ratio
-max_hf_slope = -0.15;          % artifact guard: EMG-like high-frequency slope
+max_hf_slope = -0.15;          % informative only (tables/diagnostics); not a hard eligibility gate
 max_emg_score = 0.85;          % anchor: very high EMG score
 max_components_to_combine = 10;     % top-K cap for combined GED branch
 artifact_proxy_max_trials = 24;     % speed cap for proxy estimation per component/window
@@ -91,9 +91,16 @@ baseline_outlier_mad_mult = 3.5;    % robust log-power cutoff (MAD units) for ba
 baseline_outlier_min_trials = 12;   % minimum trial count before baseline outlier screening is applied
 ratio_floor_prctile = 20;           % robust baseline-power percentile used as floor anchor
 ratio_floor_frac = 0.25;            % floor is this fraction of the robust baseline-power anchor
+% Near-floor trial exclusion: when combined baseline power is low across many bins, the additive
+% floor dominates and p_base <= near_floor_mult*floor flags "unstable" bins; if unstable bin
+% fraction >= instability_trial_freq_frac_thr the whole trial is NaNed. That is conservative
+% and can clear essentially all trials for borderline subjects (see debug_GED_trial_powratio_workspace).
+% Relaxation options (pick one axis): near_floor_mult 1.5->2.0..2.5; trial_freq_frac_thr 0.35->0.5..0.65;
+% ratio_floor_frac slightly lower (changes dB ratio, not only QC). Or set trial_nearfloor_exclusion_enable=false for exploratory plots only.
 instability_near_floor_mult = 1.5;  % mark as near-floor when baseline <= this multiple of floor
-instability_component_frac_thr = 0.50; % unstable if >= this fraction of components are near-floor
+instability_component_frac_thr = 0.50; % (reserved; trial loop uses per-frequency near-floor counts only)
 instability_trial_freq_frac_thr = 0.35; % exclude trial when unstable at >= this frequency fraction
+trial_nearfloor_exclusion_enable = false; % if false, skip NaNing trials (still logs ratios); use for diagnostics only
 rank_stability_boot_reps = 200;     % bootstrap repetitions for rank-aggregation stability diagnostics
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
 peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
@@ -521,9 +528,9 @@ for subj = 1:nSubj
     pass_peak_gate = finite_metrics & (peak_form_score_vec >= min_peak_form);
     fail_leak = finite_metrics & (combined_leak_vec > max_combined_leak);
     fail_lineharm = finite_metrics & (lineharm_vec > max_lineharm_ratio);
-    fail_hf_slope = finite_metrics & (hf_slope_vec > max_hf_slope);
+    fail_hf_slope = false(nSearch, 1); % HF slope kept in EMG score only; no hard gate
     fail_emg_score = finite_metrics & (emg_artifact_score > max_emg_score);
-    hard_reject_flags_raw = fail_leak | fail_hf_slope | fail_emg_score | ...
+    hard_reject_flags_raw = fail_leak | fail_emg_score | ...
         topo_flat_fail_vec | topo_nonposterior_fail_vec | topo_fragmented_fail_vec;
     soft_warn_any = fail_lineharm;
     soft_warn_flags = struct( ...
@@ -1334,19 +1341,22 @@ for subj = 1:nSubj
         trial_unstable_full = unstable_trial_frac_full >= instability_trial_freq_frac_thr;
         trial_unstable_early = unstable_trial_frac_early >= instability_trial_freq_frac_thr;
         trial_unstable_late = unstable_trial_frac_late >= instability_trial_freq_frac_thr;
-        if any(trial_unstable_full)
-            powratio_methods_full(:, trial_unstable_full, :) = NaN;
-            powratio_components(:, trial_unstable_full, :) = NaN;
+        if trial_nearfloor_exclusion_enable
+            if any(trial_unstable_full)
+                powratio_methods_full(:, trial_unstable_full, :) = NaN;
+                powratio_components(:, trial_unstable_full, :) = NaN;
+            end
+            if any(trial_unstable_early)
+                powratio_methods_early(:, trial_unstable_early, :) = NaN;
+                powratio_components_early(:, trial_unstable_early, :) = NaN;
+            end
+            if any(trial_unstable_late)
+                powratio_methods_late(:, trial_unstable_late, :) = NaN;
+                powratio_components_late(:, trial_unstable_late, :) = NaN;
+            end
         end
-        if any(trial_unstable_early)
-            powratio_methods_early(:, trial_unstable_early, :) = NaN;
-            powratio_components_early(:, trial_unstable_early, :) = NaN;
-        end
-        if any(trial_unstable_late)
-            powratio_methods_late(:, trial_unstable_late, :) = NaN;
-            powratio_components_late(:, trial_unstable_late, :) = NaN;
-        end
-        if any(trial_unstable_full) || any(trial_unstable_early) || any(trial_unstable_late)
+        if trial_nearfloor_exclusion_enable && ...
+                (any(trial_unstable_full) || any(trial_unstable_early) || any(trial_unstable_late))
             msg = sprintf(['Numerical instability exclusion for subject %s condition %s: ', ...
                 'full=%d/%d, early=%d/%d, late=%d/%d trials removed (near-floor baseline).'], ...
                 subjects{subj}, condLabels{cond}, ...
@@ -3055,7 +3065,7 @@ extreme_outlier_fail = logical(extreme_component_outlier(ci));
 info_lines = { ...
     sprintf('extreme outlier: %d', extreme_outlier_fail), ...
     sprintf('combined_leak gate: %d (%.2f <= %.2f)', ~get_flag_value(rejection_flags, 'combined_leak', ci), combined_leak_val, max_combined_leak_thr), ...
-    sprintf('hf_slope gate: %d (%.2f <= %.2f)', ~get_flag_value(rejection_flags, 'hf_slope', ci), hf_slope_vec(ci), max_hf_slope_thr), ...
+    sprintf('hf_slope (not gated): %.2f (ref %.2f)', hf_slope_vec(ci), max_hf_slope_thr), ...
     sprintf('emg_score gate: %d (%.2f <= %.2f)', ~get_flag_value(rejection_flags, 'emg_score', ci), emg_score_vec(ci), max_emg_score_thr), ...
     sprintf('topo_flat gate: %d', ~get_flag_value(rejection_flags, 'topo_flat', ci)), ...
     sprintf('topo_nonposterior gate: %d', ~get_flag_value(rejection_flags, 'topo_nonposterior', ci)), ...
@@ -3938,7 +3948,7 @@ end
 end
 
 function reasons = compute_primary_rejection_reason(rejection_flags)
-reason_order = {'combined_leak', 'lineharm', 'hf_slope', 'emg_score', ...
+reason_order = {'combined_leak', 'lineharm', 'emg_score', ...
     'topo_flat', 'topo_nonposterior', 'topo_fragmented'};
 nComp = numel(rejection_flags.combined_leak);
 reasons = repmat({'pass'}, nComp, 1);
