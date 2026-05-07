@@ -123,14 +123,6 @@ topo_fragmented_hotspot_rel = 8.0;  % high hotspot/median ratio => likely fragme
 topo_occipital_override_min = 0.70; % strong posterior concentration override for class label
 random_seed = 123;                    % reproducible randomization
 
-% Validation settings
-simulation_validation_enable = true;
-simulation_reps = 40;
-simulation_snr_levels = [0.4 0.8 1.2];
-simulation_depth_levels = [0.6 1.0 1.4];
-simulation_overlap_levels = [0.15 0.35 0.55];
-simulation_artifact_levels = [0.0 0.25 0.5];
-
 % Raw dB spectrum peak detection parameters
 centroid_freq_range = [40 80];
 centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
@@ -237,7 +229,6 @@ benchmark_metric_separation_slope = nan(nSubj, 1);
 benchmark_metric_separation_delta = nan(nSubj, 1);
 benchmark_metric_reliability_trialcv = nan(4, nSubj);
 benchmark_metric_reliability_subjspread = nan(4, 1);
-simulation_validation_results = struct();
 primary_slope_stats = struct();
 primary_delta_stats = struct();
 
@@ -2065,7 +2056,7 @@ if exist('subjects', 'var') == 1 && numel(subjects) >= max(subj_idx) && numel(su
     xticklabels(subjects(subj_idx));
 end
 xlabel('Subject', 'FontSize', 18, 'FontWeight', 'bold');
-ylabel('\Delta mean frequency shift (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
+ylabel('\Delta Frequency Shift (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
 title('Gamma Frequency Shift', 'FontSize', 20, 'FontWeight', 'bold');
 set(gca, 'FontSize', 14, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 save_figure_png(fig_cond_shift_bar, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bar_GammaFreq.png'));
@@ -2359,10 +2350,10 @@ yline(0, 'k--', 'LineWidth', 1.5);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 18, 'Box', 'off');
 xlim([0.5 4.5]);
-ylim([-5 5]);
+ylim([-6 6]);
 xlabel('Contrast condition');
-ylabel('\Delta Gamma Frequency vs 25% [Hz]');
-title('Gamma Frequency Shift', ...
+ylabel('\Delta Gamma Frequency [Hz]');
+title('Gamma Peak Frequency Shift', ...
     'FontSize', 24, 'FontWeight', 'bold');
 
 cond_shift_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift.png');
@@ -2459,7 +2450,7 @@ set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
 xlim([0.5 4.5]);
 ylabel('Peak Power [dB]');
 title('Peak Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
-save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_PeakPower.png'));
+save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_power.png'));
 
 %% Condition-shift figure: normalized peak power trajectories
 fig_condition_shift_power = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -2492,21 +2483,12 @@ set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
 xlim([0.5 4.5]);
 ylim([-0.75 0.75]);
 xlabel('Contrast condition');
-ylabel('\Delta Peak Power vs 25% [dB]');
-title('Peak Power Shift', ...
+ylabel('\Delta Peak Power [dB]');
+title('Gamma Peak Power Shift', ...
     'FontSize', 24, 'FontWeight', 'bold');
 
-cond_shift_power_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_PeakPower.png');
+cond_shift_power_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_power.png');
 save_figure_png(fig_condition_shift_power, cond_shift_power_path);
-
-
-if simulation_validation_enable
-    fprintf('Ground-truth simulation validation (no CV)\n');
-    simulation_validation_results = run_ground_truth_simulation_validation( ...
-        headmodel, simulation_reps, simulation_snr_levels, simulation_depth_levels, ...
-        simulation_overlap_levels, simulation_artifact_levels, min_eigval_hard, ...
-        max_frontleak_hard, max_templeak_hard);
-end
 
 %% Save results
 save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_GED.mat');
@@ -2543,7 +2525,6 @@ save(save_path, ...
     'benchmark_metric_separation_slope', 'benchmark_metric_separation_delta', ...
     'benchmark_metric_reliability_trialcv', 'benchmark_metric_reliability_subjspread', ...
     'primary_slope_stats', 'primary_delta_stats', ...
-    'simulation_validation_results', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
@@ -4282,104 +4263,6 @@ for fi = 1:numel(scan_freqs)
     % dB ratio with robust additive floor for numerical stability.
     pr_scan(fi) = 10 * log10((p_stim + base_floor) / (p_base + base_floor));
 end
-end
-
-function sim_results = run_ground_truth_simulation_validation(headmodel, n_reps, snr_levels, depth_levels, overlap_levels, artifact_levels, min_eig_thr, max_frontleak_thr, max_templeak_thr)
-rng(917, 'twister');
-nChans = numel(headmodel.layANThead.label);
-chan_labels = headmodel.layANThead.label(:);
-occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO)', 'once')), chan_labels);
-front_mask = cellfun(@(l) ~isempty(regexp(l, '^(Fp|AF|F)', 'once')), chan_labels);
-temp_mask = cellfun(@(l) ~isempty(regexp(l, '^(T|TP|FT)', 'once')), chan_labels);
-if ~any(occ_mask), occ_mask(:) = false; occ_mask(1:max(1, round(0.15*nChans))) = true; end
-if ~any(front_mask), front_mask(:) = false; front_mask(1:max(1, round(0.15*nChans))) = true; end
-if ~any(temp_mask), temp_mask = ~occ_mask & ~front_mask; end
-
-sim_rows = [];
-for snr = snr_levels
-    for depth = depth_levels
-        for overlap = overlap_levels
-            for art = artifact_levels
-                for rep = 1:n_reps
-                    topo_gamma = zeros(nChans, 1);
-                    topo_gamma(occ_mask) = 1;
-                    topo_gamma(front_mask) = -0.2;
-                    topo_gamma = topo_gamma + 0.08 * randn(nChans, 1);
-                    topo_gamma = topo_gamma / max(norm(topo_gamma), eps);
-
-                    topo_non = randn(nChans, 1);
-                    topo_non = topo_non / max(norm(topo_non), eps);
-                    topo_emg = zeros(nChans, 1);
-                    topo_emg(front_mask | temp_mask) = 1;
-                    topo_emg = topo_emg + 0.2 * randn(nChans, 1);
-                    topo_emg = topo_emg / max(norm(topo_emg), eps);
-
-                    topo_non = (1-overlap) * topo_non + overlap * topo_gamma;
-                    topo_non = topo_non / max(norm(topo_non), eps);
-                    topo_gamma = depth * topo_gamma;
-
-                    cov_noise = eye(nChans);
-                    cov_base = cov_noise + (0.8 * topo_non * topo_non') + (art * topo_emg * topo_emg');
-                    cov_stim = cov_noise + ((0.8 + snr) * topo_gamma * topo_gamma') + ...
-                        (0.8 * topo_non * topo_non') + (1.2 * art * topo_emg * topo_emg');
-
-                    [W, D] = eig(cov_stim, cov_base);
-                    [evals, ord] = sort(real(diag(D)), 'descend');
-                    W = W(:, ord);
-                    n_search = min(20, numel(evals));
-                    ev = evals(1:n_search);
-                    occ_strength = abs(W(occ_mask, 1:n_search));
-                    front_strength = abs(W(front_mask, 1:n_search));
-                    temp_strength = abs(W(temp_mask, 1:n_search));
-                    occ_mean = mean(occ_strength, 1)';
-                    front_leak = mean(front_strength, 1)' ./ max(occ_mean, eps);
-                    temp_leak = mean(temp_strength, 1)' ./ max(occ_mean, eps);
-                    eligible = isfinite(ev) & (ev >= min_eig_thr) & ...
-                        (front_leak <= max_frontleak_thr) & (temp_leak <= max_templeak_thr);
-                    sel_idx = find(eligible);
-                    if isempty(sel_idx)
-                        sel_idx = 1;
-                    end
-                    sel_idx = sel_idx(:)';
-                    [~, ord_sel] = sort(ev(sel_idx), 'descend');
-                    sel_idx = sel_idx(ord_sel);
-                    sel_idx = sel_idx(1:min(10, numel(sel_idx)));
-                    sel_w = ev(sel_idx)';
-                    sel_w(sel_w <= 0 | ~isfinite(sel_w)) = 0;
-                    if sum(sel_w) <= 0
-                        sel_w = ones(size(sel_w));
-                    end
-                    sel_w = sel_w / sum(sel_w);
-                    w_comb = W(:, sel_idx) * sel_w(:);
-
-                    gamma_corr = abs(corr(w_comb, topo_gamma, 'rows', 'complete'));
-                    emg_corr = abs(corr(w_comb, topo_emg, 'rows', 'complete'));
-                    is_tp = gamma_corr >= 0.50;
-                    is_fp = emg_corr >= 0.50 & gamma_corr < 0.50;
-                    loc_err = 1 - gamma_corr;
-                    sim_rows = [sim_rows; snr, depth, overlap, art, rep, is_tp, is_fp, loc_err]; %#ok<AGROW>
-                end
-            end
-        end
-    end
-end
-
-if isempty(sim_rows)
-    sim_results = struct('table', table(), 'summary', struct());
-    return;
-end
-sim_tbl = array2table(sim_rows, 'VariableNames', ...
-    {'snr', 'depth', 'overlap', 'artifact', 'rep', 'tp', 'fp', 'locerr'});
-sim_results = struct();
-sim_results.table = sim_tbl;
-sim_results.summary = struct( ...
-    'sensitivity', mean(sim_tbl.tp), ...
-    'false_positive_rate', mean(sim_tbl.fp), ...
-    'specificity', 1 - mean(sim_tbl.fp), ...
-    'mean_localization_error', mean(sim_tbl.locerr));
-fprintf('Simulation summary: sens=%.3f, spec=%.3f, fpr=%.3f, locErr=%.3f\n', ...
-    sim_results.summary.sensitivity, sim_results.summary.specificity, ...
-    sim_results.summary.false_positive_rate, sim_results.summary.mean_localization_error);
 end
 
 function Wn = normalize_filters_to_noise_metric(W, covBase)
