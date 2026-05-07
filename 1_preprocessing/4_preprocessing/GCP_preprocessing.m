@@ -198,7 +198,7 @@ for subj = 1:length(subjects)
 
         %% Append data for conditions
         cfg = [];
-        cfg.keepsampleinfo = 'no';
+        cfg.keepsampleinfo = 'yes';
         data_c25 = ft_appenddata(cfg, data_c25{:});
         data_c50 = ft_appenddata(cfg, data_c50{:});
         data_c75 = ft_appenddata(cfg, data_c75{:});

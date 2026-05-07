@@ -49,6 +49,7 @@
 startup
 [subjects, paths, colors, headmodel] = setup('GCP');
 nSubj = length(subjects);
+total_runtime_tic = tic;
 
 % Time windows
 baseline_window = [-1.5, -0.25];
@@ -194,6 +195,7 @@ all_component_selection_stats_full  = cell(1, nSubj);
 all_component_selection_stats_early = cell(1, nSubj);
 all_component_selection_stats_late  = cell(1, nSubj);
 warning_log_by_subj = cell(nSubj, 1);
+subject_runtime_seconds = nan(nSubj, 1);
 
 all_trial_powratio_components_full  = cell(4, nSubj);
 all_trial_powratio_components_early = cell(4, nSubj);
@@ -209,9 +211,8 @@ primary_slope_stats = struct();
 primary_delta_stats = struct();
 
 %% Subject loop
-for subj = 1:nSubj
-    close all
-    tic
+parfor subj = 1:nSubj
+    subj_runtime_tic = tic;
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
     if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
     fig_save_dir_emg_exclusion = comp_sel_save_dir;
@@ -252,7 +253,6 @@ for subj = 1:nSubj
         post_w = ones(nChans, 1) / nChans;
     end
     %% Build pooled covariance per window
-    clc
     fprintf('[GED] Subject %s (%d/%d) GED (early, full, late) (%d occ channels)\n', ...
         subjects{subj}, subj, nSubj, nOcc);
     rng(random_seed + subj, 'twister');
@@ -934,20 +934,28 @@ for subj = 1:nSubj
         all_eigenvalues(subj) = evals_sorted_full(selected_idx_full(1));
     end
     pf_benchmark = build_pf_benchmark_summary(candidate_table_full, candidate_table_early, candidate_table_late);
-    all_component_selection_stats_full{subj}.selected_idx = selected_idx_full;
-    all_component_selection_stats_full{subj}.selected_weights = w_combined_full;
-    all_component_selection_stats_full{subj}.candidate_table = candidate_table_full;
-    all_component_selection_stats_full{subj}.pf_benchmark = pf_benchmark.full;
+    comp_stats_full = all_component_selection_stats_full{subj};
+    comp_stats_early = all_component_selection_stats_early{subj};
+    comp_stats_late = all_component_selection_stats_late{subj};
 
-    all_component_selection_stats_early{subj}.selected_idx = selected_idx_early;
-    all_component_selection_stats_early{subj}.selected_weights = w_combined_early;
-    all_component_selection_stats_early{subj}.candidate_table = candidate_table_early;
-    all_component_selection_stats_early{subj}.pf_benchmark = pf_benchmark.early;
+    comp_stats_full.selected_idx = selected_idx_full;
+    comp_stats_full.selected_weights = w_combined_full;
+    comp_stats_full.candidate_table = candidate_table_full;
+    comp_stats_full.pf_benchmark = pf_benchmark.full;
 
-    all_component_selection_stats_late{subj}.selected_idx = selected_idx_late;
-    all_component_selection_stats_late{subj}.selected_weights = w_combined_late;
-    all_component_selection_stats_late{subj}.candidate_table = candidate_table_late;
-    all_component_selection_stats_late{subj}.pf_benchmark = pf_benchmark.late;
+    comp_stats_early.selected_idx = selected_idx_early;
+    comp_stats_early.selected_weights = w_combined_early;
+    comp_stats_early.candidate_table = candidate_table_early;
+    comp_stats_early.pf_benchmark = pf_benchmark.early;
+
+    comp_stats_late.selected_idx = selected_idx_late;
+    comp_stats_late.selected_weights = w_combined_late;
+    comp_stats_late.candidate_table = candidate_table_late;
+    comp_stats_late.pf_benchmark = pf_benchmark.late;
+
+    all_component_selection_stats_full{subj} = comp_stats_full;
+    all_component_selection_stats_early{subj} = comp_stats_early;
+    all_component_selection_stats_late{subj} = comp_stats_late;
 
     cfg_topo = [];
     cfg_topo.layout    = headmodel.layANThead;
@@ -1119,6 +1127,19 @@ for subj = 1:nSubj
     filters.late.selected_idx = selected_idx_late_norm;
     filters.late.w_combined = w_combined_late_norm;
 
+    trial_counts_initial_local = zeros(1, 3);
+    trial_counts_retained_local = zeros(1, 3);
+    cond_trial_counts = zeros(1, 4);
+    for cond_count_i = 1:4
+        dat_count = dat_per_cond{cond_count_i};
+        if ~isempty(dat_count) && isfield(dat_count, 'trial') && ~isempty(dat_count.trial)
+            cond_trial_counts(cond_count_i) = numel(dat_count.trial);
+        end
+    end
+    total_trials_subject = sum(cond_trial_counts);
+    cond_trial_offsets = [0, cumsum(cond_trial_counts(1:end-1))];
+    window_labels = {'Full Window', 'Early Window', 'Late Window'};
+    window_ranges_ms = [full_window; early_window; late_window] * 1000;
     for cond = 1:4
 
         dat = dat_per_cond{cond};
@@ -1204,11 +1225,16 @@ for subj = 1:nSubj
             x_full = tc.x_full;
             x_early = tc.x_early;
             x_late = tc.x_late;
+            trial_global_idx = cond_trial_offsets(cond) + trl;
             if isempty(x_base)
                 continue;
             end
 
             if adequate_full && ~bad_base_full(trl)
+                clc;
+                fprintf('[GED] Subject %s (%d/%d) Trial %d/%d %s (%d-%dms)\n', ...
+                    subjects{subj}, subj, nSubj, trial_global_idx, total_trials_subject, ...
+                    window_labels{1}, round(window_ranges_ms(1, 1)), round(window_ranges_ms(1, 2)));
                 comp_base = filters.full.searchFilters' * x_base;
                 comp_stim = filters.full.searchFilters' * x_full;
                 [ratio_mat_full, near_floor_mask_full] = compute_scan_ratio_from_timeseries( ...
@@ -1232,6 +1258,10 @@ for subj = 1:nSubj
             end
 
             if adequate_early && ~bad_base_early(trl)
+                clc;
+                fprintf('[GED] Subject %s (%d/%d) Trial %d/%d %s (%d-%dms)\n', ...
+                    subjects{subj}, subj, nSubj, trial_global_idx, total_trials_subject, ...
+                    window_labels{2}, round(window_ranges_ms(2, 1)), round(window_ranges_ms(2, 2)));
                 comp_base = filters.early.searchFilters' * x_base;
                 comp_stim = filters.early.searchFilters' * x_early;
                 [ratio_mat_early, near_floor_mask_early] = compute_scan_ratio_from_timeseries( ...
@@ -1255,6 +1285,10 @@ for subj = 1:nSubj
             end
 
             if adequate_late && ~bad_base_late(trl)
+                clc;
+                fprintf('[GED] Subject %s (%d/%d) Trial %d/%d %s (%d-%dms)\n', ...
+                    subjects{subj}, subj, nSubj, trial_global_idx, total_trials_subject, ...
+                    window_labels{3}, round(window_ranges_ms(3, 1)), round(window_ranges_ms(3, 2)));
                 comp_base = filters.late.searchFilters' * x_base;
                 comp_stim = filters.late.searchFilters' * x_late;
                 [ratio_mat_late, near_floor_mask_late] = compute_scan_ratio_from_timeseries( ...
@@ -1409,12 +1443,12 @@ for subj = 1:nSubj
         all_trial_mean_late(cond, subj) = robust_trial_mean(trl_peaks_late(valid_s_late));
         all_trial_median_late(cond, subj) = median(trl_peaks_late(valid_s_late));
 
-        trial_counts_initial_by_subj_window(subj, 1) = trial_counts_initial_by_subj_window(subj, 1) + nTrl;
-        trial_counts_initial_by_subj_window(subj, 2) = trial_counts_initial_by_subj_window(subj, 2) + nTrl;
-        trial_counts_initial_by_subj_window(subj, 3) = trial_counts_initial_by_subj_window(subj, 3) + nTrl;
-        trial_counts_retained_by_subj_window(subj, 1) = trial_counts_retained_by_subj_window(subj, 1) + sum(valid_s);
-        trial_counts_retained_by_subj_window(subj, 2) = trial_counts_retained_by_subj_window(subj, 2) + sum(valid_s_early);
-        trial_counts_retained_by_subj_window(subj, 3) = trial_counts_retained_by_subj_window(subj, 3) + sum(valid_s_late);
+        trial_counts_initial_local(1) = trial_counts_initial_local(1) + nTrl;
+        trial_counts_initial_local(2) = trial_counts_initial_local(2) + nTrl;
+        trial_counts_initial_local(3) = trial_counts_initial_local(3) + nTrl;
+        trial_counts_retained_local(1) = trial_counts_retained_local(1) + sum(valid_s);
+        trial_counts_retained_local(2) = trial_counts_retained_local(2) + sum(valid_s_early);
+        trial_counts_retained_local(3) = trial_counts_retained_local(3) + sum(valid_s_late);
 
         % Peak power: highest dB value in the smoothed trial spectrum.
         all_trial_gamma_power(cond, subj) = robust_trial_mean(trial_peak_power_full);
@@ -1659,8 +1693,10 @@ for subj = 1:nSubj
         save_figure_png(fig, fullfile(comp_sel_save_dir, ...
             sprintf('GCP_eeg_GED_subj%s_%s.png', subjects{subj}, window_names{wi})));
     end
+    trial_counts_initial_by_subj_window(subj, :) = trial_counts_initial_local;
+    trial_counts_retained_by_subj_window(subj, :) = trial_counts_retained_local;
     warning_log_by_subj{subj} = warning_log_subj;
-    toc
+    subject_runtime_seconds(subj) = toc(subj_runtime_tic);
 end % subject loop
 
 warning_log_cells = warning_log_by_subj;
@@ -2362,7 +2398,17 @@ for si = 1:nSubj
 end
 
 clc
-fprintf('Done.\n');
+fprintf('[GED] DONE!\n');
+fprintf('[GED] Feature extraction results saved to: %s\n', save_path);
+fprintf('[GED] Candidate tables saved to: %s\n', candidate_table_csv_dir);
+for si = 1:nSubj
+    if isfinite(subject_runtime_seconds(si))
+        fprintf('[GED] Runtime Subject %s: %s\n', subjects{si}, format_runtime_hhmmss(subject_runtime_seconds(si)));
+    else
+        fprintf('[GED] Runtime Subject %s: n/a\n', subjects{si});
+    end
+end
+fprintf('[GED] Runtime TOTAL: %s\n', format_runtime_hhmmss(toc(total_runtime_tic)));
 
 function [trl_peaks, trl_peak_power, trl_centroid] = ...
     compute_trial_peak_metrics_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, ...
@@ -4001,6 +4047,16 @@ if ~any(valid_rows)
     return;
 end
 
+% Provide explicit sampleinfo to avoid FieldTrip reconstruction warnings.
+nTrials_valid = numel(dat.trial);
+dat.sampleinfo = zeros(nTrials_valid, 2);
+sample_start = 1;
+for ti = 1:nTrials_valid
+    nSamp = numel(dat.trial{ti});
+    dat.sampleinfo(ti, :) = [sample_start, sample_start + nSamp - 1];
+    sample_start = sample_start + nSamp;
+end
+
 cfg = [];
 cfg.method = 'mtmfft';
 cfg.output = 'pow';
@@ -4009,6 +4065,7 @@ cfg.foi = scan_freqs;
 cfg.tapsmofrq = scan_width_hz;
 cfg.pad = 'nextpow2';
 cfg.keeptrials = 'yes';
+cfg.feedback = 'none';
 try
     freq = ft_freqanalysis(cfg, dat);
 catch
@@ -4286,4 +4343,16 @@ y_edge = smooth_reflective(x, edge_win);
 edge_mask = freqs < core_band(1) | freqs > core_band(2);
 y(edge_mask) = y_edge(edge_mask);
 y(~edge_mask) = y_core(~edge_mask);
+end
+
+function runtime_str = format_runtime_hhmmss(runtime_seconds)
+if nargin < 1 || ~isfinite(runtime_seconds) || runtime_seconds < 0
+    runtime_str = 'n/a';
+    return;
+end
+runtime_seconds = round(runtime_seconds);
+h = floor(runtime_seconds / 3600);
+m = floor(mod(runtime_seconds, 3600) / 60);
+s = mod(runtime_seconds, 60);
+runtime_str = sprintf('%02d:%02d:%02d', h, m, s);
 end
