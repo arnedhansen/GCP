@@ -1534,17 +1534,17 @@ for subj = 1:nSubj
         all_trial_centroid{cond, subj}     = trl_centroid;
 
         valid_s = ~isnan(trl_peaks_single);
-        all_trial_mean_single(cond, subj)   = mean(trl_peaks_single(valid_s));
+        all_trial_mean_single(cond, subj)   = robust_trial_mean(trl_peaks_single(valid_s));
         all_trial_median_single(cond, subj) = median(trl_peaks_single(valid_s));
         all_trial_detrate_single(cond, subj) = sum(valid_s) / nTrl;
 
         valid_lo = ~isnan(trl_peaks_low);
-        all_trial_mean_low(cond, subj)   = mean(trl_peaks_low(valid_lo));
+        all_trial_mean_low(cond, subj)   = robust_trial_mean(trl_peaks_low(valid_lo));
         all_trial_median_low(cond, subj) = median(trl_peaks_low(valid_lo));
         all_trial_detrate_low(cond, subj) = sum(valid_lo) / nTrl;
 
         valid_hi = ~isnan(trl_peaks_high);
-        all_trial_mean_high(cond, subj)   = mean(trl_peaks_high(valid_hi));
+        all_trial_mean_high(cond, subj)   = robust_trial_mean(trl_peaks_high(valid_hi));
         all_trial_median_high(cond, subj) = median(trl_peaks_high(valid_hi));
         all_trial_detrate_high(cond, subj) = sum(valid_hi) / nTrl;
         valid_gap = valid_lo & valid_hi;
@@ -1553,7 +1553,7 @@ for subj = 1:nSubj
         end
 
         valid_c = ~isnan(trl_centroid);
-        all_trial_mean_centroid(cond, subj)   = mean(trl_centroid(valid_c));
+        all_trial_mean_centroid(cond, subj)   = robust_trial_mean(trl_centroid(valid_c));
         all_trial_median_centroid(cond, subj) = median(trl_centroid(valid_c));
         all_trial_detrate_centroid(cond, subj) = sum(valid_c) / nTrl;
 
@@ -1570,22 +1570,22 @@ for subj = 1:nSubj
         all_trial_peaks_single_late{cond, subj} = trl_peaks_single_late;
 
         valid_s_early = ~isnan(trl_peaks_single_early);
-        all_trial_mean_single_early(cond, subj) = mean(trl_peaks_single_early(valid_s_early));
+        all_trial_mean_single_early(cond, subj) = robust_trial_mean(trl_peaks_single_early(valid_s_early));
         all_trial_median_single_early(cond, subj) = median(trl_peaks_single_early(valid_s_early));
         all_trial_detrate_single_early(cond, subj) = sum(valid_s_early) / nTrl;
 
         valid_s_late = ~isnan(trl_peaks_single_late);
-        all_trial_mean_single_late(cond, subj) = mean(trl_peaks_single_late(valid_s_late));
+        all_trial_mean_single_late(cond, subj) = robust_trial_mean(trl_peaks_single_late(valid_s_late));
         all_trial_median_single_late(cond, subj) = median(trl_peaks_single_late(valid_s_late));
         all_trial_detrate_single_late(cond, subj) = sum(valid_s_late) / nTrl;
 
         % Peak power: highest dB value in the smoothed trial spectrum.
-        all_trial_gamma_power(cond, subj) = mean(trial_peak_power_full, 'omitnan');
-        all_trial_gamma_power_early(cond, subj) = mean(trial_peak_power_early, 'omitnan');
-        all_trial_gamma_power_late(cond, subj) = mean(trial_peak_power_late, 'omitnan');
-        all_trial_gamma_power_plotstat(cond, subj) = mean(trial_peak_power_full, 'omitnan');
-        all_trial_gamma_power_early_plotstat(cond, subj) = mean(trial_peak_power_early, 'omitnan');
-        all_trial_gamma_power_late_plotstat(cond, subj) = mean(trial_peak_power_late, 'omitnan');
+        all_trial_gamma_power(cond, subj) = robust_trial_mean(trial_peak_power_full);
+        all_trial_gamma_power_early(cond, subj) = robust_trial_mean(trial_peak_power_early);
+        all_trial_gamma_power_late(cond, subj) = robust_trial_mean(trial_peak_power_late);
+        all_trial_gamma_power_plotstat(cond, subj) = robust_trial_mean(trial_peak_power_full);
+        all_trial_gamma_power_early_plotstat(cond, subj) = robust_trial_mean(trial_peak_power_early);
+        all_trial_gamma_power_late_plotstat(cond, subj) = robust_trial_mean(trial_peak_power_late);
 
         % Time-split dual-peak, centroid, and reliability summaries.
         valid_lo_early = ~isnan(trl_peaks_low_early);
@@ -2333,7 +2333,7 @@ save_figure_png(fig_main_gamma, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_Gam
 fig_condition_shift = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
-dat_freq = all_trial_median_single;  % [condition x subject]
+dat_freq = all_trial_mean_single;  % [condition x subject], robust mean over trials
 dat_shift = dat_freq - dat_freq(1, :);  % Anchor each subject at 25% condition
 
 for s = 1:nSubj
@@ -2346,9 +2346,12 @@ for s = 1:nSubj
     end
 end
 
-mu_shift = nanmean(dat_shift, 2);
-sem_shift = nanstd(dat_shift, [], 2) ./ sqrt(sum(isfinite(dat_shift), 2));
-errorbar(1:4, mu_shift, sem_shift, '-o', ...
+med_shift = nanmedian(dat_shift, 2);
+mad_shift = nan(4, 1);
+for c = 1:4
+    mad_shift(c) = robust_mad(dat_shift(c, :));
+end
+errorbar(1:4, med_shift, mad_shift, '-o', ...
     'Color', colors(4, :), 'LineWidth', 2.8, 'CapSize', 10, ...
     'MarkerFaceColor', colors(4, :), 'MarkerSize', 8);
 
@@ -2356,7 +2359,7 @@ yline(0, 'k--', 'LineWidth', 1.5);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 18, 'Box', 'off');
 xlim([0.5 4.5]);
-ylim([-4 4]);
+ylim([-5 5]);
 xlabel('Contrast condition');
 ylabel('\Delta Gamma Frequency vs 25% [Hz]');
 title('Gamma Frequency Shift', ...
@@ -2474,9 +2477,12 @@ for s = 1:nSubj
     end
 end
 
-mu_power_shift = nanmean(dat_power_shift, 2);
-sem_power_shift = nanstd(dat_power_shift, [], 2) ./ sqrt(sum(isfinite(dat_power_shift), 2));
-errorbar(1:4, mu_power_shift, sem_power_shift, '-o', ...
+med_power_shift = nanmedian(dat_power_shift, 2);
+mad_power_shift = nan(4, 1);
+for c = 1:4
+    mad_power_shift(c) = robust_mad(dat_power_shift(c, :));
+end
+errorbar(1:4, med_power_shift, mad_power_shift, '-o', ...
     'Color', colors(4, :), 'LineWidth', 2.8, 'CapSize', 10, ...
     'MarkerFaceColor', colors(4, :), 'MarkerSize', 8);
 
@@ -4026,6 +4032,33 @@ end
 val = prctile(x, pctl);
 if ~isfinite(val)
     val = default_val;
+end
+end
+
+function m = robust_trial_mean(x)
+x = x(:);
+x = x(isfinite(x));
+if isempty(x)
+    m = NaN;
+    return;
+end
+if numel(x) < 4
+    m = mean(x);
+    return;
+end
+q = quantile(x, [0.25 0.75]);
+iqr_val = q(2) - q(1);
+if ~isfinite(iqr_val) || iqr_val <= eps
+    m = median(x);
+    return;
+end
+lo_thr = q(1) - 1.5 * iqr_val;
+hi_thr = q(2) + 1.5 * iqr_val;
+x_trim = x(x >= lo_thr & x <= hi_thr);
+if isempty(x_trim)
+    m = median(x);
+else
+    m = mean(x_trim);
 end
 end
 
