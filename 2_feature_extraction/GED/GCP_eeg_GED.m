@@ -64,7 +64,7 @@ analysis_freq_range = [30, 90];
 scan_freq_step_hz = 0.5;            % analysis grid resolution (Hz)
 scan_freqs = analysis_freq_range(1):scan_freq_step_hz:analysis_freq_range(2);
 nFreqs = length(scan_freqs);
-scan_width = 3;
+scan_width = 3; % +/- Hz integration around each scan frequency (multitaper PSD)
 
 %% GED parameters
 lambda = 0.05;
@@ -87,7 +87,6 @@ max_lineharm_ratio_hard = 0.60;     % artifact guard: line-harmonic dominance ra
 max_stationarity_cv_hard = 1.20;    % artifact guard: trialwise gamma instability
 max_burst_ratio_hard = 0.35;        % artifact guard: burst-dominated trials ratio
 max_hf_slope_hard = -0.15;          % artifact guard: EMG-like high-frequency slope
-min_condlock_rho_hard = 0.05;       % plausibility guard: weak condition locking
 max_emg_score_hard = 0.85;          % adaptive guard anchor: very high EMG score
 adaptive_class_quantile = 60;       % adaptive class split percentile (occ/eMG scores)
 adaptive_artifact_mad_mult = 1.25;  % adaptive artifact bound scale (MAD units)
@@ -331,24 +330,21 @@ for subj = 1:nSubj
         dat_stim_late = ft_selectdata(cfg_t, dat_gamma);
 
         nTrl = length(dat_stim_full.trial);
-        for trl = 1:nTrl
-            d_base = double(dat_base.trial{trl});
-            d_base = bsxfun(@minus, d_base, mean(d_base, 2));
-            cov_base_trl = (d_base * d_base') / size(d_base, 2);
-            covBase_full = covBase_full + cov_base_trl;
+        if nTrl > 0
+            cfg_cov = [];
+            cfg_cov.covariance = 'yes';
+            cfg_cov.covariancewindow = 'all';
+            cfg_cov.removemean = 'yes';
 
-            d = double(dat_stim_full.trial{trl});
-            d = bsxfun(@minus, d, mean(d, 2));
-            cov_stim_trl = (d * d') / size(d, 2);
-            covStim_full = covStim_full + cov_stim_trl;
+            tl_base = ft_timelockanalysis(cfg_cov, dat_base);
+            tl_stim_full = ft_timelockanalysis(cfg_cov, dat_stim_full);
+            tl_stim_early = ft_timelockanalysis(cfg_cov, dat_stim_early);
+            tl_stim_late = ft_timelockanalysis(cfg_cov, dat_stim_late);
 
-            d = double(dat_stim_early.trial{trl});
-            d = bsxfun(@minus, d, mean(d, 2));
-            covStim_early = covStim_early + (d * d') / size(d, 2);
-
-            d = double(dat_stim_late.trial{trl});
-            d = bsxfun(@minus, d, mean(d, 2));
-            covStim_late = covStim_late + (d * d') / size(d, 2);
+            covBase_full = covBase_full + double(tl_base.cov) * nTrl;
+            covStim_full = covStim_full + double(tl_stim_full.cov) * nTrl;
+            covStim_early = covStim_early + double(tl_stim_early.cov) * nTrl;
+            covStim_late = covStim_late + double(tl_stim_late.cov) * nTrl;
         end
         nTrials_total = nTrials_total + nTrl;
     end
@@ -438,7 +434,6 @@ for subj = 1:nSubj
         searchStationarityCV = nan(nSearch, 1);
         searchBurstRatio = nan(nSearch, 1);
         searchHFSlope = nan(nSearch, 1);
-        searchCondLockRho = nan(nSearch, 1);
         searchProxyUnknown = false(nSearch, 1);
         searchEmgClass = repmat({'unassigned'}, nSearch, 1);
         searchMeanPrSpectrum = nan(nSearch, numel(scan_freqs));
@@ -502,7 +497,6 @@ for subj = 1:nSubj
         searchStationarityCV(ci) = proxy_ci.stationarity_cv;
         searchBurstRatio(ci) = proxy_ci.burst_ratio;
         searchHFSlope(ci) = proxy_ci.hf_slope;
-        searchCondLockRho(ci) = proxy_ci.cond_lock_rho;
         searchProxyUnknown(ci) = proxy_ci.unknown_high_risk;
         searchMeanPrSpectrum(ci, :) = proxy_ci.mean_pr_spectrum(:)';
         searchTopoPosteriorConcentration(ci) = topo_posterior_concentration_ci;
@@ -523,7 +517,6 @@ for subj = 1:nSubj
     stationarity_vec = searchStationarityCV;
     burst_vec = searchBurstRatio;
     hf_slope_vec = searchHFSlope;
-    condlock_vec = searchCondLockRho;
     unknown_proxy_vec = logical(searchProxyUnknown(:));
     % Non-finite proxy values are explicitly marked as unknown/high-risk.
     unknown_proxy_vec = unknown_proxy_vec | ~isfinite(lineharm_vec) | ~isfinite(stationarity_vec) | ...
@@ -557,7 +550,6 @@ for subj = 1:nSubj
         'max_stationarity', max_stationarity_cv_hard, ...
         'max_burst_ratio', max_burst_ratio_hard, ...
         'max_hf_slope', max_hf_slope_hard, ...
-        'min_condlock', min_condlock_rho_hard, ...
         'max_emg_score', max_emg_score_hard, ...
         'class_quantile', adaptive_class_quantile, ...
         'artifact_mad_mult', adaptive_artifact_mad_mult, ...
@@ -565,7 +557,7 @@ for subj = 1:nSubj
         'occ_margin_floor', adaptive_occ_margin_floor);
     adaptive_thr = build_adaptive_component_thresholds( ...
         eval_raw_vec, corr_vec, leak_vec, temp_leak_vec, lineharm_vec, stationarity_vec, ...
-        burst_vec, hf_slope_vec, condlock_vec, occipital_evidence, emg_artifact_score, default_thresholds);
+        burst_vec, hf_slope_vec, occipital_evidence, emg_artifact_score, default_thresholds);
     enforced_min_eigval = adaptive_thr.min_eigval;
     pass_eig_gate = finite_metrics & (eval_raw_vec >= enforced_min_eigval);
     single_peak_mode_mask = strcmpi(peak_form_mode_vec, 'single') | strcmpi(peak_form_mode_vec, 'dominant');
@@ -580,7 +572,6 @@ for subj = 1:nSubj
     fail_stationarity = finite_metrics & (stationarity_vec > adaptive_thr.max_stationarity);
     fail_burst = finite_metrics & (burst_vec > adaptive_thr.max_burst_ratio);
     fail_hf_slope = finite_metrics & (hf_slope_vec > adaptive_thr.max_hf_slope);
-    fail_condlock = finite_metrics & (condlock_vec < adaptive_thr.min_condlock);
     fail_emg_score = finite_metrics & (emg_artifact_score > adaptive_thr.max_emg_score);
     severe_front_leak = finite_metrics & (leak_vec > adaptive_thr.max_frontleak * hard_leak_severity_mult);
     severe_temp_leak = finite_metrics & (temp_leak_vec > adaptive_thr.max_templeak * hard_leak_severity_mult);
@@ -596,14 +587,13 @@ for subj = 1:nSubj
         severe_emg_score | unknown_proxy_vec | topo_flat_fail_vec | ...
         topo_nonposterior_fail_vec | topo_fragmented_fail_vec;
     soft_warn_any = fail_front_leak | fail_temp_leak | fail_corr | fail_stationarity | ...
-        fail_burst | fail_condlock | fail_emg_score | fail_occ_margin;
+        fail_burst | fail_emg_score | fail_occ_margin;
     soft_warn_flags = struct( ...
         'front_leak', fail_front_leak & ~severe_front_leak, ...
         'temp_leak', fail_temp_leak & ~severe_temp_leak, ...
         'corr', fail_corr, ...
         'stationarity', fail_stationarity, ...
         'burst', fail_burst, ...
-        'condlock', fail_condlock, ...
         'emg_score', fail_emg_score & ~severe_emg_score, ...
         'occ_margin', fail_occ_margin, ...
         'any', soft_warn_any);
@@ -617,7 +607,6 @@ for subj = 1:nSubj
         'stationarity', fail_stationarity, ...
         'burst', fail_burst, ...
         'hf_slope', fail_hf_slope, ...
-        'condlock', fail_condlock, ...
         'emg_score', fail_emg_score, ...
         'occ_margin', fail_occ_margin, ...
         'severe_front_leak', severe_front_leak, ...
@@ -786,7 +775,6 @@ for subj = 1:nSubj
             'thr_stationarity', adaptive_thr.max_stationarity, ...
             'thr_burst_ratio', adaptive_thr.max_burst_ratio, ...
             'thr_hf_slope', adaptive_thr.max_hf_slope, ...
-            'thr_condlock', adaptive_thr.min_condlock, ...
             'thr_emg_score', adaptive_thr.max_emg_score, ...
             'thr_occ_margin', adaptive_thr.min_occ_margin);
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_HARD_ELIGIBLE_COMPONENTS', msg, hard_metrics);
@@ -811,7 +799,6 @@ for subj = 1:nSubj
     candidate_table.stationarity_cv = stationarity_vec;
     candidate_table.burst_ratio = burst_vec;
     candidate_table.hf_slope = hf_slope_vec;
-    candidate_table.cond_lock_rho = condlock_vec;
     candidate_table.peak_clarity = peak_bonus_vec;
     candidate_table.peak_count = peak_count_vec;
     candidate_table.peak_form_score = peak_form_score_vec;
@@ -880,7 +867,6 @@ for subj = 1:nSubj
     candidate_table.fail_stationarity = rejection_flags.stationarity;
     candidate_table.fail_burst = rejection_flags.burst;
     candidate_table.fail_hf_slope = rejection_flags.hf_slope;
-    candidate_table.fail_condlock = rejection_flags.condlock;
     candidate_table.fail_emg_score = rejection_flags.emg_score;
     candidate_table.fail_occ_margin = rejection_flags.occ_margin;
     candidate_table.fail_severe_front_leak = rejection_flags.severe_front_leak;
@@ -894,7 +880,6 @@ for subj = 1:nSubj
     candidate_table.soft_warn_corr = soft_warn_flags.corr;
     candidate_table.soft_warn_stationarity = soft_warn_flags.stationarity;
     candidate_table.soft_warn_burst = soft_warn_flags.burst;
-    candidate_table.soft_warn_condlock = soft_warn_flags.condlock;
     candidate_table.soft_warn_emg_score = soft_warn_flags.emg_score;
     candidate_table.soft_warn_occ_margin = soft_warn_flags.occ_margin;
     candidate_table.hard_eligible_raw = hard_eligible_raw;
@@ -2709,21 +2694,15 @@ end
 if nargin < 7 || ~isfinite(near_floor_mult) || near_floor_mult <= 0
     near_floor_mult = 1.5;
 end
-n_fft = 2^nextpow2(max([size(sig_stim, 2), size(sig_base, 2), 256]));
-f_axis = fs * (0:(n_fft/2)) / n_fft;
-px_stim = abs(fft(sig_stim, n_fft, 2)).^2;
-px_base = abs(fft(sig_base, n_fft, 2)).^2;
-px_stim = px_stim(:, 1:numel(f_axis));
-px_base = px_base(:, 1:numel(f_axis));
+p_stim_scan = compute_scan_power_mtmfft_ft(sig_stim, fs, scan_freqs, scan_width_hz);
+p_base_scan = compute_scan_power_mtmfft_ft(sig_base, fs, scan_freqs, scan_width_hz);
+if isempty(p_stim_scan) || isempty(p_base_scan)
+    return;
+end
 floor_use = max(base_floor, eps);
 for fi = 1:numel(scan_freqs)
-    f0 = scan_freqs(fi);
-    f_mask = f_axis >= max(0, f0 - scan_width_hz) & f_axis <= (f0 + scan_width_hz);
-    if ~any(f_mask)
-        continue;
-    end
-    p_stim = mean(px_stim(:, f_mask), 2, 'omitnan');
-    p_base = mean(px_base(:, f_mask), 2, 'omitnan');
+    p_stim = p_stim_scan(:, fi);
+    p_base = p_base_scan(:, fi);
     valid = isfinite(p_stim) & isfinite(p_base) & (p_base > 0);
     ratio_col = nan(nSig, 1);
     ratio_col(valid) = 10 * log10((p_stim(valid) + floor_use) ./ (p_base(valid) + floor_use));
@@ -3989,7 +3968,7 @@ end
 end
 
 function thr = build_adaptive_component_thresholds(eval_raw_vec, corr_vec, leak_vec, temp_leak_vec, ...
-    lineharm_vec, stationarity_vec, burst_vec, hf_slope_vec, condlock_vec, occ_evidence, emg_score, defaults)
+    lineharm_vec, stationarity_vec, burst_vec, hf_slope_vec, occ_evidence, emg_score, defaults)
 thr = struct();
 thr.min_eigval = min(defaults.min_eigval, max(defaults.min_eig_floor, robust_percentile(eval_raw_vec, 35, defaults.min_eigval)));
 thr.max_frontleak = max(defaults.max_frontleak, robust_upper_bound(leak_vec, defaults.max_frontleak, defaults.artifact_mad_mult));
@@ -3999,7 +3978,6 @@ thr.max_lineharm = max(defaults.max_lineharm, robust_upper_bound(lineharm_vec, d
 thr.max_stationarity = max(defaults.max_stationarity, robust_upper_bound(stationarity_vec, defaults.max_stationarity, defaults.artifact_mad_mult));
 thr.max_burst_ratio = max(defaults.max_burst_ratio, robust_upper_bound(burst_vec, defaults.max_burst_ratio, defaults.artifact_mad_mult));
 thr.max_hf_slope = max(defaults.max_hf_slope, robust_upper_bound(hf_slope_vec, defaults.max_hf_slope, defaults.artifact_mad_mult));
-thr.min_condlock = min(defaults.min_condlock, robust_lower_bound(condlock_vec, defaults.min_condlock, defaults.artifact_mad_mult));
 thr.occ_class_thr = robust_percentile(occ_evidence, defaults.class_quantile, 0.6);
 thr.emg_class_thr = robust_percentile(emg_score, defaults.class_quantile, 0.5);
 thr.max_emg_score = max(defaults.max_emg_score, robust_upper_bound(emg_score, defaults.max_emg_score, defaults.artifact_mad_mult));
@@ -4120,7 +4098,7 @@ end
 
 function reasons = compute_primary_rejection_reason(rejection_flags)
 reason_order = {'unknown_proxy', 'front_leak', 'temp_leak', 'corr', ...
-    'lineharm', 'stationarity', 'burst', 'hf_slope', 'condlock', 'emg_score', 'occ_margin', ...
+    'lineharm', 'stationarity', 'burst', 'hf_slope', 'emg_score', 'occ_margin', ...
     'topo_flat', 'topo_nonposterior', 'topo_fragmented'};
 nComp = numel(rejection_flags.unknown_proxy);
 reasons = repmat({'pass'}, nComp, 1);
@@ -4141,7 +4119,6 @@ proxy = struct( ...
     'stationarity_cv', NaN, ...
     'burst_ratio', NaN, ...
     'hf_slope', NaN, ...
-    'cond_lock_rho', NaN, ...
     'unknown_high_risk', true, ...
     'mean_pr_spectrum', nan(1, numel(scan_freqs)), ...
     'n_trials_used', 0);
@@ -4162,7 +4139,6 @@ end
 
 trial_gamma = [];
 trial_pr = [];
-trial_cond = [];
 lineharm_acc = [];
 trial_count = 0;
 for cond = 1:numel(dat_per_cond)
@@ -4201,7 +4177,6 @@ for cond = 1:numel(dat_per_cond)
         end
         trial_gamma(end+1, 1) = nanmean(pr_band); %#ok<AGROW>
         trial_pr(end+1, :) = pr_full; %#ok<AGROW>
-        trial_cond(end+1, 1) = cond; %#ok<AGROW>
         lineharm_acc(end+1, 1) = max(harm_val, 0) / max(abs(nonharm_val), eps); %#ok<AGROW>
         trial_count = trial_count + 1;
         if trial_count >= max_trials
@@ -4233,18 +4208,8 @@ if sum(hf_mask) >= 3
     proxy.hf_slope = p(1);
 end
 
-cond_means = nan(4, 1);
-for c = 1:4
-    cond_means(c) = nanmean(trial_gamma(trial_cond == c));
-end
-valid_cond = isfinite(cond_means);
-if sum(valid_cond) >= 3
-    r = corr((1:4)', cond_means, 'rows', 'complete', 'type', 'Spearman');
-    proxy.cond_lock_rho = r;
-end
-
 proxy.unknown_high_risk = ~(isfinite(proxy.lineharm_ratio) && isfinite(proxy.stationarity_cv) && ...
-    isfinite(proxy.burst_ratio) && isfinite(proxy.hf_slope) && isfinite(proxy.cond_lock_rho));
+    isfinite(proxy.burst_ratio) && isfinite(proxy.hf_slope));
 end
 
 function bad_mask = flag_unreliable_baseline_trials(base_power_vals, mad_mult, min_trials, enable_flag)
@@ -4278,26 +4243,13 @@ if isempty(x_stim) || isempty(x_base) || fs <= 0
 end
 x_stim = x_stim(:)';
 x_base = x_base(:)';
-n_fft = 2^nextpow2(max([numel(x_stim), numel(x_base), 256]));
-f_axis = fs * (0:(n_fft/2)) / n_fft;
-px_stim = abs(fft(x_stim, n_fft)).^2;
-px_base = abs(fft(x_base, n_fft)).^2;
-px_stim = px_stim(1:numel(f_axis));
-px_base = px_base(1:numel(f_axis));
-base_band_scan = nan(size(scan_freqs));
-for fi = 1:numel(scan_freqs)
-    f0 = scan_freqs(fi);
-    f_lo = max(0, f0 - scan_width);
-    f_hi = f0 + scan_width;
-    f_mask = f_axis >= f_lo & f_axis <= f_hi;
-    if ~any(f_mask)
-        continue;
-    end
-    p_stim = mean(px_stim(f_mask));
-    p_base = mean(px_base(f_mask));
-    base_band_scan(fi) = p_base;
-    pr_scan(fi) = p_stim;
+p_stim_scan = compute_scan_power_mtmfft_ft(x_stim, fs, scan_freqs, scan_width);
+p_base_scan = compute_scan_power_mtmfft_ft(x_base, fs, scan_freqs, scan_width);
+if isempty(p_stim_scan) || isempty(p_base_scan)
+    return;
 end
+pr_scan = p_stim_scan(1, :);
+base_band_scan = p_base_scan(1, :);
 valid_base = isfinite(base_band_scan) & (base_band_scan > 0);
 if ~any(valid_base)
     pr_scan(:) = NaN;
@@ -4322,6 +4274,82 @@ for fi = 1:numel(scan_freqs)
     % dB ratio with robust additive floor for numerical stability.
     pr_scan(fi) = 10 * log10((p_stim + base_floor) / (p_base + base_floor));
 end
+end
+
+function p_scan = compute_scan_power_mtmfft_ft(sig, fs, scan_freqs, scan_width_hz)
+if isvector(sig)
+    sig = sig(:)';
+end
+nSig = size(sig, 1);
+p_scan = nan(nSig, numel(scan_freqs));
+if isempty(sig) || fs <= 0 || isempty(scan_freqs) || ~isfinite(scan_width_hz) || scan_width_hz <= 0
+    return;
+end
+if size(sig, 2) < 8
+    return;
+end
+
+valid_rows = false(nSig, 1);
+trial_data = {};
+time_data = {};
+for si = 1:nSig
+    x = double(sig(si, :));
+    finite_mask = isfinite(x);
+    if sum(finite_mask) < 8
+        continue;
+    end
+    % Replace non-finite samples after demeaning finite samples only.
+    x_center = mean(x(finite_mask));
+    x(~finite_mask) = x_center;
+    x = x - mean(x);
+    valid_rows(si) = true;
+    trial_data{end+1} = x; %#ok<AGROW>
+    time_data{end+1} = (0:(numel(x)-1)) / fs; %#ok<AGROW>
+end
+if ~any(valid_rows)
+    return;
+end
+
+dat = [];
+dat.label = {'comp'};
+dat.fsample = fs;
+dat.trial = cell(1, numel(trial_data));
+dat.time = cell(1, numel(trial_data));
+for ti = 1:numel(trial_data)
+    dat.trial{ti} = trial_data{ti};
+    dat.time{ti} = time_data{ti};
+end
+
+cfg = [];
+cfg.method = 'mtmfft';
+cfg.output = 'pow';
+cfg.taper = 'dpss';
+cfg.foi = scan_freqs;
+cfg.tapsmofrq = scan_width_hz;
+cfg.pad = 'nextpow2';
+cfg.keeptrials = 'yes';
+freq = ft_freqanalysis(cfg, dat);
+
+pow = freq.powspctrm;
+if ndims(pow) == 3
+    pow = squeeze(pow(:, 1, :));
+elseif isvector(pow)
+    pow = pow(:)';
+end
+if size(pow, 1) == 1 && sum(valid_rows) > 1
+    pow = repmat(pow, sum(valid_rows), 1);
+end
+
+if size(pow, 2) ~= numel(scan_freqs) && isfield(freq, 'freq') && ~isempty(freq.freq)
+    freq_axis = freq.freq(:)';
+    pow_interp = nan(size(pow, 1), numel(scan_freqs));
+    for ri = 1:size(pow, 1)
+        pow_interp(ri, :) = interp1(freq_axis, pow(ri, :), scan_freqs, 'linear', NaN);
+    end
+    pow = pow_interp;
+end
+
+p_scan(valid_rows, :) = pow;
 end
 
 function Wn = normalize_filters_to_noise_metric(W, covBase)
