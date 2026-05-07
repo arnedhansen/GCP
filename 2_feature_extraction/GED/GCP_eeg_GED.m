@@ -344,6 +344,10 @@ parfor subj = 1:nSubj
     rejection_flags_full = struct(); rejection_flags_early = struct(); rejection_flags_late = struct();
     soft_warn_flags_full = struct(); soft_warn_flags_early = struct(); soft_warn_flags_late = struct();
     candidate_table_full = struct(); candidate_table_early = struct(); candidate_table_late = struct();
+    W_combined_full_norm = []; W_combined_early_norm = []; W_combined_late_norm = [];
+    w_combined_full_norm = []; w_combined_early_norm = []; w_combined_late_norm = [];
+    W_top_full_norm = []; W_top_early_norm = []; W_top_late_norm = [];
+    selected_idx_full_norm = []; selected_idx_early_norm = []; selected_idx_late_norm = [];
 
     % Simulated signed occipital template (same for all windows)
     sim_template = zeros(nChans, 1);
@@ -1129,6 +1133,13 @@ parfor subj = 1:nSubj
 
     trial_counts_initial_local = zeros(1, 3);
     trial_counts_retained_local = zeros(1, 3);
+    subj_powratio_fullscan = cell(1, 4);
+    subj_powratio_early = cell(1, 4);
+    subj_powratio_late = cell(1, 4);
+    subj_peaks_full = cell(1, 4);
+    subj_peaks_early = cell(1, 4);
+    subj_peaks_late = cell(1, 4);
+    subj_centroid_full = cell(1, 4);
     cond_trial_counts = zeros(1, 4);
     for cond_count_i = 1:4
         dat_count = dat_per_cond{cond_count_i};
@@ -1368,6 +1379,9 @@ parfor subj = 1:nSubj
         all_trial_powratio{cond, subj} = powratio_trials_full;
         all_trial_powratio_early{cond, subj} = powratio_trials_early;
         all_trial_powratio_late{cond, subj} = powratio_trials_late;
+        subj_powratio_fullscan{cond} = powratio_trials_fullscan;
+        subj_powratio_early{cond} = powratio_trials_early;
+        subj_powratio_late{cond} = powratio_trials_late;
         all_trial_powratio_fullscan_plotstat{cond, subj} = powratio_trials_fullscan_plotstat;
         all_trial_powratio_plotstat{cond, subj} = powratio_trials_full_plotstat;
         all_trial_powratio_early_plotstat{cond, subj} = powratio_trials_early_plotstat;
@@ -1380,6 +1394,8 @@ parfor subj = 1:nSubj
 
         all_trial_peaks{cond, subj} = trl_peaks;
         all_trial_centroid{cond, subj}     = trl_centroid;
+        subj_peaks_full{cond} = trl_peaks;
+        subj_centroid_full{cond} = trl_centroid;
 
         valid_s = ~isnan(trl_peaks);
         all_trial_mean(cond, subj)   = robust_trial_mean(trl_peaks(valid_s));
@@ -1434,6 +1450,8 @@ parfor subj = 1:nSubj
         all_trial_outlier_mask_power_late{cond, subj} = outlier_mask_power_late;
         all_trial_peaks_early{cond, subj} = trl_peaks_early;
         all_trial_peaks_late{cond, subj} = trl_peaks_late;
+        subj_peaks_early{cond} = trl_peaks_early;
+        subj_peaks_late{cond} = trl_peaks_late;
 
         valid_s_early = ~isnan(trl_peaks_early);
         all_trial_mean_early(cond, subj) = robust_trial_mean(trl_peaks_early(valid_s_early));
@@ -1503,25 +1521,25 @@ parfor subj = 1:nSubj
     window_names = {'full', 'early', 'late'};
     for wi = 1:3
         if wi == 1
-            pr_source = all_trial_powratio_fullscan;
-            peaks_source = all_trial_peaks;
-            centroid_source = all_trial_centroid;
+            pr_source = subj_powratio_fullscan;
+            peaks_source = subj_peaks_full;
+            centroid_source = subj_centroid_full;
             topo_mat_window = searchTopos_full;
             selected_idx_window = selected_idx_full;
             selected_w_window = w_combined_full;
             eigvals_window = evals_sorted_full;
         elseif wi == 2
-            pr_source = all_trial_powratio_early;
-            peaks_source = all_trial_peaks_early;
-            centroid_source = cell(size(all_trial_powratio_early));
+            pr_source = subj_powratio_early;
+            peaks_source = subj_peaks_early;
+            centroid_source = cell(1, 4);
             topo_mat_window = searchTopos_early;
             selected_idx_window = selected_idx_early;
             selected_w_window = w_combined_early;
             eigvals_window = evals_sorted_early;
         else
-            pr_source = all_trial_powratio_late;
-            peaks_source = all_trial_peaks_late;
-            centroid_source = cell(size(all_trial_powratio_late));
+            pr_source = subj_powratio_late;
+            peaks_source = subj_peaks_late;
+            centroid_source = cell(1, 4);
             topo_mat_window = searchTopos_late;
             selected_idx_window = selected_idx_late;
             selected_w_window = w_combined_late;
@@ -1531,7 +1549,7 @@ parfor subj = 1:nSubj
         pr_raw_mats = cell(1, 4);
         row1_clim = ones(1, 4);
         for cond = 1:4
-            pr_raw_mats{cond} = pr_source{cond, subj};
+            pr_raw_mats{cond} = pr_source{cond};
             if ~isempty(pr_raw_mats{cond})
                 cond_vals = abs(pr_raw_mats{cond}(:));
                 cond_vals = cond_vals(isfinite(cond_vals));
@@ -1560,7 +1578,7 @@ parfor subj = 1:nSubj
                 colormap(gca, cmap_div);
                 caxis([-row1_clim(cond) row1_clim(cond)]);
                 cb = colorbar; cb.FontSize = 8;
-                ctd = centroid_source{cond, subj};
+                ctd = centroid_source{cond};
                 if ~isempty(ctd)
                     valid_ctd = ~isnan(ctd);
                     tr_idx = find(valid_ctd);
@@ -1674,7 +1692,7 @@ parfor subj = 1:nSubj
         edges = 30:2:90;
         hist_mat = zeros(4, length(edges)-1);
         for cond = 1:4
-            tpk = peaks_source{cond, subj};
+            tpk = peaks_source{cond};
             if ~isempty(tpk)
                 tpk = tpk(~isnan(tpk));
                 hist_mat(cond,:) = histcounts(tpk, edges);
