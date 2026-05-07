@@ -211,8 +211,9 @@ primary_slope_stats = struct();
 primary_delta_stats = struct();
 
 %% Subject loop
-parfor subj = 1:nSubj
+for subj = 1:nSubj
     subj_runtime_tic = tic;
+    fprintf('[GED] Subject %s (%d/%d) started\n', subjects{subj}, subj, nSubj);
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
     if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
     fig_save_dir_emg_exclusion = comp_sel_save_dir;
@@ -252,9 +253,9 @@ parfor subj = 1:nSubj
     else
         post_w = ones(nChans, 1) / nChans;
     end
+    
     %% Build pooled covariance per window
-    fprintf('[GED] Subject %s (%d/%d) GED (early, full, late) (%d occ channels)\n', ...
-        subjects{subj}, subj, nSubj, nOcc);
+    clc; fprintf('[GED] Subject %s (%d/%d) GED (early, full, late) (%d occ channels)\n', subjects{subj}, subj, nSubj, nOcc);
     rng(random_seed + subj, 'twister');
 
     stim_windows = {full_window, early_window, late_window};
@@ -1146,6 +1147,7 @@ parfor subj = 1:nSubj
         if isempty(dat), continue; end
 
         nTrl = length(dat.trial);
+        trial_print_step = 25;
         powratio_methods_full = nan(1, nTrl, nFreqs);
         powratio_methods_early = nan(1, nTrl, nFreqs);
         powratio_methods_late = nan(1, nTrl, nFreqs);
@@ -1232,12 +1234,19 @@ parfor subj = 1:nSubj
         end
 
         if adequate_full
+            clc;
+            fprintf('[GED] Subject %s (%d/%d) Trial 0/%d Full Window\n', ...
+                subjects{subj}, subj, nSubj, nTrl);
             trial_mask_full = has_base & has_full & ~bad_base_full;
             [ratio_cube_full, near_floor_count_full] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.full.searchFilters, 'x_full', trial_mask_full, ...
                 fsample, scan_freqs, scan_width, base_floor_full, instability_near_floor_mult);
             powratio_components = ratio_cube_full;
             for trl = 1:nTrl
+                if mod(trl-1, trial_print_step) == 0 || trl == nTrl
+                    fprintf('[GED] Subject %s (%d/%d) Trial %d/%d Full Window\n', ...
+                        subjects{subj}, subj, nSubj, trl, nTrl);
+                end
                 ratio_mat_full = squeeze(powratio_components(:, trl, :));
                 if isvector(ratio_mat_full)
                     ratio_mat_full = reshape(ratio_mat_full, size(powratio_components, 1), []);
@@ -1259,12 +1268,19 @@ parfor subj = 1:nSubj
         end
 
         if adequate_early
+            clc;
+            fprintf('[GED] Subject %s (%d/%d) Trial 0/%d Early Window\n', ...
+                subjects{subj}, subj, nSubj, nTrl);
             trial_mask_early = has_base & has_early & ~bad_base_early;
             [ratio_cube_early, near_floor_count_early] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.early.searchFilters, 'x_early', trial_mask_early, ...
                 fsample, scan_freqs, scan_width, base_floor_early, instability_near_floor_mult);
             powratio_components_early = ratio_cube_early;
             for trl = 1:nTrl
+                if mod(trl-1, trial_print_step) == 0 || trl == nTrl
+                    fprintf('[GED] Subject %s (%d/%d) Trial %d/%d Early Window\n', ...
+                        subjects{subj}, subj, nSubj, trl, nTrl);
+                end
                 ratio_mat_early = squeeze(powratio_components_early(:, trl, :));
                 if isvector(ratio_mat_early)
                     ratio_mat_early = reshape(ratio_mat_early, size(powratio_components_early, 1), []);
@@ -1286,12 +1302,19 @@ parfor subj = 1:nSubj
         end
 
         if adequate_late
+            clc;
+            fprintf('[GED] Subject %s (%d/%d) Trial 0/%d Late Window\n', ...
+                subjects{subj}, subj, nSubj, nTrl);
             trial_mask_late = has_base & has_late & ~bad_base_late;
             [ratio_cube_late, near_floor_count_late] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.late.searchFilters, 'x_late', trial_mask_late, ...
                 fsample, scan_freqs, scan_width, base_floor_late, instability_near_floor_mult);
             powratio_components_late = ratio_cube_late;
             for trl = 1:nTrl
+                if mod(trl-1, trial_print_step) == 0 || trl == nTrl
+                    fprintf('[GED] Subject %s (%d/%d) Trial %d/%d Late Window\n', ...
+                        subjects{subj}, subj, nSubj, trl, nTrl);
+                end
                 ratio_mat_late = squeeze(powratio_components_late(:, trl, :));
                 if isvector(ratio_mat_late)
                     ratio_mat_late = reshape(ratio_mat_late, size(powratio_components_late, 1), []);
@@ -1850,19 +1873,6 @@ slope_post = benchmark_metric_separation_slope;
 delta_post = benchmark_metric_separation_delta;
 primary_slope_stats = compute_one_sample_stats(slope_post);
 primary_delta_stats = compute_one_sample_stats(delta_post);
-
-fprintf('Primary inference (combined GED, subject-level)\n');
-fprintf(['Slope: n=%d, mean=%.3f Hz/condition, t(%d)=%.3f, p=%.4f, ', ...
-         '95%% CI [%.3f, %.3f], d=%.3f\n'], ...
-    primary_slope_stats.n, primary_slope_stats.mean, primary_slope_stats.df, ...
-    primary_slope_stats.tstat, primary_slope_stats.p, ...
-    primary_slope_stats.ci_low, primary_slope_stats.ci_high, primary_slope_stats.cohens_d);
-fprintf(['Delta (100%%-25%%): n=%d, mean=%.3f Hz, t(%d)=%.3f, p=%.4f, ', ...
-         '95%% CI [%.3f, %.3f], d=%.3f\n'], ...
-    primary_delta_stats.n, primary_delta_stats.mean, primary_delta_stats.df, ...
-    primary_delta_stats.tstat, primary_delta_stats.p, ...
-    primary_delta_stats.ci_low, primary_delta_stats.ci_high, primary_delta_stats.cohens_d);
-
 tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
 
 % ---------- Panel 1: condition slope ----------
@@ -2085,11 +2095,8 @@ end
 apply_dynamic_summary_ylims();
 save_figure_png(fig_summary_late, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary_late.png'));
 
-%% Grand average gamma figures
-close all
-fprintf('\nCreating grand average figures...\n');
-
 %% Grand average: peak frequency (stats-style boxplot, non-baselined frequency)
+close all
 fig_box1_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
@@ -2212,14 +2219,6 @@ save_figure_png(fig_condition_shift, cond_shift_path);
 [gamma_slope_full, gamma_delta_full] = compute_condition_separation_from_matrix(all_trial_median);
 [gamma_slope_early, gamma_delta_early] = compute_condition_separation_from_matrix(all_trial_median_early);
 [gamma_slope_late, gamma_delta_late] = compute_condition_separation_from_matrix(all_trial_median_late);
-fprintf('\nTime-split gamma separation (descriptive):\n');
-fprintf('Full  slope=%.3f Hz/condition, delta(100-25)=%.3f Hz\n', ...
-    mean(gamma_slope_full, 'omitnan'), mean(gamma_delta_full, 'omitnan'));
-fprintf('Early slope=%.3f Hz/condition, delta(100-25)=%.3f Hz\n', ...
-    mean(gamma_slope_early, 'omitnan'), mean(gamma_delta_early, 'omitnan'));
-fprintf('Late  slope=%.3f Hz/condition, delta(100-25)=%.3f Hz\n', ...
-    mean(gamma_slope_late, 'omitnan'), mean(gamma_delta_late, 'omitnan'));
-
 fig_main_gamma_windows = figure('Position', [0 0 1512 982], 'Color', 'w');
 tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
 
@@ -4283,54 +4282,6 @@ if isempty(warning_log)
     warning_log = entry;
 else
     warning_log(end+1, 1) = entry;
-end
-end
-
-function print_subject_warning_summary(warning_log)
-fprintf('Per-subject warning summary\n');
-if isempty(warning_log)
-    fprintf('No warnings were logged across subjects.\n');
-    return;
-end
-
-for wi = 1:numel(warning_log)
-    w = warning_log(wi);
-    fprintf('%3d) subject=%s | code=%s\n', wi, w.subject, w.code);
-    fprintf('     %s\n', w.message);
-    if strcmp(w.code, 'NO_HARD_ELIGIBLE_COMPONENTS')
-        m = w.metrics;
-        fprintf(['     selection diagnostics: nSearch=%d, finite=%d, passEig=%d, artifactFlagged=%d, ', ...
-                 'unknownHighRisk=%d, passRaw=%d, excludedOutlier=%d\n'], ...
-            m.n_search, m.n_finite_metrics, m.n_pass_eig, m.n_artifact_flagged, ...
-            m.n_unknown_high_risk, m.n_pass_all_raw, m.n_excluded_extreme_component_outlier);
-        if isfield(m, 'top_fail_idx') && isfinite(m.top_fail_idx)
-            fprintf(['     top failing component: C%d | eig=%.3f (thr=%.3f, pass=%d), ', ...
-                     'corr=%.3f (thr=%.3f), ratio=%.3f, artifact=%d\n'], ...
-                m.top_fail_idx, m.top_fail_eig, m.thr_eig, m.top_fail_pass_eig, ...
-                m.top_fail_corr, m.thr_corr, ...
-                m.top_fail_ratio, m.top_fail_artifact);
-        end
-    elseif strcmp(w.code, 'NO_OCCIPITAL_COMPONENTS') || strcmp(w.code, 'TOO_FEW_HARD_COMPONENTS')
-        m = w.metrics;
-        if isfield(m, 'n_valid_components')
-            fprintf('     combined-selection diagnostics: valid=%d, minRequired=%d\n', ...
-                m.n_valid_components, m.min_required);
-        else
-            fprintf('     combined-selection diagnostics: nHardEligible=%d, nFiniteScores=%d\n', ...
-                m.n_hard_eligible, m.n_finite_scores);
-        end
-    elseif strcmp(w.code, 'EXTREME_COMPONENT_OUTLIER_EXCLUDED')
-        m = w.metrics;
-        fprintf('     outlier diagnostics: C%d, lambda1=%.3f, lambda2=%.3f, ratio12=%.3f\n', ...
-            m.component_idx, m.lambda1, m.lambda2, m.lambda1_lambda2_ratio);
-    end
-end
-
-codes = {warning_log.code};
-[u_codes, ~, ic] = unique(codes);
-fprintf('\nWarning counts by code:\n');
-for ci = 1:numel(u_codes)
-    fprintf('  %s: %d\n', u_codes{ci}, sum(ic == ci));
 end
 end
 
