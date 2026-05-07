@@ -32,14 +32,14 @@
 %   3. Flag numerical-instability cases (near-floor baseline power across
 %      many frequencies/components) and exclude unstable trials automatically.
 %   4. Detect per-trial spectral features (single-peak, low/high peaks,
-%      centroid) and compute peak-centered gamma power.
+%      centroid) and compute peak power.
 %
 % Outputs
 % -------
 %   - Per-condition/per-subject peak frequency and power summaries
 %     (full, early, late windows).
 %   - Combined-method benchmark summaries:
-%     detectability, prominence, trial CV, and condition separation.
+%     detectability, trial CV, peak power, and condition separation.
 %   - Subject diagnostics (component selection, rejection reasons,
 %     topographies, spectra), group summary figures, and GLMM check.
 %   - Optional ground-truth simulation validation.
@@ -58,7 +58,6 @@ late_window = [1.0, 2.0];
 
 % Gamma frequency range
 gamma_range = [30, 90];
-gamma_peak_power_halfwidth_hz = 2.5;
 
 % Narrowband scanning parameters (direct analysis-band scan only)
 analysis_freq_range = [30, 90];
@@ -133,9 +132,6 @@ simulation_overlap_levels = [0.15 0.35 0.55];
 simulation_artifact_levels = [0.0 0.25 0.5];
 
 % Raw dB spectrum peak detection parameters
-peak_min_prom_frac = 0.15;         % MinPeakProminence as fraction of current-spectrum max
-peak_min_distance_hz = 5;          % MinPeakDistance in Hz
-peak_min_prom_abs = 0.02;          % absolute prominence floor (robustness in low-amplitude trials)
 centroid_freq_range = [40 80];
 centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
@@ -196,8 +192,6 @@ all_trial_median_gap_early    = nan(4, nSubj);
 all_trial_median_gap_late     = nan(4, nSubj);
 all_trial_median_centroid_early = nan(4, nSubj);
 all_trial_median_centroid_late  = nan(4, nSubj);
-all_trial_prominence_early    = nan(4, nSubj);
-all_trial_prominence_late     = nan(4, nSubj);
 all_trial_trialcv_early       = nan(4, nSubj);
 all_trial_trialcv_late        = nan(4, nSubj);
 all_trial_mean_centroid   = nan(4, nSubj);
@@ -239,7 +233,6 @@ all_trial_powratio_components_full  = cell(4, nSubj);
 all_trial_powratio_components_early = cell(4, nSubj);
 all_trial_powratio_components_late  = cell(4, nSubj);
 benchmark_metric_detectability = nan(4, nSubj);
-benchmark_metric_prominence = nan(4, nSubj);
 benchmark_metric_separation_slope = nan(nSubj, 1);
 benchmark_metric_separation_delta = nan(nSubj, 1);
 benchmark_metric_reliability_trialcv = nan(4, nSubj);
@@ -540,7 +533,7 @@ for subj = 1:nSubj
         isfinite(lineharm_vec) & isfinite(stationarity_vec) & isfinite(burst_vec) & ...
         isfinite(hf_slope_vec);
     [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
-        searchMeanPrSpectrum, scan_freqs, analysis_freq_range, peak_min_prom_frac, peak_min_distance_hz);
+        searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
     [peak_form_score_vec, peak_form_mode_vec, peak_form_diag] = compute_peak_form_template_score_from_spectra( ...
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
     topo_posterior_vec = searchTopoPosteriorConcentration;
@@ -834,7 +827,6 @@ for subj = 1:nSubj
     candidate_table.peak_form_trough_depth = peak_form_diag.best_trough_depth;
     candidate_table.peak_form_minor_peak_count = peak_form_diag.minor_peak_count;
     candidate_table.peak_form_minor_peak_relmax = peak_form_diag.minor_peak_relmax;
-    candidate_table.peak_form_minor_peak_prom_relmax = peak_form_diag.minor_peak_prom_relmax;
     candidate_table.peak_form_edge_ratio = peak_form_diag.edge_ratio;
     candidate_table.peak_form_edge_run = peak_form_diag.edge_run_score;
     candidate_table.peak_form_edge_artifact_flag = peak_form_diag.edge_artifact_flag;
@@ -1531,74 +1523,10 @@ for subj = 1:nSubj
         all_trial_powratio_early_plotstat{cond, subj} = powratio_trials_early_plotstat;
         all_trial_powratio_late_plotstat{cond, subj} = powratio_trials_late_plotstat;
         %% Per-trial peak detection
-        trl_peaks_single = nan(nTrl, 1);
-        trl_peaks_low    = nan(nTrl, 1);
-        trl_peaks_high   = nan(nTrl, 1);
-        trl_centroid     = nan(nTrl, 1);
-
-        for trl = 1:nTrl
-            pr_full = powratio_trials_fullscan(trl, :);
-            if all(isnan(pr_full)), continue; end
-
-            pr_proc = pr_full;
-            pr_proc = movmean(pr_proc, max(1, round(trial_peak_smooth_n)), 'omitnan');
-            valid = isfinite(pr_proc) & isfinite(scan_freqs);
-            pr_proc = pr_proc(valid);
-            freq_use = scan_freqs(valid);
-            if numel(pr_proc) < 7
-                continue;
-            end
-            y_pos = max(pr_proc, 0);
-            robust_scale = robust_mad(pr_proc);
-            if ~isfinite(robust_scale) || robust_scale <= eps
-                robust_scale = iqr(pr_proc);
-            end
-            if ~isfinite(robust_scale) || robust_scale <= eps
-                robust_scale = 1;
-            end
-
-            % Stripe-center metric: spectral centroid of positive raw mass in 40-80 Hz.
-            centroid_mask_use = freq_use >= centroid_freq_range(1) & freq_use <= centroid_freq_range(2);
-            pr_band = pr_proc(centroid_mask_use);
-            freq_band = freq_use(centroid_mask_use);
-            w_pos = max(pr_band, 0);
-            pos_mass = sum(w_pos);
-            total_abs_mass = sum(abs(pr_band));
-            if pos_mass > 0 && max(pr_band) >= centroid_min_peak && ...
-                    (pos_mass / max(total_abs_mass, eps)) >= centroid_posfrac_min
-                trl_centroid(trl) = sum(freq_band .* w_pos) / pos_mass;
-            end
-
-            % Single-peak: tallest prominent peak
-            mprom = max([0, max(y_pos) * peak_min_prom_frac, peak_min_prom_abs, 0.8 * robust_scale]);
-            [pks, locs] = findpeaks(y_pos, freq_use, ...
-                'MinPeakProminence', mprom, ...
-                'MinPeakDistance', peak_min_distance_hz);
-
-            if ~isempty(pks)
-                [~, best_pk] = max(pks);
-                trl_peaks_single(trl) = locs(best_pk);
-            end
-
-            % Dual-peak: hard 50 Hz boundary.
-            [pks_all, locs_all] = findpeaks(y_pos, freq_use, ...
-                'MinPeakDistance', peak_min_distance_hz);
-            pos_mask = pks_all > 0;
-            pks_pos  = pks_all(pos_mask);
-            locs_pos = locs_all(pos_mask);
-            in_lo = locs_pos >= 30 & locs_pos <= 49;
-            in_hi = locs_pos >= 50 & locs_pos <= 90;
-            if any(in_lo)
-                [~, bi] = max(pks_pos(in_lo));
-                tmp = locs_pos(in_lo);
-                trl_peaks_low(trl) = tmp(bi);
-            end
-            if any(in_hi)
-                [~, bi] = max(pks_pos(in_hi));
-                tmp = locs_pos(in_hi);
-                trl_peaks_high(trl) = tmp(bi);
-            end
-        end
+        [trl_peaks_single, trial_peak_power_full, trl_peaks_low, trl_peaks_high, trl_centroid] = ...
+            compute_trial_peak_metrics_from_powratio_fullscan( ...
+            powratio_trials_fullscan, scan_freqs, true(size(scan_freqs)), ...
+            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min);
 
         all_trial_peaks_single{cond, subj} = trl_peaks_single;
         all_trial_peaks_low{cond, subj}    = trl_peaks_low;
@@ -1629,13 +1557,15 @@ for subj = 1:nSubj
         all_trial_median_centroid(cond, subj) = median(trl_centroid(valid_c));
         all_trial_detrate_centroid(cond, subj) = sum(valid_c) / nTrl;
 
-        % Time-split single-peak summaries.
-        trl_peaks_single_early = detect_single_peaks_from_powratio_fullscan( ...
-            powratio_trials_early_fullscan, scan_freqs, true(size(scan_freqs)), trial_peak_smooth_n, ...
-            peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz);
-        trl_peaks_single_late = detect_single_peaks_from_powratio_fullscan( ...
-            powratio_trials_late_fullscan, scan_freqs, true(size(scan_freqs)), trial_peak_smooth_n, ...
-            peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz);
+        % Time-split peak summaries.
+        [trl_peaks_single_early, trial_peak_power_early, trl_peaks_low_early, trl_peaks_high_early, trl_centroid_early] = ...
+            compute_trial_peak_metrics_from_powratio_fullscan( ...
+            powratio_trials_early_fullscan, scan_freqs, true(size(scan_freqs)), ...
+            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min);
+        [trl_peaks_single_late, trial_peak_power_late, trl_peaks_low_late, trl_peaks_high_late, trl_centroid_late] = ...
+            compute_trial_peak_metrics_from_powratio_fullscan( ...
+            powratio_trials_late_fullscan, scan_freqs, true(size(scan_freqs)), ...
+            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min);
         all_trial_peaks_single_early{cond, subj} = trl_peaks_single_early;
         all_trial_peaks_single_late{cond, subj} = trl_peaks_single_late;
 
@@ -1649,29 +1579,15 @@ for subj = 1:nSubj
         all_trial_median_single_late(cond, subj) = median(trl_peaks_single_late(valid_s_late));
         all_trial_detrate_single_late(cond, subj) = sum(valid_s_late) / nTrl;
 
-        % Peak-centered gamma power: mean dB change from baseline within peak +/- 2.5 Hz.
-        [trial_gamma_power_full, all_trial_gamma_power(cond, subj)] = compute_peak_centered_gamma_power( ...
-            powratio_trials_full, scan_freqs, trl_peaks_single, gamma_peak_power_halfwidth_hz);
-        [trial_gamma_power_early, all_trial_gamma_power_early(cond, subj)] = compute_peak_centered_gamma_power( ...
-            powratio_trials_early, scan_freqs, trl_peaks_single_early, gamma_peak_power_halfwidth_hz);
-        [trial_gamma_power_late, all_trial_gamma_power_late(cond, subj)] = compute_peak_centered_gamma_power( ...
-            powratio_trials_late, scan_freqs, trl_peaks_single_late, gamma_peak_power_halfwidth_hz);
-        all_trial_gamma_power_plotstat(cond, subj) = mean(trial_gamma_power_full, 'omitnan');
-        all_trial_gamma_power_early_plotstat(cond, subj) = mean(trial_gamma_power_early, 'omitnan');
-        all_trial_gamma_power_late_plotstat(cond, subj) = mean(trial_gamma_power_late, 'omitnan');
+        % Peak power: highest dB value in the smoothed trial spectrum.
+        all_trial_gamma_power(cond, subj) = mean(trial_peak_power_full, 'omitnan');
+        all_trial_gamma_power_early(cond, subj) = mean(trial_peak_power_early, 'omitnan');
+        all_trial_gamma_power_late(cond, subj) = mean(trial_peak_power_late, 'omitnan');
+        all_trial_gamma_power_plotstat(cond, subj) = mean(trial_peak_power_full, 'omitnan');
+        all_trial_gamma_power_early_plotstat(cond, subj) = mean(trial_peak_power_early, 'omitnan');
+        all_trial_gamma_power_late_plotstat(cond, subj) = mean(trial_peak_power_late, 'omitnan');
 
-        % Time-split dual-peak, centroid, prominence, and reliability summaries.
-        [~, trl_peaks_low_early, trl_peaks_high_early, trl_centroid_early, trl_peak_prom_early] = ...
-            compute_trial_peak_metrics_from_powratio_fullscan( ...
-            powratio_trials_early_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            centroid_band_mask, trial_peak_smooth_n, peak_min_prom_frac, peak_min_prom_abs, ...
-            peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min);
-        [~, trl_peaks_low_late, trl_peaks_high_late, trl_centroid_late, trl_peak_prom_late] = ...
-            compute_trial_peak_metrics_from_powratio_fullscan( ...
-            powratio_trials_late_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            centroid_band_mask, trial_peak_smooth_n, peak_min_prom_frac, peak_min_prom_abs, ...
-            peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min);
-
+        % Time-split dual-peak, centroid, and reliability summaries.
         valid_lo_early = ~isnan(trl_peaks_low_early);
         valid_hi_early = ~isnan(trl_peaks_high_early);
         if any(valid_lo_early)
@@ -1687,10 +1603,6 @@ for subj = 1:nSubj
         valid_cent_early = isfinite(trl_centroid_early);
         if any(valid_cent_early)
             all_trial_median_centroid_early(cond, subj) = median(trl_centroid_early(valid_cent_early));
-        end
-        valid_prom_early = isfinite(trl_peak_prom_early);
-        if any(valid_prom_early)
-            all_trial_prominence_early(cond, subj) = mean(trl_peak_prom_early(valid_prom_early));
         end
         if sum(valid_s_early) >= 2
             vf_early = trl_peaks_single_early(valid_s_early);
@@ -1712,10 +1624,6 @@ for subj = 1:nSubj
         valid_cent_late = isfinite(trl_centroid_late);
         if any(valid_cent_late)
             all_trial_median_centroid_late(cond, subj) = median(trl_centroid_late(valid_cent_late));
-        end
-        valid_prom_late = isfinite(trl_peak_prom_late);
-        if any(valid_prom_late)
-            all_trial_prominence_late(cond, subj) = mean(trl_peak_prom_late(valid_prom_late));
         end
         if sum(valid_s_late) >= 2
             vf_late = trl_peaks_single_late(valid_s_late);
@@ -1983,9 +1891,7 @@ end
 print_subject_warning_summary(warning_log);
 
 %% Combined GED metrics (full window only)
-all_trial_powratio_window = all_trial_powratio;
 benchmark_metric_detectability = nan(4, nSubj);
-benchmark_metric_prominence = nan(4, nSubj);
 benchmark_metric_separation_slope = nan(nSubj, 1);
 benchmark_metric_separation_delta = nan(nSubj, 1);
 benchmark_metric_reliability_trialcv = nan(4, nSubj);
@@ -1994,36 +1900,16 @@ benchmark_metric_reliability_subjspread = nan(4, 1);
 for subj = 1:nSubj
     cond_medians = nan(4, 1);
     for cond = 1:4
-        pr_raw = all_trial_powratio_window{cond, subj};
-        if isempty(pr_raw)
+        peak_freq = all_trial_peaks_single{cond, subj};
+        if isempty(peak_freq)
             continue;
         end
-        nTrl = size(pr_raw, 1);
-        peak_freq = nan(nTrl, 1);
-        peak_prom = nan(nTrl, 1);
-        for trl = 1:nTrl
-            y = movmean(pr_raw(trl, :), 5);
-            if all(isnan(y))
-                continue;
-            end
-            mprom = max(0, max(y) * peak_min_prom_frac);
-            [pks, locs, ~, p] = findpeaks(y, scan_freqs, ...
-                'MinPeakDistance', peak_min_distance_hz, ...
-                'MinPeakProminence', mprom);
-            if ~isempty(pks)
-                [~, bi] = max(pks);
-                peak_freq(trl) = locs(bi);
-                peak_prom(trl) = p(bi);
-            end
-        end
-
-        benchmark_metric_detectability(cond, subj) = mean(~isnan(peak_freq));
-        benchmark_metric_prominence(cond, subj) = mean(peak_prom(~isnan(peak_prom)));
-        vf = peak_freq(~isnan(peak_freq));
+        benchmark_metric_detectability(cond, subj) = mean(isfinite(peak_freq));
+        vf = peak_freq(isfinite(peak_freq));
         if numel(vf) >= 2 && mean(vf) ~= 0
             benchmark_metric_reliability_trialcv(cond, subj) = std(vf) / abs(mean(vf));
         end
-        cond_medians(cond) = median(peak_freq(~isnan(peak_freq)));
+        cond_medians(cond) = median(vf);
     end
 
     vx = ~isnan(cond_medians);
@@ -2189,20 +2075,18 @@ fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('GED Trials Summary Dashboard (component selection backprojected)', ...
     'FontSize', 16, 'FontWeight', 'bold');
 gamma_metric_full = all_trial_gamma_power;
-gamma_metric_label = 'Gamma Power [dB]';
+gamma_metric_label = 'Peak Power [dB]';
 
 summary_metrics = { ...
     all_trial_median_single, ...
     all_trial_median_low, ...
     all_trial_median_high, ...
     all_trial_median_gap, ...
-    benchmark_metric_prominence, ...
     benchmark_metric_reliability_trialcv, ...
     all_trial_median_centroid, ...
     gamma_metric_full};
 summary_names = {'Single median [Hz]', 'Low median [Hz]', 'High median [Hz]', ...
-    'H-L separation [Hz]', 'Prominence', 'Trial CV', ...
-    'Centroid median [Hz]', gamma_metric_label};
+    'H-L separation [Hz]', 'Trial CV', 'Centroid median [Hz]', gamma_metric_label};
 
 for mi = 1:numel(summary_metrics)
     subplot(2, 4, mi); hold on;
@@ -2250,9 +2134,9 @@ for mi = 1:numel(summary_metrics)
         ylim([22.5 36]);
     elseif mi == 5
         ylim([0 10]);
-    elseif mi == 7
+    elseif mi == 6
         ylim([50 60]);
-    elseif mi == 8
+    elseif mi == 7
         ylim([-15 40]);
     end
 end
@@ -2268,7 +2152,6 @@ summary_metrics_early = { ...
     all_trial_median_low_early, ...
     all_trial_median_high_early, ...
     all_trial_median_gap_early, ...
-    all_trial_prominence_early, ...
     all_trial_trialcv_early, ...
     all_trial_median_centroid_early, ...
     gamma_metric_early};
@@ -2320,7 +2203,6 @@ summary_metrics_late = { ...
     all_trial_median_low_late, ...
     all_trial_median_high_late, ...
     all_trial_median_gap_late, ...
-    all_trial_prominence_late, ...
     all_trial_trialcv_late, ...
     all_trial_median_centroid_late, ...
     gamma_metric_late};
@@ -2524,7 +2406,7 @@ ylabel('\Delta Gamma Frequency [Hz]');
 title('Subject Shift', 'FontWeight', 'bold');
 save_figure_png(fig_main_gamma_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq_timeSplit.png'));
 
-%% Power figure: gamma-band dB power over conditions
+%% Power figure: peak dB power over conditions
 fig_power_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
@@ -2572,11 +2454,11 @@ yline(0, 'k--', 'LineWidth', 1.2);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 15, 'Box', 'off');
 xlim([0.5 4.5]);
-ylabel('Power [dB]');
-title('Gamma Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
-save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaPower.png'));
+ylabel('Peak Power [dB]');
+title('Peak Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
+save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_PeakPower.png'));
 
-%% Condition-shift figure: normalized gamma power trajectories
+%% Condition-shift figure: normalized peak power trajectories
 fig_condition_shift_power = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
@@ -2604,11 +2486,11 @@ set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
 xlim([0.5 4.5]);
 ylim([-0.75 0.75]);
 xlabel('Contrast condition');
-ylabel('\Delta Gamma Power vs 25% [dB]');
-title('Gamma Power Shift', ...
+ylabel('\Delta Peak Power vs 25% [dB]');
+title('Peak Power Shift', ...
     'FontSize', 24, 'FontWeight', 'bold');
 
-cond_shift_power_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_GammaPower.png');
+cond_shift_power_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_PeakPower.png');
 save_figure_png(fig_condition_shift_power, cond_shift_power_path);
 
 
@@ -2640,7 +2522,6 @@ save(save_path, ...
     'all_trial_median_high_early', 'all_trial_median_high_late', ...
     'all_trial_median_gap_early', 'all_trial_median_gap_late', ...
     'all_trial_median_centroid_early', 'all_trial_median_centroid_late', ...
-    'all_trial_prominence_early', 'all_trial_prominence_late', ...
     'all_trial_trialcv_early', 'all_trial_trialcv_late', ...
     'all_trial_mean_centroid', 'all_trial_median_centroid', ...
     'all_trial_detrate_single', 'all_trial_detrate_low', 'all_trial_detrate_high', 'all_trial_detrate_single_early', 'all_trial_detrate_single_late', ...
@@ -2652,7 +2533,7 @@ save(save_path, ...
     'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
     'warning_log', ...
     'all_trial_powratio_components_full', 'all_trial_powratio_components_early', 'all_trial_powratio_components_late', ...
-    'benchmark_metric_detectability', 'benchmark_metric_prominence', ...
+    'benchmark_metric_detectability', ...
     'benchmark_metric_separation_slope', 'benchmark_metric_separation_delta', ...
     'benchmark_metric_reliability_trialcv', 'benchmark_metric_reliability_subjspread', ...
     'primary_slope_stats', 'primary_delta_stats', ...
@@ -2708,88 +2589,15 @@ end
 clc
 fprintf('Done.\n');
 
-function trl_peaks_single = detect_single_peaks_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, smooth_n, peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz)
-nTrl = size(powratio_trials_fullscan, 1);
-trl_peaks_single = nan(nTrl, 1);
-scan_freqs_analysis = scan_freqs_full(analysis_mask);
-for trl = 1:nTrl
-    pr_full = powratio_trials_fullscan(trl, :);
-    if all(~isfinite(pr_full))
-        continue;
-    end
-    pr_proc = pr_full(analysis_mask);
-    pr_proc = movmean(pr_proc, max(1, round(smooth_n)), 'omitnan');
-    pr_proc = pr_proc(:)';
-    valid = isfinite(pr_proc) & isfinite(scan_freqs_analysis);
-    pr_proc = pr_proc(valid);
-    x_use = scan_freqs_analysis(valid);
-    if numel(pr_proc) < 7
-        continue;
-    end
-    y_pos = max(pr_proc, 0);
-    robust_scale = robust_mad(pr_proc);
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = iqr(pr_proc);
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = 1;
-    end
-    mprom = max([0, max(y_pos) * peak_min_prom_frac, peak_min_prom_abs, 0.8 * robust_scale]);
-    [pks, locs] = findpeaks(y_pos, x_use, ...
-        'MinPeakProminence', mprom, ...
-        'MinPeakDistance', peak_min_distance_hz);
-    if ~isempty(pks)
-        [~, best_pk] = max(pks);
-        trl_peaks_single(trl) = locs(best_pk);
-    end
-end
-end
-
-function [trial_gamma_power, mean_gamma_power] = compute_peak_centered_gamma_power(powratio_trials, scan_freqs_analysis, trl_peaks_single, halfwidth_hz)
-if isempty(powratio_trials) || isempty(scan_freqs_analysis) || isempty(trl_peaks_single)
-    trial_gamma_power = [];
-    mean_gamma_power = nan;
-    return;
-end
-
-if isvector(powratio_trials)
-    powratio_trials = reshape(powratio_trials, 1, []);
-end
-
-nTrl = min(size(powratio_trials, 1), numel(trl_peaks_single));
-trial_gamma_power = nan(nTrl, 1);
-freq_axis = scan_freqs_analysis(:)';
-for trl = 1:nTrl
-    peak_hz = trl_peaks_single(trl);
-    if ~isfinite(peak_hz)
-        continue;
-    end
-    band_mask = isfinite(freq_axis) & abs(freq_axis - peak_hz) <= halfwidth_hz;
-    if ~any(band_mask)
-        continue;
-    end
-    row_vals = powratio_trials(trl, :);
-    if numel(row_vals) ~= numel(freq_axis)
-        continue;
-    end
-    trial_gamma_power(trl) = mean(row_vals(band_mask), 'omitnan');
-end
-
-mean_gamma_power = mean(trial_gamma_power, 'omitnan');
-if ~isfinite(mean_gamma_power)
-    mean_gamma_power = nan;
-end
-end
-
-function [trl_peaks_single, trl_peaks_low, trl_peaks_high, trl_centroid, trl_peak_prom] = ...
+function [trl_peaks_single, trl_peak_power, trl_peaks_low, trl_peaks_high, trl_centroid] = ...
     compute_trial_peak_metrics_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, ...
-    centroid_band_mask, smooth_n, peak_min_prom_frac, peak_min_prom_abs, peak_min_distance_hz, centroid_min_peak, centroid_posfrac_min)
+    centroid_band_mask, smooth_n, centroid_min_peak, centroid_posfrac_min)
 nTrl = size(powratio_trials_fullscan, 1);
 trl_peaks_single = nan(nTrl, 1);
+trl_peak_power = nan(nTrl, 1);
 trl_peaks_low = nan(nTrl, 1);
 trl_peaks_high = nan(nTrl, 1);
 trl_centroid = nan(nTrl, 1);
-trl_peak_prom = nan(nTrl, 1);
 scan_freqs_analysis = scan_freqs_full(analysis_mask);
 freq_band = scan_freqs_full(centroid_band_mask);
 for trl = 1:nTrl
@@ -2803,43 +2611,31 @@ for trl = 1:nTrl
     valid = isfinite(pr_proc) & isfinite(scan_freqs_analysis);
     pr_proc = pr_proc(valid);
     x_use = scan_freqs_analysis(valid);
-    if numel(pr_proc) < 7
+    if isempty(pr_proc)
         continue;
     end
-    y_pos = max(pr_proc, 0);
-    robust_scale = robust_mad(pr_proc);
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = iqr(pr_proc);
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = 1;
-    end
-    mprom = max([0, max(y_pos) * peak_min_prom_frac, peak_min_prom_abs, 0.8 * robust_scale]);
-    [pks, locs, ~, prom] = findpeaks(y_pos, x_use, ...
-        'MinPeakProminence', mprom, ...
-        'MinPeakDistance', peak_min_distance_hz);
-    if ~isempty(pks)
-        [~, best_pk] = max(pks);
-        trl_peaks_single(trl) = locs(best_pk);
-        trl_peak_prom(trl) = prom(best_pk);
+
+    % Tallest local maximum from findpeaks; fall back to global max if
+    % findpeaks returns nothing (e.g. monotonic or boundary peak).
+    [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use);
+    if isfinite(peak_hz)
+        trl_peaks_single(trl) = peak_hz;
+        trl_peak_power(trl) = peak_power;
     end
 
-    [pks_all, locs_all] = findpeaks(y_pos, x_use, ...
-        'MinPeakDistance', peak_min_distance_hz);
-    pos_mask = pks_all > 0;
-    pks_pos  = pks_all(pos_mask);
-    locs_pos = locs_all(pos_mask);
-    in_lo = locs_pos >= 30 & locs_pos <= 49;
-    in_hi = locs_pos >= 50 & locs_pos <= 90;
-    if any(in_lo)
-        [~, bi] = max(pks_pos(in_lo));
-        tmp = locs_pos(in_lo);
-        trl_peaks_low(trl) = tmp(bi);
+    low_mask = x_use >= 30 & x_use <= 49;
+    if any(low_mask)
+        [lo_hz, ~] = pick_tallest_peak(pr_proc(low_mask), x_use(low_mask));
+        if isfinite(lo_hz)
+            trl_peaks_low(trl) = lo_hz;
+        end
     end
-    if any(in_hi)
-        [~, bi] = max(pks_pos(in_hi));
-        tmp = locs_pos(in_hi);
-        trl_peaks_high(trl) = tmp(bi);
+    high_mask = x_use >= 50 & x_use <= 90;
+    if any(high_mask)
+        [hi_hz, ~] = pick_tallest_peak(pr_proc(high_mask), x_use(high_mask));
+        if isfinite(hi_hz)
+            trl_peaks_high(trl) = hi_hz;
+        end
     end
 
     pr_proc_full = movmean(pr_full, max(1, round(smooth_n)), 'omitnan');
@@ -2851,6 +2647,31 @@ for trl = 1:nTrl
             (pos_mass / max(total_abs_mass, eps)) >= centroid_posfrac_min
         trl_centroid(trl) = sum(freq_band .* w_pos) / pos_mass;
     end
+end
+end
+
+function [peak_hz, peak_power] = pick_tallest_peak(y, x)
+peak_hz = NaN;
+peak_power = NaN;
+y = y(:)';
+x = x(:)';
+if isempty(y) || numel(y) ~= numel(x)
+    return;
+end
+if numel(y) >= 3
+    [pks, locs] = findpeaks(y, x);
+    if ~isempty(pks)
+        [peak_power, bi] = max(pks);
+        peak_hz = locs(bi);
+        return;
+    end
+end
+[peak_power, idx] = max(y);
+if isfinite(peak_power)
+    peak_hz = x(idx);
+else
+    peak_power = NaN;
+    peak_hz = NaN;
 end
 end
 
@@ -2960,16 +2781,13 @@ for ai = 1:numel(ax)
         continue;
     end
     title_str = lower(char(this_ax.Title.String));
-    if contains(title_str, 'prominence')
-        y_min = max(0, min(y_min, 0));
-        y_max = max(y_max, 0.6);
-    elseif contains(title_str, 'trial cv')
+    if contains(title_str, 'trial cv')
         y_min = max(0, min(y_min, 0));
         y_max = max(y_max, 0.15);
-    elseif contains(title_str, 'gamma power') && contains(title_str, 'norm')
+    elseif contains(title_str, 'peak power') && contains(title_str, 'norm')
         y_min = max(0, min(y_min, 0.7));
         y_max = max(y_max, 1.3);
-    elseif contains(title_str, 'gamma power')
+    elseif contains(title_str, 'peak power')
         y_min = min(y_min, 0);
         y_max = max(y_max, 0);
     end
@@ -3263,8 +3081,6 @@ for k = 1:nCols
     if k <= nShowSel
         ci = sel_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        peak_hz_ci = peak_form_best_center_hz(ci);
-        add_peak_band_overlay(scan_freqs, spec_data, peak_hz_ci, 2.5, false, [0 0 0], 1.0, false, false);
         h_raw = plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
         spec_min = min(spec_data(isfinite(spec_data)));
@@ -3317,8 +3133,6 @@ for k = 1:nCols
     if k <= nShowRej
         ci = rej_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        peak_hz_ci = peak_form_best_center_hz(ci);
-        add_peak_band_overlay(scan_freqs, spec_data, peak_hz_ci, 2.5, false, [0 0 0], 1.0, false, false);
         h_raw_r = plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
         spec_min = min(spec_data(isfinite(spec_data)));
@@ -3461,9 +3275,8 @@ for wi = 1:3
     spec_vec = sel_w(:)' * spec_mat(sel_idx, :);
     [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
         spec_vec, scan_freqs, analysis_freq_range);
-    add_peak_band_overlay(scan_freqs, spec_vec, pf_peak_hz, 2.5, false, [1 0 0], 1.0, true, false);
     plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0);
-    add_peak_band_overlay(scan_freqs, spec_vec, pf_peak_hz, 2.5, true, [1 0 0], 0.35, false, true);
+    add_peak_point_overlay(scan_freqs, spec_vec, pf_peak_hz);
     yline(0, 'k--', 'LineWidth', 0.8);
     xlim([analysis_freq_range(1) analysis_freq_range(2)]);
     spec_finite = spec_vec(isfinite(spec_vec));
@@ -3478,7 +3291,7 @@ for wi = 1:3
     format_power_change_db_axis(gca);
     xlabel('Hz'); ylabel('Power [dB]');
     box on;
-    text(0.02, 0.98, sprintf('PF = %.2f | peak = %.1f Hz (+/- 2.5 Hz)', ...
+    text(0.02, 0.98, sprintf('PF = %.2f | peak = %.1f Hz', ...
         pf_score, pf_peak_hz), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
         'FontSize', 9, 'Interpreter', 'none', 'Color', [0.1 0.1 0.1]);
@@ -3493,26 +3306,7 @@ save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra
 close(fig);
 end
 
-function add_peak_band_overlay(freq_axis, spec_vec, peak_hz, halfwidth_hz, show_mean_line, mean_line_color, mean_line_frac, show_band_patch, show_peak_line)
-if nargin < 4 || ~isfinite(halfwidth_hz) || halfwidth_hz <= 0
-    halfwidth_hz = 2.5;
-end
-if nargin < 5 || isempty(show_mean_line)
-    show_mean_line = false;
-end
-if nargin < 6 || isempty(mean_line_color) || numel(mean_line_color) ~= 3
-    mean_line_color = [0 0 0];
-end
-if nargin < 7 || ~isfinite(mean_line_frac) || mean_line_frac <= 0
-    mean_line_frac = 1.0;
-end
-if nargin < 8 || isempty(show_band_patch)
-    show_band_patch = true;
-end
-if nargin < 9 || isempty(show_peak_line)
-    show_peak_line = true;
-end
-mean_line_frac = min(mean_line_frac, 1.0);
+function add_peak_point_overlay(freq_axis, spec_vec, peak_hz)
 if isempty(freq_axis) || isempty(spec_vec) || numel(freq_axis) ~= numel(spec_vec)
     return;
 end
@@ -3534,36 +3328,18 @@ if ~isfinite(peak_hz)
     peak_hz = x(idx_peak);
 end
 
-band_mask = abs(x - peak_hz) <= halfwidth_hz;
-if any(band_mask)
-    xb = x(band_mask);
-    yb = y(band_mask);
-    if show_band_patch
-        x_fill = [xb, fliplr(xb)];
-        y_fill = [yb, baseline_y * ones(size(yb))];
-        patch(x_fill, y_fill, [0.70 0.70 0.70], ...
-            'FaceAlpha', 0.28, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-    end
-    gamma_avg = mean(yb, 'omitnan');
-    if show_mean_line && isfinite(gamma_avg) && numel(xb) >= 2
-        x_center = mean([xb(1), xb(end)]);
-        x_half = 0.5 * (xb(end) - xb(1)) * mean_line_frac;
-        x_lo = x_center - x_half;
-        x_hi = x_center + x_half;
-        plot([x_lo x_hi], [gamma_avg gamma_avg], '-', ...
-            'Color', mean_line_color, 'LineWidth', 1.8, 'HandleVisibility', 'off');
-    end
-end
-
 peak_power = interp1(x, y, peak_hz, 'linear', NaN);
 if ~isfinite(peak_power)
     [~, idx_near] = min(abs(x - peak_hz));
     peak_hz = x(idx_near);
     peak_power = y(idx_near);
 end
-if show_peak_line && isfinite(peak_hz) && isfinite(peak_power)
+if isfinite(peak_hz) && isfinite(peak_power)
     plot([peak_hz peak_hz], [baseline_y peak_power], '--', ...
         'Color', [0.55 0.55 0.55], 'LineWidth', 0.5, 'HandleVisibility', 'off');
+    plot(peak_hz, peak_power, 'o', ...
+        'Color', [0.55 0.55 0.55], 'MarkerFaceColor', [0.55 0.55 0.55], ...
+        'MarkerSize', 4, 'HandleVisibility', 'off');
 end
 end
 
@@ -3691,7 +3467,7 @@ edge_artifact_flag = isfinite(edge_ratio) && (edge_ratio > edge_ratio_hard) && .
 end
 
 function [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
-    mean_pr_spectrum, scan_freqs, analysis_freq_range, peak_min_prom_frac, peak_min_distance_hz)
+    mean_pr_spectrum, scan_freqs, analysis_freq_range)
 nComp = size(mean_pr_spectrum, 1);
 peak_bonus_vec = zeros(nComp, 1);
 peak_count_vec = zeros(nComp, 1);
@@ -3713,23 +3489,21 @@ for ci = 1:nComp
         continue;
     end
     y_band = movmean(y_band, 3);
-    peak_scale = max(y_band) - median(y_band);
+    y_shape = max(y_band - median(y_band), 0);
+    peak_scale = max(y_shape);
     if ~isfinite(peak_scale) || peak_scale <= eps
         continue;
     end
-    min_prom = max(0, max(y_band) * peak_min_prom_frac);
-    [~, ~, ~, prom] = findpeaks(y_band, x_band, ...
-        'MinPeakProminence', min_prom, ...
-        'MinPeakDistance', peak_min_distance_hz);
-    if isempty(prom)
-        continue;
+    [pks, ~] = findpeaks(y_shape, x_band, 'MinPeakDistance', 5);
+    if isempty(pks)
+        pks = peak_scale;
     end
-    prom = sort(prom(:), 'descend');
-    n_keep = min(2, numel(prom));
+    pks = sort(pks(:), 'descend');
+    n_keep = min(2, numel(pks));
     peak_count_vec(ci) = n_keep;
-    prom_score = min(1, mean(prom(1:n_keep)) / max(peak_scale, eps));
+    amp_score = min(1, mean(pks(1:n_keep)) / max(peak_scale, eps));
     count_score = n_keep / 2;
-    peak_bonus_vec(ci) = max(0, min(1, 0.65 * prom_score + 0.35 * count_score));
+    peak_bonus_vec(ci) = max(0, min(1, 0.65 * amp_score + 0.35 * count_score));
 end
 end
 
@@ -3742,7 +3516,6 @@ double_widths_hz = [3 4 5 6];
 min_trough_depth = 0.10;
 min_similarity = 0.40;
 smooth_n = 3;
-prom_abs_floor = 0.001;
 peak_width_min_hz = 2.0;
 peak_width_max_hz = 20.0;
 edge_ratio_soft = 1.25;
@@ -3769,7 +3542,6 @@ diag = struct( ...
     'best_trough_depth', nan(nComp, 1), ...
     'minor_peak_count', nan(nComp, 1), ...
     'minor_peak_relmax', nan(nComp, 1), ...
-    'minor_peak_prom_relmax', nan(nComp, 1), ...
     'edge_ratio', nan(nComp, 1), ...
     'edge_run_score', nan(nComp, 1), ...
     'edge_artifact_flag', false(nComp, 1), ...
@@ -3810,8 +3582,8 @@ for ci = 1:nComp
     diag.best_single_similarity(ci) = single_best;
     diag.best_double_similarity(ci) = double_best;
 
-    % Raw spectra can be globally offset (including mostly negative values),
-    % so peak prominence is measured relative to a local raw floor.
+    % Raw spectra can be globally offset, so peak shape is measured relative
+    % to a local raw floor.
     y_floor = prctile(y_band(isfinite(y_band)), 20);
     if ~isfinite(y_floor)
         y_floor = median(y_band(isfinite(y_band)));
@@ -3830,10 +3602,7 @@ for ci = 1:nComp
     if ~isfinite(robust_scale) || robust_scale <= eps
         robust_scale = 1;
     end
-    rel_prom = 0.08 * max(y_pos);
-    min_prom = max([0, rel_prom, prom_abs_floor, 0.15 * robust_scale]);
-    [pks, locs, widths, prom] = findpeaks(y_pos, x_band, ...
-        'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
+    [pks, locs, widths] = findpeaks(y_pos, x_band, 'MinPeakDistance', 5);
     if isempty(pks)
         % Fallback: keep best local maximum to avoid collapsing valid-but-noisy traces to PF=0.
         [dom_amp, dom_idx] = max(y_pos);
@@ -3841,28 +3610,22 @@ for ci = 1:nComp
             continue;
         end
         dom_loc = x_band(dom_idx);
-        dom_prom = max(0, dom_amp - median(y_pos));
         widths = 6;
         pks = dom_amp;
         locs = dom_loc;
-        prom = dom_prom;
     end
-    [~, dom_idx] = max(prom);
+    [~, dom_idx] = max(pks);
     dom_amp = pks(dom_idx);
-    dom_prom = prom(dom_idx);
     dom_width = widths(dom_idx);
     dom_loc = locs(dom_idx);
     minor_idx = setdiff(1:numel(pks), dom_idx);
     minor_count = numel(minor_idx);
     minor_relmax = 0;
-    minor_prom_relmax = 0;
     if ~isempty(minor_idx)
         minor_relmax = max(pks(minor_idx)) / max(dom_amp, eps);
-        minor_prom_relmax = max(prom(minor_idx)) / max(dom_prom, eps);
     end
     diag.minor_peak_count(ci) = minor_count;
     diag.minor_peak_relmax(ci) = minor_relmax;
-    diag.minor_peak_prom_relmax(ci) = minor_prom_relmax;
 
     width_low = peak_width_min_hz;
     width_high = peak_width_max_hz;
@@ -3874,8 +3637,8 @@ for ci = 1:nComp
             width_score = max(0.20, width_high / max(dom_width, eps));
         end
     end
-    snr_score = dom_prom / (dom_prom + robust_scale);
-    prom_score = dom_prom / (dom_prom + 0.70 * robust_scale);
+    snr_score = dom_amp / (dom_amp + robust_scale);
+    amp_score = dom_amp / (dom_amp + 0.70 * robust_scale);
     shape_score = max(single_best, double_best);
     peak_core_hz = 6;
     peak_core_mask = abs(x_band - dom_loc) <= peak_core_hz;
@@ -3884,7 +3647,7 @@ for ci = 1:nComp
     if isfinite(conc_ratio) && conc_ratio < 0.32
         concentration_pen = max(0.35, conc_ratio / 0.32);
     end
-    dominant_quality = max(0, min(1, (0.40 * prom_score + 0.30 * snr_score + 0.30 * shape_score) * width_score * concentration_pen));
+    dominant_quality = max(0, min(1, (0.40 * amp_score + 0.30 * snr_score + 0.30 * shape_score) * width_score * concentration_pen));
 
     best_pre_penalty = dominant_quality;
     dual_candidate = isfinite(double_best) && isfinite(single_best) && ...
@@ -3929,13 +3692,13 @@ for ci = 1:nComp
             minor_pen = minor_pen * max(0.75, 1 - 0.08 * (minor_count - 1));
         end
 
-        % Strong penalty only when a secondary peak is truly prominent
-        % relative to the dominant peak (C11/C14-like multi-peak pattern).
+        % Strong penalty only when a secondary peak is large relative to the
+        % dominant peak (C11/C14-like multi-peak pattern).
         strong_minor_rel_start = 0.55;
         strong_minor_rel_full = 0.85;
-        if isfinite(minor_prom_relmax) && minor_prom_relmax > strong_minor_rel_start
+        if isfinite(minor_relmax) && minor_relmax > strong_minor_rel_start
             rel_span = max(strong_minor_rel_full - strong_minor_rel_start, eps);
-            rel_frac = min(1, (minor_prom_relmax - strong_minor_rel_start) / rel_span);
+            rel_frac = min(1, (minor_relmax - strong_minor_rel_start) / rel_span);
             minor_pen = minor_pen * max(0.30, 1 - 0.70 * rel_frac);
         end
     end
