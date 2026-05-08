@@ -77,7 +77,7 @@ min_eigval = 1.1;              % minimum GED eigenvalue (lambda >= 1.1)
 min_peak_form = 0.5;    % minimum PF score for candidate eligibility
 pf_multi_peak_sep_min_hz = 5;         % penalize PF when another peak sits at least this far from the dominant (Hz)
 pf_multi_peak_height_ratio_min = 0.8; % rival peak height must reach this fraction of the dominant peak amplitude
-pf_multi_peak_penalty_mult = 0.6;     % multiplier applied with edge/HF/roughness penalties when the rule fires
+pf_multi_peak_penalty_mult = 0.35;    % base multiplier for >=5 Hz, >=80% dominant rival peaks (strong PF penalty)
 max_combined_leak = 1.30;      % artifact guard: mean(front leak, temporal leak)
 max_lineharm_ratio = 0.60;     % artifact guard: line-harmonic dominance ratio
 max_hf_slope = -0.15;          % informative only (tables/diagnostics); not an eligibility gate
@@ -3546,7 +3546,12 @@ for ci = 1:nComp
         rival_mask = ((1:numel(pks))' ~= dom_idx) & sep_ok & height_ok;
         if any(rival_mask)
             multi_peak_hit = true;
-            multi_peak_pen = multi_peak_penalty_mult;
+            n_rivals = sum(rival_mask);
+            rival_amp_ratio = pks(rival_mask) ./ max(dom_amp, eps);
+            amp_excess = max(0, mean(rival_amp_ratio) - multi_peak_height_ratio_min);
+            amp_scale = amp_excess / max(1 - multi_peak_height_ratio_min, eps);
+            extra_loss = 0.18 * max(0, n_rivals - 1) + 0.15 * min(1, amp_scale);
+            multi_peak_pen = max(0.15, multi_peak_penalty_mult - extra_loss);
         end
     end
 
