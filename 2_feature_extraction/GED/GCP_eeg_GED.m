@@ -65,7 +65,7 @@ analysis_freq_range = [30, 90];
 scan_freq_step_hz = 0.5;            % analysis grid resolution (Hz)
 scan_freqs = analysis_freq_range(1):scan_freq_step_hz:analysis_freq_range(2);
 nFreqs = length(scan_freqs);
-scan_width = 3; % +/- Hz integration around each scan frequency (multitaper PSD)
+scan_width = 2; % +/- Hz integration around each scan frequency (multitaper PSD)
 
 %% GED parameters
 lambda = 0.05;
@@ -75,9 +75,9 @@ template_sigma_occ = 0.20;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
 min_eigval = 1.1;              % minimum GED eigenvalue (lambda >= 1.1)
 min_peak_form = 0.6;    % minimum PF score for candidate eligibility
-pf_multi_peak_sep_min_hz = 15;       % penalize PF when another peak sits at least this far from the dominant (Hz)
-pf_multi_peak_height_ratio_min = 0.80; % rival peak height must reach this fraction of the dominant peak amplitude
-pf_multi_peak_penalty_mult = 0.62;    % multiplier applied with edge/HF/roughness penalties when the rule fires
+pf_multi_peak_sep_min_hz = 5;         % penalize PF when another peak sits at least this far from the dominant (Hz)
+pf_multi_peak_height_ratio_min = 0.9; % rival peak height must reach this fraction of the dominant peak amplitude
+pf_multi_peak_penalty_mult = 0.6;     % multiplier applied with edge/HF/roughness penalties when the rule fires
 max_combined_leak = 1.30;      % artifact guard: mean(front leak, temporal leak)
 max_lineharm_ratio = 0.60;     % artifact guard: line-harmonic dominance ratio
 max_hf_slope = -0.15;          % informative only (tables/diagnostics); not a hard eligibility gate
@@ -100,7 +100,7 @@ ratio_floor_frac = 0.25;            % floor is this fraction of the robust basel
 instability_near_floor_mult = 1.5;  % mark as near-floor when baseline <= this multiple of floor
 instability_component_frac_thr = 0.50; % (reserved; trial loop uses per-frequency near-floor counts only)
 instability_trial_freq_frac_thr = 0.35; % exclude trial when unstable at >= this frequency fraction
-trial_nearfloor_exclusion_enable = false; % if false, skip NaNing trials (still logs ratios); use for diagnostics only
+trial_nearfloor_exclusion_enable = true; % if false, skip NaNing trials (still logs ratios); use for diagnostics only
 rank_stability_boot_reps = 200;     % bootstrap repetitions for rank-aggregation stability diagnostics
 peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
 peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
@@ -675,6 +675,10 @@ for subj = 1:nSubj
     candidate_table.peak_form_total_penalty_used = peak_form_diag.total_penalty_used;
     candidate_table.peak_form_multi_peak_penalty = peak_form_diag.multi_peak_penalty;
     candidate_table.peak_form_multi_peak_flag = peak_form_diag.multi_peak_flag;
+    candidate_table.peak_form_dominance_penalty = peak_form_diag.dominance_penalty;
+    candidate_table.peak_form_dom_rivals_major = peak_form_diag.dominance_rival_count_major;
+    candidate_table.peak_form_dom_rivals_minor = peak_form_diag.dominance_rival_count_minor;
+    candidate_table.peak_form_dom_rival_amp_ratio_sum = peak_form_diag.dominance_rival_amp_ratio_sum;
     candidate_table.peak_form_dominant_penalty = peak_form_diag.dominant_penalty_tag;
     candidate_table.pf_quality_band = assign_pf_quality_band_labels(peak_form_score_vec);
     candidate_table.pf_rank = compute_descending_rank(peak_form_score_vec);
@@ -2216,7 +2220,7 @@ ylabel('\Delta Gamma Frequency [Hz]');
 title('Gamma Peak Frequency Shift', ...
     'FontSize', 24, 'FontWeight', 'bold');
 
-cond_shift_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift.png');
+cond_shift_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_frequency.png');
 save_figure_png(fig_condition_shift, cond_shift_path);
 
 %% Main figure: gamma frequency over contrast by time window
@@ -2530,17 +2534,38 @@ end
 if isempty(p_stim_scan) || isempty(p_base_scan)
     return;
 end
-floor_use = max(base_floor, eps);
+% IMPORTANT: derive stabilization floor from spectral baseline power per row.
+% Using a global time-domain floor can over-dominate spectral bins and
+% collapse ratios toward 0 dB.
+floor_fallback = max(base_floor, eps);
+for ri = 1:nSig
+    p_stim_row = p_stim_scan(ri, :);
+    p_base_row = p_base_scan(ri, :);
+    valid_base = isfinite(p_base_row) & (p_base_row > 0);
+    if ~any(valid_base)
+        continue;
+    end
+    base_anchor = prctile(p_base_row(valid_base), 20);
+    base_median = median(p_base_row(valid_base), 'omitnan');
+    if ~isfinite(base_anchor) || base_anchor <= 0
+        base_anchor = base_median;
+    end
+    if ~isfinite(base_anchor) || base_anchor <= 0
+        base_anchor = floor_fallback;
+    end
+    floor_row = max(0.25 * base_anchor, eps);
+
+    valid = isfinite(p_stim_row) & isfinite(p_base_row) & (p_base_row > 0);
+    ratio_row = nan(1, numel(scan_freqs));
+    ratio_row(valid) = 10 * log10((p_stim_row(valid) + floor_row) ./ (p_base_row(valid) + floor_row));
+    ratio_db(ri, :) = ratio_row;
+    near_floor_row_mask(ri, valid) = p_base_row(valid) <= near_floor_mult * floor_row;
+end
+
 for fi = 1:numel(scan_freqs)
-    p_stim = p_stim_scan(:, fi);
-    p_base = p_base_scan(:, fi);
-    valid = isfinite(p_stim) & isfinite(p_base) & (p_base > 0);
-    ratio_col = nan(nSig, 1);
-    ratio_col(valid) = 10 * log10((p_stim(valid) + floor_use) ./ (p_base(valid) + floor_use));
-    ratio_db(:, fi) = ratio_col;
-    near_floor_row_mask(valid, fi) = p_base(valid) <= near_floor_mult * floor_use;
-    if any(valid)
-        near_floor_freq_mask(fi) = mean(near_floor_row_mask(valid, fi)) >= 0.5;
+    valid_fi = isfinite(ratio_db(:, fi));
+    if any(valid_fi)
+        near_floor_freq_mask(fi) = mean(near_floor_row_mask(valid_fi, fi)) >= 0.5;
     end
 end
 end
@@ -3051,6 +3076,7 @@ annotation(figSel, 'textbox', [0.010 0.09 0.040 0.34], ...
     'FontWeight', 'bold', 'FontSize', 14, 'Rotation', 90, 'FitBoxToText', 'off');
 sgtitle(sprintf('Top 5 Selected and Rejected Components: %s (%s)', subject_id, win_name), ...
     'FontSize', 14, 'FontWeight', 'bold');
+drawnow;
 save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected_%s.png', subject_id, win_name)));
 close(figSel);
 
@@ -3466,6 +3492,9 @@ diag = struct( ...
     'total_penalty_used', nan(nComp, 1), ...
     'edge_penalty', nan(nComp, 1), ...
     'dominance_penalty', nan(nComp, 1), ...
+    'dominance_rival_count_major', nan(nComp, 1), ...
+    'dominance_rival_count_minor', nan(nComp, 1), ...
+    'dominance_rival_amp_ratio_sum', nan(nComp, 1), ...
     'hf_rise_penalty', nan(nComp, 1), ...
     'best_shift_hz', nan(nComp, 1), ...
     'best_center_hz', nan(nComp, 1), ...
@@ -3560,6 +3589,42 @@ for ci = 1:nComp
         end
     end
 
+    % Rival-peak clutter penalty:
+    % - Does not penalize a single moderate side peak.
+    % - Penalizes spectra with many sizeable rivals (no clear dominant peak).
+    dominance_pen = 1;
+    n_rival_major = 0;
+    n_rival_minor = 0;
+    rival_amp_ratio_sum = 0;
+    if numel(pks) >= 2 && isfinite(dom_amp) && dom_amp > eps
+        sep_from_dom = abs(locs - dom_loc);
+        is_rival = ((1:numel(pks))' ~= dom_idx);
+        rival_ratios = pks ./ max(dom_amp, eps);
+        rival_sep = sep_from_dom;
+
+        major_ratio_min = 0.55;
+        minor_ratio_min = 0.30;
+        major_sep_min_hz = 4.0;
+        minor_sep_min_hz = 2.5;
+
+        major_mask = is_rival & (rival_sep >= major_sep_min_hz) & (rival_ratios >= major_ratio_min);
+        minor_mask = is_rival & (rival_sep >= minor_sep_min_hz) & (rival_ratios >= minor_ratio_min);
+
+        n_rival_major = sum(major_mask);
+        n_rival_minor = sum(minor_mask);
+        if any(major_mask)
+            rival_amp_ratio_sum = sum(rival_ratios(major_mask));
+        end
+
+        clutter_load = 0;
+        clutter_load = clutter_load + 0.35 * max(0, n_rival_major - 1);
+        clutter_load = clutter_load + 0.12 * max(0, n_rival_minor - 2);
+        clutter_load = clutter_load + 0.45 * max(0, rival_amp_ratio_sum - 0.85);
+
+        max_loss = 0.55;
+        dominance_pen = max(0.45, 1 - min(max_loss, clutter_load));
+    end
+
     width_low = peak_width_min_hz;
     width_high = peak_width_max_hz;
     width_score = 1;
@@ -3633,8 +3698,6 @@ for ci = 1:nComp
         edge_pen = edge_pen * 0.90;
     end
 
-    dominance_pen = 1;
-
     % Penalize rough/noisy spectra that can spuriously match broad templates.
     % Scale-invariant: normalize to unit range so absolute amplitude does not bias the ratio.
     roughness_ratio = NaN;
@@ -3686,6 +3749,9 @@ for ci = 1:nComp
     diag.total_penalty_used(ci) = penalty_used;
     diag.edge_penalty(ci) = edge_pen;
     diag.dominance_penalty(ci) = dominance_pen;
+    diag.dominance_rival_count_major(ci) = n_rival_major;
+    diag.dominance_rival_count_minor(ci) = n_rival_minor;
+    diag.dominance_rival_amp_ratio_sum(ci) = rival_amp_ratio_sum;
     diag.hf_rise_penalty(ci) = hf_pen;
     diag.best_shift_hz(ci) = best_shift;
     if ~isempty(best_centers) && all(isfinite(best_centers))
