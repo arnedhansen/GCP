@@ -3033,6 +3033,7 @@ annotation(figSel, 'textbox', [0.010 0.09 0.040 0.34], ...
 sgtitle(sprintf('Top 5 Selected and Rejected Components: %s (%s)', subject_id, win_name), ...
     'FontSize', 14, 'FontWeight', 'bold');
 drawnow;
+pause(0.05);
 save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected_%s.png', subject_id, win_name)));
 close(figSel);
 
@@ -3585,22 +3586,30 @@ sigma_candidates = unique([2 3 4 5 6 8 10 12 dom_width_seed * [0.7 1.0 1.3]]);
 sigma_candidates = sigma_candidates(isfinite(sigma_candidates) & sigma_candidates > 0);
 sigma_candidates = max(1.5, min(14, sigma_candidates));
 best_rss = Inf;
-best_beta = [mean(y_train); 0];
+best_beta = [mean(y_train); 0; 0];
 best_mu = mu_candidates(1);
 best_sigma = sigma_candidates(1);
+x_mu = mean(x_train);
+x_sd = std(x_train, 1);
+if ~isfinite(x_sd) || x_sd <= eps
+    x_sd = 1;
+end
+z_train = (x_train - x_mu) / x_sd;
+z_test = (x_test - x_mu) / x_sd;
 for mui = 1:numel(mu_candidates)
     mu = mu_candidates(mui);
     for si = 1:numel(sigma_candidates)
         sigma = sigma_candidates(si);
         g_train = exp(-0.5 * ((x_train - mu) ./ sigma).^2);
-        X_train = [ones(numel(x_train), 1), g_train(:)];
+        % Dominant model: one peak + low-order baseline trend.
+        X_train = [ones(numel(x_train), 1), z_train(:), g_train(:)];
         beta = X_train \ y_train(:);
         if ~all(isfinite(beta))
             continue;
         end
-        if beta(2) < 0
-            beta(2) = 0;
-            beta(1) = mean(y_train);
+        if beta(3) < 0
+            beta(3) = 0;
+            beta(1:2) = [mean(y_train); 0];
         end
         yhat_train_try = X_train * beta;
         rss = sum((y_train(:) - yhat_train_try(:)).^2, 'omitnan');
@@ -3614,8 +3623,8 @@ for mui = 1:numel(mu_candidates)
 end
 g_train_best = exp(-0.5 * ((x_train - best_mu) ./ best_sigma).^2);
 g_test_best = exp(-0.5 * ((x_test - best_mu) ./ best_sigma).^2);
-yhat_train = [ones(numel(x_train), 1), g_train_best(:)] * best_beta;
-yhat_test = [ones(numel(x_test), 1), g_test_best(:)] * best_beta;
+yhat_train = [ones(numel(x_train), 1), z_train(:), g_train_best(:)] * best_beta;
+yhat_test = [ones(numel(x_test), 1), z_test(:), g_test_best(:)] * best_beta;
 end
 
 function [yhat_train, yhat_test] = fit_predict_pf_model_diffuse(x_train, y_train, x_test)
@@ -3644,18 +3653,48 @@ if ~isfinite(x_sd) || x_sd <= eps
 end
 z_train = (x_train - x_mu) / x_sd;
 z_test = (x_test - x_mu) / x_sd;
-X_train = [ones(numel(z_train), 1), z_train(:)];
-beta = X_train \ y_train(:);
-if ~all(isfinite(beta))
-    beta = [mean(y_train); 0];
+zpos_train = max(z_train(:), 0);
+zpos_test = max(z_test(:), 0);
+
+% Stronger EMG competitor: monotonic high-frequency rise with optional curvature.
+feat_train_set = { ...
+    [z_train(:)], ...
+    [z_train(:), zpos_train, zpos_train.^2]};
+feat_test_set = { ...
+    [z_test(:)], ...
+    [z_test(:), zpos_test, zpos_test.^2]};
+
+best_rss = Inf;
+best_intercept = mean(y_train, 'omitnan');
+best_beta = zeros(size(feat_train_set{1}, 2), 1);
+best_feat_idx = 1;
+for fi = 1:numel(feat_train_set)
+    F_train = feat_train_set{fi};
+    F_test = feat_test_set{fi};
+    if isempty(F_train) || size(F_train, 1) ~= numel(y_train)
+        continue;
+    end
+    y_center = y_train(:) - mean(y_train(:), 'omitnan');
+    beta = F_train \ y_center;
+    if ~all(isfinite(beta))
+        beta = zeros(size(F_train, 2), 1);
+    end
+    beta = max(beta, 0);
+    intercept = mean(y_train(:) - F_train * beta, 'omitnan');
+    yhat_train_try = intercept + F_train * beta;
+    rss = sum((y_train(:) - yhat_train_try).^2, 'omitnan');
+    if isfinite(rss) && rss < best_rss
+        best_rss = rss;
+        best_intercept = intercept;
+        best_beta = beta;
+        best_feat_idx = fi;
+    end
 end
-if beta(2) < 0
-    beta(2) = 0;
-    beta(1) = mean(y_train);
-end
-yhat_train = X_train * beta;
-X_test = [ones(numel(z_test), 1), z_test(:)];
-yhat_test = X_test * beta;
+
+F_train_best = feat_train_set{best_feat_idx};
+F_test_best = feat_test_set{best_feat_idx};
+yhat_train = best_intercept + F_train_best * best_beta;
+yhat_test = best_intercept + F_test_best * best_beta;
 end
 
 function [yhat_train, yhat_test] = fit_predict_pf_model_null(y_train, y_test)
@@ -4362,11 +4401,7 @@ if nargin < 2 || isempty(out_path)
 end
 drawnow;
 pause(0.05);
-try
-    exportgraphics(fig_handle, out_path, 'Resolution', 300);
-catch
-    exportgraphics(fig_handle, out_path, 'Resolution', 600);
-end
+exportgraphics(fig_handle, out_path, 'Resolution', 600);
 end
 
 function y = smooth_reflective_edges(x, freqs, core_band, core_win, edge_win)
