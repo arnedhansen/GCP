@@ -131,7 +131,7 @@ end
 fig_save_dir_ged = fullfile(gcp_root_path, 'figures', 'eeg', 'ged');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
 fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
-fig_save_dir_powspctrm = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/component_selection/601';
+fig_save_dir_powspctrm = fig_save_dir_component_selection;
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
 if ~exist(fig_save_dir_powspctrm, 'dir'), mkdir(fig_save_dir_powspctrm); end
@@ -4668,6 +4668,10 @@ if nargin < 1 || isempty(fig_handle) || ~ishandle(fig_handle)
 end
 if nargin < 2 || isempty(out_path)
     return;
+end
+out_dir = fileparts(out_path);
+if ~isempty(out_dir) && ~exist(out_dir, 'dir')
+    mkdir(out_dir);
 end
 drawnow;
 pause(0.05);
