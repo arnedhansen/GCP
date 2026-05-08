@@ -113,7 +113,8 @@ centroid_freq_range = [30 90];
 centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
 centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
-trial_peak_smooth_n = 1;     % moving-average smoothing for trial-level peak detection
+trial_peak_smooth_n = 3;     % moving-average smoothing for trial-level peak detection
+trial_peak_edge_margin_hz = 5; % ignore edge bins near 30/90 Hz during trial-level peak detection
 trial_metric_outlier_enable = true;      % apply trial-level outlier rejection on extracted frequency/power metrics
 trial_metric_outlier_iqr_mult = 1.5;     % outlier threshold in IQR units around Q1/Q3
 trial_metric_outlier_min_trials = 50;    % minimum finite trials to run IQR-based outlier rejection
@@ -1400,7 +1401,8 @@ for subj = 1:nSubj
         [trl_peaks, trial_peak_power_full, trl_centroid] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min);
+            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min, ...
+            trial_peak_edge_margin_hz);
 
         all_trial_peaks{cond, subj} = trl_peaks;
         all_trial_centroid{cond, subj}     = trl_centroid;
@@ -1411,11 +1413,13 @@ for subj = 1:nSubj
         [trl_peaks_early, trial_peak_power_early, trl_centroid_early] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_early_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min);
+            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min, ...
+            trial_peak_edge_margin_hz);
         [trl_peaks_late, trial_peak_power_late, trl_centroid_late] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_late_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min);
+            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min, ...
+            trial_peak_edge_margin_hz);
         % Trial-level metric outlier rejection (subject-condition specific).
         if trial_metric_outlier_enable
             [outlier_mask_freq_full, ~] = detect_trial_metric_outliers_iqr( ...
@@ -2374,13 +2378,16 @@ fprintf('[GED] Runtime TOTAL: %s\n', format_runtime_hhmmss(toc(total_runtime_tic
 
 function [trl_peaks, trl_peak_power, trl_centroid] = ...
     compute_trial_peak_metrics_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, ...
-    centroid_band_mask, smooth_n, centroid_min_peak, centroid_posfrac_min)
+    centroid_band_mask, smooth_n, centroid_min_peak, centroid_posfrac_min, edge_margin_hz)
 nTrl = size(powratio_trials_fullscan, 1);
 trl_peaks = nan(nTrl, 1);
 trl_peak_power = nan(nTrl, 1);
 trl_centroid = nan(nTrl, 1);
 scan_freqs_analysis = scan_freqs_full(analysis_mask);
 freq_band = scan_freqs_full(centroid_band_mask);
+if nargin < 8 || ~isfinite(edge_margin_hz) || edge_margin_hz < 0
+    edge_margin_hz = 0;
+end
 for trl = 1:nTrl
     pr_full = powratio_trials_fullscan(trl, :);
     if all(~isfinite(pr_full))
@@ -2396,8 +2403,8 @@ for trl = 1:nTrl
     end
 
     % Constrained peak search: prioritize 30-90 Hz gamma band with adaptive
-    % prominence threshold; then fall back to full-band and finally global max.
-    [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use);
+    % prominence threshold; keep NaN when no reliable local peak is detected.
+    [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use, smooth_n, edge_margin_hz);
     if isfinite(peak_hz)
         trl_peaks(trl) = peak_hz;
         trl_peak_power(trl) = peak_power;
@@ -2415,15 +2422,22 @@ for trl = 1:nTrl
 end
 end
 
-function [peak_hz, peak_power] = pick_tallest_peak(y, x)
+function [peak_hz, peak_power] = pick_tallest_peak(y, x, smooth_n, edge_margin_hz)
 peak_hz = NaN;
 peak_power = NaN;
 y = y(:)';
 x = x(:)';
 core_mask = false(size(x));
+if nargin < 3 || ~isfinite(smooth_n) || smooth_n < 1
+    smooth_n = 1;
+end
+if nargin < 4 || ~isfinite(edge_margin_hz) || edge_margin_hz < 0
+    edge_margin_hz = 0;
+end
 if isempty(y) || numel(y) ~= numel(x)
     return;
 end
+y = movmean(y, max(1, round(smooth_n)), 'omitnan');
 if numel(y) >= 3
     y_floor = median(y, 'omitnan');
     if ~isfinite(y_floor)
@@ -2446,8 +2460,12 @@ if numel(y) >= 3
     end
     min_prom = max([0.02, 0.10 * peak_scale, 0.20 * robust_scale]);
 
-    core_lo = 30;
-    core_hi = 90;
+    core_lo = 30 + edge_margin_hz;
+    core_hi = 90 - edge_margin_hz;
+    if core_hi <= core_lo
+        core_lo = 30;
+        core_hi = 90;
+    end
     core_mask = x >= core_lo & x <= core_hi;
     if sum(core_mask) >= 3
         x_core = x(core_mask);
@@ -2468,23 +2486,6 @@ if numel(y) >= 3
     end
 end
 
-if any(core_mask)
-    y_core = y(core_mask);
-    x_core = x(core_mask);
-    [peak_power, idx] = max(y_core);
-    if isfinite(peak_power)
-        peak_hz = x_core(idx);
-        return;
-    end
-end
-
-[peak_power, idx] = max(y);
-if isfinite(peak_power)
-    peak_hz = x(idx);
-else
-    peak_power = NaN;
-    peak_hz = NaN;
-end
 end
 
 function [ratio_db, near_floor_freq_mask, near_floor_row_mask] = compute_scan_ratio_from_timeseries(sig_stim, sig_base, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult)
