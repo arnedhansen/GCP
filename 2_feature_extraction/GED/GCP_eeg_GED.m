@@ -31,7 +31,7 @@
 %      10*log10((p_stim + floor)/(p_base + floor)).
 %   3. Flag numerical-instability cases (near-floor baseline power across
 %      many frequencies/components) and exclude unstable trials automatically.
-%   4. Detect per-trial spectral features (single-peak, low/high peaks,
+%   4. Detect per-trial spectral features (dominant peak, low/high peaks,
 %      centroid) and compute peak power.
 %
 % Outputs
@@ -65,7 +65,7 @@ analysis_freq_range = [30, 90];
 scan_freq_step_hz = 0.5;            % analysis grid resolution (Hz)
 scan_freqs = analysis_freq_range(1):scan_freq_step_hz:analysis_freq_range(2);
 nFreqs = length(scan_freqs);
-scan_width = 2; % +/- Hz integration around each scan frequency (multitaper PSD)
+scan_width = 3; % +/- Hz integration around each scan frequency (multitaper PSD)
 
 %% GED parameters
 lambda = 0.05;
@@ -75,12 +75,9 @@ template_sigma_occ = 0.20;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
 min_eigval = 1.1;              % minimum GED eigenvalue (lambda >= 1.1)
 min_peak_form = 0.6;    % minimum PF score for candidate eligibility
-pf_multi_peak_sep_min_hz = 5;         % penalize PF when another peak sits at least this far from the dominant (Hz)
-pf_multi_peak_height_ratio_min = 0.9; % rival peak height must reach this fraction of the dominant peak amplitude
-pf_multi_peak_penalty_mult = 0.6;     % multiplier applied with edge/HF/roughness penalties when the rule fires
 max_combined_leak = 1.30;      % artifact guard: mean(front leak, temporal leak)
 max_lineharm_ratio = 0.60;     % artifact guard: line-harmonic dominance ratio
-max_hf_slope = -0.15;          % informative only (tables/diagnostics); not a hard eligibility gate
+max_hf_slope = -0.15;          % informative only (tables/diagnostics); not an eligibility gate
 max_emg_score = 0.85;          % anchor: very high EMG score
 max_components_to_combine = 10;     % top-K cap for combined GED branch
 artifact_proxy_max_trials = 24;     % speed cap for proxy estimation per component/window
@@ -93,19 +90,12 @@ ratio_floor_prctile = 20;           % robust baseline-power percentile used as f
 ratio_floor_frac = 0.25;            % floor is this fraction of the robust baseline-power anchor
 % Near-floor trial exclusion: when combined baseline power is low across many bins, the additive
 % floor dominates and p_base <= near_floor_mult*floor flags "unstable" bins; if unstable bin
-% fraction >= instability_trial_freq_frac_thr the whole trial is NaNed. That is conservative
-% and can clear essentially all trials for borderline subjects (see debug_GED_trial_powratio_workspace).
-% Relaxation options (pick one axis): near_floor_mult 1.5->2.0..2.5; trial_freq_frac_thr 0.35->0.5..0.65;
-% ratio_floor_frac slightly lower (changes dB ratio, not only QC). Or set trial_nearfloor_exclusion_enable=false for exploratory plots only.
+% fraction >= instability_trial_freq_frac_thr the whole trial is NaN
 instability_near_floor_mult = 1.5;  % mark as near-floor when baseline <= this multiple of floor
 instability_component_frac_thr = 0.50; % (reserved; trial loop uses per-frequency near-floor counts only)
 instability_trial_freq_frac_thr = 0.35; % exclude trial when unstable at >= this frequency fraction
 trial_nearfloor_exclusion_enable = true; % if false, skip NaNing trials (still logs ratios); use for diagnostics only
 rank_stability_boot_reps = 200;     % bootstrap repetitions for rank-aggregation stability diagnostics
-peak_bonus_rescue_min = 0.55;       % minimum peak-clarity to rescue flat-only exclusions
-peak_bonus_min_peaks = 1;           % minimum number of detected peaks for rescue
-hard_leak_severity_mult = 1.15;     % leak must exceed adaptive threshold by this factor for hard reject
-hard_emg_severity_mult = 1.10;      % EMG score must exceed adaptive threshold by this factor for hard reject
 topo_flat_std_min = 1e-6;           % near-zero std => degenerate/flat map
 topo_flat_range_min = 1e-5;         % near-zero dynamic range => degenerate/flat map
 topo_nonposterior_max = 0.28;       % posterior concentration below this is non-posterior
@@ -354,7 +344,7 @@ for subj = 1:nSubj
     searchMeanPrSpectrum_full = []; searchMeanPrSpectrum_early = []; searchMeanPrSpectrum_late = [];
     searchEmgClass_full = {}; searchEmgClass_early = {}; searchEmgClass_late = {};
     rejection_flags_full = struct(); rejection_flags_early = struct(); rejection_flags_late = struct();
-    soft_warn_flags_full = struct(); soft_warn_flags_early = struct(); soft_warn_flags_late = struct();
+    warn_flags_full = struct(); warn_flags_early = struct(); warn_flags_late = struct();
     candidate_table_full = struct(); candidate_table_early = struct(); candidate_table_late = struct();
     W_combined_full_norm = []; W_combined_early_norm = []; W_combined_late_norm = [];
     w_combined_full_norm = []; w_combined_early_norm = []; w_combined_late_norm = [];
@@ -489,7 +479,7 @@ for subj = 1:nSubj
     end
     W_top = searchFilters(:, 1);
 
-    % Candidate metrics (single deterministic path for preregistered selection).
+    % Candidate metrics (deterministic path for preregistered selection).
     corr_vec = searchCorrs;
     ratio_vec = searchOccFrontRatio;
     eval_raw_vec = evals_sorted(1:nSearch);
@@ -509,8 +499,7 @@ for subj = 1:nSubj
     [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
     [peak_form_score_vec, peak_form_mode_vec, peak_form_diag] = compute_peak_form_template_score_from_spectra( ...
-        searchMeanPrSpectrum, scan_freqs, analysis_freq_range, ...
-        pf_multi_peak_sep_min_hz, pf_multi_peak_height_ratio_min, pf_multi_peak_penalty_mult);
+        searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
     topo_posterior_vec = searchTopoPosteriorConcentration;
     topo_flat_fail_vec = (searchTopoSpatialStd < topo_flat_std_min) | (searchTopoDynamicRange < topo_flat_range_min);
     topo_nonposterior_fail_vec = topo_posterior_vec < topo_nonposterior_max;
@@ -524,22 +513,22 @@ for subj = 1:nSubj
         0.20 * normalize_robust(max(hf_slope_for_score, 0));
     enforced_min_eigval = min_eigval;
     pass_eig_gate = finite_metrics & (eval_raw_vec >= enforced_min_eigval);
-    single_peak_mode_mask = strcmpi(peak_form_mode_vec, 'single') | strcmpi(peak_form_mode_vec, 'dominant');
+    dominant_peak_mode_mask = strcmpi(peak_form_mode_vec, 'dominant');
     pass_peak_gate = finite_metrics & (peak_form_score_vec >= min_peak_form);
     fail_leak = finite_metrics & (combined_leak_vec > max_combined_leak);
     fail_lineharm = finite_metrics & (lineharm_vec > max_lineharm_ratio);
-    fail_hf_slope = false(nSearch, 1); % HF slope kept in EMG score only; no hard gate
+    fail_hf_slope = false(nSearch, 1); % HF slope kept in EMG score only; no eligibility gate
     fail_emg_score = finite_metrics & (emg_artifact_score > max_emg_score);
-    hard_reject_flags_raw = fail_leak | fail_emg_score | ...
+    reject_flags = fail_leak | fail_emg_score | ...
         topo_flat_fail_vec | topo_nonposterior_fail_vec | topo_fragmented_fail_vec;
-    soft_warn_any = fail_lineharm;
-    soft_warn_flags = struct( ...
+    warn_any = fail_lineharm;
+    warn_flags = struct( ...
         'combined_leak', false(nSearch, 1), ...
         'lineharm', fail_lineharm, ...
         'hf_slope', false(nSearch, 1), ...
         'emg_score', false(nSearch, 1), ...
-        'any', soft_warn_any);
-    artifact_flags = hard_reject_flags_raw;
+        'any', warn_any);
+    artifact_flags = reject_flags;
     rejection_flags = struct( ...
         'combined_leak', fail_leak, ...
         'lineharm', false(nSearch, 1), ...
@@ -584,7 +573,6 @@ for subj = 1:nSubj
         evals_sorted(1:nSearch), raw_eligible_for_outlier, outlier_ratio_thr, outlier_mad_mult, outlier_min_rest);
     if ~isempty(extreme_component_outlier_idx)
         extreme_component_outlier_mask(extreme_component_outlier_idx) = true;
-        artifact_flags(extreme_component_outlier_idx) = true;
         msg = sprintf(['Extreme GED component outlier excluded for subject %s (component C%d) ', ...
                        'before combined-component selection.'], subjects{subj}, extreme_component_outlier_idx);
         ratio12_val = NaN;
@@ -602,15 +590,10 @@ for subj = 1:nSubj
                    'thr_peak_pf', min_peak_form));
     end
     occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
-    hard_eligible = pass_eig_gate & pass_peak_gate & ~artifact_flags & ...
+    eligible = pass_eig_gate & pass_peak_gate & ~artifact_flags & ...
         ~extreme_component_outlier_mask & occipital_class_mask;
-    no_threshold_match = ~any(hard_eligible);
-    occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
-    very_good_pf_mask = pass_peak_gate;
-    pass_lenient_eig_gate = pass_eig_gate;
-    hard_reject_flags = hard_reject_flags_raw;
-    artifact_flags = hard_reject_flags;
-    selection_pool_mask = hard_eligible;
+    no_threshold_match = ~any(eligible);
+    selection_pool_mask = eligible;
     [searchScores, rankagg_metrics, rankagg_stability] = compute_calibrated_rank_aggregation_score( ...
         eval_raw_vec, peak_form_score_vec, peak_bonus_vec, occipital_evidence, emg_artifact_score, rank_stability_boot_reps);
     searchScores(~finite_metrics) = -Inf;
@@ -618,23 +601,23 @@ for subj = 1:nSubj
     if ~any(isfinite(searchScores))
         msg = sprintf(['No components met fixed preregistered criteria for subject %s. ', ...
                        'This window will retain NaN-valued downstream outputs.'], subjects{subj});
-        hard_metrics = struct( ...
+        eligibility_metrics = struct( ...
             'n_search', nSearch, ...
             'n_finite_metrics', sum(finite_metrics), ...
             'n_pass_eig', sum(pass_eig_gate), ...
             'n_pass_peak_pf', sum(pass_peak_gate), ...
             'n_artifact_flagged', sum(artifact_flags), ...
-            'n_lineharm_exceeds_soft_thr', sum(fail_lineharm), ...
-            'n_pass_all_raw', sum(hard_eligible), ...
+            'n_lineharm_exceeds_warn_thr', sum(fail_lineharm), ...
+            'n_eligible', sum(eligible), ...
             'n_occipital_class', sum(occipital_class_mask), ...
             'n_excluded_extreme_component_outlier', sum(extreme_component_outlier_mask), ...
             'thr_eig', enforced_min_eigval, ...
             'thr_peak_pf', min_peak_form, ...
             'thr_combined_leak', max_combined_leak, ...
-            'thr_lineharm_soft_warn', max_lineharm_ratio, ...
+            'thr_lineharm_warn', max_lineharm_ratio, ...
             'thr_hf_slope', max_hf_slope, ...
             'thr_emg_score', max_emg_score);
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_HARD_ELIGIBLE_COMPONENTS', msg, hard_metrics);
+        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_ELIGIBLE_COMPONENTS', msg, eligibility_metrics);
     end
     [bestScore, bestIdx] = max(searchScores);
     if isempty(bestIdx) || isnan(bestScore)
@@ -658,28 +641,16 @@ for subj = 1:nSubj
     candidate_table.peak_count = peak_count_vec;
     candidate_table.peak_form_score = peak_form_score_vec;
     candidate_table.peak_form_mode = peak_form_mode_vec;
-    candidate_table.peak_form_basis = repmat({'raw_only_current'}, nSearch, 1);
-    candidate_table.peak_form_best_single_similarity = peak_form_diag.best_single_similarity;
-    candidate_table.peak_form_best_double_similarity = peak_form_diag.best_double_similarity;
-    candidate_table.peak_form_similarity_raw = peak_form_diag.best_similarity_raw;
-    candidate_table.peak_form_best_shift_hz = peak_form_diag.best_shift_hz;
-    candidate_table.peak_form_best_center_hz = peak_form_diag.best_center_hz;
-    candidate_table.peak_form_best_width_hz = peak_form_diag.best_width_hz;
-    candidate_table.peak_form_best_separation_hz = peak_form_diag.best_separation_hz;
-    candidate_table.peak_form_trough_depth = peak_form_diag.best_trough_depth;
-    candidate_table.peak_form_edge_ratio = peak_form_diag.edge_ratio;
-    candidate_table.peak_form_edge_run = peak_form_diag.edge_run_score;
-    candidate_table.peak_form_edge_artifact_flag = peak_form_diag.edge_artifact_flag;
-    candidate_table.peak_form_similarity_pre_penalty = peak_form_diag.pre_penalty_similarity;
-    candidate_table.peak_form_total_penalty_raw = peak_form_diag.total_penalty_raw;
-    candidate_table.peak_form_total_penalty_used = peak_form_diag.total_penalty_used;
-    candidate_table.peak_form_multi_peak_penalty = peak_form_diag.multi_peak_penalty;
-    candidate_table.peak_form_multi_peak_flag = peak_form_diag.multi_peak_flag;
-    candidate_table.peak_form_dominance_penalty = peak_form_diag.dominance_penalty;
-    candidate_table.peak_form_dom_rivals_major = peak_form_diag.dominance_rival_count_major;
-    candidate_table.peak_form_dom_rivals_minor = peak_form_diag.dominance_rival_count_minor;
-    candidate_table.peak_form_dom_rival_amp_ratio_sum = peak_form_diag.dominance_rival_amp_ratio_sum;
-    candidate_table.peak_form_dominant_penalty = peak_form_diag.dominant_penalty_tag;
+    candidate_table.peak_form_basis = repmat({'cv_likelihood_model_comparison'}, nSearch, 1);
+    candidate_table.peak_form_cv_ll_dominant = peak_form_diag.cv_loglik_dominant;
+    candidate_table.peak_form_cv_ll_diffuse = peak_form_diag.cv_loglik_diffuse;
+    candidate_table.peak_form_cv_ll_artifact = peak_form_diag.cv_loglik_artifact;
+    candidate_table.peak_form_cv_ll_null = peak_form_diag.cv_loglik_null;
+    candidate_table.peak_form_ll_margin = peak_form_diag.cv_margin_vs_best_alt;
+    candidate_table.peak_form_dominant_peak_hz = peak_form_diag.dominant_peak_hz;
+    candidate_table.peak_form_dominant_peak_width_hz = peak_form_diag.dominant_peak_width_hz;
+    candidate_table.peak_form_dominant_peak_amp = peak_form_diag.dominant_peak_amp;
+    candidate_table.peak_form_cv_kfold = peak_form_diag.cv_kfold_used;
     candidate_table.pf_quality_band = assign_pf_quality_band_labels(peak_form_score_vec);
     candidate_table.pf_rank = compute_descending_rank(peak_form_score_vec);
     candidate_table.occipital_evidence = occipital_evidence;
@@ -703,30 +674,26 @@ for subj = 1:nSubj
     candidate_table.rank_stability_rank_std = rankagg_stability.rank_std;
     candidate_table.pass_eig_gate = pass_eig_gate;
     candidate_table.pass_peak_pf_gate = pass_peak_gate;
-    candidate_table.single_peak_mode = single_peak_mode_mask;
-    candidate_table.very_good_pf = very_good_pf_mask;
-    candidate_table.pass_lenient_eig_gate = pass_lenient_eig_gate;
+    candidate_table.dominant_peak_mode = dominant_peak_mode_mask;
     candidate_table.combined_leak = combined_leak_vec;
     candidate_table.artifact_flag = artifact_flags;
-    candidate_table.hard_reject_raw = hard_reject_flags_raw;
-    candidate_table.hard_reject = hard_reject_flags;
-    candidate_table.soft_warn = soft_warn_any;
+    candidate_table.reject = reject_flags;
+    candidate_table.warn = warn_any;
     candidate_table.reject_reason = compute_primary_rejection_reason(rejection_flags);
     candidate_table.fail_combined_leak = rejection_flags.combined_leak;
     candidate_table.fail_lineharm = rejection_flags.lineharm;
-    candidate_table.lineharm_exceeds_soft_thr = fail_lineharm;
+    candidate_table.lineharm_exceeds_warn_thr = fail_lineharm;
     candidate_table.fail_hf_slope = rejection_flags.hf_slope;
     candidate_table.fail_emg_score = rejection_flags.emg_score;
     candidate_table.fail_topo_flat = rejection_flags.topo_flat;
     candidate_table.fail_topo_nonposterior = rejection_flags.topo_nonposterior;
     candidate_table.fail_topo_fragmented = rejection_flags.topo_fragmented;
-    candidate_table.soft_warn_combined_leak = soft_warn_flags.combined_leak;
-    candidate_table.soft_warn_lineharm = soft_warn_flags.lineharm;
-    candidate_table.soft_warn_hf_slope = soft_warn_flags.hf_slope;
-    candidate_table.soft_warn_emg_score = soft_warn_flags.emg_score;
-    candidate_table.hard_eligible_raw = hard_eligible;
+    candidate_table.warn_combined_leak = warn_flags.combined_leak;
+    candidate_table.warn_lineharm = warn_flags.lineharm;
+    candidate_table.warn_hf_slope = warn_flags.hf_slope;
+    candidate_table.warn_emg_score = warn_flags.emg_score;
     candidate_table.extreme_component_outlier = extreme_component_outlier_mask;
-    candidate_table.hard_eligible = hard_eligible;
+    candidate_table.eligible = eligible;
     candidate_table.thr_min_eigval = repmat(enforced_min_eigval, nSearch, 1);
     candidate_table.thr_min_peak_pf = repmat(min_peak_form, nSearch, 1);
     candidate_table.thr_max_combined_leak = repmat(max_combined_leak, nSearch, 1);
@@ -740,7 +707,7 @@ for subj = 1:nSubj
         msg = sprintf(['No occipital-labeled artifact-screened finite components available for subject %s. ', ...
             'This window will be marked as NaN for downstream metrics.'], subjects{subj});
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCCIPITAL_COMPONENTS', msg, ...
-            struct('n_hard_eligible', sum(hard_eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
+            struct('n_eligible', sum(eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
             'n_finite_scores', sum(isfinite(searchScores))));
     end
     if isempty(combined_idx)
@@ -800,7 +767,7 @@ for subj = 1:nSubj
     if isempty(finite_scores)
         msg = sprintf('No finite eligible component scores for subject %s; using unconstrained eigenvalue ordering for display.', subjects{subj});
         warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_FINITE_SCORES_FOR_DISPLAY', msg, ...
-            struct('n_hard_eligible', sum(hard_eligible), 'n_search', nSearch));
+            struct('n_eligible', sum(eligible), 'n_search', nSearch));
         [~, topDispOrder] = sort(evals_sorted(1:nSearch), 'descend');
     else
         [~, topDispOrder] = sort(evals_sorted(1:nSearch), 'descend');
@@ -829,7 +796,7 @@ for subj = 1:nSubj
             searchMeanPrSpectrum_full = searchMeanPrSpectrum;
             searchEmgClass_full = searchEmgClass;
             rejection_flags_full = rejection_flags;
-            soft_warn_flags_full = soft_warn_flags;
+            warn_flags_full = warn_flags;
             candidate_table_full = candidate_table;
         elseif w == 2
             searchFilters_early = searchFilters;
@@ -843,7 +810,7 @@ for subj = 1:nSubj
             searchMeanPrSpectrum_early = searchMeanPrSpectrum;
             searchEmgClass_early = searchEmgClass;
             rejection_flags_early = rejection_flags;
-            soft_warn_flags_early = soft_warn_flags;
+            warn_flags_early = warn_flags;
             candidate_table_early = candidate_table;
         else
             searchFilters_late = searchFilters;
@@ -857,7 +824,7 @@ for subj = 1:nSubj
             searchMeanPrSpectrum_late = searchMeanPrSpectrum;
             searchEmgClass_late = searchEmgClass;
             rejection_flags_late = rejection_flags;
-            soft_warn_flags_late = soft_warn_flags;
+            warn_flags_late = warn_flags;
             candidate_table_late = candidate_table;
         end
 
@@ -901,8 +868,8 @@ for subj = 1:nSubj
             'emg_artifact_score', emg_artifact_score, ...
             'occipital_evidence', occipital_evidence, ...
             'emg_class', {searchEmgClass}, ...
-            'hard_reject_flags', artifact_flags, ...
-            'soft_warn_flags', soft_warn_flags, ...
+            'reject_flags', artifact_flags, ...
+            'warn_flags', warn_flags, ...
             'rejection_flags', rejection_flags, ...
             'no_threshold_match', no_threshold_match);
         if w == 1
@@ -979,7 +946,7 @@ for subj = 1:nSubj
         fig_save_dir_emg_exclusion, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(candidate_table_full.comp_idx)), ...
         searchEmgClass_full, ...
-        candidate_table_full.hard_eligible, ...
+        candidate_table_full.eligible, ...
         rejection_flags_full, ...
         candidate_table_full.front_leak, candidate_table_full.temp_leak, candidate_table_full.combined_leak, ...
         candidate_table_full.lineharm_ratio, candidate_table_full.hf_slope, candidate_table_full.emg_artifact_score, ...
@@ -991,7 +958,7 @@ for subj = 1:nSubj
         fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(candidate_table_early.comp_idx)), ...
         searchEmgClass_early, ...
-        candidate_table_early.hard_eligible, ...
+        candidate_table_early.eligible, ...
         rejection_flags_early, ...
         candidate_table_early.front_leak, candidate_table_early.temp_leak, candidate_table_early.combined_leak, ...
         candidate_table_early.lineharm_ratio, candidate_table_early.hf_slope, candidate_table_early.emg_artifact_score, ...
@@ -1003,7 +970,7 @@ for subj = 1:nSubj
         fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(candidate_table_late.comp_idx)), ...
         searchEmgClass_late, ...
-        candidate_table_late.hard_eligible, ...
+        candidate_table_late.eligible, ...
         rejection_flags_late, ...
         candidate_table_late.front_leak, candidate_table_late.temp_leak, candidate_table_late.combined_leak, ...
         candidate_table_late.lineharm_ratio, candidate_table_late.hf_slope, candidate_table_late.emg_artifact_score, ...
@@ -1915,7 +1882,7 @@ save_figure_png(fig_cond_slope, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_conditio
 
 %% Mean gamma frequency shift bar plot
 close all
-fig_cond_shift_bar = figure('Position', [0 0 1512 982], 'Color', 'w');
+fig_cond_shift_bar_freq = figure('Position', [0 0 1512 982], 'Color', 'w');
 valid_delta = isfinite(delta_post);
 subj_idx = find(valid_delta);
 delta_vals = delta_post(valid_delta);
@@ -1932,7 +1899,7 @@ xlabel('Subject', 'FontSize', 18, 'FontWeight', 'bold');
 ylabel('\Delta Frequency Shift (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
 title('Gamma Frequency Shift', 'FontSize', 20, 'FontWeight', 'bold');
 set(gca, 'FontSize', 14, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
-save_figure_png(fig_cond_shift_bar, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bar_GammaFreq.png'));
+save_figure_png(fig_cond_shift_bar_freq, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bar_GammaFreq.png'));
 
 %% Summary dashboard (backprojected combined-component data)
 fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -2175,14 +2142,14 @@ text(0.02, 0.98, sprintf('Linear trend (subject slope): p=%.4f, d=%.2f', ...
 save_figure_png(fig_main_gamma, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq.png'));
 
 %% Condition-shift figure: normalized gamma frequency trajectories
-fig_condition_shift = figure('Position', [0 0 1512 982], 'Color', 'w');
+fig_condition_shift_freq = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
 dat_freq = all_trial_mean;  % [condition x subject], robust mean over trials
-dat_shift = dat_freq - dat_freq(1, :);  % Anchor each subject at 25% condition
+dat_freq_shift = dat_freq - dat_freq(1, :);  % Anchor each subject at 25% condition
 
 for s = 1:nSubj
-    y_subj = dat_shift(:, s);
+    y_subj = dat_freq_shift(:, s);
     valid_subj = isfinite(y_subj);
     if sum(valid_subj) >= 2
         plot(find(valid_subj), y_subj(valid_subj), '-o', ...
@@ -2191,12 +2158,12 @@ for s = 1:nSubj
     end
 end
 
-med_shift = nanmedian(dat_shift, 2);
-mad_shift = nan(4, 1);
+med_freq_shift = nanmedian(dat_freq_shift, 2);
+mad_freq_shift = nan(4, 1);
 for c = 1:4
-    mad_shift(c) = robust_mad(dat_shift(c, :));
+    mad_freq_shift(c) = robust_mad(dat_freq_shift(c, :));
 end
-errorbar(1:4, med_shift, mad_shift, '-o', ...
+errorbar(1:4, med_freq_shift, mad_freq_shift, '-o', ...
     'Color', colors(4, :), 'LineWidth', 2.8, 'CapSize', 10, ...
     'MarkerFaceColor', colors(4, :), 'MarkerSize', 8);
 
@@ -2210,8 +2177,8 @@ ylabel('\Delta Gamma Frequency [Hz]');
 title('Gamma Peak Frequency Shift', ...
     'FontSize', 24, 'FontWeight', 'bold');
 
-cond_shift_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_frequency.png');
-save_figure_png(fig_condition_shift, cond_shift_path);
+cond_shift_freq_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_frequency.png');
+save_figure_png(fig_condition_shift_freq, cond_shift_freq_path);
 
 %% Main figure: gamma frequency over contrast by time window
 [gamma_slope_full, gamma_delta_full] = compute_condition_separation_from_matrix(all_trial_median);
@@ -2344,7 +2311,6 @@ save(save_path, ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
     'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
-    'warning_log', ...
     'all_trial_powratio_components_full', 'all_trial_powratio_components_early', 'all_trial_powratio_components_late', ...
     'all_trial_outlier_mask_freq_full', 'all_trial_outlier_mask_freq_early', 'all_trial_outlier_mask_freq_late', ...
     'all_trial_outlier_mask_power_full', 'all_trial_outlier_mask_power_early', 'all_trial_outlier_mask_power_late', ...
@@ -2904,7 +2870,7 @@ end
 
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
     searchMeanPrSpectrum, eigval_vec, emg_class, ...
-    hard_eligible, rejection_flags, ...
+    eligible, rejection_flags, ...
     front_leak_vec, temp_leak_vec, combined_leak_vec, lineharm_vec, hf_slope_vec, emg_score_vec, ...
     extreme_component_outlier, ...
     cfg_topo, topo_labels, ...
@@ -2924,7 +2890,7 @@ if ~isempty(selected_idx)
     selected_mask(selected_idx) = true;
 end
 occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), emg_class(:));
-final_eligible_mask = logical(hard_eligible(:)) & occipital_class_mask;
+final_eligible_mask = logical(eligible(:)) & occipital_class_mask;
 final_rejected_mask = ~final_eligible_mask;
 sel_idx = find(selected_mask);
 rej_idx = find(final_rejected_mask & ~selected_mask);
@@ -3086,7 +3052,7 @@ info_lines = { ...
     sprintf('topo_flat gate: %d', ~get_flag_value(rejection_flags, 'topo_flat', ci)), ...
     sprintf('topo_nonposterior gate: %d', ~get_flag_value(rejection_flags, 'topo_nonposterior', ci)), ...
     sprintf('topo_fragmented gate: %d', ~get_flag_value(rejection_flags, 'topo_fragmented', ci)), ...
-    sprintf('lineharm soft-warn: %d (%.2f > %.2f)', lineharm_vec(ci) > max_lineharm_ratio_thr, lineharm_vec(ci), max_lineharm_ratio_thr), ...
+    sprintf('lineharm warn: %d (%.2f > %.2f)', lineharm_vec(ci) > max_lineharm_ratio_thr, lineharm_vec(ci), max_lineharm_ratio_thr), ...
     sprintf('front/temp leak: %.2f/%.2f', front_leak_vec(ci), temp_leak_vec(ci))};
 info_viol = [ ...
     extreme_outlier_fail, ...
@@ -3299,7 +3265,7 @@ pf_peak_hz = NaN;
 if isempty(spec_vec) || isempty(scan_freqs) || numel(spec_vec) ~= numel(scan_freqs)
     return;
 end
-[pf_vec, ~, pf_diag] = compute_peak_form_template_score_from_spectra( ...
+[pf_vec, ~, ~] = compute_peak_form_template_score_from_spectra( ...
     spec_vec(:)', scan_freqs, analysis_freq_range);
 if ~isempty(pf_vec) && isfinite(pf_vec(1))
     pf_score = pf_vec(1);
@@ -3358,39 +3324,6 @@ yt_lbl = arrayfun(@(v) sprintf('%g', v), yt, 'UniformOutput', false);
 set(axh, 'YTickLabel', yt_lbl);
 end
 
-function [edge_ratio, edge_run_score, edge_artifact_flag] = compute_edge_artifact_indicators( ...
-    y_resid, x_band, analysis_freq_range, edge_ratio_limit, edge_run_limit)
-edge_ratio = NaN;
-edge_run_score = NaN;
-edge_artifact_flag = false;
-if isempty(y_resid) || isempty(x_band) || numel(y_resid) ~= numel(x_band)
-    return;
-end
-x_lo = analysis_freq_range(1);
-x_hi = analysis_freq_range(2);
-edge_mask = (x_band <= (x_lo + 5)) | (x_band >= (x_hi - 5));
-interior_mask = x_band >= (x_lo + 10) & x_band <= (x_hi - 10);
-if sum(edge_mask) < 3 || sum(interior_mask) < 3
-    return;
-end
-edge_amp = prctile(abs(y_resid(edge_mask)), 90);
-interior_amp = prctile(abs(y_resid(interior_mask)), 90);
-edge_ratio = edge_amp / max(interior_amp, eps);
-left_mask = x_band <= (x_lo + 6);
-right_mask = x_band >= (x_hi - 6);
-left_run = 0;
-right_run = 0;
-if sum(left_mask) >= 4
-    left_run = abs(mean(diff(y_resid(left_mask))));
-end
-if sum(right_mask) >= 4
-    right_run = abs(mean(diff(y_resid(right_mask))));
-end
-edge_run_score = max(left_run, right_run);
-edge_artifact_flag = isfinite(edge_ratio) && (edge_ratio > edge_ratio_limit) && ...
-    isfinite(edge_run_score) && (edge_run_score > edge_run_limit);
-end
-
 function [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
     mean_pr_spectrum, scan_freqs, analysis_freq_range)
 nComp = size(mean_pr_spectrum, 1);
@@ -3445,60 +3378,20 @@ end
 end
 
 function [peak_form_score_vec, peak_form_mode_vec, diag] = compute_peak_form_template_score_from_spectra( ...
-    mean_pr_spectrum, scan_freqs, analysis_freq_range, multi_peak_sep_min_hz, multi_peak_height_ratio_min, multi_peak_penalty_mult)
-if nargin < 4 || isempty(multi_peak_sep_min_hz) || ~isfinite(multi_peak_sep_min_hz)
-    multi_peak_sep_min_hz = 15;
-end
-if nargin < 5 || isempty(multi_peak_height_ratio_min) || ~isfinite(multi_peak_height_ratio_min)
-    multi_peak_height_ratio_min = 0.80;
-end
-if nargin < 6 || isempty(multi_peak_penalty_mult) || ~isfinite(multi_peak_penalty_mult)
-    multi_peak_penalty_mult = 0.62;
-end
-multi_peak_penalty_mult = max(0, min(1, multi_peak_penalty_mult));
-shift_max_hz = 10;
-single_widths_hz = [5 7 9 12];
-double_separations_hz = [8 12 16 20];
-double_widths_hz = [3 4 5 6];
-min_trough_depth = 0.10;
-min_similarity = 0.40;
-smooth_n = 5;
-peak_width_min_hz = 2.0;
-peak_width_max_hz = 20.0;
-edge_ratio_soft = 1.25;
-edge_ratio_limit = 1.75;
-edge_run_soft = 0.025;
-edge_run_limit = 0.060;
-peak_form_prom_abs_floor = 0.02;
+    mean_pr_spectrum, scan_freqs, analysis_freq_range)
 nComp = size(mean_pr_spectrum, 1);
 peak_form_score_vec = zeros(nComp, 1);
 peak_form_mode_vec = repmat({'none'}, nComp, 1);
 diag = struct( ...
-    'best_single_similarity', nan(nComp, 1), ...
-    'best_double_similarity', nan(nComp, 1), ...
-    'best_similarity_raw', nan(nComp, 1), ...
-    'pre_penalty_similarity', nan(nComp, 1), ...
-    'total_penalty_raw', nan(nComp, 1), ...
-    'total_penalty_used', nan(nComp, 1), ...
-    'edge_penalty', nan(nComp, 1), ...
-    'dominance_penalty', nan(nComp, 1), ...
-    'dominance_rival_count_major', nan(nComp, 1), ...
-    'dominance_rival_count_minor', nan(nComp, 1), ...
-    'dominance_rival_amp_ratio_sum', nan(nComp, 1), ...
-    'hf_rise_penalty', nan(nComp, 1), ...
-    'best_shift_hz', nan(nComp, 1), ...
-    'best_center_hz', nan(nComp, 1), ...
-    'best_width_hz', nan(nComp, 1), ...
-    'best_separation_hz', nan(nComp, 1), ...
-    'best_trough_depth', nan(nComp, 1), ...
-    'edge_ratio', nan(nComp, 1), ...
-    'edge_run_score', nan(nComp, 1), ...
-    'edge_artifact_flag', false(nComp, 1), ...
-    'roughness_ratio', nan(nComp, 1), ...
-    'roughness_penalty', nan(nComp, 1), ...
-    'multi_peak_penalty', nan(nComp, 1), ...
-    'multi_peak_flag', false(nComp, 1), ...
-    'dominant_penalty_tag', {repmat({'none'}, nComp, 1)});
+    'cv_loglik_dominant', nan(nComp, 1), ...
+    'cv_loglik_diffuse', nan(nComp, 1), ...
+    'cv_loglik_artifact', nan(nComp, 1), ...
+    'cv_loglik_null', nan(nComp, 1), ...
+    'cv_margin_vs_best_alt', nan(nComp, 1), ...
+    'dominant_peak_hz', nan(nComp, 1), ...
+    'dominant_peak_width_hz', nan(nComp, 1), ...
+    'dominant_peak_amp', nan(nComp, 1), ...
+    'cv_kfold_used', nan(nComp, 1));
 if isempty(mean_pr_spectrum) || isempty(scan_freqs)
     return;
 end
@@ -3506,430 +3399,294 @@ freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_r
 if ~any(freq_mask)
     return;
 end
-smooth_n = max(1, round(smooth_n));
+model_names = {'dominant', 'diffuse', 'artifact', 'null'};
 for ci = 1:nComp
     y = mean_pr_spectrum(ci, :);
     if all(~isfinite(y))
         continue;
     end
     x_band = scan_freqs(freq_mask);
-    y_proc = y(freq_mask);
-    y_proc = movmean(y_proc, smooth_n, 'omitnan');
-    y_band = y_proc;
+    y_band = movmean(y(freq_mask), 3, 'omitnan');
     valid = isfinite(x_band) & isfinite(y_band);
     x_band = x_band(valid);
     y_band = y_band(valid);
-    y_resid = y_band;
-    if numel(y_band) < 7
+    if numel(y_band) < 8
         continue;
     end
-    y_shape = max(y_band - median(y_band(isfinite(y_band))), 0);
-    if ~any(isfinite(y_shape))
-        y_shape = zeros(size(y_band));
-    end
-    [single_best, single_meta] = evaluate_single_template_bank(y_shape, x_band, single_widths_hz, shift_max_hz);
-    [double_best, double_meta] = evaluate_double_template_bank( ...
-        y_shape, y_band, x_band, double_widths_hz, double_separations_hz, shift_max_hz, min_trough_depth);
-    diag.best_single_similarity(ci) = single_best;
-    diag.best_double_similarity(ci) = double_best;
 
-    % Raw spectra can be globally offset, so peak shape is measured relative
-    % to a local raw floor.
-    y_floor = prctile(y_band(isfinite(y_band)), 20);
-    if ~isfinite(y_floor)
-        y_floor = median(y_band(isfinite(y_band)));
-    end
-    if ~isfinite(y_floor)
-        y_floor = 0;
-    end
-    y_pos = max(y_band - y_floor, 0);
-    robust_scale = robust_mad(y_pos);
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = iqr(y_pos);
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = std(y_pos(isfinite(y_pos)));
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = 1;
-    end
-    rel_prom = 0.08 * max(y_pos);
-    min_prom = max([0, rel_prom, peak_form_prom_abs_floor, 0.15 * robust_scale]);
-    [pks, locs, widths] = findpeaks(y_pos, x_band, 'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
-    if isempty(pks)
+    % PF is posterior evidence for a dominant-peak model versus diffuse/artifact/null models (k-fold CV likelihood).
+    [dom_loc, dom_width, dom_amp] = select_dominant_peak_seed(y_band, x_band, analysis_freq_range);
+    [ll_dom, ll_diffuse, ll_artifact, ll_null, kfold_used] = compute_pf_cv_loglikelihoods(y_band, x_band, dom_loc, dom_width);
+    ll_vec = [ll_dom, ll_diffuse, ll_artifact, ll_null];
+    if ~any(isfinite(ll_vec))
         continue;
     end
-    pks = pks(:);
-    locs = locs(:);
-    widths = widths(:);
-    [~, dom_idx] = max(pks);
-    dom_amp = pks(dom_idx);
-    dom_width = widths(dom_idx);
-    dom_loc = locs(dom_idx);
-
-    multi_peak_pen = 1;
-    multi_peak_hit = false;
-    if numel(pks) >= 2 && isfinite(dom_amp) && dom_amp > eps
-        sep_ok = abs(locs - dom_loc) >= multi_peak_sep_min_hz;
-        height_ok = pks >= multi_peak_height_ratio_min * dom_amp;
-        rival_mask = ((1:numel(pks))' ~= dom_idx) & sep_ok & height_ok;
-        if any(rival_mask)
-            multi_peak_hit = true;
-            multi_peak_pen = multi_peak_penalty_mult;
-        end
+    ll_max = max(ll_vec(isfinite(ll_vec)));
+    ll_scaled = ll_vec - ll_max;
+    ll_scaled(~isfinite(ll_scaled)) = -Inf;
+    ll_scaled = max(ll_scaled, -60);
+    model_weights = exp(ll_scaled);
+    if sum(model_weights) <= 0 || ~all(isfinite(model_weights))
+        continue;
     end
+    model_post = model_weights / sum(model_weights);
+    [~, best_idx] = max(model_post);
 
-    % Rival-peak clutter penalty:
-    % - Does not penalize a single moderate side peak.
-    % - Penalizes spectra with many sizeable rivals (no clear dominant peak).
-    dominance_pen = 1;
-    n_rival_major = 0;
-    n_rival_minor = 0;
-    rival_amp_ratio_sum = 0;
-    if numel(pks) >= 2 && isfinite(dom_amp) && dom_amp > eps
-        sep_from_dom = abs(locs - dom_loc);
-        is_rival = ((1:numel(pks))' ~= dom_idx);
-        rival_ratios = pks ./ max(dom_amp, eps);
-        rival_sep = sep_from_dom;
-
-        major_ratio_min = 0.55;
-        minor_ratio_min = 0.30;
-        major_sep_min_hz = 4.0;
-        minor_sep_min_hz = 2.5;
-
-        major_mask = is_rival & (rival_sep >= major_sep_min_hz) & (rival_ratios >= major_ratio_min);
-        minor_mask = is_rival & (rival_sep >= minor_sep_min_hz) & (rival_ratios >= minor_ratio_min);
-
-        n_rival_major = sum(major_mask);
-        n_rival_minor = sum(minor_mask);
-        if any(major_mask)
-            rival_amp_ratio_sum = sum(rival_ratios(major_mask));
-        end
-
-        clutter_load = 0;
-        clutter_load = clutter_load + 0.35 * max(0, n_rival_major - 1);
-        clutter_load = clutter_load + 0.12 * max(0, n_rival_minor - 2);
-        clutter_load = clutter_load + 0.45 * max(0, rival_amp_ratio_sum - 0.85);
-
-        max_loss = 0.55;
-        dominance_pen = max(0.45, 1 - min(max_loss, clutter_load));
+    alt_ll = max(ll_vec(2:end));
+    if ~isfinite(alt_ll)
+        alt_ll = ll_max;
     end
-
-    width_low = peak_width_min_hz;
-    width_high = peak_width_max_hz;
-    width_score = 1;
-    if isfinite(dom_width)
-        if dom_width < width_low
-            width_score = max(0.15, dom_width / max(width_low, eps));
-        elseif dom_width > width_high
-            width_score = max(0.20, width_high / max(dom_width, eps));
-        end
-    end
-    snr_score = dom_amp / (dom_amp + robust_scale);
-    amp_score = dom_amp / (dom_amp + 0.70 * robust_scale);
-    shape_score = max(single_best, double_best);
-    peak_core_hz = 6;
-    peak_core_mask = abs(x_band - dom_loc) <= peak_core_hz;
-    conc_ratio = sum(y_pos(peak_core_mask)) / max(sum(y_pos), eps);
-    concentration_pen = 1;
-    if isfinite(conc_ratio) && conc_ratio < 0.32
-        concentration_pen = max(0.35, conc_ratio / 0.32);
-    end
-    dominant_quality = max(0, min(1, (0.40 * amp_score + 0.30 * snr_score + 0.30 * shape_score) * width_score * concentration_pen));
-
-    best_pre_penalty = dominant_quality;
-    dual_candidate = isfinite(double_best) && isfinite(single_best) && ...
-        (double_best > (single_best + 0.05)) && isfinite(double_meta.trough_depth) && ...
-        (double_meta.trough_depth >= max(0.05, 0.75 * min_trough_depth));
-    if dual_candidate
-        mode_raw = 'dual';
-        best_shift = double_meta.shift_hz;
-        best_width = double_meta.width_hz;
-        best_sep = double_meta.sep_hz;
-        best_trough = double_meta.trough_depth;
-        if ~isempty(double_meta.centers_hz)
-            best_centers = double_meta.centers_hz;
-        else
-            best_centers = dom_loc;
-        end
-    else
-        mode_raw = 'single';
-        best_shift = single_meta.shift_hz;
-        best_width = dom_width;
-        best_sep = double_meta.sep_hz;
-        best_trough = double_meta.trough_depth;
-        best_centers = dom_loc;
-    end
-
-    % Penalize EMG-like monotonic high-frequency rise in the upper gamma band.
-    hf_pen = 1;
-    hf_mask = x_band >= max(70, analysis_freq_range(2) - 15);
-    if sum(hf_mask) >= 5
-        hf_idx = find(hf_mask);
-        hf_rho = corr((1:numel(hf_idx))', y_band(hf_idx)', 'rows', 'complete', 'type', 'Spearman');
-        if isfinite(hf_rho) && hf_rho > 0.70
-            hf_pen = max(0.65, 1 - 0.30 * (hf_rho - 0.70) / 0.30);
-        end
-    end
-
-    [edge_ratio, edge_run_score, edge_flag] = compute_edge_artifact_indicators( ...
-        y_resid, x_band, analysis_freq_range, edge_ratio_limit, edge_run_limit);
-    diag.edge_ratio(ci) = edge_ratio;
-    diag.edge_run_score(ci) = edge_run_score;
-    diag.edge_artifact_flag(ci) = edge_flag;
-    edge_pen = 1;
-    if isfinite(edge_ratio) && edge_ratio > edge_ratio_soft
-        edge_pen = edge_pen * max(0.80, 1 - 0.20 * min(1, (edge_ratio - edge_ratio_soft) / max(edge_ratio_limit - edge_ratio_soft, eps)));
-    end
-    if isfinite(edge_run_score) && edge_run_score > edge_run_soft
-        edge_pen = edge_pen * max(0.80, 1 - 0.20 * min(1, (edge_run_score - edge_run_soft) / max(edge_run_limit - edge_run_soft, eps)));
-    end
-    if edge_flag
-        edge_pen = edge_pen * 0.90;
-    end
-
-    % Penalize rough/noisy spectra that can spuriously match broad templates.
-    % Scale-invariant: normalize to unit range so absolute amplitude does not bias the ratio.
-    roughness_ratio = NaN;
-    roughness_pen = 1;
-    y_finite = y_band(isfinite(y_band));
-    if numel(y_finite) >= 3
-        y_range = max(y_finite) - min(y_finite);
-        if y_range > eps
-            y_scaled = y_band / y_range;
-        else
-            y_scaled = y_band;
-        end
-        dy = diff(y_scaled);
-        amp_scale = prctile(y_scaled, 75) - prctile(y_scaled, 25);
-        if ~isfinite(amp_scale) || amp_scale <= eps
-            amp_scale = std(y_scaled(isfinite(y_scaled)));
-        end
-        if ~isfinite(amp_scale) || amp_scale <= eps
-            amp_scale = 1;
-        end
-        roughness_ratio = robust_mad(dy) / amp_scale;
-        rough_ref = 0.40;
-        rough_span = 0.70;
-        rough_pen_floor = 0.55;
-        rough_pen_max_loss = 0.45;
-        if isfinite(roughness_ratio) && roughness_ratio > rough_ref
-            loss_frac = min(1, (roughness_ratio - rough_ref) / rough_span);
-            roughness_pen = max(rough_pen_floor, 1 - rough_pen_max_loss * loss_frac);
-        end
-    end
-
-    penalty_raw = edge_pen * dominance_pen * hf_pen * roughness_pen * multi_peak_pen;
-    penalty_floor = 0.20;
-    penalty_used = max(penalty_floor, penalty_raw);
-    best_raw = best_pre_penalty * penalty_used;
-
-    penalty_names = {'edge', 'dominance', 'hf_rise', 'roughness', 'multi_peak'};
-    penalty_vals = [edge_pen, dominance_pen, hf_pen, roughness_pen, multi_peak_pen];
-    [worst_pen, worst_idx] = min(penalty_vals);
-    if isfinite(worst_pen) && (worst_pen < 0.999)
-        dominant_penalty_tag = penalty_names{worst_idx};
-    else
-        dominant_penalty_tag = 'none';
-    end
-
-    diag.best_similarity_raw(ci) = best_raw;
-    diag.pre_penalty_similarity(ci) = best_pre_penalty;
-    diag.total_penalty_raw(ci) = penalty_raw;
-    diag.total_penalty_used(ci) = penalty_used;
-    diag.edge_penalty(ci) = edge_pen;
-    diag.dominance_penalty(ci) = dominance_pen;
-    diag.dominance_rival_count_major(ci) = n_rival_major;
-    diag.dominance_rival_count_minor(ci) = n_rival_minor;
-    diag.dominance_rival_amp_ratio_sum(ci) = rival_amp_ratio_sum;
-    diag.hf_rise_penalty(ci) = hf_pen;
-    diag.best_shift_hz(ci) = best_shift;
-    if ~isempty(best_centers) && all(isfinite(best_centers))
-        diag.best_center_hz(ci) = mean(best_centers);
-    end
-    diag.best_width_hz(ci) = best_width;
-    diag.best_separation_hz(ci) = best_sep;
-    diag.best_trough_depth(ci) = best_trough;
-    diag.roughness_ratio(ci) = roughness_ratio;
-    diag.roughness_penalty(ci) = roughness_pen;
-    diag.multi_peak_penalty(ci) = multi_peak_pen;
-    diag.multi_peak_flag(ci) = multi_peak_hit;
-    diag.dominant_penalty_tag{ci} = dominant_penalty_tag;
-
-    if ~isfinite(best_raw)
-        peak_form_score_vec(ci) = 0;
-        peak_form_mode_vec{ci} = 'none';
-    else
-        score_mapped = best_raw;
-        if isfinite(min_similarity) && (min_similarity > 0) && (best_raw < min_similarity)
-            score_mapped = 0.75 * score_mapped;
-        end
-        peak_form_score_vec(ci) = max(0, min(1, score_mapped));
-        peak_form_mode_vec{ci} = mode_raw;
-    end
+    peak_form_score_vec(ci) = max(0, min(1, model_post(1)));
+    peak_form_mode_vec{ci} = model_names{best_idx};
+    diag.cv_loglik_dominant(ci) = ll_dom;
+    diag.cv_loglik_diffuse(ci) = ll_diffuse;
+    diag.cv_loglik_artifact(ci) = ll_artifact;
+    diag.cv_loglik_null(ci) = ll_null;
+    diag.cv_margin_vs_best_alt(ci) = ll_dom - alt_ll;
+    diag.dominant_peak_hz(ci) = dom_loc;
+    diag.dominant_peak_width_hz(ci) = dom_width;
+    diag.dominant_peak_amp(ci) = dom_amp;
+    diag.cv_kfold_used(ci) = kfold_used;
 end
 end
 
-function [best_sim, meta] = evaluate_single_template_bank(y_shape, x_band, widths_hz, shift_max_hz)
-best_sim = 0;
-meta = struct('shift_hz', NaN, 'width_hz', NaN, 'centers_hz', []);
-if isempty(widths_hz)
+function [dom_loc, dom_width, dom_amp] = select_dominant_peak_seed(y_band, x_band, analysis_freq_range)
+dom_loc = NaN;
+dom_width = NaN;
+dom_amp = NaN;
+if isempty(y_band) || isempty(x_band) || numel(y_band) ~= numel(x_band)
     return;
 end
-x_mid = mean(x_band);
-x_min = min(x_band);
-x_max = max(x_band);
-for wi = 1:numel(widths_hz)
-    w = widths_hz(wi);
-    if ~isfinite(w) || w <= 0
-        continue;
-    end
-    shift_vals = candidate_shift_values_hz(x_band, shift_max_hz);
-    for si = 1:numel(shift_vals)
-        shift_hz = shift_vals(si);
-        center_hz = x_mid + shift_hz;
-        if ~isfinite(center_hz) || center_hz < x_min || center_hz > x_max
-            continue;
-        end
-        tpl = gaussian_template(x_band, center_hz, w);
-        sim = safe_template_similarity(y_shape, tpl);
-        if sim > best_sim
-            best_sim = sim;
-            meta.shift_hz = shift_hz;
-            meta.width_hz = w;
-            meta.centers_hz = center_hz;
-        end
-    end
+y_floor = prctile(y_band, 20);
+if ~isfinite(y_floor)
+    y_floor = median(y_band);
 end
+if ~isfinite(y_floor)
+    y_floor = 0;
 end
-
-function [best_sim, meta] = evaluate_double_template_bank(y_shape, y_band, x_band, widths_hz, separations_hz, shift_max_hz, min_trough_depth)
-best_sim = 0;
-meta = struct('shift_hz', NaN, 'width_hz', NaN, 'sep_hz', NaN, 'trough_depth', NaN, 'centers_hz', []);
-if isempty(widths_hz) || isempty(separations_hz)
+y_pos = max(y_band - y_floor, 0);
+robust_scale = robust_mad(y_pos);
+if ~isfinite(robust_scale) || robust_scale <= eps
+    robust_scale = std(y_pos(isfinite(y_pos)));
+end
+if ~isfinite(robust_scale) || robust_scale <= eps
+    robust_scale = 1;
+end
+prom_min = max([0.02, 0.08 * max(y_pos), 0.15 * robust_scale]);
+[pks, locs, widths] = findpeaks(y_pos, x_band, 'MinPeakProminence', prom_min, 'MinPeakDistance', 4);
+if isempty(pks)
+    core_lo = max(40, analysis_freq_range(1));
+    core_hi = min(80, analysis_freq_range(2));
+    core_mask = x_band >= core_lo & x_band <= core_hi;
+    if ~any(core_mask)
+        core_mask = true(size(x_band));
+    end
+    y_core = y_pos(core_mask);
+    x_core = x_band(core_mask);
+    [dom_amp, idx] = max(y_core);
+    dom_loc = x_core(idx);
+    dom_width = 6;
     return;
 end
-x_mid = mean(x_band);
-x_min = min(x_band);
-x_max = max(x_band);
-shift_vals = candidate_shift_values_hz(x_band, shift_max_hz);
-for wi = 1:numel(widths_hz)
-    w = widths_hz(wi);
-    if ~isfinite(w) || w <= 0
-        continue;
-    end
-    for di = 1:numel(separations_hz)
-        sep = separations_hz(di);
-        if ~isfinite(sep) || sep <= 0
-            continue;
-        end
-        for si = 1:numel(shift_vals)
-            shift_hz = shift_vals(si);
-            c1 = x_mid + shift_hz - sep / 2;
-            c2 = x_mid + shift_hz + sep / 2;
-            if ~isfinite(c1) || ~isfinite(c2) || c1 < x_min || c2 > x_max
-                continue;
-            end
-            tpl = gaussian_template(x_band, c1, w) + gaussian_template(x_band, c2, w);
-            sim = safe_template_similarity(y_shape, tpl);
-            trough_depth = estimate_trough_depth(y_band, x_band, c1, c2);
-            trough_scale = min(1, max(0, trough_depth) / max(min_trough_depth, eps));
-            sim_adj = sim * trough_scale;
-            if sim_adj > best_sim
-                best_sim = sim_adj;
-                meta.shift_hz = shift_hz;
-                meta.width_hz = w;
-                meta.sep_hz = sep;
-                meta.trough_depth = trough_depth;
-                meta.centers_hz = [c1 c2];
-            end
-        end
-    end
+[dom_amp, dom_idx] = max(pks);
+dom_loc = locs(dom_idx);
+dom_width = widths(dom_idx);
+if ~isfinite(dom_width) || dom_width <= 0
+    dom_width = 6;
 end
+dom_width = max(2, min(16, dom_width));
 end
 
-function shifts = candidate_shift_values_hz(x_band, shift_max_hz)
-if numel(x_band) >= 2
-    df = median(diff(x_band));
+function [ll_dom, ll_diffuse, ll_artifact, ll_null, kfold_used] = compute_pf_cv_loglikelihoods(y, x, dom_loc_seed, dom_width_seed)
+ll_dom = NaN;
+ll_diffuse = NaN;
+ll_artifact = NaN;
+ll_null = NaN;
+kfold_used = NaN;
+n = numel(y);
+if n < 8
+    return;
+end
+k = 5;
+if n < 16
+    k = 3;
+end
+if n < 11
+    k = 2;
+end
+fold_id = floor((0:n-1) * k / n) + 1;
+ll_acc = zeros(1, 4);
+fold_valid = 0;
+for fi = 1:k
+    test_mask = fold_id == fi;
+    train_mask = ~test_mask;
+    if sum(train_mask) < 5 || sum(test_mask) < 2
+        continue;
+    end
+    x_train = x(train_mask);
+    y_train = y(train_mask);
+    x_test = x(test_mask);
+    y_test = y(test_mask);
+
+    [yhat_train_dom, yhat_test_dom] = fit_predict_pf_model_dominant(x_train, y_train, x_test, dom_loc_seed, dom_width_seed);
+    [yhat_train_diffuse, yhat_test_diffuse] = fit_predict_pf_model_diffuse(x_train, y_train, x_test);
+    [yhat_train_artifact, yhat_test_artifact] = fit_predict_pf_model_artifact(x_train, y_train, x_test);
+    [yhat_train_null, yhat_test_null] = fit_predict_pf_model_null(y_train, y_test);
+
+    fold_ll_dom = pf_fold_loglikelihood(y_train, yhat_train_dom, y_test, yhat_test_dom);
+    fold_ll_diffuse = pf_fold_loglikelihood(y_train, yhat_train_diffuse, y_test, yhat_test_diffuse);
+    fold_ll_artifact = pf_fold_loglikelihood(y_train, yhat_train_artifact, y_test, yhat_test_artifact);
+    fold_ll_null = pf_fold_loglikelihood(y_train, yhat_train_null, y_test, yhat_test_null);
+    fold_ll = [fold_ll_dom, fold_ll_diffuse, fold_ll_artifact, fold_ll_null];
+    if ~all(isfinite(fold_ll))
+        continue;
+    end
+    ll_acc = ll_acc + fold_ll;
+    fold_valid = fold_valid + 1;
+end
+if fold_valid < max(2, min(3, k))
+    return;
+end
+ll_dom = ll_acc(1);
+ll_diffuse = ll_acc(2);
+ll_artifact = ll_acc(3);
+ll_null = ll_acc(4);
+kfold_used = fold_valid;
+end
+
+function [yhat_train, yhat_test] = fit_predict_pf_model_dominant(x_train, y_train, x_test, dom_loc_seed, dom_width_seed)
+if nargin < 5 || ~isfinite(dom_width_seed) || dom_width_seed <= 0
+    dom_width_seed = 6;
+end
+if nargin < 4 || ~isfinite(dom_loc_seed)
+    dom_loc_seed = median(x_train(isfinite(x_train)));
+end
+if ~isfinite(dom_loc_seed)
+    dom_loc_seed = mean(x_train);
+end
+if numel(x_train) >= 2
+    df = median(diff(sort(x_train)));
 else
     df = 1;
 end
 if ~isfinite(df) || df <= 0
     df = 1;
 end
-shift_max_hz = max(0, shift_max_hz);
-max_possible = max(abs(x_band - mean(x_band)));
-if ~isfinite(max_possible) || max_possible <= 0
-    max_possible = shift_max_hz;
+mu_candidates = unique([dom_loc_seed + [-2 -1 0 1 2] * df, dom_loc_seed + [-2 -1 0 1 2]]);
+mu_candidates = mu_candidates(isfinite(mu_candidates));
+if isempty(mu_candidates)
+    mu_candidates = dom_loc_seed;
 end
-shift_limit = min(shift_max_hz, max_possible);
-shifts = -shift_limit:df:shift_limit;
-if isempty(shifts)
-    shifts = 0;
+mu_candidates = mu_candidates(mu_candidates >= min(x_train) & mu_candidates <= max(x_train));
+if isempty(mu_candidates)
+    mu_candidates = min(max(dom_loc_seed, min(x_train)), max(x_train));
 end
-if ~any(abs(shifts) < 1e-9)
-    shifts = unique(sort([shifts, 0]));
+sigma_candidates = unique([2 3 4 5 6 8 10 12 dom_width_seed * [0.7 1.0 1.3]]);
+sigma_candidates = sigma_candidates(isfinite(sigma_candidates) & sigma_candidates > 0);
+sigma_candidates = max(1.5, min(14, sigma_candidates));
+best_rss = Inf;
+best_beta = [mean(y_train); 0];
+best_mu = mu_candidates(1);
+best_sigma = sigma_candidates(1);
+for mui = 1:numel(mu_candidates)
+    mu = mu_candidates(mui);
+    for si = 1:numel(sigma_candidates)
+        sigma = sigma_candidates(si);
+        g_train = exp(-0.5 * ((x_train - mu) ./ sigma).^2);
+        X_train = [ones(numel(x_train), 1), g_train(:)];
+        beta = X_train \ y_train(:);
+        if ~all(isfinite(beta))
+            continue;
+        end
+        if beta(2) < 0
+            beta(2) = 0;
+            beta(1) = mean(y_train);
+        end
+        yhat_train_try = X_train * beta;
+        rss = sum((y_train(:) - yhat_train_try(:)).^2, 'omitnan');
+        if isfinite(rss) && rss < best_rss
+            best_rss = rss;
+            best_beta = beta;
+            best_mu = mu;
+            best_sigma = sigma;
+        end
+    end
 end
-end
-
-function depth = estimate_trough_depth(y_band, x_band, c1, c2)
-depth = 0;
-if ~(isfinite(c1) && isfinite(c2))
-    return;
-end
-if c1 > c2
-    tmp = c1;
-    c1 = c2;
-    c2 = tmp;
-end
-[~, i1] = min(abs(x_band - c1));
-[~, i2] = min(abs(x_band - c2));
-if i1 == i2
-    return;
-end
-idx_lo = min(i1, i2);
-idx_hi = max(i1, i2);
-y_pos = max(y_band(:), 0);
-p1 = y_pos(i1);
-p2 = y_pos(i2);
-if idx_hi - idx_lo < 2 || ~isfinite(p1) || ~isfinite(p2)
-    return;
-end
-valley = min(y_pos(idx_lo:idx_hi));
-peak_ref = max(min(p1, p2), eps);
-depth = max(0, min(1, 1 - valley / peak_ref));
-end
-
-function sim = safe_template_similarity(y_shape, tpl)
-sim = 0;
-if isempty(y_shape) || isempty(tpl)
-    return;
-end
-ys = y_shape(:);
-ys(~isfinite(ys)) = 0;
-ys = max(ys, 0);
-tpl = tpl(:);
-tpl = max(tpl, 0);
-if numel(tpl) ~= numel(ys)
-    return;
-end
-mass = sum(ys);
-if ~isfinite(mass) || mass <= eps
-    return;
-end
-sim = sum(ys .* tpl) / mass;
-if ~isfinite(sim)
-    sim = 0;
-end
-sim = max(0, min(1, sim));
+g_train_best = exp(-0.5 * ((x_train - best_mu) ./ best_sigma).^2);
+g_test_best = exp(-0.5 * ((x_test - best_mu) ./ best_sigma).^2);
+yhat_train = [ones(numel(x_train), 1), g_train_best(:)] * best_beta;
+yhat_test = [ones(numel(x_test), 1), g_test_best(:)] * best_beta;
 end
 
-function g = gaussian_template(x, mu, sigma)
-if ~isfinite(mu) || ~isfinite(sigma) || sigma <= 0
-    g = zeros(size(x));
+function [yhat_train, yhat_test] = fit_predict_pf_model_diffuse(x_train, y_train, x_test)
+x_mu = mean(x_train);
+x_sd = std(x_train, 1);
+if ~isfinite(x_sd) || x_sd <= eps
+    x_sd = 1;
+end
+z_train = (x_train - x_mu) / x_sd;
+z_test = (x_test - x_mu) / x_sd;
+X_train = [ones(numel(z_train), 1), z_train(:), (z_train(:)).^2];
+beta = X_train \ y_train(:);
+if ~all(isfinite(beta))
+    beta = [mean(y_train); 0; 0];
+end
+yhat_train = X_train * beta;
+X_test = [ones(numel(z_test), 1), z_test(:), (z_test(:)).^2];
+yhat_test = X_test * beta;
+end
+
+function [yhat_train, yhat_test] = fit_predict_pf_model_artifact(x_train, y_train, x_test)
+x_mu = mean(x_train);
+x_sd = std(x_train, 1);
+if ~isfinite(x_sd) || x_sd <= eps
+    x_sd = 1;
+end
+z_train = (x_train - x_mu) / x_sd;
+z_test = (x_test - x_mu) / x_sd;
+X_train = [ones(numel(z_train), 1), z_train(:)];
+beta = X_train \ y_train(:);
+if ~all(isfinite(beta))
+    beta = [mean(y_train); 0];
+end
+if beta(2) < 0
+    beta(2) = 0;
+    beta(1) = mean(y_train);
+end
+yhat_train = X_train * beta;
+X_test = [ones(numel(z_test), 1), z_test(:)];
+yhat_test = X_test * beta;
+end
+
+function [yhat_train, yhat_test] = fit_predict_pf_model_null(y_train, y_test)
+mu = mean(y_train, 'omitnan');
+if ~isfinite(mu)
+    mu = 0;
+end
+yhat_train = repmat(mu, numel(y_train), 1);
+yhat_test = repmat(mu, numel(y_test), 1);
+end
+
+function ll = pf_fold_loglikelihood(y_train, yhat_train, y_test, yhat_test)
+ll = NaN;
+if isempty(y_train) || isempty(yhat_train) || isempty(y_test) || isempty(yhat_test)
     return;
 end
-g = exp(-0.5 * ((x - mu) ./ sigma).^2);
+res_train = y_train(:) - yhat_train(:);
+res_test = y_test(:) - yhat_test(:);
+if ~all(isfinite(res_train)) || ~all(isfinite(res_test))
+    return;
+end
+sigma2_train = mean(res_train.^2);
+var_floor = 0.01 * var(y_train(:), 1);
+if ~isfinite(var_floor) || var_floor <= eps
+    var_floor = 1e-6;
+end
+sigma2 = max([sigma2_train, var_floor, 1e-6]);
+ll = -0.5 * sum(log(2 * pi * sigma2) + (res_test.^2) ./ sigma2);
+if ~isfinite(ll)
+    ll = NaN;
+end
 end
 
 function [outlier_mask, stats] = detect_trial_metric_outliers_iqr(x, iqr_mult, min_trials)
