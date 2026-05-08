@@ -4404,6 +4404,13 @@ for wi = 1:3
                 end
                 plot(scan_freqs, tr_curve, '-', ...
                     'Color', blend_with_white(colors(cond, :), 0.84), 'LineWidth', 0.35);
+                valid_peak = isfinite(tr_curve) & isfinite(scan_freqs);
+                if any(valid_peak)
+                    [peak_hz_trial, peak_pow_trial] = pick_tallest_peak(tr_curve(valid_peak), scan_freqs(valid_peak));
+                    if isfinite(peak_hz_trial) && isfinite(peak_pow_trial)
+                        plot(peak_hz_trial, peak_pow_trial, 'k.', 'MarkerSize', 6);
+                    end
+                end
                 panel_min = min(panel_min, min(tr_curve, [], 'omitnan'));
                 panel_max = max(panel_max, max(tr_curve, [], 'omitnan'));
             end
