@@ -1558,7 +1558,7 @@ for subj = 1:nSubj
 
         % --- Row 1: Heatmap of trial-level spectra ---
         for cond = 1:4
-            subplot(3, 4, cond);
+            subplot(2, 4, cond);
             if ~isempty(pr_raw_mats{cond})
                 hold on;
                 imagesc(scan_freqs, 1:size(pr_raw_mats{cond},1), pr_raw_mats{cond});
@@ -1583,48 +1583,8 @@ for subj = 1:nSubj
             set(gca, 'FontSize', 10); xlim([30 90]); box on;
         end
 
-        % --- Row 2: Mean trial-level spectrum ---
-        for cond = 1:4
-            subplot(3, 4, 4 + cond); hold on;
-            if ~isempty(pr_raw_mats{cond})
-                mu_raw = nanmean(pr_raw_mats{cond}, 1);
-                nTrl = size(pr_raw_mats{cond}, 1);
-                sem_raw = nanstd(pr_raw_mats{cond}, [], 1) / sqrt(max(1, nTrl));
-                row2_min = min(mu_raw - sem_raw, [], 'omitnan');
-                row2_max = max(mu_raw + sem_raw, [], 'omitnan');
-                row2_abs = max(abs([mu_raw - sem_raw, mu_raw + sem_raw]), [], 'omitnan');
-                if ~isfinite(row2_abs) || row2_abs <= 0
-                    row2_abs = 1;
-                end
-                if ~isfinite(row2_min)
-                    row2_min = 0;
-                end
-                if ~isfinite(row2_max)
-                    row2_max = 2;
-                end
-                faceC = 0.8*colors(cond,:) + 0.2*[1 1 1];
-                patch([scan_freqs, fliplr(scan_freqs)], ...
-                    [mu_raw - sem_raw, fliplr(mu_raw + sem_raw)], ...
-                    colors(cond,:), 'FaceColor', faceC, 'EdgeColor', 'none', 'FaceAlpha', 0.4);
-                plot(scan_freqs, mu_raw, '-', 'Color', colors(cond,:), 'LineWidth', 2.5);
-                yline(0, 'k-', 'LineWidth', 0.5);
-                xline(50, 'k:', 'LineWidth', 1, 'Alpha', 0.5);
-                y_lo = row2_min - 0.08 * abs(row2_max - row2_min);
-                y_hi = row2_max + 0.08 * abs(row2_max - row2_min);
-                if ~isfinite(y_lo) || ~isfinite(y_hi) || y_hi <= y_lo
-                    y_lo = -10;
-                    y_hi = 10;
-                end
-                ylim([y_lo y_hi]);
-            end
-            xlabel('Freq [Hz]');
-            ylabel('Power [dB]');
-            title(sprintf('%s Mean Spectrum', condLabels{cond}), 'FontSize', 10);
-            set(gca, 'FontSize', 10); xlim([30 90]);  box on;
-        end
-
-        % --- Row 3: Topoplot + histogram ---
-        subplot(3, 4, 9);
+        % --- Row 2: Topoplot + histogram ---
+        subplot(2, 4, 5);
         if ~isempty(topo_mat_window) && ~isempty(selected_idx_window)
             topo_data = [];
             topo_data.label  = dataEEG_c25.label;
@@ -1675,7 +1635,7 @@ for subj = 1:nSubj
             title(sprintf('Weighted GED (%d comps, \\lambda=%.2f)', n_sel_show, lambda_show), 'FontSize', 11);
         end
 
-        subplot(3, 4, [10 11 12]); hold on;
+        subplot(2, 4, [6 7 8]); hold on;
         edges = 30:2:90;
         hist_mat = zeros(4, length(edges)-1);
         for cond = 1:4
@@ -2190,7 +2150,7 @@ tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile; hold on;
 plot_gamma_window_panel(all_trial_median_early, condLabels, colors, nSubj);
 ylabel('Gamma Frequency [Hz]');
-title('Early (0-600 ms)', 'FontWeight', 'bold');
+title('Early (0-500 ms)', 'FontWeight', 'bold');
 
 nexttile; hold on;
 plot_gamma_window_panel(all_trial_median_late, condLabels, colors, nSubj);
@@ -3070,7 +3030,7 @@ end
 function plot_rejection_info_text_columns(info_lines, info_viol)
 y0 = 1.52;
 dy = 0.11;
-criteria_font_size = 5;
+criteria_font_size = 3.5;
 if isempty(info_lines)
     return;
 end
@@ -4401,7 +4361,7 @@ if nargin < 2 || isempty(out_path)
 end
 drawnow;
 pause(0.05);
-exportgraphics(fig_handle, out_path, 'Resolution', 600);
+exportgraphics(fig_handle, out_path, 'Resolution', 300);
 end
 
 function y = smooth_reflective_edges(x, freqs, core_band, core_win, edge_win)
