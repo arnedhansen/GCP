@@ -71,7 +71,7 @@ scan_width = 3; % +/- Hz integration around each scan frequency (multitaper PSD)
 lambda = 0.05;
 ged_search_n = 20;          % search first N GED components
 template_front_weight = 0.7; % anti-template weight for frontal channels
-template_sigma_occ = 0.20;   % spatial smoothness for occipital template
+template_sigma_occ = 0.12;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
 min_eigval = 1.1;              % minimum GED eigenvalue (lambda >= 1.1)
 min_peak_form = 0.6;    % minimum PF score for candidate eligibility
@@ -100,7 +100,6 @@ topo_flat_std_min = 1e-6;           % near-zero std => degenerate/flat map
 topo_flat_range_min = 1e-5;         % near-zero dynamic range => degenerate/flat map
 topo_nonposterior_max = 0.28;       % posterior concentration below this is non-posterior
 topo_fragmented_hotspot_rel = 8.0;  % high hotspot/median ratio => likely fragmented map
-topo_occipital_override_min = 0.70; % strong posterior concentration override for class label
 occ_class_thr = 0.60;         % occipital-evidence threshold for occipital class
 emg_class_thr = 0.50;         % EMG-score threshold for EMG class
 min_occ_margin = 0.05;        % occipital-vs-EMG margin threshold
@@ -539,12 +538,7 @@ for subj = 1:nSubj
         'topo_fragmented', topo_fragmented_fail_vec);
     for ci = 1:nSearch
         occ_minus_emg_ci = occipital_evidence(ci) - emg_artifact_score(ci);
-        if (topo_posterior_vec(ci) >= topo_occipital_override_min) && ...
-                ~topo_flat_fail_vec(ci) && ~topo_fragmented_fail_vec(ci) && ...
-                ~topo_nonposterior_fail_vec(ci)
-            % Strong posterior concentration is treated as occipital class.
-            searchEmgClass{ci} = 'occipital';
-        elseif (occipital_evidence(ci) >= occ_class_thr) && ...
+        if (occipital_evidence(ci) >= occ_class_thr) && ...
                 (emg_artifact_score(ci) < emg_class_thr) && ...
                 (occ_minus_emg_ci >= min_occ_margin)
             searchEmgClass{ci} = 'occipital';
@@ -1656,7 +1650,7 @@ for subj = 1:nSubj
         set(gca, 'FontSize', 11); xlim([30 90]);  box on;
 
         save_figure_png(fig, fullfile(comp_sel_save_dir, ...
-            sprintf('GCP_eeg_GED_subj%s_%s.png', subjects{subj}, window_names{wi})));
+            sprintf('GCP_eeg_GED_subj%s_trials_overview_%s.png', subjects{subj}, window_names{wi})));
     end
     trial_counts_initial_by_subj_window(subj, :) = trial_counts_initial_local;
     trial_counts_retained_by_subj_window(subj, :) = trial_counts_retained_local;
