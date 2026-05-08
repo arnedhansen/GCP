@@ -1737,17 +1737,7 @@ for subj = 1:nSubj
     subject_runtime_seconds(subj) = toc(subj_runtime_tic);
 end % subject loop
 
-warning_log_cells = warning_log_by_subj;
-for subj = 1:numel(warning_log_cells)
-    warning_log_cells{subj} = warning_log_cells{subj}(:);
-end
-warning_log_cells = warning_log_cells(~cellfun(@isempty, warning_log_cells));
-if isempty(warning_log_cells)
-    warning_log = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
-else
-    warning_log = vertcat(warning_log_cells{:});
-end
-print_subject_warning_summary(warning_log);
+warning_log = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
 
 %% Trial retention figure by participant and window
 fig_trial_retention = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -4533,15 +4523,12 @@ end
 end
 
 function warning_log = append_subject_warning(warning_log, subject_id, code, message, metrics)
-if nargin < 5 || isempty(metrics)
-    metrics = struct();
+% Warning logging intentionally disabled.
+% Keep signature for compatibility with existing call sites.
+if nargin < 1 || isempty(warning_log)
+    warning_log = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
 end
-entry = struct('subject', subject_id, 'code', code, 'message', message, 'metrics', metrics);
-if isempty(warning_log)
-    warning_log = entry;
-else
-    warning_log(end+1, 1) = entry;
-end
+unused = {subject_id, code, message, metrics}; %#ok<NASGU>
 end
 
 function p_adj = bh_fdr_adjust(p_raw)
