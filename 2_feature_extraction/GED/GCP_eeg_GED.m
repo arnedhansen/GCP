@@ -212,6 +212,8 @@ for subj = 1:nSubj
     subj_runtime_tic = tic;
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
     if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
+    powspctrm_save_dir_subj = fullfile(fig_save_dir_powspctrm, subjects{subj});
+    if ~exist(powspctrm_save_dir_subj, 'dir'), mkdir(powspctrm_save_dir_subj); end
     fig_save_dir_emg_exclusion = comp_sel_save_dir;
     datapath = fullfile(gcp_feature_data_path, subjects{subj}, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
@@ -1657,6 +1659,10 @@ for subj = 1:nSubj
         save_figure_png(fig, fullfile(comp_sel_save_dir, ...
             sprintf('GCP_eeg_GED_subj%s_trials_overview_%s.png', subjects{subj}, window_names{wi})));
     end
+    plot_subject_all_trial_power_spectra( ...
+        subjects{subj}, scan_freqs, condLabels, colors, ...
+        subj_powratio_early, subj_powratio_fullscan, subj_powratio_late, ...
+        powspctrm_save_dir_subj);
     trial_counts_initial_by_subj_window(subj, :) = trial_counts_initial_local;
     trial_counts_retained_by_subj_window(subj, :) = trial_counts_retained_local;
     warning_log_by_subj{subj} = warning_log_subj;
@@ -4369,6 +4375,60 @@ pause(0.05);
 exportgraphics(fig_handle, out_path, 'Resolution', 300);
 end
 
+function plot_subject_all_trial_power_spectra(subject_id, scan_freqs, condLabels, colors, ...
+    subj_powratio_early, subj_powratio_full, subj_powratio_late, out_dir)
+if nargin < 8 || isempty(out_dir)
+    return;
+end
+window_names = {'early', 'full', 'late'};
+window_data = {subj_powratio_early, subj_powratio_full, subj_powratio_late};
+nCond = numel(condLabels);
+if nCond == 0 || isempty(scan_freqs)
+    return;
+end
+fig_all = figure('Position', [0 0 1512 982], 'Color', 'w');
+sgtitle(sprintf('All Trial Power Spectra: Subject %s', subject_id), ...
+    'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+for wi = 1:3
+    for cond = 1:nCond
+        subplot(3, nCond, (wi - 1) * nCond + cond); hold on;
+        pr_mat = window_data{wi}{cond};
+        panel_min = inf;
+        panel_max = -inf;
+        if ~isempty(pr_mat)
+            nTrl = size(pr_mat, 1);
+            for trl = 1:nTrl
+                tr_curve = pr_mat(trl, :);
+                if ~any(isfinite(tr_curve))
+                    continue;
+                end
+                plot(scan_freqs, tr_curve, '-', ...
+                    'Color', blend_with_white(colors(cond, :), 0.84), 'LineWidth', 0.35);
+                panel_min = min(panel_min, min(tr_curve, [], 'omitnan'));
+                panel_max = max(panel_max, max(tr_curve, [], 'omitnan'));
+            end
+            mu_curve = mean(pr_mat, 1, 'omitnan');
+            if any(isfinite(mu_curve))
+                plot(scan_freqs, mu_curve, '-', 'Color', colors(cond, :), 'LineWidth', 2.0);
+                panel_min = min(panel_min, min(mu_curve, [], 'omitnan'));
+                panel_max = max(panel_max, max(mu_curve, [], 'omitnan'));
+            end
+        end
+        yline(0, 'k-', 'LineWidth', 0.4);
+        xlim([scan_freqs(1), scan_freqs(end)]);
+        if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
+            yr = panel_max - panel_min;
+            ylim([panel_min - 0.05 * yr, panel_max + 0.08 * yr]);
+        end
+        xlabel('Frequency [Hz]');
+        ylabel('Power [dB]');
+        title(sprintf('%s | %s', upper(window_names{wi}), condLabels{cond}), 'Interpreter', 'none');
+        set(gca, 'FontSize', 9, 'Box', 'on');
+    end
+end
+save_figure_png(fig_all, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_all_trial_power_spectra.png', subject_id)));
+end
+
 function y = smooth_reflective_edges(x, freqs, core_band, core_win, edge_win)
 y = x;
 if isempty(x) || isempty(freqs) || numel(x) ~= numel(freqs)
@@ -4389,6 +4449,14 @@ y_edge = smooth_reflective(x, edge_win);
 edge_mask = freqs < core_band(1) | freqs > core_band(2);
 y(edge_mask) = y_edge(edge_mask);
 y(~edge_mask) = y_core(~edge_mask);
+end
+
+function c_out = blend_with_white(c_in, blend_frac)
+if nargin < 2 || ~isfinite(blend_frac)
+    blend_frac = 0.8;
+end
+blend_frac = min(max(blend_frac, 0), 1);
+c_out = (1 - blend_frac) * c_in + blend_frac * [1 1 1];
 end
 
 function runtime_str = format_runtime_hhmmss(runtime_seconds)
