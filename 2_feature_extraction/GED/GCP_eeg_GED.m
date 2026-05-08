@@ -125,20 +125,14 @@ condLabels = {'25%', '50%', '75%', '100%'};
 
 % Figure save directories
 gcp_root_path = paths.root;
-gcp_feature_data_path = fullfile(gcp_root_path, 'data', 'features');
+gcp_feature_data_path = paths.features;
 if ~exist(gcp_feature_data_path, 'dir')
     gcp_feature_data_path = gcp_root_path;
 end
-fig_save_dir_ged = fullfile(gcp_root_path, 'figures', 'eeg', 'ged');
+fig_save_dir_ged = fullfile(paths.figures, 'eeg', 'ged');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
 fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
 fig_save_dir_powspctrm = fig_save_dir_component_selection;
-preferred_component_selection_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/component_selection';
-if exist('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP', 'dir')
-    fig_save_dir_component_selection = preferred_component_selection_dir;
-    fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
-    fig_save_dir_powspctrm = fig_save_dir_component_selection;
-end
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
 if ~exist(fig_save_dir_powspctrm, 'dir'), mkdir(fig_save_dir_powspctrm); end
@@ -2429,7 +2423,7 @@ save(save_path, ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
 % Save candidate tables as CSV files (one file per subject and window).
-candidate_table_csv_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/controls';
+candidate_table_csv_dir = paths.controls;
 if ~exist(candidate_table_csv_dir, 'dir')
     mkdir(candidate_table_csv_dir);
 end
