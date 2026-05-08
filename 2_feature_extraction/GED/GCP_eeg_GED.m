@@ -255,7 +255,7 @@ for subj = 1:nSubj
     end
     
     %% Build pooled covariance per window
-    clc; fprintf('[GED] Subject %s (%d/%d) GED (early, full, late) (%d occ channels)\n', subjects{subj}, subj, nSubj, nOcc);
+    clc; close all; fprintf('[GED] Subject %s (%d/%d) GED (early, full, late) (%d occ channels)\n', subjects{subj}, subj, nSubj, nOcc);
     rng(random_seed + subj, 'twister');
 
     stim_windows = {full_window, early_window, late_window};
@@ -3683,7 +3683,8 @@ if ~isfinite(var_floor) || var_floor <= eps
     var_floor = 1e-6;
 end
 sigma2 = max([sigma2_train, var_floor, 1e-6]);
-ll = -0.5 * sum(log(2 * pi * sigma2) + (res_test.^2) ./ sigma2);
+% Mean per-point test log-likelihood prevents softmax saturation from long spectra.
+ll = -0.5 * mean(log(2 * pi * sigma2) + (res_test.^2) ./ sigma2);
 if ~isfinite(ll)
     ll = NaN;
 end
