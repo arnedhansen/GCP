@@ -133,6 +133,12 @@ fig_save_dir_ged = fullfile(gcp_root_path, 'figures', 'eeg', 'ged');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
 fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
 fig_save_dir_powspctrm = fig_save_dir_component_selection;
+preferred_component_selection_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/component_selection';
+if exist('/Volumes/g_psyplafor_methlab$/Students/Arne/GCP', 'dir')
+    fig_save_dir_component_selection = preferred_component_selection_dir;
+    fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
+    fig_save_dir_powspctrm = fig_save_dir_component_selection;
+end
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
 if ~exist(fig_save_dir_powspctrm, 'dir'), mkdir(fig_save_dir_powspctrm); end
@@ -201,6 +207,15 @@ subject_runtime_seconds = nan(nSubj, 1);
 all_trial_powratio_components_full  = cell(4, nSubj);
 all_trial_powratio_components_early = cell(4, nSubj);
 all_trial_powratio_components_late  = cell(4, nSubj);
+all_condition_powspctrm_full = cell(4, nSubj);
+all_condition_powspctrm_early = cell(4, nSubj);
+all_condition_powspctrm_late = cell(4, nSubj);
+all_condition_peak_freq_full = nan(4, nSubj);
+all_condition_peak_freq_early = nan(4, nSubj);
+all_condition_peak_freq_late = nan(4, nSubj);
+all_condition_peak_power_full = nan(4, nSubj);
+all_condition_peak_power_early = nan(4, nSubj);
+all_condition_peak_power_late = nan(4, nSubj);
 trial_counts_initial_by_subj_window = zeros(nSubj, 3);
 trial_counts_retained_by_subj_window = zeros(nSubj, 3);
 benchmark_metric_detectability = nan(4, nSubj);
@@ -1127,6 +1142,12 @@ for subj = 1:nSubj
     subj_centroid_full = cell(1, 4);
     subj_centroid_early = cell(1, 4);
     subj_centroid_late = cell(1, 4);
+    subj_condition_avg_full = cell(1, 4);
+    subj_condition_avg_early = cell(1, 4);
+    subj_condition_avg_late = cell(1, 4);
+    subj_condition_peak_full = nan(1, 4);
+    subj_condition_peak_early = nan(1, 4);
+    subj_condition_peak_late = nan(1, 4);
     for cond = 1:4
 
         dat = dat_per_cond{cond};
@@ -1463,19 +1484,8 @@ for subj = 1:nSubj
         subj_centroid_early{cond} = trl_centroid_early;
         subj_centroid_late{cond} = trl_centroid_late;
         valid_s = ~isnan(trl_peaks);
-        all_trial_mean(cond, subj)   = robust_trial_mean(trl_peaks(valid_s));
-        all_trial_median(cond, subj) = median(trl_peaks(valid_s));
-        valid_c = isfinite(trl_centroid);
-        all_trial_mean_centroid(cond, subj) = robust_trial_mean(trl_centroid(valid_c));
-        all_trial_median_centroid(cond, subj) = median(trl_centroid(valid_c));
-
         valid_s_early = ~isnan(trl_peaks_early);
-        all_trial_mean_early(cond, subj) = robust_trial_mean(trl_peaks_early(valid_s_early));
-        all_trial_median_early(cond, subj) = median(trl_peaks_early(valid_s_early));
-
         valid_s_late = ~isnan(trl_peaks_late);
-        all_trial_mean_late(cond, subj) = robust_trial_mean(trl_peaks_late(valid_s_late));
-        all_trial_median_late(cond, subj) = median(trl_peaks_late(valid_s_late));
 
         trial_counts_initial_local(1) = trial_counts_initial_local(1) + nTrl;
         trial_counts_initial_local(2) = trial_counts_initial_local(2) + nTrl;
@@ -1483,6 +1493,42 @@ for subj = 1:nSubj
         trial_counts_retained_local(1) = trial_counts_retained_local(1) + sum(valid_s);
         trial_counts_retained_local(2) = trial_counts_retained_local(2) + sum(valid_s_early);
         trial_counts_retained_local(3) = trial_counts_retained_local(3) + sum(valid_s_late);
+
+        % Condition-level spectra and peak metrics from trial-averaged spectra
+        % (FieldTrip averaging over the trial dimension).
+        cond_avg_full = compute_condition_average_powratio_ft(powratio_trials_full_plotstat, scan_freqs);
+        cond_avg_early = compute_condition_average_powratio_ft(powratio_trials_early_plotstat, scan_freqs);
+        cond_avg_late = compute_condition_average_powratio_ft(powratio_trials_late_plotstat, scan_freqs);
+        all_condition_powspctrm_full{cond, subj} = cond_avg_full;
+        all_condition_powspctrm_early{cond, subj} = cond_avg_early;
+        all_condition_powspctrm_late{cond, subj} = cond_avg_late;
+        subj_condition_avg_full{cond} = cond_avg_full;
+        subj_condition_avg_early{cond} = cond_avg_early;
+        subj_condition_avg_late{cond} = cond_avg_late;
+
+        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz);
+        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz);
+        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz);
+        all_condition_peak_freq_full(cond, subj) = peak_full_hz;
+        all_condition_peak_freq_early(cond, subj) = peak_early_hz;
+        all_condition_peak_freq_late(cond, subj) = peak_late_hz;
+        all_condition_peak_power_full(cond, subj) = peak_full_power;
+        all_condition_peak_power_early(cond, subj) = peak_early_power;
+        all_condition_peak_power_late(cond, subj) = peak_late_power;
+        subj_condition_peak_full(cond) = peak_full_hz;
+        subj_condition_peak_early(cond) = peak_early_hz;
+        subj_condition_peak_late(cond) = peak_late_hz;
+
+        all_trial_mean(cond, subj) = robust_trial_mean(trl_peaks(valid_s));
+        all_trial_median(cond, subj) = median(trl_peaks(valid_s));
+        valid_c = isfinite(trl_centroid);
+        all_trial_mean_centroid(cond, subj) = robust_trial_mean(trl_centroid(valid_c));
+        all_trial_median_centroid(cond, subj) = median(trl_centroid(valid_c));
+
+        all_trial_mean_early(cond, subj) = robust_trial_mean(trl_peaks_early(valid_s_early));
+        all_trial_median_early(cond, subj) = median(trl_peaks_early(valid_s_early));
+        all_trial_mean_late(cond, subj) = robust_trial_mean(trl_peaks_late(valid_s_late));
+        all_trial_median_late(cond, subj) = median(trl_peaks_late(valid_s_late));
 
         % Peak power: highest dB value in the smoothed trial spectrum.
         all_trial_gamma_power(cond, subj) = robust_trial_mean(trial_peak_power_full);
@@ -1691,6 +1737,11 @@ for subj = 1:nSubj
         subjects{subj}, scan_freqs, condLabels, colors, ...
         subj_powratio_early, subj_powratio_fullscan, subj_powratio_late, ...
         powspctrm_save_dir_subj);
+    plot_subject_condition_average_power_spectra( ...
+        subjects{subj}, scan_freqs, condLabels, colors, ...
+        subj_condition_avg_early, subj_condition_avg_full, subj_condition_avg_late, ...
+        subj_condition_peak_early, subj_condition_peak_full, subj_condition_peak_late, ...
+        powspctrm_save_dir_subj);
     trial_counts_initial_by_subj_window(subj, :) = trial_counts_initial_local;
     trial_counts_retained_by_subj_window(subj, :) = trial_counts_retained_local;
     warning_log_by_subj{subj} = warning_log_subj;
@@ -1698,6 +1749,64 @@ for subj = 1:nSubj
 end % subject loop
 
 warning_log = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
+
+%% Grand-average condition-level spectra from trial-averaged data
+fig_condition_avg_powspctrm = figure('Position', [0 0 1512 982], 'Color', 'w');
+tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
+window_names_condavg = {'EARLY', 'FULL', 'LATE'};
+window_cells_condavg = {all_condition_powspctrm_early, all_condition_powspctrm_full, all_condition_powspctrm_late};
+peak_cells_condavg = {all_condition_peak_freq_early, all_condition_peak_freq_full, all_condition_peak_freq_late};
+for wi = 1:3
+    nexttile; hold on;
+    panel_min = inf;
+    panel_max = -inf;
+    for cond = 1:4
+        subj_curves = nan(nSubj, numel(scan_freqs));
+        for s = 1:nSubj
+            curv = window_cells_condavg{wi}{cond, s};
+            if ~isempty(curv) && numel(curv) == numel(scan_freqs)
+                subj_curves(s, :) = curv(:)';
+            end
+        end
+        mu = nanmean(subj_curves, 1);
+        n_valid = sum(any(isfinite(subj_curves), 2));
+        if n_valid > 0
+            sem = nanstd(subj_curves, [], 1) ./ sqrt(n_valid);
+        else
+            sem = nan(size(mu));
+        end
+        good = isfinite(scan_freqs) & isfinite(mu) & isfinite(sem);
+        if sum(good) < 3
+            continue;
+        end
+        x = scan_freqs(good);
+        y = mu(good);
+        e = sem(good);
+        fill([x, fliplr(x)], [y - e, fliplr(y + e)], colors(cond, :), ...
+            'FaceAlpha', 0.14, 'EdgeColor', 'none', 'HandleVisibility', 'off');
+        plot(x, y, '-', 'Color', colors(cond, :), 'LineWidth', 3.2, 'DisplayName', condLabels{cond});
+        peak_freq_group = nanmedian(peak_cells_condavg{wi}(cond, :));
+        if isfinite(peak_freq_group)
+            xline(peak_freq_group, ':', 'Color', colors(cond, :), 'LineWidth', 2.0, 'HandleVisibility', 'off');
+        end
+        panel_min = min(panel_min, min(y - e));
+        panel_max = max(panel_max, max(y + e));
+    end
+    yline(0, 'k--', 'LineWidth', 0.8, 'HandleVisibility', 'off');
+    xlim([analysis_freq_range(1), analysis_freq_range(2)]);
+    if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
+        yr = panel_max - panel_min;
+        ylim([panel_min - 0.10 * yr, panel_max + 0.12 * yr]);
+    end
+    xlabel('Frequency [Hz]');
+    ylabel('Power [dB]');
+    title(window_names_condavg{wi}, 'FontSize', 14, 'FontWeight', 'bold');
+    set(gca, 'FontSize', 11, 'Box', 'on');
+end
+legend(condLabels, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off', 'FontSize', 11);
+sgtitle('GED Condition-Averaged Power Spectra (trial-averaged per subject)', ...
+    'FontSize', 16, 'FontWeight', 'bold');
+save_figure_png(fig_condition_avg_powspctrm, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_average_powspctrm_windows.png'));
 
 %% Trial retention figure by participant and window
 fig_trial_retention = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -1827,8 +1936,8 @@ save_figure_png(fig_cent, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_centroid_summa
 close all
 fig_cond_slope = figure('Position', [0 0 1512 982], 'Color', 'w');
 
-slope_post = benchmark_metric_separation_slope;
-delta_post = benchmark_metric_separation_delta;
+slope_post = compute_condition_separation_from_matrix(all_condition_peak_freq_full);
+delta_post = all_condition_peak_freq_full(4, :) - all_condition_peak_freq_full(1, :);
 primary_slope_stats = compute_one_sample_stats(slope_post);
 primary_delta_stats = compute_one_sample_stats(delta_post);
 tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
@@ -2058,7 +2167,7 @@ close all
 fig_box1_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
-dat = all_trial_median;  % [condition x subject], absolute frequency (Hz)
+dat = all_condition_peak_freq_full;  % [condition x subject], condition-averaged spectral peak [Hz]
 
 % Subject-wise lines across contrast conditions
 for s = 1:nSubj
@@ -2100,7 +2209,7 @@ close all
 fig_main_gamma = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
-dat = all_trial_median;  % [condition x subject]
+dat = all_condition_peak_freq_full;  % [condition x subject]
 mu = nanmean(dat, 2);
 sem = nanstd(dat, [], 2) ./ sqrt(sum(~isnan(dat), 2));
 
@@ -2138,8 +2247,7 @@ save_figure_png(fig_main_gamma, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_Gam
 fig_condition_shift_freq = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
-% Subject-level values are already trial-outlier-cleaned means.
-dat_freq = all_trial_mean;  % [condition x subject], robust mean over cleaned trials
+dat_freq = all_condition_peak_freq_full;  % [condition x subject], peak from condition-averaged spectra
 dat_freq_shift = dat_freq - dat_freq(1, :);  % Anchor each subject at 25% condition
 
 for s = 1:nSubj
@@ -2175,23 +2283,23 @@ cond_shift_freq_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_f
 save_figure_png(fig_condition_shift_freq, cond_shift_freq_path);
 
 %% Main figure: gamma frequency over contrast by time window
-[gamma_slope_full, gamma_delta_full] = compute_condition_separation_from_matrix(all_trial_median);
-[gamma_slope_early, gamma_delta_early] = compute_condition_separation_from_matrix(all_trial_median_early);
-[gamma_slope_late, gamma_delta_late] = compute_condition_separation_from_matrix(all_trial_median_late);
+[gamma_slope_full, gamma_delta_full] = compute_condition_separation_from_matrix(all_condition_peak_freq_full);
+[gamma_slope_early, gamma_delta_early] = compute_condition_separation_from_matrix(all_condition_peak_freq_early);
+[gamma_slope_late, gamma_delta_late] = compute_condition_separation_from_matrix(all_condition_peak_freq_late);
 fig_main_gamma_windows = figure('Position', [0 0 1512 982], 'Color', 'w');
 tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
 
 nexttile; hold on;
-plot_gamma_window_panel(all_trial_median_early, condLabels, colors, nSubj);
+plot_gamma_window_panel(all_condition_peak_freq_early, condLabels, colors, nSubj);
 ylabel('Gamma Frequency [Hz]');
 title('Early (0-500 ms)', 'FontWeight', 'bold');
 
 nexttile; hold on;
-plot_gamma_window_panel(all_trial_median_late, condLabels, colors, nSubj);
+plot_gamma_window_panel(all_condition_peak_freq_late, condLabels, colors, nSubj);
 title('Late (1000-2000 ms)', 'FontWeight', 'bold');
 
 nexttile; hold on;
-late_minus_early_subj = nanmean(all_trial_median_late - all_trial_median_early, 1);
+late_minus_early_subj = nanmean(all_condition_peak_freq_late - all_condition_peak_freq_early, 1);
 valid_shift = isfinite(late_minus_early_subj);
 if any(valid_shift)
     boxplot(late_minus_early_subj(valid_shift)', ones(sum(valid_shift), 1), ...
@@ -2211,7 +2319,7 @@ save_figure_png(fig_main_gamma_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_
 fig_power_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
-dat_power = all_trial_gamma_power;
+dat_power = all_condition_peak_power_full;
 dat_power_plot = dat_power;
 
 for s = 1:nSubj
@@ -2248,8 +2356,7 @@ save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bo
 fig_condition_shift_power = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
-% Subject-level values are already trial-outlier-cleaned means.
-dat_power = all_trial_gamma_power;
+dat_power = all_condition_peak_power_full;
 dat_power_shift = dat_power - dat_power(1, :);  % Anchor each subject at 25% condition
 
 for s = 1:nSubj
@@ -2308,6 +2415,9 @@ save(save_path, ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
     'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
     'all_trial_powratio_components_full', 'all_trial_powratio_components_early', 'all_trial_powratio_components_late', ...
+    'all_condition_powspctrm_full', 'all_condition_powspctrm_early', 'all_condition_powspctrm_late', ...
+    'all_condition_peak_freq_full', 'all_condition_peak_freq_early', 'all_condition_peak_freq_late', ...
+    'all_condition_peak_power_full', 'all_condition_peak_power_early', 'all_condition_peak_power_late', ...
     'all_trial_outlier_mask_freq_full', 'all_trial_outlier_mask_freq_early', 'all_trial_outlier_mask_freq_late', ...
     'all_trial_outlier_mask_power_full', 'all_trial_outlier_mask_power_early', 'all_trial_outlier_mask_power_late', ...
     'trial_counts_initial_by_subj_window', 'trial_counts_retained_by_subj_window', ...
@@ -4743,6 +4853,103 @@ for wi = 1:3
     end
 end
 save_figure_png(fig_all, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_all_trial_power_spectra.png', subject_id)));
+end
+
+function plot_subject_condition_average_power_spectra(subject_id, scan_freqs, condLabels, colors, ...
+    subj_avg_early, subj_avg_full, subj_avg_late, ...
+    subj_peak_early, subj_peak_full, subj_peak_late, out_dir)
+if nargin < 11 || isempty(out_dir) || isempty(scan_freqs) || isempty(condLabels)
+    return;
+end
+window_names = {'EARLY', 'FULL', 'LATE'};
+window_data = {subj_avg_early, subj_avg_full, subj_avg_late};
+peak_data = {subj_peak_early, subj_peak_full, subj_peak_late};
+nCond = numel(condLabels);
+fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
+for wi = 1:3
+    nexttile; hold on;
+    panel_min = inf;
+    panel_max = -inf;
+    for cond = 1:nCond
+        avg_curve = window_data{wi}{cond};
+        if isempty(avg_curve) || numel(avg_curve) ~= numel(scan_freqs)
+            continue;
+        end
+        valid = isfinite(avg_curve) & isfinite(scan_freqs);
+        if sum(valid) < 3
+            continue;
+        end
+        x = scan_freqs(valid);
+        y = avg_curve(valid);
+        plot(x, y, '-', 'Color', colors(cond, :), 'LineWidth', 2.8, 'DisplayName', condLabels{cond});
+        peak_hz = peak_data{wi}(cond);
+        if isfinite(peak_hz)
+            xline(peak_hz, ':', 'Color', colors(cond, :), 'LineWidth', 1.8, 'HandleVisibility', 'off');
+        end
+        panel_min = min(panel_min, min(y));
+        panel_max = max(panel_max, max(y));
+    end
+    yline(0, 'k--', 'LineWidth', 0.7, 'HandleVisibility', 'off');
+    xlim([scan_freqs(1), scan_freqs(end)]);
+    if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
+        yr = panel_max - panel_min;
+        ylim([panel_min - 0.10 * yr, panel_max + 0.12 * yr]);
+    end
+    xlabel('Frequency [Hz]');
+    ylabel('Power [dB]');
+    title(window_names{wi}, 'FontSize', 13, 'FontWeight', 'bold');
+    set(gca, 'FontSize', 10, 'Box', 'on');
+end
+legend(condLabels, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off', 'FontSize', 10);
+sgtitle(sprintf('Condition-Averaged GED Power Spectra: Subject %s', subject_id), ...
+    'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+save_figure_png(fig, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_combined_condition_spectrum.png', subject_id)));
+save_figure_png(fig, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_condition_average_power_spectra.png', subject_id)));
+end
+
+function avg_curve = compute_condition_average_powratio_ft(pr_mat, scan_freqs)
+avg_curve = nan(1, numel(scan_freqs));
+if isempty(pr_mat) || isempty(scan_freqs)
+    return;
+end
+if size(pr_mat, 2) ~= numel(scan_freqs)
+    return;
+end
+valid_trials = any(isfinite(pr_mat), 2);
+if ~any(valid_trials)
+    return;
+end
+freq_dat = [];
+freq_dat.label = {'comp'};
+freq_dat.freq = scan_freqs(:)';
+freq_dat.dimord = 'rpt_chan_freq';
+freq_dat.powspctrm = nan(sum(valid_trials), 1, numel(scan_freqs));
+trial_rows = find(valid_trials);
+for ti = 1:numel(trial_rows)
+    freq_dat.powspctrm(ti, 1, :) = pr_mat(trial_rows(ti), :);
+end
+cfg = [];
+cfg.avgoverrpt = 'yes';
+try
+    freq_avg = ft_selectdata(cfg, freq_dat);
+catch
+    avg_curve = mean(pr_mat(valid_trials, :), 1, 'omitnan');
+    return;
+end
+pow_avg = freq_avg.powspctrm;
+if ndims(pow_avg) == 3
+    pow_avg = squeeze(pow_avg(1, 1, :));
+elseif ismatrix(pow_avg)
+    pow_avg = squeeze(pow_avg);
+end
+avg_curve = pow_avg(:)';
+if numel(avg_curve) ~= numel(scan_freqs)
+    avg_curve = mean(pr_mat(valid_trials, :), 1, 'omitnan');
+end
+if all(~isfinite(avg_curve))
+    avg_curve = mean(pr_mat(valid_trials, :), 1, 'omitnan');
+end
 end
 
 function y = smooth_reflective_edges(x, freqs, core_band, core_win, edge_win)
