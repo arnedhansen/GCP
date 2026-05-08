@@ -62,10 +62,10 @@ gamma_range = [30, 90];
 
 % Narrowband scanning parameters (direct analysis-band scan only)
 analysis_freq_range = [30, 90];
-scan_freq_step_hz = 0.5;            % analysis grid resolution (Hz)
+scan_freq_step_hz = 1;            % analysis grid resolution (Hz)
 scan_freqs = analysis_freq_range(1):scan_freq_step_hz:analysis_freq_range(2);
 nFreqs = length(scan_freqs);
-scan_width = 3; % +/- Hz integration around each scan frequency (multitaper PSD)
+scan_width = 1.5; % spectral smoothing (Hz) for multitaper PSD scan; narrower to preserve peak shifts
 
 %% GED parameters
 lambda = 0.05;
@@ -110,10 +110,10 @@ centroid_freq_range = [40 80];
 centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
 centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
-trial_peak_smooth_n = 3;     % moving-average smoothing for trial-level peak detection
+trial_peak_smooth_n = 1;     % moving-average smoothing for trial-level peak detection
 trial_metric_outlier_enable = true;      % apply trial-level outlier rejection on extracted frequency/power metrics
 trial_metric_outlier_iqr_mult = 1.5;     % outlier threshold in IQR units around Q1/Q3
-trial_metric_outlier_min_trials = 30;    % minimum finite trials to run IQR-based outlier rejection
+trial_metric_outlier_min_trials = 50;    % minimum finite trials to run IQR-based outlier rejection
 
 % Condition info
 condNames  = {'c25', 'c50', 'c75', 'c100'};
@@ -1206,9 +1206,14 @@ for subj = 1:nSubj
             trial_mask_full = has_base & has_full & ~bad_base_full;
             ged_freq_progress_set_phase('Full TrialScan Batch');
             [ratio_cube_full, near_floor_count_full] = compute_scan_ratio_for_window_batch( ...
-                trial_cache, filters.full.searchFilters, 'x_full', trial_mask_full, ...
+                trial_cache, filters.full.W_combined, 'x_full', trial_mask_full, ...
                 fsample, scan_freqs, scan_width, base_floor_full, instability_near_floor_mult);
             powratio_components = ratio_cube_full;
+            filter_vec_full = build_combined_filter_vector(filters.full.W_combined, filters.full.w_combined);
+            [ratio_trials_full_combined, near_floor_count_full_combined, valid_freq_counts_full_combined] = ...
+                compute_scan_ratio_for_combined_filter_batch( ...
+                trial_cache, filter_vec_full, 'x_full', trial_mask_full, ...
+                fsample, scan_freqs, scan_width, base_floor_full, instability_near_floor_mult);
             for trl = 1:nTrl
                 if mod(trl-1, trial_print_step) == 0 || trl == nTrl
                     clc
@@ -1219,17 +1224,15 @@ for subj = 1:nSubj
                 if isvector(ratio_mat_full)
                     ratio_mat_full = reshape(ratio_mat_full, size(powratio_components, 1), []);
                 end
-                if ~isempty(ratio_mat_full) && ~isempty(filters.full.selected_idx)
-                    w_use = filters.full.w_combined(:);
-                    if numel(w_use) ~= numel(filters.full.selected_idx)
-                        w_use = ones(numel(filters.full.selected_idx), 1) / max(numel(filters.full.selected_idx), 1);
-                    end
-                    w_use = w_use / max(sum(w_use), eps);
-                    sel_ratio = ratio_mat_full(filters.full.selected_idx, :);
-                    powratio_methods_full(1, trl, :) = (w_use' * sel_ratio);
+                if ~isempty(ratio_trials_full_combined)
+                    powratio_methods_full(1, trl, :) = ratio_trials_full_combined(trl, :);
                 end
-                valid_freq_counts_full(trl) = sum(any(isfinite(ratio_mat_full), 1));
-                if any(any(isfinite(ratio_mat_full), 1))
+                if trl <= numel(valid_freq_counts_full_combined)
+                    valid_freq_counts_full(trl) = valid_freq_counts_full_combined(trl);
+                end
+                if trl <= numel(near_floor_count_full_combined) && valid_freq_counts_full(trl) > 0
+                    unstable_freq_counts_full(trl) = near_floor_count_full_combined(trl);
+                elseif any(any(isfinite(ratio_mat_full), 1))
                     unstable_freq_counts_full(trl) = near_floor_count_full(trl);
                 end
             end
@@ -1242,9 +1245,14 @@ for subj = 1:nSubj
             trial_mask_early = has_base & has_early & ~bad_base_early;
             ged_freq_progress_set_phase('Early TrialScan Batch');
             [ratio_cube_early, near_floor_count_early] = compute_scan_ratio_for_window_batch( ...
-                trial_cache, filters.early.searchFilters, 'x_early', trial_mask_early, ...
+                trial_cache, filters.early.W_combined, 'x_early', trial_mask_early, ...
                 fsample, scan_freqs, scan_width, base_floor_early, instability_near_floor_mult);
             powratio_components_early = ratio_cube_early;
+            filter_vec_early = build_combined_filter_vector(filters.early.W_combined, filters.early.w_combined);
+            [ratio_trials_early_combined, near_floor_count_early_combined, valid_freq_counts_early_combined] = ...
+                compute_scan_ratio_for_combined_filter_batch( ...
+                trial_cache, filter_vec_early, 'x_early', trial_mask_early, ...
+                fsample, scan_freqs, scan_width, base_floor_early, instability_near_floor_mult);
             for trl = 1:nTrl
                 if mod(trl-1, trial_print_step) == 0 || trl == nTrl
                     fprintf('[GED] Subject %s (%d/%d) Trial %d/%d Early Window\n', ...
@@ -1254,17 +1262,15 @@ for subj = 1:nSubj
                 if isvector(ratio_mat_early)
                     ratio_mat_early = reshape(ratio_mat_early, size(powratio_components_early, 1), []);
                 end
-                if ~isempty(ratio_mat_early) && ~isempty(filters.early.selected_idx)
-                    w_use = filters.early.w_combined(:);
-                    if numel(w_use) ~= numel(filters.early.selected_idx)
-                        w_use = ones(numel(filters.early.selected_idx), 1) / max(numel(filters.early.selected_idx), 1);
-                    end
-                    w_use = w_use / max(sum(w_use), eps);
-                    sel_ratio = ratio_mat_early(filters.early.selected_idx, :);
-                    powratio_methods_early(1, trl, :) = (w_use' * sel_ratio);
+                if ~isempty(ratio_trials_early_combined)
+                    powratio_methods_early(1, trl, :) = ratio_trials_early_combined(trl, :);
                 end
-                valid_freq_counts_early(trl) = sum(any(isfinite(ratio_mat_early), 1));
-                if any(any(isfinite(ratio_mat_early), 1))
+                if trl <= numel(valid_freq_counts_early_combined)
+                    valid_freq_counts_early(trl) = valid_freq_counts_early_combined(trl);
+                end
+                if trl <= numel(near_floor_count_early_combined) && valid_freq_counts_early(trl) > 0
+                    unstable_freq_counts_early(trl) = near_floor_count_early_combined(trl);
+                elseif any(any(isfinite(ratio_mat_early), 1))
                     unstable_freq_counts_early(trl) = near_floor_count_early(trl);
                 end
             end
@@ -1277,9 +1283,14 @@ for subj = 1:nSubj
             trial_mask_late = has_base & has_late & ~bad_base_late;
             ged_freq_progress_set_phase('Late TrialScan Batch');
             [ratio_cube_late, near_floor_count_late] = compute_scan_ratio_for_window_batch( ...
-                trial_cache, filters.late.searchFilters, 'x_late', trial_mask_late, ...
+                trial_cache, filters.late.W_combined, 'x_late', trial_mask_late, ...
                 fsample, scan_freqs, scan_width, base_floor_late, instability_near_floor_mult);
             powratio_components_late = ratio_cube_late;
+            filter_vec_late = build_combined_filter_vector(filters.late.W_combined, filters.late.w_combined);
+            [ratio_trials_late_combined, near_floor_count_late_combined, valid_freq_counts_late_combined] = ...
+                compute_scan_ratio_for_combined_filter_batch( ...
+                trial_cache, filter_vec_late, 'x_late', trial_mask_late, ...
+                fsample, scan_freqs, scan_width, base_floor_late, instability_near_floor_mult);
             for trl = 1:nTrl
                 if mod(trl-1, trial_print_step) == 0 || trl == nTrl
                     fprintf('[GED] Subject %s (%d/%d) Trial %d/%d Late Window\n', ...
@@ -1289,17 +1300,15 @@ for subj = 1:nSubj
                 if isvector(ratio_mat_late)
                     ratio_mat_late = reshape(ratio_mat_late, size(powratio_components_late, 1), []);
                 end
-                if ~isempty(ratio_mat_late) && ~isempty(filters.late.selected_idx)
-                    w_use = filters.late.w_combined(:);
-                    if numel(w_use) ~= numel(filters.late.selected_idx)
-                        w_use = ones(numel(filters.late.selected_idx), 1) / max(numel(filters.late.selected_idx), 1);
-                    end
-                    w_use = w_use / max(sum(w_use), eps);
-                    sel_ratio = ratio_mat_late(filters.late.selected_idx, :);
-                    powratio_methods_late(1, trl, :) = (w_use' * sel_ratio);
+                if ~isempty(ratio_trials_late_combined)
+                    powratio_methods_late(1, trl, :) = ratio_trials_late_combined(trl, :);
                 end
-                valid_freq_counts_late(trl) = sum(any(isfinite(ratio_mat_late), 1));
-                if any(any(isfinite(ratio_mat_late), 1))
+                if trl <= numel(valid_freq_counts_late_combined)
+                    valid_freq_counts_late(trl) = valid_freq_counts_late_combined(trl);
+                end
+                if trl <= numel(near_floor_count_late_combined) && valid_freq_counts_late(trl) > 0
+                    unstable_freq_counts_late(trl) = near_floor_count_late_combined(trl);
+                elseif any(any(isfinite(ratio_mat_late), 1))
                     unstable_freq_counts_late(trl) = near_floor_count_late(trl);
                 end
             end
@@ -1382,13 +1391,6 @@ for subj = 1:nSubj
         subj_peaks_full{cond} = trl_peaks;
         subj_centroid_full{cond} = trl_centroid;
 
-        valid_s = ~isnan(trl_peaks);
-        all_trial_mean(cond, subj)   = robust_trial_mean(trl_peaks(valid_s));
-        all_trial_median(cond, subj) = median(trl_peaks(valid_s));
-
-        valid_c = ~isnan(trl_centroid);
-        all_trial_mean_centroid(cond, subj)   = robust_trial_mean(trl_centroid(valid_c));
-        all_trial_median_centroid(cond, subj) = median(trl_centroid(valid_c));
         % Time-split peak summaries.
         [trl_peaks_early, trial_peak_power_early, trl_centroid_early] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
@@ -1440,6 +1442,12 @@ for subj = 1:nSubj
         subj_peaks_late{cond} = trl_peaks_late;
         subj_centroid_early{cond} = trl_centroid_early;
         subj_centroid_late{cond} = trl_centroid_late;
+        valid_s = ~isnan(trl_peaks);
+        all_trial_mean(cond, subj)   = robust_trial_mean(trl_peaks(valid_s));
+        all_trial_median(cond, subj) = median(trl_peaks(valid_s));
+        valid_c = isfinite(trl_centroid);
+        all_trial_mean_centroid(cond, subj) = robust_trial_mean(trl_centroid(valid_c));
+        all_trial_median_centroid(cond, subj) = median(trl_centroid(valid_c));
 
         valid_s_early = ~isnan(trl_peaks_early);
         all_trial_mean_early(cond, subj) = robust_trial_mean(trl_peaks_early(valid_s_early));
@@ -2110,7 +2118,8 @@ save_figure_png(fig_main_gamma, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_Gam
 fig_condition_shift_freq = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
-dat_freq = all_trial_mean;  % [condition x subject], robust mean over trials
+% Subject-level values are already trial-outlier-cleaned means.
+dat_freq = all_trial_mean;  % [condition x subject], robust mean over cleaned trials
 dat_freq_shift = dat_freq - dat_freq(1, :);  % Anchor each subject at 25% condition
 
 for s = 1:nSubj
@@ -2129,7 +2138,7 @@ for c = 1:4
     mad_freq_shift(c) = robust_mad(dat_freq_shift(c, :));
 end
 errorbar(1:4, med_freq_shift, mad_freq_shift, '-o', ...
-    'Color', colors(4, :), 'LineWidth', 2.8, 'CapSize', 10, ...
+    'Color', colors(4, :), 'LineWidth', 3, 'CapSize', 10, ...
     'MarkerFaceColor', colors(4, :), 'MarkerSize', 8);
 
 yline(0, 'k--', 'LineWidth', 1.5);
@@ -2219,7 +2228,9 @@ save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bo
 fig_condition_shift_power = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 
-dat_power_shift = all_trial_gamma_power - all_trial_gamma_power(1, :);  % Anchor each subject at 25% condition
+% Subject-level values are already trial-outlier-cleaned means.
+dat_power = all_trial_gamma_power;
+dat_power_shift = dat_power - dat_power(1, :);  % Anchor each subject at 25% condition
 
 for s = 1:nSubj
     y_subj = dat_power_shift(:, s);
@@ -2237,7 +2248,7 @@ for c = 1:4
     mad_power_shift(c) = robust_mad(dat_power_shift(c, :));
 end
 errorbar(1:4, med_power_shift, mad_power_shift, '-o', ...
-    'Color', colors(4, :), 'LineWidth', 2.8, 'CapSize', 10, ...
+    'Color', colors(4, :), 'LineWidth', 3, 'CapSize', 10, ...
     'MarkerFaceColor', colors(4, :), 'MarkerSize', 8);
 
 yline(0, 'k--', 'LineWidth', 1.5);
@@ -2360,7 +2371,6 @@ for trl = 1:nTrl
         continue;
     end
     pr_proc = pr_full(analysis_mask);
-    pr_proc = movmean(pr_proc, max(1, round(smooth_n)), 'omitnan');
     pr_proc = pr_proc(:)';
     valid = isfinite(pr_proc) & isfinite(scan_freqs_analysis);
     pr_proc = pr_proc(valid);
@@ -2369,8 +2379,8 @@ for trl = 1:nTrl
         continue;
     end
 
-    % Tallest local maximum from findpeaks; fall back to global max if
-    % findpeaks returns nothing (e.g. monotonic or boundary peak).
+    % Constrained peak search: prioritize 40-80 Hz gamma core with adaptive
+    % prominence threshold; then fall back to full-band and finally global max.
     [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use);
     if isfinite(peak_hz)
         trl_peaks(trl) = peak_hz;
@@ -2394,17 +2404,64 @@ peak_hz = NaN;
 peak_power = NaN;
 y = y(:)';
 x = x(:)';
+core_mask = false(size(x));
 if isempty(y) || numel(y) ~= numel(x)
     return;
 end
 if numel(y) >= 3
-    [pks, locs] = findpeaks(y, x);
+    y_floor = median(y, 'omitnan');
+    if ~isfinite(y_floor)
+        y_floor = 0;
+    end
+    y_shape = max(y - y_floor, 0);
+    peak_scale = max(y_shape);
+    if ~isfinite(peak_scale)
+        peak_scale = 0;
+    end
+    robust_scale = robust_mad(y_shape);
+    if ~isfinite(robust_scale) || robust_scale <= eps
+        robust_scale = iqr(y_shape) / 1.349;
+    end
+    if ~isfinite(robust_scale) || robust_scale <= eps
+        robust_scale = std(y_shape(isfinite(y_shape)));
+    end
+    if ~isfinite(robust_scale) || robust_scale <= eps
+        robust_scale = 0;
+    end
+    min_prom = max([0.02, 0.10 * peak_scale, 0.20 * robust_scale]);
+
+    core_lo = 40;
+    core_hi = 80;
+    core_mask = x >= core_lo & x <= core_hi;
+    if sum(core_mask) >= 3
+        x_core = x(core_mask);
+        y_core = y(core_mask);
+        [pks, locs] = findpeaks(y_core, x_core, 'MinPeakProminence', min_prom, 'MinPeakDistance', 4);
+        if ~isempty(pks)
+            [peak_power, bi] = max(pks);
+            peak_hz = locs(bi);
+            return;
+        end
+    end
+
+    [pks, locs] = findpeaks(y, x, 'MinPeakProminence', min_prom, 'MinPeakDistance', 4);
     if ~isempty(pks)
         [peak_power, bi] = max(pks);
         peak_hz = locs(bi);
         return;
     end
 end
+
+if any(core_mask)
+    y_core = y(core_mask);
+    x_core = x(core_mask);
+    [peak_power, idx] = max(y_core);
+    if isfinite(peak_power)
+        peak_hz = x_core(idx);
+        return;
+    end
+end
+
 [peak_power, idx] = max(y);
 if isfinite(peak_power)
     peak_hz = x(idx);
@@ -4071,7 +4128,7 @@ cfg = [];
 cfg.method = 'mtmfft';
 cfg.output = 'pow';
 cfg.taper = 'dpss';
-cfg.foilim = [min(scan_freqs) max(scan_freqs)];
+cfg.foi = scan_freqs;
 cfg.tapsmofrq = scan_width_hz;
 cfg.pad = 'nextpow2';
 cfg.keeptrials = 'yes';
@@ -4169,6 +4226,76 @@ if isempty(p_all) || size(p_all, 1) < 2 * nStim
 end
 p_stim_scan = p_all(1:nStim, :);
 p_base_scan = p_all((nStim + 1):(2 * nStim), :);
+end
+
+function w_combined = build_combined_filter_vector(W_combined, w_components)
+w_combined = [];
+if isempty(W_combined)
+    return;
+end
+nComp = size(W_combined, 2);
+if nComp < 1
+    return;
+end
+if isempty(w_components) || numel(w_components) ~= nComp
+    w_components = ones(nComp, 1);
+else
+    w_components = w_components(:);
+end
+w_components(~isfinite(w_components) | w_components <= 0) = 0;
+if sum(w_components) <= 0
+    w_components = ones(nComp, 1);
+end
+w_components = w_components / sum(w_components);
+w_combined = W_combined * w_components;
+if ~all(isfinite(w_combined))
+    w_combined = [];
+end
+end
+
+function [ratio_trials, near_floor_freq_count_per_trial, valid_freq_count_per_trial] = ...
+    compute_scan_ratio_for_combined_filter_batch(trial_cache, filter_vec, stim_field, trial_mask, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult)
+nTrl = numel(trial_cache);
+ratio_trials = nan(nTrl, numel(scan_freqs));
+near_floor_freq_count_per_trial = zeros(nTrl, 1);
+valid_freq_count_per_trial = zeros(nTrl, 1);
+if nTrl == 0 || isempty(filter_vec) || ~any(trial_mask)
+    return;
+end
+filter_vec = filter_vec(:);
+if ~all(isfinite(filter_vec))
+    return;
+end
+
+sig_stim_cells = cell(0, 1);
+sig_base_cells = cell(0, 1);
+row_trial_idx = zeros(0, 1);
+for trl = 1:nTrl
+    if ~trial_mask(trl)
+        continue;
+    end
+    tc = trial_cache{trl};
+    x_base = tc.x_base;
+    x_stim = tc.(stim_field);
+    if isempty(x_base) || isempty(x_stim)
+        continue;
+    end
+    sig_base_cells{end+1, 1} = (filter_vec' * x_base); %#ok<AGROW>
+    sig_stim_cells{end+1, 1} = (filter_vec' * x_stim); %#ok<AGROW>
+    row_trial_idx(end+1, 1) = trl; %#ok<AGROW>
+end
+if isempty(sig_stim_cells)
+    return;
+end
+
+[ratio_rows, ~, near_floor_row_mask] = compute_scan_ratio_from_timeseries( ...
+    sig_stim_cells, sig_base_cells, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult);
+for ri = 1:size(ratio_rows, 1)
+    trl = row_trial_idx(ri);
+    ratio_trials(trl, :) = ratio_rows(ri, :);
+    valid_freq_count_per_trial(trl) = sum(isfinite(ratio_rows(ri, :)));
+    near_floor_freq_count_per_trial(trl) = sum(near_floor_row_mask(ri, :));
+end
 end
 
 function ged_freq_progress_reset(subject_label, subj_idx, subj_total, call_total_estimate)
