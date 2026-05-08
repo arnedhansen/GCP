@@ -74,7 +74,7 @@ template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.12;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
 min_eigval = 1.1;              % minimum GED eigenvalue (lambda >= 1.1)
-min_peak_form = 0.6;    % minimum PF score for candidate eligibility
+min_peak_form = 0.9;    % minimum PF score for candidate eligibility
 max_combined_leak = 1.30;      % artifact guard: mean(front leak, temporal leak)
 max_lineharm_ratio = 0.60;     % artifact guard: line-harmonic dominance ratio
 max_hf_slope = -0.15;          % informative only (tables/diagnostics); not an eligibility gate
@@ -110,7 +110,7 @@ centroid_freq_range = [40 80];
 centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
 centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
-trial_peak_smooth_n = 1;     % moving-average smoothing for trial-level peak detection
+trial_peak_smooth_n = 3;     % moving-average smoothing for trial-level peak detection
 trial_metric_outlier_enable = true;      % apply trial-level outlier rejection on extracted frequency/power metrics
 trial_metric_outlier_iqr_mult = 1.5;     % outlier threshold in IQR units around Q1/Q3
 trial_metric_outlier_min_trials = 30;    % minimum finite trials to run IQR-based outlier rejection
@@ -1106,6 +1106,8 @@ for subj = 1:nSubj
     subj_peaks_early = cell(1, 4);
     subj_peaks_late = cell(1, 4);
     subj_centroid_full = cell(1, 4);
+    subj_centroid_early = cell(1, 4);
+    subj_centroid_late = cell(1, 4);
     for cond = 1:4
 
         dat = dat_per_cond{cond};
@@ -1431,8 +1433,11 @@ for subj = 1:nSubj
         all_trial_outlier_mask_power_late{cond, subj} = outlier_mask_power_late;
         all_trial_peaks_early{cond, subj} = trl_peaks_early;
         all_trial_peaks_late{cond, subj} = trl_peaks_late;
+        subj_peaks_full{cond} = trl_peaks;
         subj_peaks_early{cond} = trl_peaks_early;
         subj_peaks_late{cond} = trl_peaks_late;
+        subj_centroid_early{cond} = trl_centroid_early;
+        subj_centroid_late{cond} = trl_centroid_late;
 
         valid_s_early = ~isnan(trl_peaks_early);
         all_trial_mean_early(cond, subj) = robust_trial_mean(trl_peaks_early(valid_s_early));
@@ -1512,7 +1517,7 @@ for subj = 1:nSubj
         elseif wi == 2
             pr_source = subj_powratio_early;
             peaks_source = subj_peaks_early;
-            centroid_source = cell(1, 4);
+            centroid_source = subj_centroid_early;
             topo_mat_window = searchTopos_early;
             selected_idx_window = selected_idx_early;
             selected_w_window = w_combined_early;
@@ -1520,7 +1525,7 @@ for subj = 1:nSubj
         else
             pr_source = subj_powratio_late;
             peaks_source = subj_peaks_late;
-            centroid_source = cell(1, 4);
+            centroid_source = subj_centroid_late;
             topo_mat_window = searchTopos_late;
             selected_idx_window = selected_idx_late;
             selected_w_window = w_combined_late;
@@ -3540,7 +3545,7 @@ sigma_candidates = unique([2 3 4 5 6 8 10 12 dom_width_seed * [0.7 1.0 1.3]]);
 sigma_candidates = sigma_candidates(isfinite(sigma_candidates) & sigma_candidates > 0);
 sigma_candidates = max(1.5, min(14, sigma_candidates));
 best_rss = Inf;
-best_beta = [mean(y_train); 0; 0];
+best_beta = [mean(y_train); 0; 0; 0; 0];
 best_mu = mu_candidates(1);
 best_sigma = sigma_candidates(1);
 x_mu = mean(x_train);
@@ -3555,16 +3560,16 @@ for mui = 1:numel(mu_candidates)
     for si = 1:numel(sigma_candidates)
         sigma = sigma_candidates(si);
         g_train = exp(-0.5 * ((x_train - mu) ./ sigma).^2);
-        % Dominant model: one peak + low-order baseline trend.
-        X_train = [ones(numel(x_train), 1), z_train(:), g_train(:)];
+        % Dominant model: one peak + low-order baseline + shoulder/skew bases.
+        right_shoulder_train = max(x_train(:) - mu, 0) .* g_train(:);
+        left_shoulder_train = max(mu - x_train(:), 0) .* g_train(:);
+        X_train = [ones(numel(x_train), 1), z_train(:), g_train(:), ...
+            right_shoulder_train, left_shoulder_train];
         beta = X_train \ y_train(:);
         if ~all(isfinite(beta))
             continue;
         end
-        if beta(3) < 0
-            beta(3) = 0;
-            beta(1:2) = [mean(y_train); 0];
-        end
+        beta(3:5) = max(beta(3:5), 0);
         yhat_train_try = X_train * beta;
         rss = sum((y_train(:) - yhat_train_try(:)).^2, 'omitnan');
         if isfinite(rss) && rss < best_rss
@@ -3577,8 +3582,14 @@ for mui = 1:numel(mu_candidates)
 end
 g_train_best = exp(-0.5 * ((x_train - best_mu) ./ best_sigma).^2);
 g_test_best = exp(-0.5 * ((x_test - best_mu) ./ best_sigma).^2);
-yhat_train = [ones(numel(x_train), 1), z_train(:), g_train_best(:)] * best_beta;
-yhat_test = [ones(numel(x_test), 1), z_test(:), g_test_best(:)] * best_beta;
+right_shoulder_train_best = max(x_train(:) - best_mu, 0) .* g_train_best(:);
+left_shoulder_train_best = max(best_mu - x_train(:), 0) .* g_train_best(:);
+right_shoulder_test_best = max(x_test(:) - best_mu, 0) .* g_test_best(:);
+left_shoulder_test_best = max(best_mu - x_test(:), 0) .* g_test_best(:);
+yhat_train = [ones(numel(x_train), 1), z_train(:), g_train_best(:), ...
+    right_shoulder_train_best, left_shoulder_train_best] * best_beta;
+yhat_test = [ones(numel(x_test), 1), z_test(:), g_test_best(:), ...
+    right_shoulder_test_best, left_shoulder_test_best] * best_beta;
 end
 
 function [yhat_train, yhat_test] = fit_predict_pf_model_diffuse(x_train, y_train, x_test)
