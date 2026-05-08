@@ -11,7 +11,9 @@
 %
 % Outputs:
 %   1) Subject-wise figures with 3 window panels
-%      - GCP_eeg_GED_powspctrm_subj<id>.png
+%      - <fig_dir>/<subj>/GCP_eeg_GED_powspctrm_subj<id>.png
+%   2) Subject-wise all-trial spectra figures (3x4: windows x conditions)
+%      - <fig_dir>/<subj>/GCP_eeg_GED_powspctrm_subj<id>_allspectra.png
 %   2) Window-wise all-subject overview figures
 %      - GCP_eeg_GED_powspctrm_early_ALL.png
 %      - GCP_eeg_GED_powspctrm_full_ALL.png
@@ -209,6 +211,54 @@ time_cells = {S.all_trial_powratio_bench_early, S.all_trial_powratio_bench, S.al
 
 %% Subject-wise figures (three windows per subject)
 for s = 1:nSubj
+    subj_dir = fullfile(fig_dir, subj_labels{s});
+    if ~exist(subj_dir, 'dir')
+        mkdir(subj_dir);
+    end
+
+    % 3x4 trial-level spectra grid: rows=time windows, cols=conditions
+    fig_allspectra = figure('Position', [0 0 1512 982], 'Color', 'w');
+    sgtitle(sprintf('All Trial Power Spectra (Final Combined GED): Subject %s', subj_labels{s}), ...
+        'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+
+    for wi = 1:3
+        for cond = 1:nCond
+            subplot(3, 4, (wi - 1) * 4 + cond); hold on;
+
+            pr_mat = time_cells{wi}{combined_method_idx, cond, s};
+            if ~isempty(pr_mat)
+                alpha_support = local_supports_line_alpha();
+                for tr = 1:size(pr_mat, 1)
+                    tr_curve = pr_mat(tr, :);
+                    if ~any(isfinite(tr_curve))
+                        continue;
+                    end
+                    if alpha_support
+                        htr = plot(scan_freqs, tr_curve, '-', ...
+                            'Color', [colors(cond, :), 0.08], 'LineWidth', 0.35);
+                    else
+                        htr = plot(scan_freqs, tr_curve, '-', ...
+                            'Color', blend_with_white(colors(cond, :), 0.82), 'LineWidth', 0.35);
+                    end
+                    htr.Annotation.LegendInformation.IconDisplayStyle = 'off';
+                end
+
+                mu = mean(pr_mat, 1, 'omitnan');
+                plot(scan_freqs, mu, '-', 'Color', colors(cond, :), 'LineWidth', 1.8);
+            end
+
+            xlim(analysis_freq_range);
+            yline(0, 'k-', 'LineWidth', 0.4);
+            xlabel('Frequency [Hz]');
+            ylabel('Power [dB]');
+            title(sprintf('%s | %s', upper(time_windows{wi}), condLabels{cond}), 'Interpreter', 'none');
+            set(gca, 'FontSize', 9, 'Box', 'on');
+        end
+    end
+
+    out_allspectra = fullfile(subj_dir, sprintf('GCP_eeg_GED_powspctrm_subj%s_allspectra.png', subj_labels{s}));
+    exportgraphics(fig_allspectra, out_allspectra, 'Resolution', 600);
+
     fig_ps = figure('Position', [0 0 1512 982], 'Color', 'w');
     for wi = 1:3
         subplot(1, 3, wi); hold on;
@@ -255,7 +305,7 @@ for s = 1:nSubj
     sgtitle(sprintf('Final Combined GED Power Spectra: Subject %s', subj_labels{s}), ...
         'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
 
-    out_subj = fullfile(fig_dir, sprintf('GCP_eeg_GED_powspctrm_subj%s.png', subj_labels{s}));
+    out_subj = fullfile(subj_dir, sprintf('GCP_eeg_GED_powspctrm_subj%s.png', subj_labels{s}));
     exportgraphics(fig_ps, out_subj, 'Resolution', 600);
 end
 
@@ -323,4 +373,29 @@ end
 if any(idx_edges)
     y_out(idx_edges) = movmean(y_in(idx_edges), edge_n, 'omitnan');
 end
+end
+
+function tf = local_supports_line_alpha()
+persistent alpha_ok
+if isempty(alpha_ok)
+    alpha_ok = false;
+    ftmp = figure('Visible', 'off');
+    htmp = plot(1:2, [0 1], '-');
+    try
+        set(htmp, 'Color', [0 0 0 0.2]);
+        alpha_ok = true;
+    catch
+        alpha_ok = false;
+    end
+    close(ftmp);
+end
+tf = alpha_ok;
+end
+
+function c_out = blend_with_white(c_in, blend_frac)
+if nargin < 2
+    blend_frac = 0.8;
+end
+blend_frac = min(max(blend_frac, 0), 1);
+c_out = (1 - blend_frac) * c_in + blend_frac * [1 1 1];
 end
