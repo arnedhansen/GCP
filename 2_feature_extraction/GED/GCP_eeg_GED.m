@@ -74,7 +74,7 @@ template_front_weight = 0.7; % anti-template weight for frontal channels
 template_sigma_occ = 0.12;   % spatial smoothness for occipital template
 template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
 min_eigval = 1.1;              % minimum GED eigenvalue (lambda >= 1.1)
-min_peak_form = 0.6;    % minimum PF score for candidate eligibility
+min_peak_form = 0.5;    % minimum PF score for candidate eligibility
 pf_multi_peak_sep_min_hz = 5;         % penalize PF when another peak sits at least this far from the dominant (Hz)
 pf_multi_peak_height_ratio_min = 0.8; % rival peak height must reach this fraction of the dominant peak amplitude
 pf_multi_peak_penalty_mult = 0.6;     % multiplier applied with edge/HF/roughness penalties when the rule fires
@@ -2395,7 +2395,7 @@ for trl = 1:nTrl
         continue;
     end
 
-    % Constrained peak search: prioritize 40-80 Hz gamma core with adaptive
+    % Constrained peak search: prioritize 30-90 Hz gamma band with adaptive
     % prominence threshold; then fall back to full-band and finally global max.
     [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use);
     if isfinite(peak_hz)
@@ -2446,8 +2446,8 @@ if numel(y) >= 3
     end
     min_prom = max([0.02, 0.10 * peak_scale, 0.20 * robust_scale]);
 
-    core_lo = 40;
-    core_hi = 80;
+    core_lo = 30;
+    core_hi = 90;
     core_mask = x >= core_lo & x <= core_hi;
     if sum(core_mask) >= 3
         x_core = x(core_mask);
@@ -3317,8 +3317,8 @@ if any(freq_mask)
     x = x(valid);
     y = y(valid);
     if numel(y) >= 3
-        peak_lo = max(40, analysis_freq_range(1));
-        peak_hi = min(80, analysis_freq_range(2));
+        peak_lo = max(30, analysis_freq_range(1));
+        peak_hi = min(90, analysis_freq_range(2));
         inner_mask = x >= peak_lo & x <= peak_hi;
         if sum(inner_mask) >= 3
             x_peak = x(inner_mask);
@@ -3334,8 +3334,8 @@ end
 if ~isfinite(pf_peak_hz)
     if sum(freq_mask) >= 3
         if numel(y) >= 3
-            peak_lo = max(40, analysis_freq_range(1));
-            peak_hi = min(80, analysis_freq_range(2));
+            peak_lo = max(30, analysis_freq_range(1));
+            peak_hi = min(90, analysis_freq_range(2));
             inner_mask = x >= peak_lo & x <= peak_hi;
             if sum(inner_mask) >= 3
                 x_peak = x(inner_mask);
