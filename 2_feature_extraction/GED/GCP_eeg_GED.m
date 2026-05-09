@@ -4875,48 +4875,62 @@ window_names = {'EARLY', 'FULL', 'LATE'};
 window_data = {subj_avg_early, subj_avg_full, subj_avg_late};
 peak_data = {subj_peak_early, subj_peak_full, subj_peak_late};
 nCond = numel(condLabels);
-fig = figure('Position', [0 0 1512 982], 'Color', 'w');
-tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
-for wi = 1:3
-    nexttile; hold on;
-    panel_min = inf;
-    panel_max = -inf;
-    for cond = 1:nCond
-        avg_curve = window_data{wi}{cond};
-        if isempty(avg_curve) || numel(avg_curve) ~= numel(scan_freqs)
-            continue;
+smooth_core_win = 7;
+smooth_edge_win = 13;
+
+for is_smoothed = [0 1]
+    fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+    tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
+    for wi = 1:3
+        nexttile; hold on;
+        panel_min = inf;
+        panel_max = -inf;
+        for cond = 1:nCond
+            avg_curve = window_data{wi}{cond};
+            if isempty(avg_curve) || numel(avg_curve) ~= numel(scan_freqs)
+                continue;
+            end
+            valid = isfinite(avg_curve) & isfinite(scan_freqs);
+            if sum(valid) < 3
+                continue;
+            end
+            x = scan_freqs(valid);
+            y = avg_curve(valid);
+            if is_smoothed
+                y_plot = smooth_reflective_edges(y, x, [scan_freqs(1) scan_freqs(end)], smooth_core_win, smooth_edge_win);
+            else
+                y_plot = y;
+            end
+            plot(x, y_plot, '-', 'Color', colors(cond, :), 'LineWidth', 2.8, 'DisplayName', condLabels{cond});
+            peak_hz = peak_data{wi}(cond);
+            if isfinite(peak_hz)
+                xline(peak_hz, ':', 'Color', colors(cond, :), 'LineWidth', 1.8, 'HandleVisibility', 'off');
+            end
+            panel_min = min(panel_min, min(y_plot));
+            panel_max = max(panel_max, max(y_plot));
         end
-        valid = isfinite(avg_curve) & isfinite(scan_freqs);
-        if sum(valid) < 3
-            continue;
+        yline(0, 'k--', 'LineWidth', 0.7, 'HandleVisibility', 'off');
+        xlim([scan_freqs(1), scan_freqs(end)]);
+        if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
+            yr = panel_max - panel_min;
+            ylim([panel_min - 0.10 * yr, panel_max + 0.12 * yr]);
         end
-        x = scan_freqs(valid);
-        y = avg_curve(valid);
-        y_smooth = smooth_reflective_edges(y, x, [scan_freqs(1) scan_freqs(end)], 5, 9);
-        plot(x, y_smooth, '-', 'Color', colors(cond, :), 'LineWidth', 2.8, 'DisplayName', condLabels{cond});
-        peak_hz = peak_data{wi}(cond);
-        if isfinite(peak_hz)
-            xline(peak_hz, ':', 'Color', colors(cond, :), 'LineWidth', 1.8, 'HandleVisibility', 'off');
-        end
-        panel_min = min(panel_min, min(y_smooth));
-        panel_max = max(panel_max, max(y_smooth));
+        xlabel('Frequency [Hz]');
+        ylabel('Power [dB]');
+        title(window_names{wi}, 'FontSize', 13, 'FontWeight', 'bold');
+        set(gca, 'FontSize', 10, 'Box', 'on');
     end
-    yline(0, 'k--', 'LineWidth', 0.7, 'HandleVisibility', 'off');
-    xlim([scan_freqs(1), scan_freqs(end)]);
-    if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
-        yr = panel_max - panel_min;
-        ylim([panel_min - 0.10 * yr, panel_max + 0.12 * yr]);
+    legend(condLabels, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off', 'FontSize', 10);
+    if is_smoothed
+        sgtitle(sprintf('Condition-Averaged GED Power Spectra (Smoothed): Subject %s', subject_id), ...
+            'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+        save_figure_png(fig, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_powscptrm_smoothed.png', subject_id)));
+    else
+        sgtitle(sprintf('Condition-Averaged GED Power Spectra (Unsmoothed): Subject %s', subject_id), ...
+            'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+        save_figure_png(fig, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_powscptrm.png', subject_id)));
     end
-    xlabel('Frequency [Hz]');
-    ylabel('Power [dB]');
-    title(window_names{wi}, 'FontSize', 13, 'FontWeight', 'bold');
-    set(gca, 'FontSize', 10, 'Box', 'on');
 end
-legend(condLabels, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off', 'FontSize', 10);
-sgtitle(sprintf('Condition-Averaged GED Power Spectra: Subject %s', subject_id), ...
-    'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
-save_figure_png(fig, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_combined_condition_spectrum.png', subject_id)));
-save_figure_png(fig, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_condition_average_power_spectra.png', subject_id)));
 end
 
 function avg_curve = compute_condition_average_powratio_ft(pr_mat, scan_freqs)
