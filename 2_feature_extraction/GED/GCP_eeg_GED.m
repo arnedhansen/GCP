@@ -65,7 +65,7 @@ analysis_freq_range = [30, 90];
 scan_freq_step_hz = 1;            % analysis grid resolution (Hz)
 scan_freqs = analysis_freq_range(1):scan_freq_step_hz:analysis_freq_range(2);
 nFreqs = length(scan_freqs);
-scan_width = 1.5; % spectral smoothing (Hz) for multitaper PSD scan; narrower to preserve peak shifts
+scan_width = 2.0; % spectral smoothing (Hz) for mtmfft
 
 %% GED parameters
 lambda = 0.05;
@@ -1477,6 +1477,21 @@ for subj = 1:nSubj
         subj_peaks_late{cond} = trl_peaks_late;
         subj_centroid_early{cond} = trl_centroid_early;
         subj_centroid_late{cond} = trl_centroid_late;
+        outlier_rows_full = outlier_mask_freq_full | outlier_mask_power_full;
+        outlier_rows_early = outlier_mask_freq_early | outlier_mask_power_early;
+        outlier_rows_late = outlier_mask_freq_late | outlier_mask_power_late;
+        powratio_trials_full_avg = powratio_trials_full_plotstat;
+        powratio_trials_early_avg = powratio_trials_early_plotstat;
+        powratio_trials_late_avg = powratio_trials_late_plotstat;
+        if ~isempty(powratio_trials_full_avg)
+            powratio_trials_full_avg(outlier_rows_full, :) = NaN;
+        end
+        if ~isempty(powratio_trials_early_avg)
+            powratio_trials_early_avg(outlier_rows_early, :) = NaN;
+        end
+        if ~isempty(powratio_trials_late_avg)
+            powratio_trials_late_avg(outlier_rows_late, :) = NaN;
+        end
         valid_s = ~isnan(trl_peaks);
         valid_s_early = ~isnan(trl_peaks_early);
         valid_s_late = ~isnan(trl_peaks_late);
@@ -1490,9 +1505,9 @@ for subj = 1:nSubj
 
         % Condition-level spectra and peak metrics from trial-averaged spectra
         % (FieldTrip averaging over the trial dimension).
-        cond_avg_full = compute_condition_average_powratio_ft(powratio_trials_full_plotstat, scan_freqs);
-        cond_avg_early = compute_condition_average_powratio_ft(powratio_trials_early_plotstat, scan_freqs);
-        cond_avg_late = compute_condition_average_powratio_ft(powratio_trials_late_plotstat, scan_freqs);
+        cond_avg_full = compute_condition_average_powratio_ft(powratio_trials_full_avg, scan_freqs);
+        cond_avg_early = compute_condition_average_powratio_ft(powratio_trials_early_avg, scan_freqs);
+        cond_avg_late = compute_condition_average_powratio_ft(powratio_trials_late_avg, scan_freqs);
         all_condition_powspctrm_full{cond, subj} = cond_avg_full;
         all_condition_powspctrm_early{cond, subj} = cond_avg_early;
         all_condition_powspctrm_late{cond, subj} = cond_avg_late;
@@ -1776,15 +1791,16 @@ for wi = 1:3
         x = scan_freqs(good);
         y = mu(good);
         e = sem(good);
+        y_smooth = smooth_reflective_edges(y, x, analysis_freq_range, 5, 9);
         fill([x, fliplr(x)], [y - e, fliplr(y + e)], colors(cond, :), ...
             'FaceAlpha', 0.14, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-        plot(x, y, '-', 'Color', colors(cond, :), 'LineWidth', 3.2, 'DisplayName', condLabels{cond});
+        plot(x, y_smooth, '-', 'Color', colors(cond, :), 'LineWidth', 3.2, 'DisplayName', condLabels{cond});
         peak_freq_group = nanmedian(peak_cells_condavg{wi}(cond, :));
         if isfinite(peak_freq_group)
             xline(peak_freq_group, ':', 'Color', colors(cond, :), 'LineWidth', 2.0, 'HandleVisibility', 'off');
         end
-        panel_min = min(panel_min, min(y - e));
-        panel_max = max(panel_max, max(y + e));
+        panel_min = min(panel_min, min(y_smooth - e));
+        panel_max = max(panel_max, max(y_smooth + e));
     end
     yline(0, 'k--', 'LineWidth', 0.8, 'HandleVisibility', 'off');
     xlim([analysis_freq_range(1), analysis_freq_range(2)]);
@@ -4876,13 +4892,14 @@ for wi = 1:3
         end
         x = scan_freqs(valid);
         y = avg_curve(valid);
-        plot(x, y, '-', 'Color', colors(cond, :), 'LineWidth', 2.8, 'DisplayName', condLabels{cond});
+        y_smooth = smooth_reflective_edges(y, x, [scan_freqs(1) scan_freqs(end)], 5, 9);
+        plot(x, y_smooth, '-', 'Color', colors(cond, :), 'LineWidth', 2.8, 'DisplayName', condLabels{cond});
         peak_hz = peak_data{wi}(cond);
         if isfinite(peak_hz)
             xline(peak_hz, ':', 'Color', colors(cond, :), 'LineWidth', 1.8, 'HandleVisibility', 'off');
         end
-        panel_min = min(panel_min, min(y));
-        panel_max = max(panel_max, max(y));
+        panel_min = min(panel_min, min(y_smooth));
+        panel_max = max(panel_max, max(y_smooth));
     end
     yline(0, 'k--', 'LineWidth', 0.7, 'HandleVisibility', 'off');
     xlim([scan_freqs(1), scan_freqs(end)]);
