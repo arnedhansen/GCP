@@ -120,7 +120,7 @@ trial_peak_edge_margin_hz = 5; % ignore edge bins near 30/90 Hz during trial-lev
 trial_metric_outlier_enable = true;      % apply trial-level outlier rejection on extracted frequency/power metrics
 trial_metric_outlier_iqr_mult = 1.5;     % outlier threshold in IQR units around Q1/Q3
 trial_metric_outlier_min_trials = 50;    % minimum finite trials to run IQR-based outlier rejection
-peak_bootstrap_reps = 1000;              % criterion-4 reliability: bootstrap repetitions per condition
+peak_bootstrap_reps = 1000;              % criterion-4 reliability: bootstrap reps (no FieldTrip in inner loop)
 peak_bootstrap_min_trials = 30;          % criterion-4 reliability: minimum retained trials per condition
 peak_bootstrap_ci_prct = [2.5 97.5];     % criterion-4 reliability: percentile interval for peak-frequency precision
 reliability_ci_width_median_max_hz = 10; % criterion-4 pass: max median CI width across conditions
@@ -4832,7 +4832,13 @@ peak_hz_boot = nan(n_boot, 1);
 for bi = 1:n_boot
     sample_idx = trial_rows(randi(n_valid_trials, n_valid_trials, 1));
     boot_mat = pr_mat(sample_idx, :);
-    boot_avg = compute_condition_average_powratio_ft(boot_mat, scan_freqs);
+    % Uniform trial mean only (matches compute_condition_average_powratio_ft fallback);
+    % avoids ft_selectdata here — otherwise ~n_boot FieldTrip calls per condition/window.
+    boot_use = any(isfinite(boot_mat), 2);
+    if ~any(boot_use)
+        continue;
+    end
+    boot_avg = mean(boot_mat(boot_use, :), 1, 'omitnan');
     boot_avg = movmean(boot_avg, max(1, round(smooth_n)), 'omitnan');
     [peak_hz_boot(bi), ~] = pick_tallest_peak(boot_avg, scan_freqs, 1, edge_margin_hz);
 end
