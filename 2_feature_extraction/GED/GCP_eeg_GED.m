@@ -132,10 +132,8 @@ end
 fig_save_dir_ged = fullfile(paths.figures, 'eeg', 'ged');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
 fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
-fig_save_dir_powspctrm = fig_save_dir_component_selection;
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
-if ~exist(fig_save_dir_powspctrm, 'dir'), mkdir(fig_save_dir_powspctrm); end
 comp_sel_save_dir = fig_save_dir_component_selection;
 
 %% Preallocate storage
@@ -212,21 +210,12 @@ all_condition_peak_power_early = nan(4, nSubj);
 all_condition_peak_power_late = nan(4, nSubj);
 trial_counts_initial_by_subj_window = zeros(nSubj, 3);
 trial_counts_retained_by_subj_window = zeros(nSubj, 3);
-benchmark_metric_detectability = nan(4, nSubj);
-benchmark_metric_separation_slope = nan(nSubj, 1);
-benchmark_metric_separation_delta = nan(nSubj, 1);
-benchmark_metric_reliability_trialcv = nan(4, nSubj);
-benchmark_metric_reliability_subjspread = nan(4, 1);
-primary_slope_stats = struct();
-primary_delta_stats = struct();
 
 %% Subject loop
 for subj = 1:nSubj
     subj_runtime_tic = tic;
     comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
     if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
-    powspctrm_save_dir_subj = fullfile(fig_save_dir_powspctrm, subjects{subj});
-    if ~exist(powspctrm_save_dir_subj, 'dir'), mkdir(powspctrm_save_dir_subj); end
     fig_save_dir_emg_exclusion = comp_sel_save_dir;
     datapath = fullfile(gcp_feature_data_path, subjects{subj}, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
@@ -1595,6 +1584,8 @@ for subj = 1:nSubj
             pr_source = subj_powratio_fullscan;
             peaks_source = subj_peaks_full;
             centroid_source = subj_centroid_full;
+            condavg_source = subj_condition_avg_full;
+            condpeak_source = subj_condition_peak_full;
             topo_mat_window = searchTopos_full;
             selected_idx_window = selected_idx_full;
             selected_w_window = w_combined_full;
@@ -1603,6 +1594,8 @@ for subj = 1:nSubj
             pr_source = subj_powratio_early;
             peaks_source = subj_peaks_early;
             centroid_source = subj_centroid_early;
+            condavg_source = subj_condition_avg_early;
+            condpeak_source = subj_condition_peak_early;
             topo_mat_window = searchTopos_early;
             selected_idx_window = selected_idx_early;
             selected_w_window = w_combined_early;
@@ -1611,6 +1604,8 @@ for subj = 1:nSubj
             pr_source = subj_powratio_late;
             peaks_source = subj_peaks_late;
             centroid_source = subj_centroid_late;
+            condavg_source = subj_condition_avg_late;
+            condpeak_source = subj_condition_peak_late;
             topo_mat_window = searchTopos_late;
             selected_idx_window = selected_idx_late;
             selected_w_window = w_combined_late;
@@ -1654,10 +1649,9 @@ for subj = 1:nSubj
                     valid_ctd = ~isnan(ctd);
                     tr_idx = find(valid_ctd);
                     if ~isempty(tr_idx)
-                        plot(ctd(valid_ctd), tr_idx, '.', 'Color', [0 0 0], 'MarkerSize', 7);
-                    end
-                    if numel(tr_idx) >= 2
-                        plot(ctd(valid_ctd), tr_idx, '-', 'Color', [0 0 0], 'LineWidth', 0.6);
+                        scatter(ctd(valid_ctd), tr_idx, 28, 'k', 'filled', ...
+                            'MarkerEdgeColor', [0 0 0], 'MarkerEdgeAlpha', 0.75, ...
+                            'MarkerFaceAlpha', 0.85);
                     end
                 end
                 xlabel('Freq [Hz]'); ylabel('Trial');
@@ -1667,7 +1661,7 @@ for subj = 1:nSubj
             set(gca, 'FontSize', 10); xlim([30 90]); box on;
         end
 
-        % --- Row 2: Topoplot + histogram ---
+        % --- Row 2: Topoplot + histogram + combined spectra ---
         subplot(2, 4, 5);
         if ~isempty(topo_mat_window) && ~isempty(selected_idx_window)
             topo_data = [];
@@ -1719,7 +1713,7 @@ for subj = 1:nSubj
             title(sprintf('Weighted GED (%d comps, \\lambda=%.2f)', n_sel_show, lambda_show), 'FontSize', 11);
         end
 
-        subplot(2, 4, [6 7 8]); hold on;
+        subplot(2, 4, [6 7]); hold on;
         edges = 30:2:90;
         hist_mat = zeros(4, length(edges)-1);
         for cond = 1:4
@@ -1739,18 +1733,38 @@ for subj = 1:nSubj
         legend(bh, condLabels, 'FontSize', 10, 'Location', 'best');
         set(gca, 'FontSize', 11); xlim([30 90]);  box on;
 
+        subplot(2, 4, 8); hold on;
+        for cond = 1:4
+            avg_curve = condavg_source{cond};
+            if isempty(avg_curve) || numel(avg_curve) ~= numel(scan_freqs)
+                continue;
+            end
+            valid_curve = isfinite(avg_curve) & isfinite(scan_freqs);
+            if sum(valid_curve) < 3
+                continue;
+            end
+            x_curve = scan_freqs(valid_curve);
+            y_curve = avg_curve(valid_curve);
+            y_plot = smooth_reflective_edges(y_curve, x_curve, [scan_freqs(1) scan_freqs(end)], 5, 10);
+            plot(x_curve, y_plot, '-', 'Color', colors(cond, :), 'LineWidth', 2.2, ...
+                'DisplayName', condLabels{cond});
+            peak_hz = condpeak_source(cond);
+            if isfinite(peak_hz)
+                xline(peak_hz, ':', 'Color', colors(cond, :), 'LineWidth', 1.2, ...
+                    'HandleVisibility', 'off');
+            end
+        end
+        yline(0, 'k--', 'LineWidth', 0.7, 'HandleVisibility', 'off');
+        xlim([scan_freqs(1), scan_freqs(end)]);
+        xlabel('Freq [Hz]');
+        ylabel('Power [dB]');
+        title('Condition-Averaged Spectra', 'FontSize', 11);
+        set(gca, 'FontSize', 10, 'Box', 'on');
+        legend('Location', 'best', 'FontSize', 9);
+
         save_figure_png(fig, fullfile(comp_sel_save_dir, ...
             sprintf('GCP_eeg_GED_subj%s_trials_overview_%s.png', subjects{subj}, window_names{wi})));
     end
-    plot_subject_all_trial_power_spectra( ...
-        subjects{subj}, scan_freqs, condLabels, colors, ...
-        subj_powratio_early, subj_powratio_fullscan, subj_powratio_late, ...
-        powspctrm_save_dir_subj);
-    plot_subject_condition_average_power_spectra( ...
-        subjects{subj}, scan_freqs, condLabels, colors, ...
-        subj_condition_avg_early, subj_condition_avg_full, subj_condition_avg_late, ...
-        subj_condition_peak_early, subj_condition_peak_full, subj_condition_peak_late, ...
-        powspctrm_save_dir_subj);
     trial_counts_initial_by_subj_window(subj, :) = trial_counts_initial_local;
     trial_counts_retained_by_subj_window(subj, :) = trial_counts_retained_local;
     warning_log_by_subj{subj} = warning_log_subj;
@@ -1777,20 +1791,18 @@ for wi = 1:3
                 subj_curves(s, :) = curv(:)';
             end
         end
-        mu = nanmean(subj_curves, 1);
-        n_valid = sum(any(isfinite(subj_curves), 2));
-        if n_valid > 0
-            sem = nanstd(subj_curves, [], 1) ./ sqrt(n_valid);
-        else
-            sem = nan(size(mu));
+        med_curve = nanmedian(subj_curves, 1);
+        mad_curve = nan(1, numel(scan_freqs));
+        for fi = 1:numel(scan_freqs)
+            mad_curve(fi) = robust_mad(subj_curves(:, fi));
         end
-        good = isfinite(scan_freqs) & isfinite(mu) & isfinite(sem);
+        good = isfinite(scan_freqs) & isfinite(med_curve) & isfinite(mad_curve);
         if sum(good) < 3
             continue;
         end
         x = scan_freqs(good);
-        y = mu(good);
-        e = sem(good);
+        y = med_curve(good);
+        e = mad_curve(good);
         y_smooth = smooth_reflective_edges(y, x, analysis_freq_range, 5, 9);
         fill([x, fliplr(x)], [y - e, fliplr(y + e)], colors(cond, :), ...
             'FaceAlpha', 0.14, 'EdgeColor', 'none', 'HandleVisibility', 'off');
@@ -1846,43 +1858,6 @@ end
 sgtitle('Trial Retention by Participant and Time Window', 'FontSize', 18, 'FontWeight', 'bold');
 save_figure_png(fig_trial_retention, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_trial_retention_by_subject_window.png'));
 
-%% Combined GED metrics (full window only)
-benchmark_metric_detectability = nan(4, nSubj);
-benchmark_metric_separation_slope = nan(nSubj, 1);
-benchmark_metric_separation_delta = nan(nSubj, 1);
-benchmark_metric_reliability_trialcv = nan(4, nSubj);
-benchmark_metric_reliability_subjspread = nan(4, 1);
-
-for subj = 1:nSubj
-    cond_medians = nan(4, 1);
-    for cond = 1:4
-        peak_freq = all_trial_peaks{cond, subj};
-        if isempty(peak_freq)
-            continue;
-        end
-        benchmark_metric_detectability(cond, subj) = mean(isfinite(peak_freq));
-        vf = peak_freq(isfinite(peak_freq));
-        if numel(vf) >= 2 && mean(vf) ~= 0
-            benchmark_metric_reliability_trialcv(cond, subj) = std(vf) / abs(mean(vf));
-        end
-        cond_medians(cond) = median(vf);
-    end
-
-    vx = ~isnan(cond_medians);
-    if sum(vx) >= 2
-        p = polyfit(find(vx), cond_medians(vx)', 1);
-        benchmark_metric_separation_slope(subj) = p(1);
-    end
-    if ~isnan(cond_medians(1)) && ~isnan(cond_medians(4))
-        benchmark_metric_separation_delta(subj) = cond_medians(4) - cond_medians(1);
-    end
-end
-
-for cond = 1:4
-    v = benchmark_metric_reliability_trialcv(cond, :);
-    benchmark_metric_reliability_subjspread(cond, 1) = std(v(~isnan(v)));
-end
-
 % CENTROID METRIC: Subject/group summaries and concordance
 fig_cent = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Trial-Level Gamma Centroid', ...
@@ -1904,10 +1879,13 @@ for c = 1:4
             'MarkerEdgeColor', 'k', 'LineWidth', 0.4);
     end
 end
-mu_c = nanmean(all_trial_median_centroid, 2);
-sem_c = nanstd(all_trial_median_centroid, [], 2) ./ sqrt(sum(~isnan(all_trial_median_centroid), 2));
-errorbar(1:4, mu_c, sem_c, 'k', 'LineWidth', 2, 'CapSize', 10);
-plot(1:4, mu_c, 'k-', 'LineWidth', 2.5);
+med_c = nanmedian(all_trial_median_centroid, 2);
+mad_c = nan(4, 1);
+for c = 1:4
+    mad_c(c) = robust_mad(all_trial_median_centroid(c, :));
+end
+errorbar(1:4, med_c, mad_c, 'k', 'LineWidth', 2, 'CapSize', 10);
+plot(1:4, med_c, 'k-', 'LineWidth', 2.5);
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13, 'Box', 'off');
 xlim([0.3 4.7]); 
 ylim([50 70]); 
@@ -1948,8 +1926,6 @@ fig_cond_slope = figure('Position', [0 0 1512 982], 'Color', 'w');
 
 slope_post = compute_condition_separation_from_matrix(all_condition_peak_freq_full);
 delta_post = all_condition_peak_freq_full(4, :) - all_condition_peak_freq_full(1, :);
-primary_slope_stats = compute_one_sample_stats(slope_post);
-primary_delta_stats = compute_one_sample_stats(delta_post);
 tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
 
 % ---------- Panel 1: condition slope ----------
@@ -1965,7 +1941,7 @@ if ~isempty(slope_vals)
 end
 yline(0, 'k--', 'LineWidth', 1.0);
 xlim([0.45 1.45]);
-ylim([-2 2]);
+ylim(compute_symmetric_ylim(slope_vals, 0.15, 0.4));
 set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED'}, ...
     'FontSize', 16, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 ylabel('Slope across contrast conditions [Hz/condition]', 'FontSize', 18, 'FontWeight', 'bold');
@@ -1984,7 +1960,7 @@ if ~isempty(delta_vals)
 end
 yline(0, 'k--', 'LineWidth', 1.0);
 xlim([0.45 1.45]);
-ylim([-6 6]);
+ylim(compute_symmetric_ylim(delta_vals, 0.15, 1));
 set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED'}, ...
     'FontSize', 16, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 ylabel('\Delta median (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight', 'bold');
@@ -2002,7 +1978,7 @@ bar(subj_idx, delta_vals, 0.75, 'FaceColor', [0.6 0.6 0.6], 'EdgeColor', 'k');
 hold on;
 yline(0, 'k--', 'LineWidth', 1.2);
 xlim([0.5 max(subj_idx) + 0.5]);
-ylim([-6 6]);
+ylim(compute_symmetric_ylim(delta_vals, 0.15, 1));
 xticks(subj_idx);
 if exist('subjects', 'var') == 1 && numel(subjects) >= max(subj_idx) && numel(subj_idx) <= 35
     xticklabels(subjects(subj_idx));
@@ -2012,246 +1988,6 @@ ylabel('\Delta Frequency Shift (100% - 25%) [Hz]', 'FontSize', 18, 'FontWeight',
 title('Gamma Frequency Shift', 'FontSize', 20, 'FontWeight', 'bold');
 set(gca, 'FontSize', 14, 'LineWidth', 1.2, 'TickDir', 'out', 'Box', 'off');
 save_figure_png(fig_cond_shift_bar_freq, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bar_GammaFreq.png'));
-
-%% Summary dashboard (backprojected combined-component data)
-fig_summary = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('GED Trials Summary Dashboard (component selection backprojected)', ...
-    'FontSize', 16, 'FontWeight', 'bold');
-gamma_metric_full = all_trial_gamma_power;
-gamma_metric_label = 'Peak Power [dB]';
-
-summary_metrics = { ...
-    all_trial_median, ...
-    benchmark_metric_reliability_trialcv, ...
-    all_trial_median_centroid, ...
-    gamma_metric_full};
-summary_names = {'Peak median [Hz]', 'Trial CV', 'Centroid median [Hz]', gamma_metric_label};
-
-for mi = 1:numel(summary_metrics)
-    subplot(2, 4, mi); hold on;
-    dat = summary_metrics{mi};
-    dat_plot = dat;
-    % Figure-only outlier exclusion per metric and condition (subject-level).
-    for c = 1:4
-        cond_vals = dat_plot(c, :);
-        valid_idx = find(isfinite(cond_vals));
-        if numel(valid_idx) >= 4
-            outlier_cond = isoutlier(cond_vals(valid_idx), 'median');
-            dat_plot(c, valid_idx(outlier_cond)) = NaN;
-        end
-    end
-    mu = nanmean(dat_plot, 2);
-    sem = nanstd(dat_plot, [], 2) ./ sqrt(sum(~isnan(dat_plot), 2));
-    med = nanmedian(dat_plot, 2);
-    for c = 1:4
-        bar(c, mu(c), 0.6, 'FaceColor', colors(c,:), 'EdgeColor', 'k', 'FaceAlpha', 0.7);
-    end
-    errorbar(1:4, mu, sem, 'k', 'LineStyle', 'none', 'LineWidth', 1.1, 'CapSize', 5);
-    scatter(1:4, med, 28, 'kd', 'filled');
-    for s = 1:nSubj
-        for c = 1:4
-            if ~isnan(dat_plot(c, s))
-                scatter(c + (rand - 0.5) * 0.18, dat_plot(c, s), 20, [0.5 0.5 0.5], ...
-                    'filled', ...
-                    'MarkerFaceAlpha', 0.5, ...
-                    'MarkerEdgeColor', [1 1 1], ...    % white ring
-                    'LineWidth', 0.5, ...              
-                    'MarkerEdgeAlpha', 0.9);                       
-            end
-        end
-    end
-    set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 9);
-    title(summary_names{mi}, 'FontSize', 10, 'FontWeight', 'bold');
-    box on;
-    if mi == 1
-        ylim([45 70]);
-    elseif mi == 2
-        ylim([0 10]);
-    elseif mi == 3
-        ylim([50 60]);
-    elseif mi == 4
-        ylim([-15 40]);
-    end
-end
-apply_dynamic_summary_ylims();
-save_figure_png(fig_summary, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary_full.png'));
-
-fig_summary_early = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('GED Trials Summary Dashboard (component selection backprojected, early window)', ...
-    'FontSize', 16, 'FontWeight', 'bold');
-gamma_metric_early = all_trial_gamma_power_early;
-summary_metrics_early = { ...
-    all_trial_median_early, ...
-    all_trial_trialcv_early, ...
-    all_trial_median_centroid_early, ...
-    gamma_metric_early};
-for mi = 1:numel(summary_metrics_early)
-    subplot(2, 4, mi); hold on;
-    dat = summary_metrics_early{mi};
-    dat_plot = dat;
-    for c = 1:4
-        cond_vals = dat_plot(c, :);
-        valid_idx = find(isfinite(cond_vals));
-        if numel(valid_idx) >= 4
-            outlier_cond = isoutlier(cond_vals(valid_idx), 'median');
-            dat_plot(c, valid_idx(outlier_cond)) = NaN;
-        end
-    end
-    mu = nanmean(dat_plot, 2);
-    sem = nanstd(dat_plot, [], 2) ./ sqrt(sum(~isnan(dat_plot), 2));
-    med = nanmedian(dat_plot, 2);
-    for c = 1:4
-        bar(c, mu(c), 0.6, 'FaceColor', colors(c,:), 'EdgeColor', 'k', 'FaceAlpha', 0.7);
-    end
-    errorbar(1:4, mu, sem, 'k', 'LineStyle', 'none', 'LineWidth', 1.1, 'CapSize', 5);
-    scatter(1:4, med, 28, 'kd', 'filled');
-    for s = 1:nSubj
-        for c = 1:4
-            if ~isnan(dat_plot(c, s))
-                scatter(c + (rand - 0.5) * 0.18, dat_plot(c, s), 20, [0.5 0.5 0.5], ...
-                    'filled', ...
-                    'MarkerFaceAlpha', 0.5, ...
-                    'MarkerEdgeColor', [1 1 1], ...
-                    'LineWidth', 0.5, ...
-                    'MarkerEdgeAlpha', 0.9);
-            end
-        end
-    end
-    set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 9);
-    title(summary_names{mi}, 'FontSize', 10, 'FontWeight', 'bold');
-    box on;
-end
-apply_dynamic_summary_ylims();
-save_figure_png(fig_summary_early, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary_early.png'));
-
-fig_summary_late = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle('GED Trials Summary Dashboard (component selection backprojected, late window)', ...
-    'FontSize', 16, 'FontWeight', 'bold');
-gamma_metric_late = all_trial_gamma_power_late;
-summary_metrics_late = { ...
-    all_trial_median_late, ...
-    all_trial_trialcv_late, ...
-    all_trial_median_centroid_late, ...
-    gamma_metric_late};
-for mi = 1:numel(summary_metrics_late)
-    subplot(2, 4, mi); hold on;
-    dat = summary_metrics_late{mi};
-    dat_plot = dat;
-    for c = 1:4
-        cond_vals = dat_plot(c, :);
-        valid_idx = find(isfinite(cond_vals));
-        if numel(valid_idx) >= 4
-            outlier_cond = isoutlier(cond_vals(valid_idx), 'median');
-            dat_plot(c, valid_idx(outlier_cond)) = NaN;
-        end
-    end
-    mu = nanmean(dat_plot, 2);
-    sem = nanstd(dat_plot, [], 2) ./ sqrt(sum(~isnan(dat_plot), 2));
-    med = nanmedian(dat_plot, 2);
-    for c = 1:4
-        bar(c, mu(c), 0.6, 'FaceColor', colors(c,:), 'EdgeColor', 'k', 'FaceAlpha', 0.7);
-    end
-    errorbar(1:4, mu, sem, 'k', 'LineStyle', 'none', 'LineWidth', 1.1, 'CapSize', 5);
-    scatter(1:4, med, 28, 'kd', 'filled');
-    for s = 1:nSubj
-        for c = 1:4
-            if ~isnan(dat_plot(c, s))
-                scatter(c + (rand - 0.5) * 0.18, dat_plot(c, s), 20, [0.5 0.5 0.5], ...
-                    'filled', ...
-                    'MarkerFaceAlpha', 0.5, ...
-                    'MarkerEdgeColor', [1 1 1], ...
-                    'LineWidth', 0.5, ...
-                    'MarkerEdgeAlpha', 0.9);
-            end
-        end
-    end
-    set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 9);
-    title(summary_names{mi}, 'FontSize', 10, 'FontWeight', 'bold');
-    box on;
-end
-apply_dynamic_summary_ylims();
-save_figure_png(fig_summary_late, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_metrics_summary_late.png'));
-
-%% Grand average: peak frequency (stats-style boxplot, non-baselined frequency)
-close all
-fig_box1_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'w');
-hold on;
-
-dat = all_condition_peak_freq_full;  % [condition x subject], condition-averaged spectral peak [Hz]
-
-% Subject-wise lines across contrast conditions
-for s = 1:nSubj
-    y_subj = dat(:, s);
-    valid_subj = ~isnan(y_subj);
-    if sum(valid_subj) >= 2
-        plot(find(valid_subj), y_subj(valid_subj), '-', ...
-            'Color', [0.75 0.75 0.75], 'LineWidth', 1);
-    end
-end
-
-% Boxplot for each condition
-y_all = dat(:);
-g_all = repmat((1:4)', nSubj, 1);
-valid_all = ~isnan(y_all);
-boxplot(y_all(valid_all), g_all(valid_all), 'Colors', [0.45 0.45 0.45], ...
-    'Symbol', '', 'Widths', 0.5);
-
-% Overlay jittered subject points
-for c = 1:4
-    y_c = dat(c, :);
-    valid_c = ~isnan(y_c);
-    x_jit = c + (rand(1, sum(valid_c)) - 0.5) * 0.10;
-    scatter(x_jit, y_c(valid_c), 170, colors(c,:), 'filled', ...
-        'MarkerEdgeColor', [0.25 0.25 0.25], 'LineWidth', 0.7);
-end
-
-set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
-    'FontSize', 15, 'Box', 'off');
-xlim([0.5 4.5]);
-%ylim([30 90]);
-ylabel('Gamma Frequency [Hz]');
-title('Gamma Frequency', 'FontSize', 30, 'FontWeight', 'bold');
-
-save_figure_png(fig_box1_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_GammaFreq.png'));
-
-%% Main figure: gamma frequency over contrast (mean+-SEM and trajectories)
-close all
-fig_main_gamma = figure('Position', [0 0 1512 982], 'Color', 'w');
-hold on;
-
-dat = all_condition_peak_freq_full;  % [condition x subject]
-mu = nanmean(dat, 2);
-sem = nanstd(dat, [], 2) ./ sqrt(sum(~isnan(dat), 2));
-
-for s = 1:nSubj
-    y_subj = dat(:, s);
-    valid_subj = ~isnan(y_subj);
-    if sum(valid_subj) >= 2
-        plot(find(valid_subj), y_subj(valid_subj), '-', ...
-            'Color', [0.78 0.78 0.78], 'LineWidth', 1.1);
-    end
-end
-
-for c = 1:4
-    y_c = dat(c, :);
-    valid_c = ~isnan(y_c);
-    x_jit = c + (rand(1, sum(valid_c)) - 0.5) * 0.12;
-    scatter(x_jit, y_c(valid_c), 130, colors(c,:), 'filled', ...
-        'MarkerEdgeColor', [0.25 0.25 0.25], 'LineWidth', 0.7);
-end
-
-errorbar(1:4, mu, sem, 'k-o', 'LineWidth', 2.2, 'CapSize', 9, ...
-    'MarkerFaceColor', [0.1 0.1 0.1], 'MarkerSize', 7);
-set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
-    'FontSize', 16, 'Box', 'off');
-xlim([0.5 4.5]);
-ylabel('Gamma Frequency [Hz]');
-title('Gamma Frequency over Contrast', 'FontSize', 24, 'FontWeight', 'bold');
-text(0.02, 0.98, sprintf('Linear trend (subject slope): p=%.4f, d=%.2f', ...
-    primary_slope_stats.p, primary_slope_stats.cohens_d), ...
-    'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
-    'FontSize', 14, 'FontWeight', 'bold');
-save_figure_png(fig_main_gamma, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq.png'));
 
 %% Condition-shift figure: normalized gamma frequency trajectories
 fig_condition_shift_freq = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -2283,7 +2019,7 @@ yline(0, 'k--', 'LineWidth', 1.5);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 18, 'Box', 'off');
 xlim([0.5 4.5]);
-ylim([-6 6]);
+ylim(compute_symmetric_ylim(dat_freq_shift(:), 0.15, 1));
 xlabel('Contrast condition');
 ylabel('\Delta Gamma Frequency [Hz]');
 title('Gamma Peak Frequency Shift', ...
@@ -2292,10 +2028,7 @@ title('Gamma Peak Frequency Shift', ...
 cond_shift_freq_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_frequency.png');
 save_figure_png(fig_condition_shift_freq, cond_shift_freq_path);
 
-%% Main figure: gamma frequency over contrast by time window
-[gamma_slope_full, gamma_delta_full] = compute_condition_separation_from_matrix(all_condition_peak_freq_full);
-[gamma_slope_early, gamma_delta_early] = compute_condition_separation_from_matrix(all_condition_peak_freq_early);
-[gamma_slope_late, gamma_delta_late] = compute_condition_separation_from_matrix(all_condition_peak_freq_late);
+%% Frequency figure: gamma frequency over contrast by time window
 fig_main_gamma_windows = figure('Position', [0 0 1512 982], 'Color', 'w');
 tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
 
@@ -2305,62 +2038,31 @@ ylabel('Gamma Frequency [Hz]');
 title('Early (0-500 ms)', 'FontWeight', 'bold');
 
 nexttile; hold on;
-plot_gamma_window_panel(all_condition_peak_freq_late, condLabels, colors, nSubj);
-title('Late (1000-2000 ms)', 'FontWeight', 'bold');
+plot_gamma_window_panel(all_condition_peak_freq_full, condLabels, colors, nSubj);
+title('Full (0-2000 ms)', 'FontWeight', 'bold');
 
 nexttile; hold on;
-late_minus_early_subj = nanmean(all_condition_peak_freq_late - all_condition_peak_freq_early, 1);
-valid_shift = isfinite(late_minus_early_subj);
-if any(valid_shift)
-    boxplot(late_minus_early_subj(valid_shift)', ones(sum(valid_shift), 1), ...
-        'Colors', 'k', 'Symbol', '', 'Widths', 0.4);
-    xj = 1 + (rand(1, sum(valid_shift)) - 0.5) * 0.20;
-    scatter(xj, late_minus_early_subj(valid_shift), 70, [0.45 0.45 0.45], 'filled', ...
-        'MarkerFaceAlpha', 0.7, 'MarkerEdgeColor', [0.2 0.2 0.2], 'LineWidth', 0.7);
-    yline(0, 'k--', 'LineWidth', 1);
-end
-xlim([0.5 1.5]);
-set(gca, 'XTick', 1, 'XTickLabel', {'Late-Early'}, 'Box', 'off', 'FontSize', 12);
-ylabel('\Delta Gamma Frequency [Hz]');
-title('Subject Shift', 'FontWeight', 'bold');
-save_figure_png(fig_main_gamma_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_main_GammaFreq_timeSplit.png'));
+plot_gamma_window_panel(all_condition_peak_freq_late, condLabels, colors, nSubj);
+title('Late (1000-2000 ms)', 'FontWeight', 'bold');
+save_figure_png(fig_main_gamma_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_freq_windows.png'));
 
-%% Power figure: peak dB power over conditions
-fig_power_statsstyle = figure('Position', [0 0 1512 982], 'Color', 'w');
-hold on;
+%% Power figure: gamma power over contrast by time window
+fig_main_power_windows = figure('Position', [0 0 1512 982], 'Color', 'w');
+tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
 
-dat_power = all_condition_peak_power_full;
-dat_power_plot = dat_power;
+nexttile; hold on;
+plot_gamma_window_panel(all_condition_peak_power_early, condLabels, colors, nSubj);
+ylabel('Gamma Peak Power [dB]');
+title('Early (0-500 ms)', 'FontWeight', 'bold');
 
-for s = 1:nSubj
-    y_subj = dat_power_plot(:, s);
-    valid_subj = ~isnan(y_subj);
-    if sum(valid_subj) >= 2
-        plot(find(valid_subj), y_subj(valid_subj), '-', ...
-            'Color', [0.75 0.75 0.75], 'LineWidth', 1);
-    end
-end
+nexttile; hold on;
+plot_gamma_window_panel(all_condition_peak_power_full, condLabels, colors, nSubj);
+title('Full (0-2000 ms)', 'FontWeight', 'bold');
 
-y_all = dat_power_plot(:);
-g_all = repmat((1:4)', nSubj, 1);
-valid_all = ~isnan(y_all);
-boxplot(y_all(valid_all), g_all(valid_all), 'Colors', [0.45 0.45 0.45], ...
-    'Symbol', '', 'Widths', 0.5);
-
-for c = 1:4
-    y_c = dat_power_plot(c, :);
-    valid_c = ~isnan(y_c);
-    x_jit = c + (rand(1, sum(valid_c)) - 0.5) * 0.10;
-    scatter(x_jit, y_c(valid_c), 170, colors(c,:), 'filled', ...
-        'MarkerEdgeColor', [0.25 0.25 0.25], 'LineWidth', 0.7);
-end
-yline(0, 'k--', 'LineWidth', 1.2);
-set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
-    'FontSize', 15, 'Box', 'off');
-xlim([0.5 4.5]);
-ylabel('Peak Power [dB]');
-title('Peak Power Increase', 'FontSize', 30, 'FontWeight', 'bold');
-save_figure_png(fig_power_statsstyle, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_boxplot_power.png'));
+nexttile; hold on;
+plot_gamma_window_panel(all_condition_peak_power_late, condLabels, colors, nSubj);
+title('Late (1000-2000 ms)', 'FontWeight', 'bold');
+save_figure_png(fig_main_power_windows, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_power_windows.png'));
 
 %% Condition-shift figure: normalized peak power trajectories
 fig_condition_shift_power = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -2392,7 +2094,7 @@ yline(0, 'k--', 'LineWidth', 1.5);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), ...
     'FontSize', 18, 'Box', 'off');
 xlim([0.5 4.5]);
-ylim([-0.75 0.75]);
+ylim(compute_symmetric_ylim(dat_power_shift(:), 0.15, 0.2));
 xlabel('Contrast condition');
 ylabel('\Delta Peak Power [dB]');
 title('Gamma Peak Power Shift', ...
@@ -2431,10 +2133,6 @@ save(save_path, ...
     'all_trial_outlier_mask_freq_full', 'all_trial_outlier_mask_freq_early', 'all_trial_outlier_mask_freq_late', ...
     'all_trial_outlier_mask_power_full', 'all_trial_outlier_mask_power_early', 'all_trial_outlier_mask_power_late', ...
     'trial_counts_initial_by_subj_window', 'trial_counts_retained_by_subj_window', ...
-    'benchmark_metric_detectability', ...
-    'benchmark_metric_separation_slope', 'benchmark_metric_separation_delta', ...
-    'benchmark_metric_reliability_trialcv', 'benchmark_metric_reliability_subjspread', ...
-    'primary_slope_stats', 'primary_delta_stats', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
@@ -2766,54 +2464,25 @@ base_floor = max(anchor * max(floor_frac, 0), eps);
 base_median = max(base_median, base_floor);
 end
 
-function apply_dynamic_summary_ylims()
-ax = findall(gcf, 'Type', 'axes');
-for ai = 1:numel(ax)
-    this_ax = ax(ai);
-    if numel(this_ax.XTick) ~= 4
-        continue;
-    end
-    y_vals = [];
-    ch = this_ax.Children;
-    for ci = 1:numel(ch)
-        if isprop(ch(ci), 'YData')
-            yd = ch(ci).YData;
-            y_vals = [y_vals; yd(:)]; %#ok<AGROW>
-        end
-    end
-    y_vals = y_vals(isfinite(y_vals));
-    if isempty(y_vals)
-        continue;
-    end
-    q05 = prctile(y_vals, 5);
-    q95 = prctile(y_vals, 95);
-    if ~isfinite(q05) || ~isfinite(q95)
-        continue;
-    end
-    if q95 <= q05
-        y_min = min(y_vals);
-        y_max = max(y_vals);
-    else
-        pad = 0.12 * (q95 - q05);
-        y_min = q05 - pad;
-        y_max = q95 + pad;
-    end
-    if ~isfinite(y_min) || ~isfinite(y_max) || y_max <= y_min
-        continue;
-    end
-    title_str = lower(char(this_ax.Title.String));
-    if contains(title_str, 'trial cv')
-        y_min = max(0, min(y_min, 0));
-        y_max = max(y_max, 0.15);
-    elseif contains(title_str, 'peak power') && contains(title_str, 'norm')
-        y_min = max(0, min(y_min, 0.7));
-        y_max = max(y_max, 1.3);
-    elseif contains(title_str, 'peak power')
-        y_min = min(y_min, 0);
-        y_max = max(y_max, 0);
-    end
-    ylim(this_ax, [y_min y_max]);
+function ylims = compute_symmetric_ylim(vals, pad_frac, min_half_range)
+if nargin < 2 || ~isfinite(pad_frac) || pad_frac < 0
+    pad_frac = 0.15;
 end
+if nargin < 3 || ~isfinite(min_half_range) || min_half_range <= 0
+    min_half_range = 1;
+end
+vals = vals(:);
+vals = vals(isfinite(vals));
+if isempty(vals)
+    half_range = min_half_range;
+else
+    max_abs = max(abs(vals));
+    if ~isfinite(max_abs)
+        max_abs = min_half_range;
+    end
+    half_range = max(max_abs * (1 + pad_frac), min_half_range);
+end
+ylims = [-half_range, half_range];
 end
 
 function [slope_vec, delta_vec] = compute_condition_separation_from_matrix(dat)
@@ -2834,8 +2503,11 @@ end
 end
 
 function plot_gamma_window_panel(dat, condLabels, colors, nSubj)
-mu = nanmean(dat, 2);
-sem = nanstd(dat, [], 2) ./ sqrt(sum(~isnan(dat), 2));
+med = nanmedian(dat, 2);
+madv = nan(4, 1);
+for c = 1:4
+    madv(c) = robust_mad(dat(c, :));
+end
 for s = 1:nSubj
     y_subj = dat(:, s);
     valid_subj = ~isnan(y_subj);
@@ -2850,7 +2522,7 @@ for c = 1:4
     scatter(x_jit, y_c(valid_c), 60, colors(c,:), 'filled', ...
         'MarkerEdgeColor', [0.25 0.25 0.25], 'LineWidth', 0.6);
 end
-errorbar(1:4, mu, sem, 'k-o', 'LineWidth', 1.8, 'CapSize', 8, ...
+errorbar(1:4, med, madv, 'k-o', 'LineWidth', 1.8, 'CapSize', 8, ...
     'MarkerFaceColor', [0.1 0.1 0.1], 'MarkerSize', 6);
 set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), 'FontSize', 11, 'Box', 'off');
 xlim([0.5 4.5]);
@@ -4745,30 +4417,6 @@ p_adj(sort_idx) = q_sorted;
 p_adj = reshape(p_adj, size(p_raw));
 end
 
-function stats = compute_one_sample_stats(x)
-x = x(:);
-x = x(isfinite(x));
-stats = struct('n', numel(x), 'mean', NaN, 'p', NaN, 'tstat', NaN, ...
-    'df', NaN, 'ci_low', NaN, 'ci_high', NaN, 'cohens_d', NaN);
-if isempty(x)
-    return;
-end
-stats.mean = mean(x);
-if numel(x) < 2
-    return;
-end
-[~, p, ci, st] = ttest(x, 0, 'Alpha', 0.05);
-stats.p = p;
-stats.tstat = st.tstat;
-stats.df = st.df;
-stats.ci_low = ci(1);
-stats.ci_high = ci(2);
-sx = std(x);
-if isfinite(sx) && sx > 0
-    stats.cohens_d = stats.mean / sx;
-end
-end
-
 function y = smooth_reflective(x, win)
 y = x;
 if nargin < 2 || isempty(win) || win <= 1 || isempty(x)
@@ -4802,135 +4450,6 @@ end
 drawnow;
 pause(0.05);
 exportgraphics(fig_handle, out_path, 'Resolution', 300);
-end
-
-function plot_subject_all_trial_power_spectra(subject_id, scan_freqs, condLabels, colors, ...
-    subj_powratio_early, subj_powratio_full, subj_powratio_late, out_dir)
-if nargin < 8 || isempty(out_dir)
-    return;
-end
-window_names = {'early', 'full', 'late'};
-window_data = {subj_powratio_early, subj_powratio_full, subj_powratio_late};
-nCond = numel(condLabels);
-if nCond == 0 || isempty(scan_freqs)
-    return;
-end
-fig_all = figure('Position', [0 0 1512 982], 'Color', 'w');
-sgtitle(sprintf('All Trial Power Spectra: Subject %s', subject_id), ...
-    'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
-for wi = 1:3
-    for cond = 1:nCond
-        subplot(3, nCond, (wi - 1) * nCond + cond); hold on;
-        pr_mat = window_data{wi}{cond};
-        panel_min = inf;
-        panel_max = -inf;
-        if ~isempty(pr_mat)
-            nTrl = size(pr_mat, 1);
-            for trl = 1:nTrl
-                tr_curve = pr_mat(trl, :);
-                if ~any(isfinite(tr_curve))
-                    continue;
-                end
-                plot(scan_freqs, tr_curve, '-', ...
-                    'Color', blend_with_white(colors(cond, :), 0.84), 'LineWidth', 0.35);
-                valid_peak = isfinite(tr_curve) & isfinite(scan_freqs);
-                if any(valid_peak)
-                    [peak_hz_trial, peak_pow_trial] = pick_tallest_peak(tr_curve(valid_peak), scan_freqs(valid_peak));
-                    if isfinite(peak_hz_trial) && isfinite(peak_pow_trial)
-                        plot(peak_hz_trial, peak_pow_trial, 'k.', 'MarkerSize', 6);
-                    end
-                end
-                panel_min = min(panel_min, min(tr_curve, [], 'omitnan'));
-                panel_max = max(panel_max, max(tr_curve, [], 'omitnan'));
-            end
-            mu_curve = mean(pr_mat, 1, 'omitnan');
-            if any(isfinite(mu_curve))
-                plot(scan_freqs, mu_curve, '-', 'Color', colors(cond, :), 'LineWidth', 2.0);
-                panel_min = min(panel_min, min(mu_curve, [], 'omitnan'));
-                panel_max = max(panel_max, max(mu_curve, [], 'omitnan'));
-            end
-        end
-        yline(0, 'k-', 'LineWidth', 0.4);
-        xlim([scan_freqs(1), scan_freqs(end)]);
-        if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
-            yr = panel_max - panel_min;
-            ylim([panel_min - 0.05 * yr, panel_max + 0.08 * yr]);
-        end
-        xlabel('Frequency [Hz]');
-        ylabel('Power [dB]');
-        title(sprintf('%s | %s', upper(window_names{wi}), condLabels{cond}), 'Interpreter', 'none');
-        set(gca, 'FontSize', 9, 'Box', 'on');
-    end
-end
-save_figure_png(fig_all, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_all_trial_power_spectra.png', subject_id)));
-end
-
-function plot_subject_condition_average_power_spectra(subject_id, scan_freqs, condLabels, colors, ...
-    subj_avg_early, subj_avg_full, subj_avg_late, ...
-    subj_peak_early, subj_peak_full, subj_peak_late, out_dir)
-if nargin < 11 || isempty(out_dir) || isempty(scan_freqs) || isempty(condLabels)
-    return;
-end
-window_names = {'EARLY', 'FULL', 'LATE'};
-window_data = {subj_avg_early, subj_avg_full, subj_avg_late};
-peak_data = {subj_peak_early, subj_peak_full, subj_peak_late};
-nCond = numel(condLabels);
-smooth_core_win = 7;
-smooth_edge_win = 13;
-
-for is_smoothed = [0 1]
-    fig = figure('Position', [0 0 1512 982], 'Color', 'w');
-    tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
-    for wi = 1:3
-        nexttile; hold on;
-        panel_min = inf;
-        panel_max = -inf;
-        for cond = 1:nCond
-            avg_curve = window_data{wi}{cond};
-            if isempty(avg_curve) || numel(avg_curve) ~= numel(scan_freqs)
-                continue;
-            end
-            valid = isfinite(avg_curve) & isfinite(scan_freqs);
-            if sum(valid) < 3
-                continue;
-            end
-            x = scan_freqs(valid);
-            y = avg_curve(valid);
-            if is_smoothed
-                y_plot = smooth_reflective_edges(y, x, [scan_freqs(1) scan_freqs(end)], smooth_core_win, smooth_edge_win);
-            else
-                y_plot = y;
-            end
-            plot(x, y_plot, '-', 'Color', colors(cond, :), 'LineWidth', 2.8, 'DisplayName', condLabels{cond});
-            peak_hz = peak_data{wi}(cond);
-            if isfinite(peak_hz)
-                xline(peak_hz, ':', 'Color', colors(cond, :), 'LineWidth', 1.8, 'HandleVisibility', 'off');
-            end
-            panel_min = min(panel_min, min(y_plot));
-            panel_max = max(panel_max, max(y_plot));
-        end
-        yline(0, 'k--', 'LineWidth', 0.7, 'HandleVisibility', 'off');
-        xlim([scan_freqs(1), scan_freqs(end)]);
-        if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
-            yr = panel_max - panel_min;
-            ylim([panel_min - 0.10 * yr, panel_max + 0.12 * yr]);
-        end
-        xlabel('Frequency [Hz]');
-        ylabel('Power [dB]');
-        title(window_names{wi}, 'FontSize', 13, 'FontWeight', 'bold');
-        set(gca, 'FontSize', 10, 'Box', 'on');
-    end
-    legend(condLabels, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off', 'FontSize', 10);
-    if is_smoothed
-        sgtitle(sprintf('Condition-Averaged GED Power Spectra (Smoothed): Subject %s', subject_id), ...
-            'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
-        save_figure_png(fig, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_powscptrm_smoothed.png', subject_id)));
-    else
-        sgtitle(sprintf('Condition-Averaged GED Power Spectra (Unsmoothed): Subject %s', subject_id), ...
-            'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
-        save_figure_png(fig, fullfile(out_dir, sprintf('GCP_eeg_GED_subj%s_powscptrm.png', subject_id)));
-    end
-end
 end
 
 function avg_curve = compute_condition_average_powratio_ft(pr_mat, scan_freqs)
@@ -4997,14 +4516,6 @@ y_edge = smooth_reflective(x, edge_win);
 edge_mask = freqs < core_band(1) | freqs > core_band(2);
 y(edge_mask) = y_edge(edge_mask);
 y(~edge_mask) = y_core(~edge_mask);
-end
-
-function c_out = blend_with_white(c_in, blend_frac)
-if nargin < 2 || ~isfinite(blend_frac)
-    blend_frac = 0.8;
-end
-blend_frac = min(max(blend_frac, 0), 1);
-c_out = (1 - blend_frac) * c_in + blend_frac * [1 1 1];
 end
 
 function runtime_str = format_runtime_hhmmss(runtime_seconds)
