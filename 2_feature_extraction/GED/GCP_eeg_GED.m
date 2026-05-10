@@ -33,6 +33,8 @@
 %      many frequencies/components) and exclude unstable trials automatically.
 %   4. Detect per-trial spectral features (dominant peak, low/high peaks,
 %      centroid) and compute peak power.
+%   5. Quantify subject-level reliability separately for full/early/late windows
+%      via bootstrap peak-frequency CI width across conditions (Criterion 4).
 %
 % Outputs
 % -------
@@ -118,6 +120,12 @@ trial_peak_edge_margin_hz = 5; % ignore edge bins near 30/90 Hz during trial-lev
 trial_metric_outlier_enable = true;      % apply trial-level outlier rejection on extracted frequency/power metrics
 trial_metric_outlier_iqr_mult = 1.5;     % outlier threshold in IQR units around Q1/Q3
 trial_metric_outlier_min_trials = 50;    % minimum finite trials to run IQR-based outlier rejection
+peak_bootstrap_reps = 1000;              % criterion-4 reliability: bootstrap repetitions per condition
+peak_bootstrap_min_trials = 30;          % criterion-4 reliability: minimum retained trials per condition
+peak_bootstrap_ci_prct = [2.5 97.5];     % criterion-4 reliability: percentile interval for peak-frequency precision
+reliability_ci_width_median_max_hz = 10; % criterion-4 pass: max median CI width across conditions
+reliability_ci_width_cond_max_hz = 12;   % criterion-4 pass: max CI width to count a condition as reliable
+reliability_min_pass_conditions = 3;     % criterion-4 pass: minimum reliable conditions (out of 4)
 
 % Condition info
 condNames  = {'c25', 'c50', 'c75', 'c100'};
@@ -193,7 +201,6 @@ all_selected_comp_weights = cell(1, nSubj);
 all_component_selection_stats_full  = cell(1, nSubj);
 all_component_selection_stats_early = cell(1, nSubj);
 all_component_selection_stats_late  = cell(1, nSubj);
-warning_log_by_subj = cell(nSubj, 1);
 subject_runtime_seconds = nan(nSubj, 1);
 
 trials_powratio_components_full  = cell(4, nSubj);
@@ -210,6 +217,36 @@ all_condition_peak_power_early = nan(4, nSubj);
 all_condition_peak_power_late = nan(4, nSubj);
 trial_counts_initial_by_subj_window = zeros(nSubj, 3);
 trial_counts_retained_by_subj_window = zeros(nSubj, 3);
+subject_peak_boot_ci_width_full = nan(4, nSubj);
+subject_peak_boot_ci_low_full = nan(4, nSubj);
+subject_peak_boot_ci_high_full = nan(4, nSubj);
+subject_peak_boot_n_valid_full = zeros(4, nSubj);
+subject_reliability_median_ci_width_full = nan(1, nSubj);
+subject_reliability_n_pass_conditions_full = zeros(1, nSubj);
+subject_reliability_n_valid_conditions_full = zeros(1, nSubj);
+subject_reliability_condition_pass_full = false(4, nSubj);
+subject_reliability_pass_full = false(1, nSubj);
+subject_reliability_reason_full = repmat({''}, 1, nSubj);
+subject_peak_boot_ci_width_early = nan(4, nSubj);
+subject_peak_boot_ci_low_early = nan(4, nSubj);
+subject_peak_boot_ci_high_early = nan(4, nSubj);
+subject_peak_boot_n_valid_early = zeros(4, nSubj);
+subject_reliability_median_ci_width_early = nan(1, nSubj);
+subject_reliability_n_pass_conditions_early = zeros(1, nSubj);
+subject_reliability_n_valid_conditions_early = zeros(1, nSubj);
+subject_reliability_condition_pass_early = false(4, nSubj);
+subject_reliability_pass_early = false(1, nSubj);
+subject_reliability_reason_early = repmat({''}, 1, nSubj);
+subject_peak_boot_ci_width_late = nan(4, nSubj);
+subject_peak_boot_ci_low_late = nan(4, nSubj);
+subject_peak_boot_ci_high_late = nan(4, nSubj);
+subject_peak_boot_n_valid_late = zeros(4, nSubj);
+subject_reliability_median_ci_width_late = nan(1, nSubj);
+subject_reliability_n_pass_conditions_late = zeros(1, nSubj);
+subject_reliability_n_valid_conditions_late = zeros(1, nSubj);
+subject_reliability_condition_pass_late = false(4, nSubj);
+subject_reliability_pass_late = false(1, nSubj);
+subject_reliability_reason_late = repmat({''}, 1, nSubj);
 
 %% Subject loop
 for subj = 1:nSubj
@@ -224,7 +261,6 @@ for subj = 1:nSubj
     dataEEG_c50 = eeg_data.dataEEG_c50;
     dataEEG_c75 = eeg_data.dataEEG_c75;
     dataEEG_c100 = eeg_data.dataEEG_c100;
-    warning_log_subj = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
 
     fsample = dataEEG_c25.fsample;
 
@@ -575,21 +611,6 @@ for subj = 1:nSubj
         evals_sorted(1:nSearch), raw_eligible_for_outlier, outlier_ratio_thr, outlier_mad_mult, outlier_min_rest);
     if ~isempty(extreme_component_outlier_idx)
         extreme_component_outlier_mask(extreme_component_outlier_idx) = true;
-        msg = sprintf(['Extreme GED component outlier excluded for subject %s (component C%d) ', ...
-                       'before combined-component selection.'], subjects{subj}, extreme_component_outlier_idx);
-        ratio12_val = NaN;
-        if numel(evals_sorted) >= 2 && isfinite(evals_sorted(2)) && evals_sorted(2) > 0
-            ratio12_val = evals_sorted(1) / evals_sorted(2);
-        end
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'EXTREME_COMPONENT_OUTLIER_EXCLUDED', msg, ...
-            struct('component_idx', extreme_component_outlier_idx, 'lambda1', evals_sorted(1), ...
-                   'lambda2', evals_sorted(min(2, numel(evals_sorted))), 'lambda1_lambda2_ratio', ratio12_val));
-    end
-    if ~any(pass_peak_gate)
-        pf_msg = sprintf('Subject %s has no components passing PF gate.', subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_COMPONENTS_PASS_PF_GATE', pf_msg, ...
-            struct('n_search', nSearch, 'n_pass_pf', sum(pass_peak_gate), ...
-                   'thr_peak_pf', min_peak_form));
     end
     occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
     eligible = pass_eig_gate & pass_peak_gate & ~artifact_flags & ...
@@ -601,25 +622,6 @@ for subj = 1:nSubj
     searchScores(~finite_metrics) = -Inf;
     searchScores(~selection_pool_mask) = -Inf;
     if ~any(isfinite(searchScores))
-        msg = sprintf(['No components met fixed preregistered criteria for subject %s. ', ...
-                       'This window will retain NaN-valued downstream outputs.'], subjects{subj});
-        eligibility_metrics = struct( ...
-            'n_search', nSearch, ...
-            'n_finite_metrics', sum(finite_metrics), ...
-            'n_pass_eig', sum(pass_eig_gate), ...
-            'n_pass_peak_pf', sum(pass_peak_gate), ...
-            'n_artifact_flagged', sum(artifact_flags), ...
-            'n_lineharm_exceeds_warn_thr', sum(fail_lineharm), ...
-            'n_eligible', sum(eligible), ...
-            'n_occipital_class', sum(occipital_class_mask), ...
-            'n_excluded_extreme_component_outlier', sum(extreme_component_outlier_mask), ...
-            'thr_eig', enforced_min_eigval, ...
-            'thr_peak_pf', min_peak_form, ...
-            'thr_combined_leak', max_combined_leak, ...
-            'thr_lineharm_warn', max_lineharm_ratio, ...
-            'thr_hf_slope', max_hf_slope, ...
-            'thr_emg_score', max_emg_score);
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_ELIGIBLE_COMPONENTS', msg, eligibility_metrics);
     end
     [bestScore, bestIdx] = max(searchScores);
     if isempty(bestIdx) || isnan(bestScore)
@@ -718,11 +720,6 @@ for subj = 1:nSubj
     fallback_occipital_idx = NaN;
     fallback_selected_mask = false(nSearch, 1);
     if isempty(combined_idx)
-        msg = sprintf(['No occipital-labeled artifact-screened finite components available for subject %s. ', ...
-            'This window will be marked as NaN for downstream metrics.'], subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_OCCIPITAL_COMPONENTS', msg, ...
-            struct('n_eligible', sum(eligible), 'n_occipital_labeled', sum(occipital_class_mask), ...
-            'n_finite_scores', sum(isfinite(searchScores))));
     end
     if isempty(combined_idx)
         combined_weights = [];
@@ -779,9 +776,6 @@ for subj = 1:nSubj
 
     finite_scores = find(isfinite(searchScores));
     if isempty(finite_scores)
-        msg = sprintf('No finite eligible component scores for subject %s; using unconstrained eigenvalue ordering for display.', subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'NO_FINITE_SCORES_FOR_DISPLAY', msg, ...
-            struct('n_eligible', sum(eligible), 'n_search', nSearch));
         [~, topDispOrder] = sort(evals_sorted(1:nSearch), 'descend');
     else
         [~, topDispOrder] = sort(evals_sorted(1:nSearch), 'descend');
@@ -1012,10 +1006,6 @@ for subj = 1:nSubj
         adequate_late = ~isempty(all_component_selection_stats_late{subj}.selected_idx);
     end
     if ~adequate_full
-        msg = sprintf(['Subject %s excluded for FULL window downstream metrics: ', ...
-            'no adequate GED components. FULL-window condition metrics set to NaN.'], subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, ...
-            'WINDOW_EXCLUDED_NO_ADEQUATE_COMPONENTS', msg, struct('window', 'full'));
         all_selected_comp_idx(subj) = NaN;
         all_selected_comp_corr(subj) = NaN;
         all_selected_comp_eval(subj) = NaN;
@@ -1024,16 +1014,8 @@ for subj = 1:nSubj
         all_selected_comp_weights{subj} = NaN;
     end
     if ~adequate_early
-        msg = sprintf(['Subject %s excluded for EARLY window downstream metrics: ', ...
-            'no adequate GED components. EARLY-window condition metrics set to NaN.'], subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, ...
-            'WINDOW_EXCLUDED_NO_ADEQUATE_COMPONENTS', msg, struct('window', 'early'));
     end
     if ~adequate_late
-        msg = sprintf(['Subject %s excluded for LATE window downstream metrics: ', ...
-            'no adequate GED components. LATE-window condition metrics set to NaN.'], subjects{subj});
-        warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, ...
-            'WINDOW_EXCLUDED_NO_ADEQUATE_COMPONENTS', msg, struct('window', 'late'));
     end
 
     %% Per-condition trial-level spectral scanning
@@ -1065,8 +1047,6 @@ for subj = 1:nSubj
             sel_idx = [];
         end
         if isempty(W_comb)
-            msg = sprintf('No selected combined filters for subject %s (%s window).', subjects{subj}, win_names{wi});
-            warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, 'EMPTY_W_COMBINED', msg, struct());
         end
         if isempty(W_t)
             W_t = zeros(nChans, 0);
@@ -1134,6 +1114,18 @@ for subj = 1:nSubj
     subj_condition_peak_full = nan(1, 4);
     subj_condition_peak_early = nan(1, 4);
     subj_condition_peak_late = nan(1, 4);
+    subj_peak_boot_ci_width_full = nan(1, 4);
+    subj_peak_boot_ci_low_full = nan(1, 4);
+    subj_peak_boot_ci_high_full = nan(1, 4);
+    subj_peak_boot_n_valid_full = zeros(1, 4);
+    subj_peak_boot_ci_width_early = nan(1, 4);
+    subj_peak_boot_ci_low_early = nan(1, 4);
+    subj_peak_boot_ci_high_early = nan(1, 4);
+    subj_peak_boot_n_valid_early = zeros(1, 4);
+    subj_peak_boot_ci_width_late = nan(1, 4);
+    subj_peak_boot_ci_low_late = nan(1, 4);
+    subj_peak_boot_ci_high_late = nan(1, 4);
+    subj_peak_boot_n_valid_late = zeros(1, 4);
     for cond = 1:4
 
         dat = dat_per_cond{cond};
@@ -1359,17 +1351,6 @@ for subj = 1:nSubj
         end
         if trial_nearfloor_exclusion_enable && ...
                 (any(trial_unstable_full) || any(trial_unstable_early) || any(trial_unstable_late))
-            msg = sprintf(['Numerical instability exclusion for subject %s condition %s: ', ...
-                'full=%d/%d, early=%d/%d, late=%d/%d trials removed (near-floor baseline).'], ...
-                subjects{subj}, condLabels{cond}, ...
-                sum(trial_unstable_full), nTrl, sum(trial_unstable_early), nTrl, sum(trial_unstable_late), nTrl);
-            warning_log_subj = append_subject_warning(warning_log_subj, subjects{subj}, ...
-                'NUMERICAL_INSTABILITY_TRIAL_EXCLUSION', msg, struct( ...
-                'condition', condLabels{cond}, ...
-                'n_removed_full', sum(trial_unstable_full), ...
-                'n_removed_early', sum(trial_unstable_early), ...
-                'n_removed_late', sum(trial_unstable_late), ...
-                'threshold_trial_freq_fraction', instability_trial_freq_frac_thr));
         end
         powratio_methods_full_analysis = powratio_methods_full;
         powratio_methods_early_analysis = powratio_methods_early;
@@ -1513,6 +1494,42 @@ for subj = 1:nSubj
         [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 1, trial_peak_edge_margin_hz);
         [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 1, trial_peak_edge_margin_hz);
         [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 1, trial_peak_edge_margin_hz);
+        [ci_width_full, ci_low_full, ci_high_full, n_boot_valid_full] = ...
+            compute_bootstrap_peak_precision_from_trials( ...
+            powratio_trials_full_avg, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz, ...
+            peak_bootstrap_reps, peak_bootstrap_min_trials, peak_bootstrap_ci_prct);
+        subj_peak_boot_ci_width_full(cond) = ci_width_full;
+        subj_peak_boot_ci_low_full(cond) = ci_low_full;
+        subj_peak_boot_ci_high_full(cond) = ci_high_full;
+        subj_peak_boot_n_valid_full(cond) = n_boot_valid_full;
+        subject_peak_boot_ci_width_full(cond, subj) = ci_width_full;
+        subject_peak_boot_ci_low_full(cond, subj) = ci_low_full;
+        subject_peak_boot_ci_high_full(cond, subj) = ci_high_full;
+        subject_peak_boot_n_valid_full(cond, subj) = n_boot_valid_full;
+        [ci_width_early, ci_low_early, ci_high_early, n_boot_valid_early] = ...
+            compute_bootstrap_peak_precision_from_trials( ...
+            powratio_trials_early_avg, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz, ...
+            peak_bootstrap_reps, peak_bootstrap_min_trials, peak_bootstrap_ci_prct);
+        subj_peak_boot_ci_width_early(cond) = ci_width_early;
+        subj_peak_boot_ci_low_early(cond) = ci_low_early;
+        subj_peak_boot_ci_high_early(cond) = ci_high_early;
+        subj_peak_boot_n_valid_early(cond) = n_boot_valid_early;
+        subject_peak_boot_ci_width_early(cond, subj) = ci_width_early;
+        subject_peak_boot_ci_low_early(cond, subj) = ci_low_early;
+        subject_peak_boot_ci_high_early(cond, subj) = ci_high_early;
+        subject_peak_boot_n_valid_early(cond, subj) = n_boot_valid_early;
+        [ci_width_late, ci_low_late, ci_high_late, n_boot_valid_late] = ...
+            compute_bootstrap_peak_precision_from_trials( ...
+            powratio_trials_late_avg, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz, ...
+            peak_bootstrap_reps, peak_bootstrap_min_trials, peak_bootstrap_ci_prct);
+        subj_peak_boot_ci_width_late(cond) = ci_width_late;
+        subj_peak_boot_ci_low_late(cond) = ci_low_late;
+        subj_peak_boot_ci_high_late(cond) = ci_high_late;
+        subj_peak_boot_n_valid_late(cond) = n_boot_valid_late;
+        subject_peak_boot_ci_width_late(cond, subj) = ci_width_late;
+        subject_peak_boot_ci_low_late(cond, subj) = ci_low_late;
+        subject_peak_boot_ci_high_late(cond, subj) = ci_high_late;
+        subject_peak_boot_n_valid_late(cond, subj) = n_boot_valid_late;
         all_condition_peak_freq_full(cond, subj) = peak_full_hz;
         all_condition_peak_freq_early(cond, subj) = peak_early_hz;
         all_condition_peak_freq_late(cond, subj) = peak_late_hz;
@@ -1562,6 +1579,33 @@ for subj = 1:nSubj
         end
 
     end % condition loop
+    [med_f, n_pass_f, n_val_f, pass_f_vec, pass_f, reason_f] = evaluate_criterion4_reliability_gate( ...
+        subj_peak_boot_ci_width_full, 'FULL', condLabels, peak_bootstrap_min_trials, ...
+        reliability_ci_width_median_max_hz, reliability_ci_width_cond_max_hz, reliability_min_pass_conditions);
+    [med_e, n_pass_e, n_val_e, pass_e_vec, pass_e, reason_e] = evaluate_criterion4_reliability_gate( ...
+        subj_peak_boot_ci_width_early, 'EARLY', condLabels, peak_bootstrap_min_trials, ...
+        reliability_ci_width_median_max_hz, reliability_ci_width_cond_max_hz, reliability_min_pass_conditions);
+    [med_l, n_pass_l, n_val_l, pass_l_vec, pass_l, reason_l] = evaluate_criterion4_reliability_gate( ...
+        subj_peak_boot_ci_width_late, 'LATE', condLabels, peak_bootstrap_min_trials, ...
+        reliability_ci_width_median_max_hz, reliability_ci_width_cond_max_hz, reliability_min_pass_conditions);
+    subject_reliability_median_ci_width_full(subj) = med_f;
+    subject_reliability_n_pass_conditions_full(subj) = n_pass_f;
+    subject_reliability_n_valid_conditions_full(subj) = n_val_f;
+    subject_reliability_condition_pass_full(:, subj) = pass_f_vec(:);
+    subject_reliability_pass_full(subj) = pass_f;
+    subject_reliability_reason_full{subj} = reason_f;
+    subject_reliability_median_ci_width_early(subj) = med_e;
+    subject_reliability_n_pass_conditions_early(subj) = n_pass_e;
+    subject_reliability_n_valid_conditions_early(subj) = n_val_e;
+    subject_reliability_condition_pass_early(:, subj) = pass_e_vec(:);
+    subject_reliability_pass_early(subj) = pass_e;
+    subject_reliability_reason_early{subj} = reason_e;
+    subject_reliability_median_ci_width_late(subj) = med_l;
+    subject_reliability_n_pass_conditions_late(subj) = n_pass_l;
+    subject_reliability_n_valid_conditions_late(subj) = n_val_l;
+    subject_reliability_condition_pass_late(:, subj) = pass_l_vec(:);
+    subject_reliability_pass_late(subj) = pass_l;
+    subject_reliability_reason_late{subj} = reason_l;
 
     %  PER-SUBJECT FIGURES (one each for full, early, late; raw spectra)
     close all
@@ -1772,11 +1816,8 @@ for subj = 1:nSubj
     end
     trial_counts_initial_by_subj_window(subj, :) = trial_counts_initial_local;
     trial_counts_retained_by_subj_window(subj, :) = trial_counts_retained_local;
-    warning_log_by_subj{subj} = warning_log_subj;
     subject_runtime_seconds(subj) = toc(subj_runtime_tic);
 end % subject loop
-
-warning_log = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
 
 %% Grand-average condition-level spectra from trial-averaged data
 fig_condition_avg_powspctrm = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -2140,8 +2181,26 @@ save(save_path, ...
     'trials_outlier_mask_freq_full', 'trials_outlier_mask_freq_early', 'trials_outlier_mask_freq_late', ...
     'trials_outlier_mask_power_full', 'trials_outlier_mask_power_early', 'trials_outlier_mask_power_late', ...
     'trial_counts_initial_by_subj_window', 'trial_counts_retained_by_subj_window', ...
+    'subject_peak_boot_ci_width_full', 'subject_peak_boot_ci_low_full', 'subject_peak_boot_ci_high_full', ...
+    'subject_peak_boot_n_valid_full', ...
+    'subject_reliability_median_ci_width_full', 'subject_reliability_n_pass_conditions_full', ...
+    'subject_reliability_n_valid_conditions_full', 'subject_reliability_condition_pass_full', ...
+    'subject_reliability_pass_full', 'subject_reliability_reason_full', ...
+    'subject_peak_boot_ci_width_early', 'subject_peak_boot_ci_low_early', 'subject_peak_boot_ci_high_early', ...
+    'subject_peak_boot_n_valid_early', ...
+    'subject_reliability_median_ci_width_early', 'subject_reliability_n_pass_conditions_early', ...
+    'subject_reliability_n_valid_conditions_early', 'subject_reliability_condition_pass_early', ...
+    'subject_reliability_pass_early', 'subject_reliability_reason_early', ...
+    'subject_peak_boot_ci_width_late', 'subject_peak_boot_ci_low_late', 'subject_peak_boot_ci_high_late', ...
+    'subject_peak_boot_n_valid_late', ...
+    'subject_reliability_median_ci_width_late', 'subject_reliability_n_pass_conditions_late', ...
+    'subject_reliability_n_valid_conditions_late', 'subject_reliability_condition_pass_late', ...
+    'subject_reliability_pass_late', 'subject_reliability_reason_late', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
-    'scan_freqs', 'subjects', 'condLabels', 'condNames');
+    'scan_freqs', 'subjects', 'condLabels', 'condNames', ...
+    'peak_bootstrap_reps', 'peak_bootstrap_min_trials', 'peak_bootstrap_ci_prct', ...
+    'reliability_ci_width_median_max_hz', 'reliability_ci_width_cond_max_hz', ...
+    'reliability_min_pass_conditions');
 
 % Save candidate tables as CSV files (one file per subject and window).
 candidate_table_csv_dir = paths.controls;
@@ -2187,11 +2246,54 @@ for si = 1:nSubj
     end
     writetable(T, fullfile(candidate_table_csv_dir, sprintf('subj%s_late.csv', sid)));
 end
+T_rel = table( ...
+    subjects(:), ...
+    subject_reliability_pass_full(:), ...
+    subject_reliability_pass_early(:), ...
+    subject_reliability_pass_late(:), ...
+    subject_reliability_median_ci_width_full(:), ...
+    subject_reliability_median_ci_width_early(:), ...
+    subject_reliability_median_ci_width_late(:), ...
+    subject_reliability_n_pass_conditions_full(:), ...
+    subject_reliability_n_pass_conditions_early(:), ...
+    subject_reliability_n_pass_conditions_late(:), ...
+    subject_reliability_n_valid_conditions_full(:), ...
+    subject_reliability_n_valid_conditions_early(:), ...
+    subject_reliability_n_valid_conditions_late(:), ...
+    subject_peak_boot_ci_width_full(1, :)', ...
+    subject_peak_boot_ci_width_full(2, :)', ...
+    subject_peak_boot_ci_width_full(3, :)', ...
+    subject_peak_boot_ci_width_full(4, :)', ...
+    subject_peak_boot_ci_width_early(1, :)', ...
+    subject_peak_boot_ci_width_early(2, :)', ...
+    subject_peak_boot_ci_width_early(3, :)', ...
+    subject_peak_boot_ci_width_early(4, :)', ...
+    subject_peak_boot_ci_width_late(1, :)', ...
+    subject_peak_boot_ci_width_late(2, :)', ...
+    subject_peak_boot_ci_width_late(3, :)', ...
+    subject_peak_boot_ci_width_late(4, :)', ...
+    subject_reliability_reason_full(:), ...
+    subject_reliability_reason_early(:), ...
+    subject_reliability_reason_late(:), ...
+    'VariableNames', {'subject', ...
+    'criterion4_pass_full', 'criterion4_pass_early', 'criterion4_pass_late', ...
+    'criterion4_median_ci_width_hz_full', 'criterion4_median_ci_width_hz_early', 'criterion4_median_ci_width_hz_late', ...
+    'criterion4_n_pass_conditions_full', 'criterion4_n_pass_conditions_early', 'criterion4_n_pass_conditions_late', ...
+    'criterion4_n_valid_conditions_full', 'criterion4_n_valid_conditions_early', 'criterion4_n_valid_conditions_late', ...
+    'ci_width_25_hz_full', 'ci_width_50_hz_full', 'ci_width_75_hz_full', 'ci_width_100_hz_full', ...
+    'ci_width_25_hz_early', 'ci_width_50_hz_early', 'ci_width_75_hz_early', 'ci_width_100_hz_early', ...
+    'ci_width_25_hz_late', 'ci_width_50_hz_late', 'ci_width_75_hz_late', 'ci_width_100_hz_late', ...
+    'criterion4_reason_full', 'criterion4_reason_early', 'criterion4_reason_late'});
+writetable(T_rel, fullfile(candidate_table_csv_dir, 'GCP_eeg_GED_subject_reliability_by_window.csv'));
 
 clc
 fprintf('[GED] DONE!\n');
 fprintf('[GED] Feature extraction results saved to: %s\n', save_path);
 fprintf('[GED] Candidate tables saved to: %s\n', candidate_table_csv_dir);
+fprintf('[GED] Criterion-4 reliability pass — FULL: %d/%d | EARLY: %d/%d | LATE: %d/%d\n', ...
+    sum(subject_reliability_pass_full), nSubj, ...
+    sum(subject_reliability_pass_early), nSubj, ...
+    sum(subject_reliability_pass_late), nSubj);
 for si = 1:nSubj
     if isfinite(subject_runtime_seconds(si))
         fprintf('[GED] Runtime Subject %s: %s\n', subjects{si}, format_runtime_hhmmss(subject_runtime_seconds(si)));
@@ -4543,15 +4645,6 @@ if ratio12 >= ratio_thr && mad_criterion
 end
 end
 
-function warning_log = append_subject_warning(warning_log, subject_id, code, message, metrics)
-% Warning logging intentionally disabled.
-% Keep signature for compatibility with existing call sites.
-if nargin < 1 || isempty(warning_log)
-    warning_log = struct('subject', {}, 'code', {}, 'message', {}, 'metrics', {});
-end
-unused = {subject_id, code, message, metrics}; %#ok<NASGU>
-end
-
 function p_adj = bh_fdr_adjust(p_raw)
 p = p_raw(:);
 n = numel(p);
@@ -4650,6 +4743,111 @@ end
 if all(~isfinite(avg_curve))
     avg_curve = mean(pr_mat(valid_trials, :), 1, 'omitnan');
 end
+end
+
+function [median_ci_width, n_pass_cond, n_valid_cond, cond_pass_col, subj_pass, reason_str] = ...
+    evaluate_criterion4_reliability_gate(ci_width_row, window_tag, cond_label_cell, ...
+    min_trials_thr, median_max_hz, cond_max_hz, min_pass_cond)
+median_ci_width = NaN;
+n_pass_cond = 0;
+n_valid_cond = 0;
+cond_pass_col = false(numel(cond_label_cell), 1);
+subj_pass = false;
+reason_str = '';
+if nargin < 2 || isempty(window_tag)
+    window_tag = '?';
+elseif ~ischar(window_tag)
+    window_tag = char(window_tag);
+end
+if isempty(ci_width_row)
+    reason_str = sprintf('%s: FAIL: no CI-width data.', window_tag);
+    return;
+end
+ci_width_row = ci_width_row(:)';
+n_cond = numel(cond_label_cell);
+if numel(ci_width_row) < n_cond
+    ci_width_row = [ci_width_row nan(1, n_cond - numel(ci_width_row))];
+elseif numel(ci_width_row) > n_cond
+    ci_width_row = ci_width_row(1:n_cond);
+end
+cond_pass = isfinite(ci_width_row) & (ci_width_row <= cond_max_hz);
+cond_pass_col = cond_pass(:);
+n_pass_cond = sum(cond_pass);
+n_valid_cond = sum(isfinite(ci_width_row));
+valid_ci = ci_width_row(isfinite(ci_width_row));
+if ~isempty(valid_ci)
+    median_ci_width = median(valid_ci);
+end
+subj_pass = isfinite(median_ci_width) && ...
+    (median_ci_width <= median_max_hz) && ...
+    (n_pass_cond >= min_pass_cond);
+if subj_pass
+    reason_str = sprintf('%s: PASS: median CI width %.2f Hz; reliable conditions %d/%d.', ...
+        window_tag, median_ci_width, n_pass_cond, n_cond);
+elseif n_valid_cond == 0
+    reason_str = sprintf('%s: FAIL: no conditions with enough retained trials (min %d) for bootstrap reliability.', ...
+        window_tag, min_trials_thr);
+elseif ~isfinite(median_ci_width) || median_ci_width > median_max_hz
+    reason_str = sprintf(['%s: FAIL: median CI width %.2f Hz exceeds threshold %.2f Hz ', ...
+        '(%d reliable conditions).'], ...
+        window_tag, median_ci_width, median_max_hz, n_pass_cond);
+else
+    reason_str = sprintf(['%s: FAIL: only %d/%d conditions passed CI-width threshold %.2f Hz ', ...
+        '(requires >=%d).'], ...
+        window_tag, n_pass_cond, n_cond, cond_max_hz, min_pass_cond);
+end
+end
+
+function [ci_width_hz, ci_low_hz, ci_high_hz, n_boot_valid] = ...
+    compute_bootstrap_peak_precision_from_trials(pr_mat, scan_freqs, smooth_n, edge_margin_hz, n_boot, min_trials, ci_prct)
+ci_width_hz = NaN;
+ci_low_hz = NaN;
+ci_high_hz = NaN;
+n_boot_valid = 0;
+if nargin < 7 || isempty(ci_prct) || numel(ci_prct) ~= 2
+    ci_prct = [2.5 97.5];
+end
+if nargin < 6 || isempty(min_trials) || ~isfinite(min_trials) || min_trials < 1
+    min_trials = 30;
+end
+if nargin < 5 || isempty(n_boot) || ~isfinite(n_boot) || n_boot < 1
+    n_boot = 1000;
+end
+if nargin < 4 || ~isfinite(edge_margin_hz) || edge_margin_hz < 0
+    edge_margin_hz = 0;
+end
+if nargin < 3 || ~isfinite(smooth_n) || smooth_n < 1
+    smooth_n = 1;
+end
+if isempty(pr_mat) || isempty(scan_freqs) || size(pr_mat, 2) ~= numel(scan_freqs)
+    return;
+end
+valid_trials = any(isfinite(pr_mat), 2);
+trial_rows = find(valid_trials);
+n_valid_trials = numel(trial_rows);
+if n_valid_trials < min_trials
+    return;
+end
+peak_hz_boot = nan(n_boot, 1);
+for bi = 1:n_boot
+    sample_idx = trial_rows(randi(n_valid_trials, n_valid_trials, 1));
+    boot_mat = pr_mat(sample_idx, :);
+    boot_avg = compute_condition_average_powratio_ft(boot_mat, scan_freqs);
+    boot_avg = movmean(boot_avg, max(1, round(smooth_n)), 'omitnan');
+    [peak_hz_boot(bi), ~] = pick_tallest_peak(boot_avg, scan_freqs, 1, edge_margin_hz);
+end
+peak_hz_boot = peak_hz_boot(isfinite(peak_hz_boot));
+n_boot_valid = numel(peak_hz_boot);
+if n_boot_valid < max(20, ceil(0.20 * n_boot))
+    return;
+end
+ci_bounds = prctile(peak_hz_boot, ci_prct);
+if numel(ci_bounds) ~= 2 || any(~isfinite(ci_bounds))
+    return;
+end
+ci_low_hz = ci_bounds(1);
+ci_high_hz = ci_bounds(2);
+ci_width_hz = ci_high_hz - ci_low_hz;
 end
 
 function y = smooth_reflective_edges(x, freqs, core_band, core_win, edge_win)
