@@ -113,7 +113,7 @@ centroid_freq_range = [30 90];
 centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
 centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
-trial_peak_smooth_n = 3;     % moving-average smoothing for trial-level peak detection
+trial_peak_smooth_n = 5;     % moving-average smoothing (5 bins ~= 5 Hz) for peak metrics
 trial_peak_edge_margin_hz = 5; % ignore edge bins near 30/90 Hz during trial-level peak detection
 trial_metric_outlier_enable = true;      % apply trial-level outlier rejection on extracted frequency/power metrics
 trial_metric_outlier_iqr_mult = 1.5;     % outlier threshold in IQR units around Q1/Q3
@@ -1500,6 +1500,9 @@ for subj = 1:nSubj
         cond_avg_full = compute_condition_average_powratio_ft(powratio_trials_full_avg, scan_freqs);
         cond_avg_early = compute_condition_average_powratio_ft(powratio_trials_early_avg, scan_freqs);
         cond_avg_late = compute_condition_average_powratio_ft(powratio_trials_late_avg, scan_freqs);
+        cond_avg_full = movmean(cond_avg_full, max(1, round(trial_peak_smooth_n)), 'omitnan');
+        cond_avg_early = movmean(cond_avg_early, max(1, round(trial_peak_smooth_n)), 'omitnan');
+        cond_avg_late = movmean(cond_avg_late, max(1, round(trial_peak_smooth_n)), 'omitnan');
         all_condition_powspctrm_full{cond, subj} = cond_avg_full;
         all_condition_powspctrm_early{cond, subj} = cond_avg_early;
         all_condition_powspctrm_late{cond, subj} = cond_avg_late;
@@ -1507,9 +1510,9 @@ for subj = 1:nSubj
         subj_condition_avg_early{cond} = cond_avg_early;
         subj_condition_avg_late{cond} = cond_avg_late;
 
-        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz);
-        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz);
-        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz);
+        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 1, trial_peak_edge_margin_hz);
+        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 1, trial_peak_edge_margin_hz);
+        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 1, trial_peak_edge_margin_hz);
         all_condition_peak_freq_full(cond, subj) = peak_full_hz;
         all_condition_peak_freq_early(cond, subj) = peak_early_hz;
         all_condition_peak_freq_late(cond, subj) = peak_late_hz;
@@ -1748,8 +1751,7 @@ for subj = 1:nSubj
             end
             x_curve = scan_freqs(valid_curve);
             y_curve = avg_curve(valid_curve);
-            y_plot = smooth_reflective_edges(y_curve, x_curve, [scan_freqs(1) scan_freqs(end)], 5, 10);
-            plot(x_curve, y_plot, '-', 'Color', colors(cond, :), 'LineWidth', 2.2, ...
+            plot(x_curve, y_curve, '-', 'Color', colors(cond, :), 'LineWidth', 2.2, ...
                 'DisplayName', condLabels{cond});
             peak_hz = condpeak_source(cond);
             if isfinite(peak_hz)
@@ -1806,16 +1808,18 @@ for wi = 1:3
         x = scan_freqs(good);
         y = med_curve(good);
         e = mad_curve(good);
-        y_smooth = smooth_reflective_edges(y, x, analysis_freq_range, 5, 9);
         fill([x, fliplr(x)], [y - e, fliplr(y + e)], colors(cond, :), ...
             'FaceAlpha', 0.14, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-        plot(x, y_smooth, '-', 'Color', colors(cond, :), 'LineWidth', 3.2, 'DisplayName', condLabels{cond});
+        plot(x, y, '-', 'Color', colors(cond, :), 'LineWidth', 3.2, 'DisplayName', condLabels{cond});
+        % Group xline reflects the across-subject summary of analysis peaks
+        % (subject-level condition-averaged spectra), not the argmax of the
+        % group-median spectrum shown for visualization.
         peak_freq_group = nanmedian(peak_cells_condavg{wi}(cond, :));
         if isfinite(peak_freq_group)
             xline(peak_freq_group, ':', 'Color', colors(cond, :), 'LineWidth', 2.0, 'HandleVisibility', 'off');
         end
-        panel_min = min(panel_min, min(y_smooth - e));
-        panel_max = max(panel_max, max(y_smooth + e));
+        panel_min = min(panel_min, min(y - e));
+        panel_max = max(panel_max, max(y + e));
     end
     yline(0, 'k--', 'LineWidth', 0.8, 'HandleVisibility', 'off');
     xlim([analysis_freq_range(1), analysis_freq_range(2)]);
@@ -2224,7 +2228,8 @@ for trl = 1:nTrl
     end
 
     % Constrained peak search: prioritize 30-90 Hz gamma band with adaptive
-    % prominence threshold; keep NaN when no reliable local peak is detected.
+    % prominence threshold, then fall back to in-band maximum when no local
+    % peak is detected (supports spectra entirely below 0 dB).
     [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use, smooth_n, edge_margin_hz);
     if isfinite(peak_hz)
         trl_peaks(trl) = peak_hz;
@@ -2248,7 +2253,6 @@ peak_hz = NaN;
 peak_power = NaN;
 y = y(:)';
 x = x(:)';
-core_mask = false(size(x));
 if nargin < 3 || ~isfinite(smooth_n) || smooth_n < 1
     smooth_n = 1;
 end
@@ -2259,52 +2263,27 @@ if isempty(y) || numel(y) ~= numel(x)
     return;
 end
 y = movmean(y, max(1, round(smooth_n)), 'omitnan');
-if numel(y) >= 3
-    y_floor = median(y, 'omitnan');
-    if ~isfinite(y_floor)
-        y_floor = 0;
-    end
-    y_shape = max(y - y_floor, 0);
-    peak_scale = max(y_shape);
-    if ~isfinite(peak_scale)
-        peak_scale = 0;
-    end
-    robust_scale = robust_mad(y_shape);
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = iqr(y_shape) / 1.349;
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = std(y_shape(isfinite(y_shape)));
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = 0;
-    end
-    min_prom = max([0.02, 0.10 * peak_scale, 0.20 * robust_scale]);
-
-    core_lo = 30 + edge_margin_hz;
-    core_hi = 90 - edge_margin_hz;
-    if core_hi <= core_lo
-        core_lo = 30;
-        core_hi = 90;
-    end
-    core_mask = x >= core_lo & x <= core_hi;
-    if sum(core_mask) >= 3
-        x_core = x(core_mask);
-        y_core = y(core_mask);
-        [pks, locs] = findpeaks(y_core, x_core, 'MinPeakProminence', min_prom, 'MinPeakDistance', 4);
-        if ~isempty(pks)
-            [peak_power, bi] = max(pks);
-            peak_hz = locs(bi);
-            return;
-        end
-    end
-
-    [pks, locs] = findpeaks(y, x, 'MinPeakProminence', min_prom, 'MinPeakDistance', 4);
-    if ~isempty(pks)
-        [peak_power, bi] = max(pks);
-        peak_hz = locs(bi);
+core_lo = 30 + edge_margin_hz;
+core_hi = 90 - edge_margin_hz;
+if core_hi <= core_lo
+    core_lo = 30;
+    core_hi = 90;
+end
+core_mask = x >= core_lo & x <= core_hi & isfinite(y) & isfinite(x);
+if any(core_mask)
+    x_use = x(core_mask);
+    y_use = y(core_mask);
+else
+    valid = isfinite(y) & isfinite(x);
+    if ~any(valid)
         return;
     end
+    x_use = x(valid);
+    y_use = y(valid);
+end
+[peak_power, bi] = max(y_use);
+if ~isempty(bi) && isfinite(peak_power)
+    peak_hz = x_use(bi);
 end
 
 end
@@ -2925,6 +2904,9 @@ if size(covBase_full, 2) ~= nChans
     return;
 end
 
+% Build matrices first so column-wise shared color limits are used.
+all_mats = cell(nWins, 4);
+qc_lines_by_win = cell(nWins, 1);
 for wi = 1:nWins
     covStim_w = covStim_per_win{wi};
     if isempty(covStim_w) || any(size(covStim_w) ~= [nChans nChans])
@@ -2932,12 +2914,105 @@ for wi = 1:nWins
     end
     lam_w = lambdas(min(wi, numel(lambdas)));
 
-    covStim_reg = (1 - lam_w) * covStim_w + lam_w * mean(diag(covStim_w), 'omitnan') * eye(nChans);
-    covBase_reg = (1 - lam_w) * covBase_full + lam_w * mean(diag(covBase_full), 'omitnan') * eye(nChans);
-    covDiff = covStim_reg - covBase_reg;
-    gedOp = covBase_reg \ covStim_reg;
+    d_stim = diag(covStim_w);
+    d_stim = d_stim(isfinite(d_stim));
+    stim_diag_mean = mean(d_stim);
+    if ~isfinite(stim_diag_mean)
+        stim_diag_mean = 1;
+    end
+    d_base = diag(covBase_full);
+    d_base = d_base(isfinite(d_base));
+    base_diag_mean = mean(d_base);
+    if ~isfinite(base_diag_mean)
+        base_diag_mean = 1;
+    end
 
-    mats = {covStim_reg, covBase_reg, covDiff, gedOp};
+    covStim_reg = (1 - lam_w) * covStim_w + lam_w * stim_diag_mean * eye(nChans);
+    covBase_reg = (1 - lam_w) * covBase_full + lam_w * base_diag_mean * eye(nChans);
+    covStim_reg = real(0.5 * (covStim_reg + covStim_reg'));
+    covBase_reg = real(0.5 * (covBase_reg + covBase_reg'));
+    covDiff = covStim_reg - covBase_reg;
+
+    rc_base = rcond(covBase_reg);
+    if ~isfinite(rc_base) || rc_base < 1e-12
+        gedOp = pinv(covBase_reg) * covStim_reg;
+    else
+        gedOp = covBase_reg \ covStim_reg;
+    end
+    gedOp = real(gedOp);
+
+    all_mats{wi, 1} = covStim_reg;
+    all_mats{wi, 2} = covBase_reg;
+    all_mats{wi, 3} = covDiff;
+    all_mats{wi, 4} = gedOp;
+
+    sym_stim = norm(covStim_reg - covStim_reg', 'fro') / max(norm(covStim_reg, 'fro'), eps);
+    sym_base = norm(covBase_reg - covBase_reg', 'fro') / max(norm(covBase_reg, 'fro'), eps);
+    eig_base = eig(covBase_reg);
+    eig_base = real(eig_base(isfinite(eig_base)));
+    if isempty(eig_base)
+        min_eig_base = NaN;
+    else
+        min_eig_base = min(eig_base);
+    end
+    cond_base = cond(covBase_reg);
+    try
+        eigvals_ged = eig(covStim_reg, covBase_reg);
+    catch
+        eigvals_ged = eig(gedOp);
+    end
+    eigvals_ged = real(eigvals_ged(isfinite(eigvals_ged)));
+    if isempty(eigvals_ged)
+        top_ged = [NaN NaN NaN];
+    else
+        eigvals_ged = sort(eigvals_ged, 'descend');
+        top_ged = nan(1, 3);
+        nTop = min(3, numel(eigvals_ged));
+        top_ged(1:nTop) = eigvals_ged(1:nTop);
+    end
+    qc_lines_by_win{wi} = sprintf(['QC: sym(S)=%.2e | sym(R)=%.2e | minEig(R)=%.3g | cond(R)=%.2e\n', ...
+        'GED top3: [%.3f, %.3f, %.3f]'], ...
+        sym_stim, sym_base, min_eig_base, cond_base, top_ged(1), top_ged(2), top_ged(3));
+end
+
+col_clims = ones(1, 4);
+for pi = 1:4
+    col_vals = [];
+    for wi = 1:nWins
+        mat_vals = abs(all_mats{wi, pi}(:));
+        mat_vals = mat_vals(isfinite(mat_vals));
+        col_vals = [col_vals; mat_vals]; %#ok<AGROW>
+    end
+    if ~isempty(col_vals)
+        clim = prctile(col_vals, 99);
+        if ~isfinite(clim) || clim <= 0
+            clim = max(col_vals);
+        end
+        if isfinite(clim) && clim > 0
+            col_clims(pi) = clim;
+        end
+    end
+end
+
+% Blue-white-red diverging map for signed matrix interpretation.
+nC = 256;
+nHalf = nC / 2;
+t = linspace(0, 1, nHalf)';
+low_col = [0.10 0.25 0.80];
+mid_col = [1.00 1.00 1.00];
+high_col = [0.80 0.15 0.15];
+cmap_low = [ ...
+    low_col(1) + (mid_col(1) - low_col(1)) * t, ...
+    low_col(2) + (mid_col(2) - low_col(2)) * t, ...
+    low_col(3) + (mid_col(3) - low_col(3)) * t];
+cmap_high = [ ...
+    mid_col(1) + (high_col(1) - mid_col(1)) * t, ...
+    mid_col(2) + (high_col(2) - mid_col(2)) * t, ...
+    mid_col(3) + (high_col(3) - mid_col(3)) * t];
+colormap(fig, [cmap_low; cmap_high]);
+
+for wi = 1:nWins
+    mats = all_mats(wi, :);
     panel_titles = { ...
         sprintf('%s Stim (reg)', win_names_cap{wi}), ...
         sprintf('%s Base (reg)', win_names_cap{wi}), ...
@@ -2950,26 +3025,18 @@ for wi = 1:nWins
         if all(~isfinite(mat(:)))
             mat = zeros(nChans);
         end
-        mat_abs = abs(mat(:));
-        mat_abs = mat_abs(isfinite(mat_abs));
-        if isempty(mat_abs)
-            clim = 1;
-        else
-            clim = prctile(mat_abs, 99);
-            if ~isfinite(clim) || clim <= 0
-                clim = max(mat_abs);
-            end
-            if ~isfinite(clim) || clim <= 0
-                clim = 1;
-            end
-        end
         imagesc(mat);
         axis image;
-        caxis([-clim clim]);
-        colormap(gca, 'turbo');
+        caxis([-col_clims(pi) col_clims(pi)]);
         colorbar;
         title(panel_titles{pi}, 'FontSize', 10, 'Interpreter', 'none');
         set(gca, 'FontSize', 8, 'YDir', 'normal');
+        if pi == 1
+            text(0.01, 0.99, qc_lines_by_win{wi}, 'Units', 'normalized', ...
+                'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
+                'FontSize', 7, 'Color', [0.05 0.05 0.05], 'BackgroundColor', [1 1 1], ...
+                'Margin', 1, 'Interpreter', 'none');
+        end
         if nChans <= 80 && ~isempty(chan_labels) && numel(chan_labels) == nChans
             xticks(1:nChans); yticks(1:nChans);
             xticklabels(chan_labels); yticklabels(chan_labels);
@@ -2981,8 +3048,9 @@ for wi = 1:nWins
     end
 end
 
-sgtitle(sprintf('GED Covariance Diagnostics: Subject %s', subject_id), 'FontSize', 14, 'FontWeight', 'bold');
-save_figure_png(fig, fullfile(save_dir, 'GCP_eeg_GED_covariance_matrix.png'));
+sgtitle(sprintf('GED Covariance Diagnostics: Subject %s | Shared color scale per column', subject_id), ...
+    'FontSize', 14, 'FontWeight', 'bold');
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_covariance_matrix.png', subject_id)));
 close(fig);
 end
 
