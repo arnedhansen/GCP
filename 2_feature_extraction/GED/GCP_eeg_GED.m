@@ -1,52 +1,29 @@
-%% GCP Trial-Level Gamma Peak Frequency via Generalized Eigendecomposition (GED)
+%% GCP Gamma Peak Frequency and Power with Generalized Eigendecomposition (GED)
 %
-% Extracts trial-level gamma-band (30-90 Hz) peak frequencies from EEG data
-% recorded during a visual grating task with four contrast conditions
-% (25%, 50%, 75%, 100%). Generalized eigendecomposition is used to derive
-% spatial filters that maximise stimulus-vs-baseline gamma power,
-% replacing conventional channel-level analyses with a component-space
-% approach that improves the signal-to-noise ratio of narrow-band
-% gamma oscillations.
-%
-% Pipeline overview
-% -----------------
 % Broadband GED and component selection (per subject)
 %   1. Pool trials across conditions and compute gamma-band covariances
-%      (30-90 Hz FIR) for three stimulus windows (full/early/late) and
-%      one shared pre-stimulus baseline.
+%      (30-90 Hz FIR) for three windows (full/early/late) and baseline.
 %   2. Solve window-specific GED (S_stim * w = lambda * S_base * w) with
 %      regularisation and rank candidate components by eigenvalue.
-%   3. Score candidates using occipital evidence, spectral peak-form quality,
-%      and artifact metrics (combined front/temporal leak, line-harmonic
-%      ratio, EMG artifact score (includes HF slope), posterior/topography checks).
-%   4. Apply fixed preregistered eligibility thresholds (no adaptive,
-%      force-include, or rescue paths), exclude extreme-component outliers,
-%      and build an eigenvalue-weighted combined occipital component set.
+%   3. Score candidates using occipital evidence, spectral powspctrm form 
+%      quality, and artifact metrics. Exclude extreme outliers and build 
+%      eigenvalue-weighted combined component.
 %
 % Trial-level spectral scanning (per subject, condition, trial)
 %   1. Project each trial to the combined GED component space and compute
-%      spectrum-based power scans on a 30-90 Hz grid (default 0.5 Hz).
-%      Scans are derived from spectral bins (FFT), not per-frequency FIR reruns.
-%   2. Express power as robust dB ratio:
-%      10*log10((p_stim + floor)/(p_base + floor)).
-%   3. Flag numerical-instability cases (near-floor baseline power across
+%      spectrum-based power scans on a 30-90 Hz grid in dB.
+%   2. Flag numerical-instability cases (near-floor baseline power across
 %      many frequencies/components) and exclude unstable trials automatically.
-%   4. Detect per-trial spectral features (dominant peak, low/high peaks,
-%      centroid) and compute peak power as the mean power within
-%      peak frequency +/- 5 Hz.
-%   5. Quantify subject-level reliability separately for full/early/late windows
-%      via bootstrap peak-frequency CI width across conditions (Criterion 4).
+%   3. Detect per-trial peak frequency and define peak power as the mean power 
+%      within peak frequency +/- 5 Hz.
+%   4. Quantify subject-level reliability separately for full/early/late windows
+%      via bootstrap peak-frequency CI width across conditions.
 %
 % Outputs
-% -------
-%   - Per-condition/per-subject peak frequency and power summaries
-%     (full, early, late windows).
-%   - Combined-method benchmark summaries:
-%     detectability, trial CV, peak power, and condition separation.
+%   - Peak frequency and power summaries (full, early, late windows).
+%   - Detectability, trial CV, peak power, and condition separation.
 %   - Subject diagnostics (component selection, rejection reasons,
-%     topographies, spectra), group summary figures, and GLMM check.
-%   - Optional ground-truth simulation validation.
-%   - Optional subject-level parallel execution (toggle in setup section).
+%     topographies, spectra), group summary figures.
 
 %% Setup
 startup
@@ -54,80 +31,29 @@ startup
 nSubj = length(subjects);
 total_runtime_tic = tic;
 
+%% Parameters
+
 % Time windows
 baseline_window = [-1.5, -0.25];
 full_window = [0, 2.0];
 early_window = [0, 0.5];
 late_window = [1.0, 2.0];
 
-% Gamma frequency range
-gamma_range = [30, 90];
-
-% Narrowband scanning parameters (direct analysis-band scan only)
-analysis_freq_range = [30, 90];
-scan_freq_step_hz = 1;            % analysis grid resolution (Hz)
+% Gamma analysis
+analysis_freq_range = [30 90];
+scan_freq_step_hz = 1; % analysis grid resolution (Hz)
 scan_freqs = analysis_freq_range(1):scan_freq_step_hz:analysis_freq_range(2);
 nFreqs = length(scan_freqs);
 scan_width = 2.0; % spectral smoothing (Hz) for mtmfft
 
-%% GED parameters
-lambda = 0.05;
-ged_search_n = 20;          % search first N GED components
-template_front_weight = 0.7; % anti-template weight for frontal channels
-template_sigma_occ = 0.12;   % spatial smoothness for occipital template
-template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
-min_eigval = 1.1;              % minimum GED eigenvalue (lambda >= 1.1)
-min_peak_form = 0.5;    % minimum PF score for candidate eligibility
-pf_multi_peak_sep_min_hz = 5;         % penalize PF when another peak sits at least this far from the dominant (Hz)
-pf_multi_peak_height_ratio_min = 0.8; % rival peak height must reach this fraction of the dominant peak amplitude
-pf_multi_peak_penalty_mult = 0.35;    % base multiplier for >=5 Hz, >=80% dominant rival peaks (strong PF penalty)
-max_combined_leak = 1.30;      % artifact guard: mean(front leak, temporal leak)
-max_lineharm_ratio = 0.60;     % artifact guard: line-harmonic dominance ratio
-max_hf_slope = -0.15;          % informative only (tables/diagnostics); not an eligibility gate
-max_emg_score = 0.85;          % anchor: very high EMG score
-max_components_to_combine = 10;     % top-K cap for combined GED branch
-artifact_proxy_max_trials = 24;     % speed cap for proxy estimation per component/window
-outlier_ratio_thr = 8.0;            % lambda1/lambda2 threshold for extreme-component outlier detection
-outlier_mad_mult = 4.0;             % MAD multiplier on log-eigenvalue distance
-outlier_min_rest = 0;               % minimum non-top eligible components for extreme-component outlier exclusion (0 = no minimum)
-baseline_outlier_mad_mult = 3.5;    % robust log-power cutoff (MAD units) for baseline outliers
-baseline_outlier_min_trials = 12;   % minimum trial count before baseline outlier screening is applied
-ratio_floor_prctile = 20;           % robust baseline-power percentile used as floor anchor
-ratio_floor_frac = 0.25;            % floor is this fraction of the robust baseline-power anchor
-% Near-floor trial exclusion: when combined baseline power is low across many bins, the additive
-% floor dominates and p_base <= near_floor_mult*floor flags "unstable" bins; if unstable bin
-% fraction >= instability_trial_freq_frac_thr the whole trial is NaN
-instability_near_floor_mult = 1.5;  % mark as near-floor when baseline <= this multiple of floor
-instability_component_frac_thr = 0.50; % (reserved; trial loop uses per-frequency near-floor counts only)
-instability_trial_freq_frac_thr = 0.35; % exclude trial when unstable at >= this frequency fraction
-trial_nearfloor_exclusion_enable = true; % if false, skip NaNing trials (still logs ratios); use for diagnostics only
-rank_stability_boot_reps = 200;     % bootstrap repetitions for rank-aggregation stability diagnostics
-topo_flat_std_min = 1e-6;           % near-zero std => degenerate/flat map
-topo_flat_range_min = 1e-5;         % near-zero dynamic range => degenerate/flat map
-topo_nonposterior_max = 0.28;       % posterior concentration below this is non-posterior
-topo_fragmented_hotspot_rel = 8.0;  % high hotspot/median ratio => likely fragmented map
-occ_class_thr = 0.60;         % occipital-evidence threshold for occipital class
-emg_class_thr = 0.50;         % EMG-score threshold for EMG class
-min_occ_margin = 0.05;        % occipital-vs-EMG margin threshold
+% GED
+lambda = 0.05;              % regularization
+ged_search_n = 10;          % search first N GED components
+min_eigval = 1.1;           % minimum GED eigenvalue (lambda >= 1.1)
+min_peak_form = 0.5;        % minimum PF score for candidate eligibility
 random_seed = 123;                    % reproducible randomization
-
-% Raw dB spectrum peak detection parameters
-centroid_freq_range = [30 90];
-centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centroid_freq_range(2);
-centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
-centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
 trial_peak_smooth_n = 5;     % moving-average smoothing (5 bins ~= 5 Hz) for peak metrics
-peak_power_halfwidth_hz = 5; % define peak power as mean power within peak_hz +/- this band
-trial_peak_edge_margin_hz = 0; % allow trial-level peak detection across the full 30-90 Hz band
-trial_metric_outlier_enable = true;      % apply trial-level outlier rejection on extracted frequency/power metrics
-trial_metric_outlier_iqr_mult = 1.5;     % outlier threshold in IQR units around Q1/Q3
-trial_metric_outlier_min_trials = 50;    % minimum finite trials to run IQR-based outlier rejection
-peak_bootstrap_reps = 1000;              % criterion-4 reliability: bootstrap reps (no FieldTrip in inner loop)
-peak_bootstrap_min_trials = 30;          % criterion-4 reliability: minimum retained trials per condition
-peak_bootstrap_ci_prct = [2.5 97.5];     % criterion-4 reliability: percentile interval for peak-frequency precision
-reliability_ci_width_median_max_hz = 10; % criterion-4 pass: max median CI width across conditions
-reliability_ci_width_cond_max_hz = 12;   % criterion-4 pass: max CI width to count a condition as reliable
-reliability_min_pass_conditions = 3;     % criterion-4 pass: minimum reliable conditions (out of 4)
+peak_power_halfwidth_hz = 5; % define peak power as mean power within peak_hz +/-
 
 % Condition info
 condNames  = {'c25', 'c50', 'c75', 'c100'};
@@ -141,10 +67,8 @@ if ~exist(gcp_feature_data_path, 'dir')
 end
 fig_save_dir_ged = fullfile(paths.figures, 'eeg', 'ged');
 fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
-fig_save_dir_emg_exclusion = fig_save_dir_component_selection;
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
-comp_sel_save_dir = fig_save_dir_component_selection;
 
 %% Preallocate storage
 trials_powratio     = cell(4, nSubj);
@@ -253,9 +177,8 @@ subject_reliability_reason_late = repmat({''}, 1, nSubj);
 %% Subject loop
 for subj = 1:nSubj
     subj_runtime_tic = tic;
-    comp_sel_save_dir = fullfile(fig_save_dir_component_selection, subjects{subj});
-    if ~exist(comp_sel_save_dir, 'dir'), mkdir(comp_sel_save_dir); end
-    fig_save_dir_emg_exclusion = comp_sel_save_dir;
+    fig_save_dir_component_selection = fullfile(fig_save_dir_component_selection, subjects{subj});
+    if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
     datapath = fullfile(gcp_feature_data_path, subjects{subj}, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
         'dataEEG_c25', 'dataEEG_c50', 'dataEEG_c75', 'dataEEG_c100');
@@ -324,9 +247,9 @@ for subj = 1:nSubj
 
         cfg_filt = [];
         cfg_filt.bpfilter   = 'yes';
-        cfg_filt.bpfreq     = gamma_range;
+        cfg_filt.bpfreq     = analysis_freq_range;
         cfg_filt.bpfilttype = 'fir';
-        cfg_filt.bpfiltord  = round(3 * fsample / gamma_range(1));
+        cfg_filt.bpfiltord  = round(3 * fsample / analysis_freq_range(1));
         dat_gamma = ft_preprocessing(cfg_filt, dat);
 
         cfg_t = [];
@@ -371,15 +294,11 @@ for subj = 1:nSubj
     % Covariances per window (for loop below)
     covStim_per_win = {covStim_full, covStim_early, covStim_late};
     plot_covariance_matrix_diagnostics( ...
-        comp_sel_save_dir, subjects{subj}, dataEEG_c25.label, ...
+        fig_save_dir_component_selection, subjects{subj}, dataEEG_c25.label, ...
         covBase_full, covStim_per_win, win_names_cap, lambdas);
 
     % Run GED + component selection per window
-    searchFilters_full  = [];
-    searchFilters_early = [];
-    searchFilters_late  = [];
-    W_top_full  = []; W_top_early  = []; W_top_late  = [];
-    W_combined_full  = []; W_combined_early  = []; W_combined_late  = [];
+    searchFilters_full  = []; searchFilters_early = []; searchFilters_late  = [];
     selected_idx_full  = []; selected_idx_early  = []; selected_idx_late  = [];
     w_combined_full  = []; w_combined_early  = []; w_combined_late  = [];
     evals_sorted_full = []; evals_sorted_early = []; evals_sorted_late = [];
@@ -390,12 +309,11 @@ for subj = 1:nSubj
     rejection_flags_full = struct(); rejection_flags_early = struct(); rejection_flags_late = struct();
     warn_flags_full = struct(); warn_flags_early = struct(); warn_flags_late = struct();
     candidate_table_full = struct(); candidate_table_early = struct(); candidate_table_late = struct();
-    W_combined_full_norm = []; W_combined_early_norm = []; W_combined_late_norm = [];
-    w_combined_full_norm = []; w_combined_early_norm = []; w_combined_late_norm = [];
-    W_top_full_norm = []; W_top_early_norm = []; W_top_late_norm = [];
-    selected_idx_full_norm = []; selected_idx_early_norm = []; selected_idx_late_norm = [];
 
     % Simulated signed occipital template (same for all windows)
+    template_front_weight = 0.75; % anti-template weight for frontal channels
+    template_sigma_occ = 0.12;   % spatial smoothness for occipital template
+    template_sigma_front = 0.25; % spatial smoothness for frontal anti-template
     sim_template = zeros(nChans, 1);
     lay_labels = headmodel.layANThead.label;
     lay_pos = headmodel.layANThead.pos;
@@ -456,9 +374,6 @@ for subj = 1:nSubj
         searchEmgClass = repmat({'unassigned'}, nSearch, 1);
         searchMeanPrSpectrum = nan(nSearch, numel(scan_freqs));
         searchTopoPosteriorConcentration = nan(nSearch, 1);
-        searchTopoSpatialStd = nan(nSearch, 1);
-        searchTopoDynamicRange = nan(nSearch, 1);
-        searchTopoHotspotRel = nan(nSearch, 1);
 
         % Forward model for topoplot and component scoring (window-specific)
         for ci = 1:nSearch
@@ -487,20 +402,12 @@ for subj = 1:nSubj
         if isempty(topo_finite)
             topo_finite = 0;
         end
-        topo_spatial_std_ci = std(topo_ci(isfinite(topo_ci)));
-        if ~isfinite(topo_spatial_std_ci)
-            topo_spatial_std_ci = 0;
-        end
-        topo_dynamic_range_ci = max(topo_finite) - min(topo_finite);
         posterior_mass = mean(topo_abs(post_idx));
         total_mass = mean(topo_finite);
         topo_posterior_concentration_ci = posterior_mass / max(total_mass, eps);
-        hotspot_thr_ci = prctile(topo_finite, 95);
-        hotspot_mass_ci = mean(topo_finite(topo_finite >= hotspot_thr_ci));
-        topo_hotspot_rel_ci = hotspot_mass_ci / max(median(topo_finite), eps);
-        % Lightweight artifact proxies from trial-level component spectra.
+        % Lightweight artifact proxies from trial-level component spectra
         proxy_ci = estimate_component_artifact_proxies( ...
-            w_ci, dat_per_cond, stim_windows{w}, baseline_window, fsample, scan_freqs, scan_width, artifact_proxy_max_trials);
+            w_ci, dat_per_cond, stim_windows{w}, baseline_window, fsample, scan_freqs, scan_width);
 
         searchFilters(:, ci) = w_ci;
         searchTopos(:, ci) = topo_ci;
@@ -517,13 +424,24 @@ for subj = 1:nSubj
         searchHFSlope(ci) = proxy_ci.hf_slope;
         searchMeanPrSpectrum(ci, :) = proxy_ci.mean_pr_spectrum(:)';
         searchTopoPosteriorConcentration(ci) = topo_posterior_concentration_ci;
-        searchTopoSpatialStd(ci) = topo_spatial_std_ci;
-        searchTopoDynamicRange(ci) = topo_dynamic_range_ci;
-        searchTopoHotspotRel(ci) = topo_hotspot_rel_ci;
     end
-    W_top = searchFilters(:, 1);
 
-    % Candidate metrics (deterministic path for preregistered selection).
+    % Candidate metrics
+    pf_multi_peak_sep_min_hz = 5;         % penalize PF when another peak sits at least this far from the dominant (Hz)
+    pf_multi_peak_height_ratio_min = 0.8; % rival peak height must reach this fraction of the dominant peak amplitude
+    pf_multi_peak_penalty_mult = 0.35;    % base multiplier for >=5 Hz, >=80% dominant rival peaks (strong PF penalty)
+    max_combined_leak = 1.30;             % artifact guard: mean(front leak, temporal leak)
+    max_lineharm_ratio = 0.60;            % artifact guard: line-harmonic dominance ratio
+    max_hf_slope = -0.15;                 % informative only (tables/diagnostics); not an eligibility gate
+    max_emg_score = 0.85;                 % anchor: very high EMG score
+    max_components_to_combine = 10;       % top-K cap for combined GED branch
+    outlier_ratio_thr = 8.0;              % lambda1/lambda2 threshold for extreme-component outlier detection
+    outlier_mad_mult = 4.0;               % MAD multiplier on log-eigenvalue distance
+    rank_stability_boot_reps = 200;       % bootstrap repetitions for rank-aggregation stability diagnostics
+    topo_nonposterior_max = 0.28;         % posterior concentration below this is non-posterior
+    occ_class_thr = 0.60;                 % occipital-evidence threshold for occipital class
+    emg_class_thr = 0.50;                 % EMG-score threshold for EMG class
+    min_occ_margin = 0.05;                % occipital-vs-EMG margin threshold
     corr_vec = searchCorrs;
     ratio_vec = searchOccFrontRatio;
     eval_raw_vec = evals_sorted(1:nSearch);
@@ -546,9 +464,7 @@ for subj = 1:nSubj
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range, ...
         pf_multi_peak_sep_min_hz, pf_multi_peak_height_ratio_min, pf_multi_peak_penalty_mult);
     topo_posterior_vec = searchTopoPosteriorConcentration;
-    topo_flat_fail_vec = (searchTopoSpatialStd < topo_flat_std_min) | (searchTopoDynamicRange < topo_flat_range_min);
     topo_nonposterior_fail_vec = topo_posterior_vec < topo_nonposterior_max;
-    topo_fragmented_fail_vec = searchTopoHotspotRel > topo_fragmented_hotspot_rel;
     occipital_evidence = 0.40 * normalize_robust(corr_vec) + ...
         0.25 * normalize_robust(ratio_vec) + ...
         0.35 * normalize_robust(topo_posterior_vec);
@@ -565,7 +481,7 @@ for subj = 1:nSubj
     fail_hf_slope = false(nSearch, 1); % HF slope kept in EMG score only; no eligibility gate
     fail_emg_score = finite_metrics & (emg_artifact_score > max_emg_score);
     reject_flags = fail_leak | fail_emg_score | ...
-        topo_flat_fail_vec | topo_nonposterior_fail_vec | topo_fragmented_fail_vec;
+        topo_nonposterior_fail_vec;
     warn_any = fail_lineharm;
     warn_flags = struct( ...
         'combined_leak', false(nSearch, 1), ...
@@ -579,9 +495,7 @@ for subj = 1:nSubj
         'lineharm', false(nSearch, 1), ...
         'hf_slope', fail_hf_slope, ...
         'emg_score', fail_emg_score, ...
-        'topo_flat', topo_flat_fail_vec, ...
-        'topo_nonposterior', topo_nonposterior_fail_vec, ...
-        'topo_fragmented', topo_fragmented_fail_vec);
+        'topo_nonposterior', topo_nonposterior_fail_vec);
     for ci = 1:nSearch
         occ_minus_emg_ci = occipital_evidence(ci) - emg_artifact_score(ci);
         if (occipital_evidence(ci) >= occ_class_thr) && ...
@@ -610,7 +524,7 @@ for subj = 1:nSubj
     raw_eligible_for_outlier = pass_eig_gate & pass_peak_gate & ...
         ~artifact_flags & cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
     [~, extreme_component_outlier_idx] = exclude_extreme_component_outlier( ...
-        evals_sorted(1:nSearch), raw_eligible_for_outlier, outlier_ratio_thr, outlier_mad_mult, outlier_min_rest);
+        evals_sorted(1:nSearch), raw_eligible_for_outlier, outlier_ratio_thr, outlier_mad_mult);
     if ~isempty(extreme_component_outlier_idx)
         extreme_component_outlier_mask(extreme_component_outlier_idx) = true;
     end
@@ -623,8 +537,6 @@ for subj = 1:nSubj
         eval_raw_vec, peak_form_score_vec, peak_bonus_vec, occipital_evidence, emg_artifact_score, rank_stability_boot_reps);
     searchScores(~finite_metrics) = -Inf;
     searchScores(~selection_pool_mask) = -Inf;
-    if ~any(isfinite(searchScores))
-    end
     [bestScore, bestIdx] = max(searchScores);
     if isempty(bestIdx) || isnan(bestScore)
         bestIdx = 1;
@@ -673,9 +585,6 @@ for subj = 1:nSubj
     candidate_table.pf_rank = compute_descending_rank(peak_form_score_vec);
     candidate_table.occipital_evidence = occipital_evidence;
     candidate_table.topo_posterior_concentration = topo_posterior_vec;
-    candidate_table.topo_spatial_std = searchTopoSpatialStd;
-    candidate_table.topo_dynamic_range = searchTopoDynamicRange;
-    candidate_table.topo_hotspot_rel = searchTopoHotspotRel;
     candidate_table.emg_artifact_score = emg_artifact_score;
     candidate_table.emg_class = searchEmgClass;
     candidate_table.score = searchScores;
@@ -703,9 +612,7 @@ for subj = 1:nSubj
     candidate_table.lineharm_exceeds_warn_thr = fail_lineharm;
     candidate_table.fail_hf_slope = rejection_flags.hf_slope;
     candidate_table.fail_emg_score = rejection_flags.emg_score;
-    candidate_table.fail_topo_flat = rejection_flags.topo_flat;
     candidate_table.fail_topo_nonposterior = rejection_flags.topo_nonposterior;
-    candidate_table.fail_topo_fragmented = rejection_flags.topo_fragmented;
     candidate_table.warn_combined_leak = warn_flags.combined_leak;
     candidate_table.warn_lineharm = warn_flags.lineharm;
     candidate_table.warn_hf_slope = warn_flags.hf_slope;
@@ -721,8 +628,6 @@ for subj = 1:nSubj
     combined_idx = find(selection_pool_mask & isfinite(searchScores));
     fallback_occipital_idx = NaN;
     fallback_selected_mask = false(nSearch, 1);
-    if isempty(combined_idx)
-    end
     if isempty(combined_idx)
         combined_weights = [];
     else
@@ -796,8 +701,6 @@ for subj = 1:nSubj
         % Store per-window filters for trial-level scanning
         if w == 1
             searchFilters_full = searchFilters;
-            W_top_full = searchFilters(:, 1);
-            W_combined_full = searchFilters(:, selected_idx);
             selected_idx_full = selected_idx;
             w_combined_full = selected_weights(:)';
             evals_sorted_full = evals_sorted;
@@ -810,8 +713,6 @@ for subj = 1:nSubj
             candidate_table_full = candidate_table;
         elseif w == 2
             searchFilters_early = searchFilters;
-            W_top_early = searchFilters(:, 1);
-            W_combined_early = searchFilters(:, selected_idx);
             selected_idx_early = selected_idx;
             w_combined_early = selected_weights(:)';
             evals_sorted_early = evals_sorted;
@@ -824,8 +725,6 @@ for subj = 1:nSubj
             candidate_table_early = candidate_table;
         else
             searchFilters_late = searchFilters;
-            W_top_late = searchFilters(:, 1);
-            W_combined_late = searchFilters(:, selected_idx);
             selected_idx_late = selected_idx;
             w_combined_late = selected_weights(:)';
             evals_sorted_late = evals_sorted;
@@ -896,9 +795,6 @@ for subj = 1:nSubj
     W_combined_full = searchFilters_full(:, selected_idx_full);
     W_combined_early = searchFilters_early(:, selected_idx_early);
     W_combined_late = searchFilters_late(:, selected_idx_late);
-    W_top_full = searchFilters_full(:, 1);
-    W_top_early = searchFilters_early(:, 1);
-    W_top_late = searchFilters_late(:, 1);
 
     topo_temp_full = searchTopos_full(:, selected_idx_full) * w_combined_full(:);
     topo_temp_early = searchTopos_early(:, selected_idx_early) * w_combined_early(:);
@@ -953,7 +849,7 @@ for subj = 1:nSubj
     cfg_topo.colormap  = '*RdBu';
     cfg_topo.figure    = 'gcf';
     plot_emg_exclusion_diagnostics( ...
-        fig_save_dir_emg_exclusion, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
+        fig_save_dir_component_selection, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(candidate_table_full.comp_idx)), ...
         searchEmgClass_full, ...
         candidate_table_full.eligible, ...
@@ -962,10 +858,11 @@ for subj = 1:nSubj
         candidate_table_full.lineharm_ratio, candidate_table_full.hf_slope, candidate_table_full.emg_artifact_score, ...
         candidate_table_full.extreme_component_outlier, ...
         cfg_topo, all_topo_labels{subj}, candidate_table_full.peak_form_score, ...
-        max_combined_leak, max_hf_slope, max_emg_score, max_lineharm_ratio, ...
+        candidate_table_full.thr_max_combined_leak(1), candidate_table_full.thr_max_hf_slope(1), ...
+        candidate_table_full.thr_max_emg_score(1), candidate_table_full.thr_max_lineharm(1), ...
         selected_idx_full);
     plot_emg_exclusion_diagnostics( ...
-        fig_save_dir_emg_exclusion, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
+        fig_save_dir_component_selection, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(candidate_table_early.comp_idx)), ...
         searchEmgClass_early, ...
         candidate_table_early.eligible, ...
@@ -974,10 +871,11 @@ for subj = 1:nSubj
         candidate_table_early.lineharm_ratio, candidate_table_early.hf_slope, candidate_table_early.emg_artifact_score, ...
         candidate_table_early.extreme_component_outlier, ...
         cfg_topo, all_topo_labels{subj}, candidate_table_early.peak_form_score, ...
-        max_combined_leak, max_hf_slope, max_emg_score, max_lineharm_ratio, ...
+        candidate_table_early.thr_max_combined_leak(1), candidate_table_early.thr_max_hf_slope(1), ...
+        candidate_table_early.thr_max_emg_score(1), candidate_table_early.thr_max_lineharm(1), ...
         selected_idx_early);
     plot_emg_exclusion_diagnostics( ...
-        fig_save_dir_emg_exclusion, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
+        fig_save_dir_component_selection, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(candidate_table_late.comp_idx)), ...
         searchEmgClass_late, ...
         candidate_table_late.eligible, ...
@@ -986,10 +884,11 @@ for subj = 1:nSubj
         candidate_table_late.lineharm_ratio, candidate_table_late.hf_slope, candidate_table_late.emg_artifact_score, ...
         candidate_table_late.extreme_component_outlier, ...
         cfg_topo, all_topo_labels{subj}, candidate_table_late.peak_form_score, ...
-        max_combined_leak, max_hf_slope, max_emg_score, max_lineharm_ratio, ...
+        candidate_table_late.thr_max_combined_leak(1), candidate_table_late.thr_max_hf_slope(1), ...
+        candidate_table_late.thr_max_emg_score(1), candidate_table_late.thr_max_lineharm(1), ...
         selected_idx_late);
     plot_combined_topo_spectra_windows( ...
-        fig_save_dir_emg_exclusion, subjects{subj}, scan_freqs, cfg_topo, all_topo_labels{subj}, ...
+        fig_save_dir_component_selection, subjects{subj}, scan_freqs, cfg_topo, all_topo_labels{subj}, ...
         searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
         searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
         searchTopos_late, searchMeanPrSpectrum_late, selected_idx_late, w_combined_late, ...
@@ -1015,10 +914,6 @@ for subj = 1:nSubj
         all_selected_comp_indices_multi{subj} = NaN;
         all_selected_comp_weights{subj} = NaN;
     end
-    if ~adequate_early
-    end
-    if ~adequate_late
-    end
 
     %% Per-condition trial-level spectral scanning
     % Use window-specific filters for each dB-spectrum output
@@ -1026,32 +921,23 @@ for subj = 1:nSubj
         if wi == 1
             W_comb = W_combined_full;
             w_comb = w_combined_full;
-            W_t = W_top_full;
             sel_idx = selected_idx_full;
             window_adequate = adequate_full;
         elseif wi == 2
             W_comb = W_combined_early;
             w_comb = w_combined_early;
-            W_t = W_top_early;
             sel_idx = selected_idx_early;
             window_adequate = adequate_early;
         else
             W_comb = W_combined_late;
             w_comb = w_combined_late;
-            W_t = W_top_late;
             sel_idx = selected_idx_late;
             window_adequate = adequate_late;
         end
         if ~window_adequate
             W_comb = zeros(nChans, 0);
             w_comb = [];
-            W_t = zeros(nChans, 0);
             sel_idx = [];
-        end
-        if isempty(W_comb)
-        end
-        if isempty(W_t)
-            W_t = zeros(nChans, 0);
         end
         if isempty(w_comb) && ~isempty(W_comb)
             w_comb = ones(1, size(W_comb, 2)) / size(W_comb, 2);
@@ -1062,39 +948,32 @@ for subj = 1:nSubj
         if ~isempty(W_comb)
             w_comb = w_comb(:)' / sum(w_comb);
         end
-        W_t = normalize_filters_to_noise_metric(W_t, covBase_full);
         W_comb = normalize_filters_to_noise_metric(W_comb, covBase_full);
         if wi == 1
             W_combined_full_norm = W_comb;
             w_combined_full_norm = w_comb;
-            W_top_full_norm = W_t;
             selected_idx_full_norm = sel_idx;
         elseif wi == 2
             W_combined_early_norm = W_comb;
             w_combined_early_norm = w_comb;
-            W_top_early_norm = W_t;
             selected_idx_early_norm = sel_idx;
         else
             W_combined_late_norm = W_comb;
             w_combined_late_norm = w_comb;
-            W_top_late_norm = W_t;
             selected_idx_late_norm = sel_idx;
         end
     end
     % Per-window filters struct for trial-level scanning
     filters = struct('full', struct(), 'early', struct(), 'late', struct());
     filters.full.searchFilters = normalize_filters_to_noise_metric(searchFilters_full, covBase_full);
-    filters.full.W_top = W_top_full_norm;
     filters.full.W_combined = W_combined_full_norm;
     filters.full.selected_idx = selected_idx_full_norm;
     filters.full.w_combined = w_combined_full_norm;
     filters.early.searchFilters = normalize_filters_to_noise_metric(searchFilters_early, covBase_full);
-    filters.early.W_top = W_top_early_norm;
     filters.early.W_combined = W_combined_early_norm;
     filters.early.selected_idx = selected_idx_early_norm;
     filters.early.w_combined = w_combined_early_norm;
     filters.late.searchFilters = normalize_filters_to_noise_metric(searchFilters_late, covBase_full);
-    filters.late.W_top = W_top_late_norm;
     filters.late.W_combined = W_combined_late_norm;
     filters.late.selected_idx = selected_idx_late_norm;
     filters.late.w_combined = w_combined_late_norm;
@@ -1187,22 +1066,28 @@ for subj = 1:nSubj
             end
         end
 
+        baseline_outlier_mad_mult = 3.5;    % robust log-power cutoff (MAD units) for baseline outliers
+        ratio_floor_prctile = 20;           % robust baseline-power percentile used as floor anchor
+        ratio_floor_frac = 0.25;            % floor is this fraction of the robust baseline-power anchor
+        instability_near_floor_mult = 1.5;  % mark as near-floor when baseline <= this multiple of floor
+        instability_trial_freq_frac_thr = 0.35; % exclude trial when unstable at >= this frequency fraction
+
         bad_base_raw = flag_unreliable_baseline_trials( ...
-            baseline_power_raw, baseline_outlier_mad_mult, baseline_outlier_min_trials);
+            baseline_power_raw, baseline_outlier_mad_mult);
         bad_base_full = bad_base_raw;
         bad_base_early = bad_base_raw;
         bad_base_late = bad_base_raw;
         if adequate_full
             bad_base_full = bad_base_full | flag_unreliable_baseline_trials( ...
-                baseline_power_comb_full, baseline_outlier_mad_mult, baseline_outlier_min_trials);
+                baseline_power_comb_full, baseline_outlier_mad_mult);
         end
         if adequate_early
             bad_base_early = bad_base_early | flag_unreliable_baseline_trials( ...
-                baseline_power_comb_early, baseline_outlier_mad_mult, baseline_outlier_min_trials);
+                baseline_power_comb_early, baseline_outlier_mad_mult);
         end
         if adequate_late
             bad_base_late = bad_base_late | flag_unreliable_baseline_trials( ...
-                baseline_power_comb_late, baseline_outlier_mad_mult, baseline_outlier_min_trials);
+                baseline_power_comb_late, baseline_outlier_mad_mult);
         end
         [base_floor_full, ~] = compute_baseline_floor_stats(baseline_power_comb_full, ratio_floor_prctile, ratio_floor_frac);
         [base_floor_early, ~] = compute_baseline_floor_stats(baseline_power_comb_early, ratio_floor_prctile, ratio_floor_frac);
@@ -1337,22 +1222,17 @@ for subj = 1:nSubj
         trial_unstable_full = unstable_trial_frac_full >= instability_trial_freq_frac_thr;
         trial_unstable_early = unstable_trial_frac_early >= instability_trial_freq_frac_thr;
         trial_unstable_late = unstable_trial_frac_late >= instability_trial_freq_frac_thr;
-        if trial_nearfloor_exclusion_enable
-            if any(trial_unstable_full)
-                powratio_methods_full(:, trial_unstable_full, :) = NaN;
-                powratio_components(:, trial_unstable_full, :) = NaN;
-            end
-            if any(trial_unstable_early)
-                powratio_methods_early(:, trial_unstable_early, :) = NaN;
-                powratio_components_early(:, trial_unstable_early, :) = NaN;
-            end
-            if any(trial_unstable_late)
-                powratio_methods_late(:, trial_unstable_late, :) = NaN;
-                powratio_components_late(:, trial_unstable_late, :) = NaN;
-            end
+        if any(trial_unstable_full)
+            powratio_methods_full(:, trial_unstable_full, :) = NaN;
+            powratio_components(:, trial_unstable_full, :) = NaN;
         end
-        if trial_nearfloor_exclusion_enable && ...
-                (any(trial_unstable_full) || any(trial_unstable_early) || any(trial_unstable_late))
+        if any(trial_unstable_early)
+            powratio_methods_early(:, trial_unstable_early, :) = NaN;
+            powratio_components_early(:, trial_unstable_early, :) = NaN;
+        end
+        if any(trial_unstable_late)
+            powratio_methods_late(:, trial_unstable_late, :) = NaN;
+            powratio_components_late(:, trial_unstable_late, :) = NaN;
         end
         powratio_methods_full_analysis = powratio_methods_full;
         powratio_methods_early_analysis = powratio_methods_early;
@@ -1388,11 +1268,11 @@ for subj = 1:nSubj
         trials_powratio_early_plotstat{cond, subj} = powratio_trials_early_plotstat;
         trials_powratio_late_plotstat{cond, subj} = powratio_trials_late_plotstat;
         %% Per-trial peak detection
+        trial_metric_outlier_iqr_mult = 1.5; % outlier threshold in IQR units around Q1/Q3
         [trl_peaks, trial_peak_power_full, trl_centroid] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min, ...
-            trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
+            trial_peak_smooth_n, peak_power_halfwidth_hz);
 
         trials_peaks{cond, subj} = trl_peaks;
         trials_centroid{cond, subj}     = trl_centroid;
@@ -1403,35 +1283,24 @@ for subj = 1:nSubj
         [trl_peaks_early, trial_peak_power_early, trl_centroid_early] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_early_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min, ...
-            trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
+            trial_peak_smooth_n, peak_power_halfwidth_hz);
         [trl_peaks_late, trial_peak_power_late, trl_centroid_late] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_late_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min, ...
-            trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
+            trial_peak_smooth_n, peak_power_halfwidth_hz);
         % Trial-level metric outlier rejection (subject-condition specific).
-        if trial_metric_outlier_enable
             [outlier_mask_freq_full, ~] = detect_trial_metric_outliers_iqr( ...
-                trl_peaks, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+                trl_peaks, trial_metric_outlier_iqr_mult);
             [outlier_mask_freq_early, ~] = detect_trial_metric_outliers_iqr( ...
-                trl_peaks_early, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+                trl_peaks_early, trial_metric_outlier_iqr_mult);
             [outlier_mask_freq_late, ~] = detect_trial_metric_outliers_iqr( ...
-                trl_peaks_late, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+                trl_peaks_late, trial_metric_outlier_iqr_mult);
             [outlier_mask_power_full, ~] = detect_trial_metric_outliers_iqr( ...
-                trial_peak_power_full, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+                trial_peak_power_full, trial_metric_outlier_iqr_mult);
             [outlier_mask_power_early, ~] = detect_trial_metric_outliers_iqr( ...
-                trial_peak_power_early, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
+                trial_peak_power_early, trial_metric_outlier_iqr_mult);
             [outlier_mask_power_late, ~] = detect_trial_metric_outliers_iqr( ...
-                trial_peak_power_late, trial_metric_outlier_iqr_mult, trial_metric_outlier_min_trials);
-        else
-            outlier_mask_freq_full = false(size(trl_peaks));
-            outlier_mask_freq_early = false(size(trl_peaks_early));
-            outlier_mask_freq_late = false(size(trl_peaks_late));
-            outlier_mask_power_full = false(size(trial_peak_power_full));
-            outlier_mask_power_early = false(size(trial_peak_power_early));
-            outlier_mask_power_late = false(size(trial_peak_power_late));
-        end
+                trial_peak_power_late, trial_metric_outlier_iqr_mult);
         trl_peaks(outlier_mask_freq_full) = NaN;
         trl_peaks_early(outlier_mask_freq_early) = NaN;
         trl_peaks_late(outlier_mask_freq_late) = NaN;
@@ -1493,13 +1362,15 @@ for subj = 1:nSubj
         subj_condition_avg_early{cond} = cond_avg_early;
         subj_condition_avg_late{cond} = cond_avg_late;
 
-        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 1, trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
-        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 1, trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
-        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 1, trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
+        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 1, peak_power_halfwidth_hz);
+        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 1, peak_power_halfwidth_hz);
+        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 1, peak_power_halfwidth_hz);
+        peak_bootstrap_reps = 1000;              % bootstrap reps (no FieldTrip in inner loop)
+        peak_bootstrap_ci_prct = [2.5 97.5];     % percentile interval for peak-frequency precision
         [ci_width_full, ci_low_full, ci_high_full, n_boot_valid_full] = ...
             compute_bootstrap_peak_precision_from_trials( ...
-            powratio_trials_full_avg, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz, ...
-            peak_bootstrap_reps, peak_bootstrap_min_trials, peak_bootstrap_ci_prct);
+            powratio_trials_full_avg, scan_freqs, trial_peak_smooth_n, ...
+            peak_bootstrap_reps, peak_bootstrap_ci_prct);
         subj_peak_boot_ci_width_full(cond) = ci_width_full;
         subj_peak_boot_ci_low_full(cond) = ci_low_full;
         subj_peak_boot_ci_high_full(cond) = ci_high_full;
@@ -1510,8 +1381,8 @@ for subj = 1:nSubj
         subject_peak_boot_n_valid_full(cond, subj) = n_boot_valid_full;
         [ci_width_early, ci_low_early, ci_high_early, n_boot_valid_early] = ...
             compute_bootstrap_peak_precision_from_trials( ...
-            powratio_trials_early_avg, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz, ...
-            peak_bootstrap_reps, peak_bootstrap_min_trials, peak_bootstrap_ci_prct);
+            powratio_trials_early_avg, scan_freqs, trial_peak_smooth_n, ...
+            peak_bootstrap_reps, peak_bootstrap_ci_prct);
         subj_peak_boot_ci_width_early(cond) = ci_width_early;
         subj_peak_boot_ci_low_early(cond) = ci_low_early;
         subj_peak_boot_ci_high_early(cond) = ci_high_early;
@@ -1522,8 +1393,8 @@ for subj = 1:nSubj
         subject_peak_boot_n_valid_early(cond, subj) = n_boot_valid_early;
         [ci_width_late, ci_low_late, ci_high_late, n_boot_valid_late] = ...
             compute_bootstrap_peak_precision_from_trials( ...
-            powratio_trials_late_avg, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz, ...
-            peak_bootstrap_reps, peak_bootstrap_min_trials, peak_bootstrap_ci_prct);
+            powratio_trials_late_avg, scan_freqs, trial_peak_smooth_n, ...
+            peak_bootstrap_reps, peak_bootstrap_ci_prct);
         subj_peak_boot_ci_width_late(cond) = ci_width_late;
         subj_peak_boot_ci_low_late(cond) = ci_low_late;
         subj_peak_boot_ci_high_late(cond) = ci_high_late;
@@ -1581,14 +1452,17 @@ for subj = 1:nSubj
         end
 
     end % condition loop
+    reliability_ci_width_median_max_hz = 10; % max median CI width across conditions
+    reliability_ci_width_cond_max_hz = 12;   % max CI width to count a condition as reliable
+    reliability_min_pass_conditions = 3;     % minimum reliable conditions (out of 4)
     [med_f, n_pass_f, n_val_f, pass_f_vec, pass_f, reason_f] = evaluate_criterion4_reliability_gate( ...
-        subj_peak_boot_ci_width_full, 'FULL', condLabels, peak_bootstrap_min_trials, ...
+        subj_peak_boot_ci_width_full, 'FULL', condLabels, ...
         reliability_ci_width_median_max_hz, reliability_ci_width_cond_max_hz, reliability_min_pass_conditions);
     [med_e, n_pass_e, n_val_e, pass_e_vec, pass_e, reason_e] = evaluate_criterion4_reliability_gate( ...
-        subj_peak_boot_ci_width_early, 'EARLY', condLabels, peak_bootstrap_min_trials, ...
+        subj_peak_boot_ci_width_early, 'EARLY', condLabels, ...
         reliability_ci_width_median_max_hz, reliability_ci_width_cond_max_hz, reliability_min_pass_conditions);
     [med_l, n_pass_l, n_val_l, pass_l_vec, pass_l, reason_l] = evaluate_criterion4_reliability_gate( ...
-        subj_peak_boot_ci_width_late, 'LATE', condLabels, peak_bootstrap_min_trials, ...
+        subj_peak_boot_ci_width_late, 'LATE', condLabels, ...
         reliability_ci_width_median_max_hz, reliability_ci_width_cond_max_hz, reliability_min_pass_conditions);
     subject_reliability_median_ci_width_full(subj) = med_f;
     subject_reliability_n_pass_conditions_full(subj) = n_pass_f;
@@ -1824,7 +1698,7 @@ for subj = 1:nSubj
         end
         legend('Location', 'southwest', 'FontSize', 9);
 
-        save_figure_png(fig, fullfile(comp_sel_save_dir, ...
+        save_figure_png(fig, fullfile(fig_save_dir_component_selection, ...
             sprintf('GCP_eeg_GED_subj%s_trials_overview_%s.png', subjects{subj}, window_names{wi})));
     end
     trial_counts_initial_by_subj_window(subj, :) = trial_counts_initial_local;
@@ -1976,7 +1850,7 @@ if ~isempty(y_all_c)
 end
 set(gca, 'XTick', 1:4, 'XTickLabel', condLabels, 'FontSize', 13, 'Box', 'off');
 xlim([0.3 4.7]);
-ylim(centroid_freq_range); 
+ylim(analysis_freq_range); 
 ylabel('Centroid Frequency [Hz]');
 title('All trials pooled', 'FontSize', 14, 'FontWeight', 'bold');
 save_figure_png(fig_cent, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_centroid_summary.png'));
@@ -1989,7 +1863,7 @@ slope_post = compute_condition_separation_from_matrix(all_condition_peak_freq_fu
 delta_post = all_condition_peak_freq_full(4, :) - all_condition_peak_freq_full(1, :);
 tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
 
-% ---------- Panel 1: condition slope ----------
+% Panel 1: condition slope 
 nexttile; hold on;
 valid_slope = isfinite(slope_post);
 slope_vals = slope_post(valid_slope);
@@ -2008,7 +1882,7 @@ set(gca, 'XTick', 1, 'XTickLabel', {'Combined GED'}, ...
 ylabel('Slope across contrast conditions [Hz/condition]', 'FontSize', 18, 'FontWeight', 'bold');
 title('Contrast Condition Slope', 'FontSize', 20, 'FontWeight', 'bold');
 
-% ---------- Panel 2: median shift (100%-25%) ----------
+% Panel 2: median shift (100%-25%) 
 nexttile; hold on;
 valid_delta = isfinite(delta_post);
 delta_vals = delta_post(valid_delta);
@@ -2211,7 +2085,7 @@ save(save_path, ...
     'subject_reliability_pass_late', 'subject_reliability_reason_late', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames', ...
-    'peak_bootstrap_reps', 'peak_bootstrap_min_trials', 'peak_bootstrap_ci_prct', ...
+    'peak_bootstrap_reps', 'peak_bootstrap_ci_prct', ...
     'reliability_ci_width_median_max_hz', 'reliability_ci_width_cond_max_hz', ...
     'reliability_min_pass_conditions');
 
@@ -2318,17 +2192,15 @@ fprintf('[GED] Runtime TOTAL: %s\n', format_runtime_hhmmss(toc(total_runtime_tic
 
 function [trl_peaks, trl_peak_power, trl_centroid] = ...
     compute_trial_peak_metrics_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, ...
-    centroid_band_mask, smooth_n, centroid_min_peak, centroid_posfrac_min, edge_margin_hz, peak_power_halfwidth_hz)
+    smooth_n, peak_power_halfwidth_hz)
 nTrl = size(powratio_trials_fullscan, 1);
 trl_peaks = nan(nTrl, 1);
 trl_peak_power = nan(nTrl, 1);
 trl_centroid = nan(nTrl, 1);
 scan_freqs_analysis = scan_freqs_full(analysis_mask);
+centroid_band_mask = scan_freqs_full >= 30 & scan_freqs_full <= 90;
 freq_band = scan_freqs_full(centroid_band_mask);
-if nargin < 8 || ~isfinite(edge_margin_hz) || edge_margin_hz < 0
-    edge_margin_hz = 0;
-end
-if nargin < 9 || ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
+if nargin < 5 || ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
     peak_power_halfwidth_hz = 0;
 end
 for trl = 1:nTrl
@@ -2345,10 +2217,8 @@ for trl = 1:nTrl
         continue;
     end
 
-    % Constrained peak search: prioritize 30-90 Hz gamma band with adaptive
-    % prominence threshold, then fall back to in-band maximum when no local
-    % peak is detected (supports spectra entirely below 0 dB).
-    [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use, smooth_n, edge_margin_hz, peak_power_halfwidth_hz);
+    % Peak search over the full 30-90 Hz gamma band.
+    [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use, smooth_n, peak_power_halfwidth_hz);
     if isfinite(peak_hz)
         trl_peaks(trl) = peak_hz;
         trl_peak_power(trl) = peak_power;
@@ -2358,15 +2228,13 @@ for trl = 1:nTrl
     pr_proc_band = pr_proc_full(centroid_band_mask);
     w_pos = max(pr_proc_band, 0);
     pos_mass = sum(w_pos);
-    total_abs_mass = sum(abs(pr_proc_band));
-    if pos_mass > 0 && max(pr_proc_band) >= centroid_min_peak && ...
-            (pos_mass / max(total_abs_mass, eps)) >= centroid_posfrac_min
+    if pos_mass > 0
         trl_centroid(trl) = sum(freq_band .* w_pos) / pos_mass;
     end
 end
 end
 
-function [peak_hz, peak_power] = pick_tallest_peak(y, x, smooth_n, edge_margin_hz, peak_power_halfwidth_hz)
+function [peak_hz, peak_power] = pick_tallest_peak(y, x, smooth_n, peak_power_halfwidth_hz)
 peak_hz = NaN;
 peak_power = NaN;
 y = y(:)';
@@ -2374,23 +2242,14 @@ x = x(:)';
 if nargin < 3 || ~isfinite(smooth_n) || smooth_n < 1
     smooth_n = 1;
 end
-if nargin < 4 || ~isfinite(edge_margin_hz) || edge_margin_hz < 0
-    edge_margin_hz = 0;
-end
-if nargin < 5 || ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
+if nargin < 4 || ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
     peak_power_halfwidth_hz = 0;
 end
 if isempty(y) || numel(y) ~= numel(x)
     return;
 end
 y = movmean(y, max(1, round(smooth_n)), 'omitnan');
-core_lo = 30 + edge_margin_hz;
-core_hi = 90 - edge_margin_hz;
-if core_hi <= core_lo
-    core_lo = 30;
-    core_hi = 90;
-end
-core_mask = x >= core_lo & x <= core_hi & isfinite(y) & isfinite(x);
+core_mask = x >= 30 & x <= 90 & isfinite(y) & isfinite(x);
 if any(core_mask)
     x_use = x(core_mask);
     y_use = y(core_mask);
@@ -2881,7 +2740,7 @@ for k = 1:nCols
     if k <= nShowSel
         ci = sel_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        h_raw = plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
+        plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
         spec_min = min(spec_data(isfinite(spec_data)));
         spec_max = max(spec_data(isfinite(spec_data)));
@@ -2935,7 +2794,7 @@ for k = 1:nCols
     if k <= nShowRej
         ci = rej_idx(k);
         spec_data = searchMeanPrSpectrum(ci, :);
-        h_raw_r = plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
+        plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
         spec_min = min(spec_data(isfinite(spec_data)));
         spec_max = max(spec_data(isfinite(spec_data)));
@@ -2992,9 +2851,7 @@ info_lines = { ...
     sprintf('combined_leak gate: %d (%.2f <= %.2f)', ~get_flag_value(rejection_flags, 'combined_leak', ci), combined_leak_val, max_combined_leak_thr), ...
     sprintf('hf_slope (not gated): %.2f (ref %.2f)', hf_slope_vec(ci), max_hf_slope_thr), ...
     sprintf('emg_score gate: %d (%.2f <= %.2f)', ~get_flag_value(rejection_flags, 'emg_score', ci), emg_score_vec(ci), max_emg_score_thr), ...
-    sprintf('topo_flat gate: %d', ~get_flag_value(rejection_flags, 'topo_flat', ci)), ...
     sprintf('topo_nonposterior gate: %d', ~get_flag_value(rejection_flags, 'topo_nonposterior', ci)), ...
-    sprintf('topo_fragmented gate: %d', ~get_flag_value(rejection_flags, 'topo_fragmented', ci)), ...
     sprintf('lineharm warn: %d (%.2f > %.2f)', lineharm_vec(ci) > max_lineharm_ratio_thr, lineharm_vec(ci), max_lineharm_ratio_thr), ...
     sprintf('front/temp leak: %.2f/%.2f', front_leak_vec(ci), temp_leak_vec(ci))};
 info_viol = [ ...
@@ -3002,9 +2859,7 @@ info_viol = [ ...
     get_flag_value(rejection_flags, 'combined_leak', ci), ...
     get_flag_value(rejection_flags, 'hf_slope', ci), ...
     get_flag_value(rejection_flags, 'emg_score', ci), ...
-    get_flag_value(rejection_flags, 'topo_flat', ci), ...
     get_flag_value(rejection_flags, 'topo_nonposterior', ci), ...
-    get_flag_value(rejection_flags, 'topo_fragmented', ci), ...
     false, ...
     false];
 end
@@ -4015,14 +3870,14 @@ edge_artifact_flag = isfinite(edge_ratio) && (edge_ratio > edge_ratio_limit) && 
     isfinite(edge_run_score) && (edge_run_score > edge_run_limit);
 end
 
-function [outlier_mask, stats] = detect_trial_metric_outliers_iqr(x, iqr_mult, min_trials)
+function [outlier_mask, stats] = detect_trial_metric_outliers_iqr(x, iqr_mult)
 x = x(:);
 outlier_mask = false(size(x));
 stats = struct('n_finite', 0, 'q1', NaN, 'q3', NaN, 'iqr_val', NaN, 'lo', NaN, 'hi', NaN, 'n_outliers', 0);
 valid = isfinite(x);
 n_finite = sum(valid);
 stats.n_finite = n_finite;
-if n_finite < max(3, min_trials)
+if n_finite == 0
     return;
 end
 q = quantile(x(valid), [0.25 0.75]);
@@ -4087,8 +3942,7 @@ end
 end
 
 function reasons = compute_primary_rejection_reason(rejection_flags)
-reason_order = {'combined_leak', 'lineharm', 'emg_score', ...
-    'topo_flat', 'topo_nonposterior', 'topo_fragmented'};
+reason_order = {'combined_leak', 'lineharm', 'emg_score', 'topo_nonposterior'};
 nComp = numel(rejection_flags.combined_leak);
 reasons = repmat({'pass'}, nComp, 1);
 for ci = 1:nComp
@@ -4102,7 +3956,7 @@ for ci = 1:nComp
 end
 end
 
-function proxy = estimate_component_artifact_proxies(filter_w, dat_per_cond, stim_window, base_window, fs, scan_freqs, scan_width, max_trials)
+function proxy = estimate_component_artifact_proxies(filter_w, dat_per_cond, stim_window, base_window, fs, scan_freqs, scan_width)
 proxy = struct( ...
     'lineharm_ratio', NaN, ...
     'stationarity_cv', NaN, ...
@@ -4112,9 +3966,6 @@ proxy = struct( ...
     'n_trials_used', 0);
 if isempty(filter_w) || isempty(dat_per_cond)
     return;
-end
-if nargin < 9 || isempty(max_trials)
-    max_trials = inf;
 end
 
 band_mask = scan_freqs >= 30 & scan_freqs <= 90;
@@ -4129,23 +3980,14 @@ trial_gamma = [];
 trial_pr = [];
 lineharm_acc = [];
 trial_count = 0;
-trial_seen = 0;
 stim_sig_cells = {};
 base_sig_cells = {};
-total_trials_available = 0;
-for ci = 1:numel(dat_per_cond)
-    if ~isempty(dat_per_cond{ci}) && isfield(dat_per_cond{ci}, 'trial')
-        total_trials_available = total_trials_available + numel(dat_per_cond{ci}.trial);
-    end
-end
-total_trials_target = min(total_trials_available, max_trials);
 for cond = 1:numel(dat_per_cond)
     dat = dat_per_cond{cond};
     if isempty(dat) || ~isfield(dat, 'trial')
         continue;
     end
     for trl = 1:numel(dat.trial)
-        trial_seen = trial_seen + 1;
         x = double(dat.trial{trl});
         t = dat.time{trl};
         if isempty(x) || isempty(t)
@@ -4160,12 +4002,6 @@ for cond = 1:numel(dat_per_cond)
         base_sig_cells{end+1, 1} = x_proj(idx_base); %#ok<AGROW>
         stim_sig_cells{end+1, 1} = x_proj(idx_stim); %#ok<AGROW>
         trial_count = trial_count + 1;
-        if trial_count >= max_trials
-            break;
-        end
-    end
-    if trial_count >= max_trials
-        break;
     end
 end
 proxy.n_trials_used = trial_count;
@@ -4229,13 +4065,13 @@ end
 
 end
 
-function bad_mask = flag_unreliable_baseline_trials(base_power_vals, mad_mult, min_trials)
+function bad_mask = flag_unreliable_baseline_trials(base_power_vals, mad_mult)
 bad_mask = false(size(base_power_vals));
 if isempty(base_power_vals)
     return;
 end
 valid = isfinite(base_power_vals) & (base_power_vals > 0);
-if sum(valid) < max(3, min_trials)
+if ~any(valid)
     return;
 end
 logp = log10(base_power_vals(valid));
@@ -4623,7 +4459,7 @@ for ci = 1:size(W, 2)
 end
 end
 
-function [eligible_mask_out, extreme_component_outlier_idx] = exclude_extreme_component_outlier(eigvals_sorted, eligible_mask_in, ratio_thr, mad_mult, min_rest_n)
+function [eligible_mask_out, extreme_component_outlier_idx] = exclude_extreme_component_outlier(eigvals_sorted, eligible_mask_in, ratio_thr, mad_mult)
 eligible_mask_out = logical(eligible_mask_in(:));
 extreme_component_outlier_idx = [];
 if isempty(eigvals_sorted) || isempty(eligible_mask_out)
@@ -4633,9 +4469,6 @@ end
 eigvals_sorted = eigvals_sorted(:);
 if numel(eigvals_sorted) ~= numel(eligible_mask_out)
     return;
-end
-if nargin < 5 || isempty(min_rest_n)
-    min_rest_n = 3;
 end
 
 eligible_idx = find(eligible_mask_out & isfinite(eigvals_sorted) & eigvals_sorted > 0);
@@ -4649,13 +4482,13 @@ top_idx = eligible_ranked_idx(1);
 lambda_top = eigvals_sorted(top_idx);
 lambda_second = eigvals_sorted(eligible_ranked_idx(2));
 rest_vals = eigvals_sorted(eligible_ranked_idx(2:end));
-if numel(rest_vals) < min_rest_n || ~isfinite(lambda_top) || ~isfinite(lambda_second) || lambda_second <= 0
+if isempty(rest_vals) || ~isfinite(lambda_top) || ~isfinite(lambda_second) || lambda_second <= 0
     return;
 end
 
 rest_log = log(rest_vals);
 rest_log = rest_log(isfinite(rest_log));
-if numel(rest_log) < min_rest_n
+if isempty(rest_log)
     return;
 end
 
@@ -4777,7 +4610,7 @@ end
 
 function [median_ci_width, n_pass_cond, n_valid_cond, cond_pass_col, subj_pass, reason_str] = ...
     evaluate_criterion4_reliability_gate(ci_width_row, window_tag, cond_label_cell, ...
-    min_trials_thr, median_max_hz, cond_max_hz, min_pass_cond)
+    median_max_hz, cond_max_hz, min_pass_cond)
 median_ci_width = NaN;
 n_pass_cond = 0;
 n_valid_cond = 0;
@@ -4815,8 +4648,8 @@ if subj_pass
     reason_str = sprintf('%s: PASS: median CI width %.2f Hz; reliable conditions %d/%d.', ...
         window_tag, median_ci_width, n_pass_cond, n_cond);
 elseif n_valid_cond == 0
-    reason_str = sprintf('%s: FAIL: no conditions with enough retained trials (min %d) for bootstrap reliability.', ...
-        window_tag, min_trials_thr);
+    reason_str = sprintf('%s: FAIL: no conditions with retained trials for bootstrap reliability.', ...
+        window_tag);
 elseif ~isfinite(median_ci_width) || median_ci_width > median_max_hz
     reason_str = sprintf(['%s: FAIL: median CI width %.2f Hz exceeds threshold %.2f Hz ', ...
         '(%d reliable conditions).'], ...
@@ -4829,22 +4662,16 @@ end
 end
 
 function [ci_width_hz, ci_low_hz, ci_high_hz, n_boot_valid] = ...
-    compute_bootstrap_peak_precision_from_trials(pr_mat, scan_freqs, smooth_n, edge_margin_hz, n_boot, min_trials, ci_prct)
+    compute_bootstrap_peak_precision_from_trials(pr_mat, scan_freqs, smooth_n, n_boot, ci_prct)
 ci_width_hz = NaN;
 ci_low_hz = NaN;
 ci_high_hz = NaN;
 n_boot_valid = 0;
-if nargin < 7 || isempty(ci_prct) || numel(ci_prct) ~= 2
+if nargin < 5 || isempty(ci_prct) || numel(ci_prct) ~= 2
     ci_prct = [2.5 97.5];
 end
-if nargin < 6 || isempty(min_trials) || ~isfinite(min_trials) || min_trials < 1
-    min_trials = 30;
-end
-if nargin < 5 || isempty(n_boot) || ~isfinite(n_boot) || n_boot < 1
+if nargin < 4 || isempty(n_boot) || ~isfinite(n_boot) || n_boot < 1
     n_boot = 1000;
-end
-if nargin < 4 || ~isfinite(edge_margin_hz) || edge_margin_hz < 0
-    edge_margin_hz = 0;
 end
 if nargin < 3 || ~isfinite(smooth_n) || smooth_n < 1
     smooth_n = 1;
@@ -4855,7 +4682,7 @@ end
 valid_trials = any(isfinite(pr_mat), 2);
 trial_rows = find(valid_trials);
 n_valid_trials = numel(trial_rows);
-if n_valid_trials < min_trials
+if n_valid_trials == 0
     return;
 end
 peak_hz_boot = nan(n_boot, 1);
@@ -4870,7 +4697,7 @@ for bi = 1:n_boot
     end
     boot_avg = mean(boot_mat(boot_use, :), 1, 'omitnan');
     boot_avg = movmean(boot_avg, max(1, round(smooth_n)), 'omitnan');
-    [peak_hz_boot(bi), ~] = pick_tallest_peak(boot_avg, scan_freqs, 1, edge_margin_hz);
+    [peak_hz_boot(bi), ~] = pick_tallest_peak(boot_avg, scan_freqs, 1);
 end
 peak_hz_boot = peak_hz_boot(isfinite(peak_hz_boot));
 n_boot_valid = numel(peak_hz_boot);
@@ -4884,28 +4711,6 @@ end
 ci_low_hz = ci_bounds(1);
 ci_high_hz = ci_bounds(2);
 ci_width_hz = ci_high_hz - ci_low_hz;
-end
-
-function y = smooth_reflective_edges(x, freqs, core_band, core_win, edge_win)
-y = x;
-if isempty(x) || isempty(freqs) || numel(x) ~= numel(freqs)
-    return;
-end
-if nargin < 4 || isempty(core_win)
-    core_win = 5;
-end
-if nargin < 5 || isempty(edge_win)
-    edge_win = 11;
-end
-if nargin < 3 || isempty(core_band) || numel(core_band) ~= 2
-    core_band = [30 90];
-end
-
-y_core = smooth_reflective(x, core_win);
-y_edge = smooth_reflective(x, edge_win);
-edge_mask = freqs < core_band(1) | freqs > core_band(2);
-y(edge_mask) = y_edge(edge_mask);
-y(~edge_mask) = y_core(~edge_mask);
 end
 
 function runtime_str = format_runtime_hhmmss(runtime_seconds)
