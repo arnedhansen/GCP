@@ -4,12 +4,8 @@
 % onset events (L_fixation, R_fixation) as fixations/s, then baseline-
 % normalised as percentage change and plotted with SEM.
 %
-% This script mirrors the microsaccade plotting workflow:
-%   1. Fixation-rate time courses (raw fixations/s)
-%   1b. Percentage-change baseline-corrected fixation rate
-%   2. Raster plots of fixation onsets
-%   3. Combined figure (rate + raster)
-%   3b. Combined figure with percentage-change rate
+% This script outputs percentage-change fixation time courses:
+%   1. Percentage-change baseline-corrected fixation rate
 
 %% Setup
 startup
@@ -22,6 +18,15 @@ nSubj = length(subjects);
 
 %% Parameters
 fsample = 500;          % Hz (updated from data when available)
+merge_tol_ms = 20;      % merge L/R onsets within +/-20 ms to avoid double counting
+
+% Gaussian smoothing kernel for continuous rate estimation
+sigma_ms   = 50;                                     % kernel SD in ms
+sigma_samp = round(sigma_ms / (1000 / fsample));     % SD in samples
+kHalf      = 3 * sigma_samp;
+x_kern     = -kHalf : kHalf;
+gKernel    = exp(-x_kern.^2 / (2 * sigma_samp^2));
+gKernel    = gKernel / sum(gKernel);                 % normalise
 
 % Computation window (wider than display to avoid edge artefacts)
 t_comp     = [-2.0 2.5];                                % seconds
@@ -42,11 +47,6 @@ disp_idx = t_store_vec >= t_win(1) & t_store_vec <= t_win(2);
 n_disp   = sum(disp_idx);
 t_vec    = t_store_vec(disp_idx);
 
-% Raster crop (display window in computation axis)
-[~, raster_crop_start] = min(abs(t_comp_vec - t_win(1)));
-[~, raster_crop_end]   = min(abs(t_comp_vec - t_win(2)));
-raster_crop_idx = raster_crop_start : raster_crop_end;
-
 % Baseline period for percentage-change normalisation
 bl_win = [-1 -0.25];                                     % seconds
 bl_idx = t_store_vec >= bl_win(1) & t_store_vec <= bl_win(2);
@@ -54,22 +54,18 @@ bl_idx = t_store_vec >= bl_win(1) & t_store_vec <= bl_win(2);
 % Plotting
 fontSize = 20;
 
-%% Condition definitions
-condCodes  = {'61', '62', '63', '64'};
-condLabels = {'25% contrast', '50% contrast', '75% contrast', '100% contrast'};
-nConds     = length(condCodes);
+% Condition definitions
+condCodes   = {'61', '62', '63', '64'};
+condLabels  = {'25% contrast', '50% contrast', '75% contrast', '100% contrast'};
+nConds      = length(condCodes);
 
-%% ====================================================================
-%  Process all conditions
-%  ====================================================================
-fprintf('\n=== Processing GCP Fixation Rate Conditions ===\n');
+%% Process all conditions
+fprintf('Processing GCP Fixation Rate Conditions');
 
 % Preallocate: subjects x timepoints (storage window) x conditions
 subjFix = nan(nSubj, n_store, nConds);
-rasterAll = cell(nConds, 1);
 
 for subj = 1:nSubj
-    fprintf('  Subject %d/%d (%s)\n', subj, nSubj, subjects{subj});
     subjMergedPath = fullfile(paths.merged, subjects{subj});
 
     for c = 1:nConds
@@ -78,6 +74,8 @@ for subj = 1:nSubj
         condOnset = [];
 
         for block = 1:4
+            clc
+            fprintf('[GCP Fixations Time Course] Subject %d/%d (%s) Block %d/4 \n', subj, nSubj, subjects{subj}, block);
             mergedFile = fullfile(subjMergedPath, ...
                 sprintf('%s_EEG_ET_GCP_block%d_merged.mat', subjects{subj}, block));
             if ~isfile(mergedFile)
@@ -102,6 +100,7 @@ for subj = 1:nSubj
             fsample = EEG_ep.srate;
             nTrialSamples = EEG_ep.pnts;
             nTrialsBlock = EEG_ep.trials;
+            merge_tol_samp = max(0, round(merge_tol_ms / 1000 * fsample));
 
             if ~all(isfield(EEG_ep.event, {'type', 'latency', 'epoch', 'duration'}))
                 error(['Missing required event fields in %s block %d, cond %s. ' ...
@@ -133,6 +132,7 @@ for subj = 1:nSubj
 
             for trl = 1:nTrialsBlock
                 onsetVec = zeros(1, nTrialSamples);
+                onsetCandidates = [];
 
                 trlMask = [EEG_ep.event.epoch] == trl;
                 trlFixEvents = find(isFixEvent & trlMask);
@@ -148,9 +148,18 @@ for subj = 1:nSubj
                     end
 
                     onsetTrial = mod(round(latencyVal) - 1, nTrialSamples) + 1;
-                    durSamples = round(durationVal);
-                    offsetTrial = min(nTrialSamples, onsetTrial + durSamples - 1); %#ok<NASGU>
-                    onsetVec(onsetTrial) = 1;
+                    onsetCandidates(end+1) = onsetTrial; %#ok<AGROW>
+                end
+
+                if ~isempty(onsetCandidates)
+                    onsetCandidates = sort(onsetCandidates);
+                    keepOnsets = onsetCandidates(1);
+                    for k = 2:numel(onsetCandidates)
+                        if onsetCandidates(k) - keepOnsets(end) > merge_tol_samp
+                            keepOnsets(end+1) = onsetCandidates(k); %#ok<AGROW>
+                        end
+                    end
+                    onsetVec(keepOnsets) = 1;
                 end
 
                 if nTrialSamples >= n_comp
@@ -165,13 +174,10 @@ for subj = 1:nSubj
 
         if size(condOnset, 1) >= 3
             % Mean onset probability per sample -> fixation rate (Hz),
-            % then crop to storage window [-1.5, 2] for baseline/display.
+            % smooth over full computation window, then crop to storage.
             rateComp = mean(condOnset, 1) * fsample;
-            subjFix(subj, :, c) = rateComp(store_idx);
-            if size(condOnset, 2) < max(raster_crop_idx)
-                error('Raster crop exceeds available samples in %s, cond %s.', subjects{subj}, condCode);
-            end
-            rasterAll{c} = [rasterAll{c}; condOnset(:, raster_crop_idx)];
+            smoothed = conv(rateComp, gKernel, 'same');
+            subjFix(subj, :, c) = smoothed(store_idx);
         end
     end
 end
@@ -188,57 +194,14 @@ for subj = 1:nSubj
     end
 end
 
-%% Grand averages — display portion only (for plotting)
-% Raw fixation rate (fixations/s)
-subjFix_disp = subjFix(:, disp_idx, :);
-grandMean = squeeze(nanmean(subjFix_disp, 1));                        % n_disp x nConds
-nValid    = squeeze(sum(~isnan(subjFix_disp(:, 1, :)), 1));           % nConds x 1
-grandSEM  = squeeze(nanstd(subjFix_disp, 0, 1)) ./ sqrt(nValid');     % n_disp x nConds
-
-% Percentage change
+%% Grand averages — display portion only (percentage change)
 subjFix_pct_disp = subjFix_pct(:, disp_idx, :);
 grandMean_pct = squeeze(nanmean(subjFix_pct_disp, 1));                          % n_disp x nConds
 nValid_pct    = squeeze(sum(~isnan(subjFix_pct_disp(:, 1, :)), 1));             % nConds x 1
 grandSEM_pct  = squeeze(nanstd(subjFix_pct_disp, 0, 1)) ./ sqrt(nValid_pct');   % n_disp x nConds
 
-%% ================================================================
-%  FIGURE 1: Fixation Rate Time Courses per Condition (raw fixations/s)
-%  ================================================================
-close all
-figure('Position', [0 0 1512 982], 'Color', 'w');
-hold on
-
-for c = 1:nConds
-    mu  = grandMean(:, c);
-    sem = grandSEM(:, c);
-
-    fill([t_vec, fliplr(t_vec)], ...
-         [(mu + sem)', fliplr((mu - sem)')], ...
-         colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-         'HandleVisibility', 'off');
-
-    plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
-end
-
-xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
-xlim(t_win);
-xlabel('Time [s]');
-ylabel('Fixations/s');
-title('Fixation Rate Time Course');
-leg_p = gobjects(nConds, 1);
-for c = 1:nConds
-    leg_p(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
-end
-legend(leg_p, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
-set(gca, 'FontSize', fontSize);
-hold off
-
-exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_fixations_rate.png'), 'Resolution', 600);
-
-%% ================================================================
-%  FIGURE 1b: Baseline-Relative Fixation Rate (% change)
-%  ================================================================
-figure('Position', [0 0 1512 982], 'Color', 'w');
+%% FIGURE Fixation Rate (% change)
+close all; figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on
 
 for c = 1:nConds
@@ -258,7 +221,6 @@ yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
 xlim(t_win);
 xlabel('Time [s]');
 ylabel('Fixations [%]');
-title('Fixation Rate Time Course');
 leg_p_pct = gobjects(nConds, 1);
 for c = 1:nConds
     leg_p_pct(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
@@ -268,187 +230,5 @@ set(gca, 'FontSize', fontSize);
 hold off
 
 exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_fixations_rate_pct.png'), 'Resolution', 600);
-
-%% ================================================================
-%  FIGURE 2: Raster Plots of Fixation Onsets
-%  ================================================================
-figure('Position', [0 0 1512 982], 'Color', 'w');
-
-for c = 1:nConds
-    subplot(1, nConds, c);
-    hold on
-
-    raster = rasterAll{c};
-    if isempty(raster)
-        title(condLabels{c}, 'FontSize', fontSize);
-        continue
-    end
-
-    nR = size(raster, 1);
-
-    maxShow = 300;
-    if nR > maxShow
-        rIdx = sort(randperm(nR, maxShow));
-        raster = raster(rIdx, :);
-        nR = maxShow;
-    end
-
-    nSampPlot = min(size(raster, 2), n_disp);
-    [trialIdx, sampleIdx] = find(raster(:, 1:nSampPlot));
-    if ~isempty(trialIdx)
-        plot(t_vec(sampleIdx), trialIdx, '.', ...
-            'Color', colors(c, :), 'MarkerSize', 12);
-    end
-
-    xline(0, 'k--', 'LineWidth', 1.5);
-    xlim(t_win);
-    ylim([0 nR + 1]);
-    xlabel('Time [s]');
-    if c == 1; ylabel('Trial'); end
-    title(condLabels{c}, 'FontSize', fontSize);
-    set(gca, 'FontSize', fontSize - 4, 'YDir', 'reverse');
-    hold off
-end
-
-sgtitle('Fixation Onset Raster', 'FontSize', fontSize + 2);
-
-exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_fixations_onset_raster.png'), 'Resolution', 600);
-
-%% ================================================================
-%  FIGURE 3: Combined (Fixation Rate + Raster)
-%  ================================================================
-figure('Position', [0 0 1512 982], 'Color', 'w');
-
-% --- Top panel: Fixation rate ---
-ax1 = subplot(2, 1, 1);
-hold on
-for c = 1:nConds
-    mu  = grandMean(:, c);
-    sem = grandSEM(:, c);
-    fill([t_vec, fliplr(t_vec)], ...
-         [(mu + sem)', fliplr((mu - sem)')], ...
-         colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-         'HandleVisibility', 'off');
-    plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
-end
-xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
-xlim(t_win);
-ylabel('Fixations/s');
-title('Fixation Dynamics');
-leg_p_comb = gobjects(nConds, 1);
-for c = 1:nConds
-    leg_p_comb(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
-end
-legend(leg_p_comb, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
-set(gca, 'FontSize', fontSize, 'XTickLabel', []);
-hold off
-
-% --- Bottom panel: Raster grouped by condition ---
-ax2 = subplot(2, 1, 2);
-hold on
-yOff      = 0;
-yTicks    = [];
-yTickLbls = {};
-
-for c = 1:nConds
-    raster = rasterAll{c};
-    if isempty(raster); continue; end
-
-    nR = min(size(raster, 1), 100);
-    raster = raster(1:nR, :);
-
-    nSampPlot = min(size(raster, 2), n_disp);
-    [trialIdx, sampleIdx] = find(raster(:, 1:nSampPlot));
-    if ~isempty(trialIdx)
-        plot(t_vec(sampleIdx), trialIdx + yOff, '.', ...
-            'Color', colors(c, :), 'MarkerSize', 12);
-    end
-
-    yTicks(end+1)    = yOff + nR / 2;
-    yTickLbls{end+1} = condLabels{c};
-    yOff = yOff + nR + 5;
-end
-
-xline(0, 'k--', 'LineWidth', 1.5);
-xlim(t_win);
-ylim([0 yOff]);
-xlabel('Time [s]');
-ylabel('Trials');
-set(gca, 'FontSize', fontSize, 'YDir', 'reverse', ...
-    'YTick', yTicks, 'YTickLabel', yTickLbls);
-hold off
-
-linkaxes([ax1, ax2], 'x');
-
-exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_fixations_combined.png'), 'Resolution', 600);
-
-%% ================================================================
-%  FIGURE 3b: Combined Baseline-Relative Fixation Rate (% change) + Raster
-%  ================================================================
-figure('Position', [0 0 1512 982], 'Color', 'w');
-
-% --- Top panel: Percentage-change fixation rate ---
-ax1p = subplot(2, 1, 1);
-hold on
-for c = 1:nConds
-    mu  = grandMean_pct(:, c);
-    sem = grandSEM_pct(:, c);
-    fill([t_vec, fliplr(t_vec)], ...
-         [(mu + sem)', fliplr((mu - sem)')], ...
-         colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-         'HandleVisibility', 'off');
-    plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
-end
-xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
-yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
-xlim(t_win);
-ylabel('Fixations [%]');
-title('Fixation Dynamics');
-leg_p_comb_pct = gobjects(nConds, 1);
-for c = 1:nConds
-    leg_p_comb_pct(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
-end
-legend(leg_p_comb_pct, condLabels, 'Location', 'southeast', 'FontSize', fontSize - 4, 'Box', 'off');
-set(gca, 'FontSize', fontSize, 'XTickLabel', []);
-hold off
-
-% --- Bottom panel: Raster grouped by condition ---
-ax2p = subplot(2, 1, 2);
-hold on
-yOff      = 0;
-yTicks    = [];
-yTickLbls = {};
-
-for c = 1:nConds
-    raster = rasterAll{c};
-    if isempty(raster); continue; end
-
-    nR = min(size(raster, 1), 100);
-    raster = raster(1:nR, :);
-
-    nSampPlot = min(size(raster, 2), n_disp);
-    [trialIdx, sampleIdx] = find(raster(:, 1:nSampPlot));
-    if ~isempty(trialIdx)
-        plot(t_vec(sampleIdx), trialIdx + yOff, '.', ...
-            'Color', colors(c, :), 'MarkerSize', 12);
-    end
-
-    yTicks(end+1)    = yOff + nR / 2;
-    yTickLbls{end+1} = condLabels{c};
-    yOff = yOff + nR + 5;
-end
-
-xline(0, 'k--', 'LineWidth', 1.5);
-xlim(t_win);
-ylim([0 yOff]);
-xlabel('Time [s]');
-ylabel('Trials');
-set(gca, 'FontSize', fontSize, 'YDir', 'reverse', ...
-    'YTick', yTicks, 'YTickLabel', yTickLbls);
-hold off
-
-linkaxes([ax1p, ax2p], 'x');
-
-exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_fixations_combined_pct.png'), 'Resolution', 600);
 
 fprintf('\n=== All fixation figures saved to %s ===\n', figpath);
