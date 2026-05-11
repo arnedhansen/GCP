@@ -2,13 +2,8 @@
 
 %% Setup
 startup
-clear
-addEEGLab
-[subjects, paths] = setup('GCP', 0);
+[subjects, paths] = setup('GCP');
 mergedPath = paths.merged;
-dirs = dir(mergedPath);
-folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
-subjects = {folders.name};
 
 %% Read data, segment and convert to FieldTrip data structure
 for subj = 1:length(subjects)
@@ -33,7 +28,10 @@ for subj = 1:length(subjects)
         %% Segment data into epochs -2s before and 3.5s after stim onset and
         %  convert to Fieldtrip data structure AND extract gaze metrics from raw EEG data
         epoch_window = [-2 3.5];
+        baseline_window = [-1.5 -0.25];
         analysis_window = [0.3 2]; % Analysis window for eye metric extraction
+        analysis_duration = diff(analysis_window);
+        baseline_duration = diff(baseline_window);
         for block = 1:4
             % 51 = PRESENTATION_C25_TASK    (Trigger for presentation of 25% contrast concentric dynamic inward grating WITH button press response)
             % 52 = PRESENTATION_C50_TASK    (Trigger for presentation of 50% contrast concentric dynamic inward grating WITH button press response)
@@ -52,10 +50,14 @@ for subj = 1:length(subjects)
                 % 25% contrast gaze metrics extraction
                 c25_gaze_metrics = pop_epoch(alleeg{block}, {'61'}, analysis_window);
                 c25_trl(block) = c25_gaze_metrics.trials;
+                c25_gaze_baseline = pop_epoch(alleeg{block}, {'61'}, baseline_window);
+                c25_bl_trl(block) = c25_gaze_baseline.trials;
                 % Extract blink timepoints
                 blink_times = [c25_gaze_metrics.event(strcmp({c25_gaze_metrics.event.type}, 'L_blink') | strcmp({c25_gaze_metrics.event.type}, 'R_blink')).latency];
+                blink_times_bl = [c25_gaze_baseline.event(strcmp({c25_gaze_baseline.event.type}, 'L_blink') | strcmp({c25_gaze_baseline.event.type}, 'R_blink')).latency];
                 % Extract saccades timepoints
                 saccade_events = c25_gaze_metrics.event(strcmp({c25_gaze_metrics.event.type}, 'L_saccade') | strcmp({c25_gaze_metrics.event.type}, 'R_saccade'));
+                saccade_events_bl = c25_gaze_baseline.event(strcmp({c25_gaze_baseline.event.type}, 'L_saccade') | strcmp({c25_gaze_baseline.event.type}, 'R_saccade'));
 
                 % Exclude saccades around blinks
                 valid_saccades = 0;
@@ -67,11 +69,22 @@ for subj = 1:length(subjects)
                         valid_saccades = valid_saccades + 1;
                     end
                 end
+                valid_saccades_bl = 0;
+                for s = 1:length(saccade_events_bl)
+                    saccade_time = saccade_events_bl(s).latency;
+                    near_blink = any(abs(saccade_time - blink_times_bl) <= 50); % 50 samples = 100 ms
+                    if ~near_blink
+                        valid_saccades_bl = valid_saccades_bl + 1;
+                    end
+                end
 
                 % Count 25% contrast gaze metrics
                 c25_sacc(block) = valid_saccades;
                 c25_fix(block) = sum(ismember({c25_gaze_metrics.event.type}, {'L_fixation', 'R_fixation'}));
                 c25_blink(block) = numel(blink_times);
+                c25_bl_sacc(block) = valid_saccades_bl;
+                c25_bl_fix(block) = sum(ismember({c25_gaze_baseline.event.type}, {'L_fixation', 'R_fixation'}));
+                c25_bl_blink(block) = numel(blink_times_bl);
 
                 %% Segment 50% contrast data
                 % 50% contrast EEG data (trigger = 62)
@@ -81,12 +94,16 @@ for subj = 1:length(subjects)
                 % 50% contrast gaze metrics extraction
                 c50_gaze_metrics = pop_epoch(alleeg{block}, {'62'}, analysis_window);
                 c50_trl(block) = c50_gaze_metrics.trials;
+                c50_gaze_baseline = pop_epoch(alleeg{block}, {'62'}, baseline_window);
+                c50_bl_trl(block) = c50_gaze_baseline.trials;
 
                 % Extract blink timepoints
                 blink_times = [c50_gaze_metrics.event(strcmp({c50_gaze_metrics.event.type}, 'L_blink') | strcmp({c50_gaze_metrics.event.type}, 'R_blink')).latency];
+                blink_times_bl = [c50_gaze_baseline.event(strcmp({c50_gaze_baseline.event.type}, 'L_blink') | strcmp({c50_gaze_baseline.event.type}, 'R_blink')).latency];
 
                 % Extract saccades timepoints
                 saccade_events = c50_gaze_metrics.event(strcmp({c50_gaze_metrics.event.type}, 'L_saccade') | strcmp({c50_gaze_metrics.event.type}, 'R_saccade'));
+                saccade_events_bl = c50_gaze_baseline.event(strcmp({c50_gaze_baseline.event.type}, 'L_saccade') | strcmp({c50_gaze_baseline.event.type}, 'R_saccade'));
 
                 % Exclude saccades around blinks
                 valid_saccades = 0;
@@ -98,11 +115,22 @@ for subj = 1:length(subjects)
                         valid_saccades = valid_saccades + 1;
                     end
                 end
+                valid_saccades_bl = 0;
+                for s = 1:length(saccade_events_bl)
+                    saccade_time = saccade_events_bl(s).latency;
+                    near_blink = any(abs(saccade_time - blink_times_bl) <= 50); % 50 samples = 100 ms
+                    if ~near_blink
+                        valid_saccades_bl = valid_saccades_bl + 1;
+                    end
+                end
 
                 % Count 50% contrast gaze metrics
                 c50_sacc(block) = valid_saccades;
                 c50_fix(block) = sum(ismember({c50_gaze_metrics.event.type}, {'L_fixation', 'R_fixation'}));
                 c50_blink(block) = numel(blink_times);
+                c50_bl_sacc(block) = valid_saccades_bl;
+                c50_bl_fix(block) = sum(ismember({c50_gaze_baseline.event.type}, {'L_fixation', 'R_fixation'}));
+                c50_bl_blink(block) = numel(blink_times_bl);
 
                 %% Segment 75% contrast data
                 % 75% contrast EEG data (trigger = 63)
@@ -112,12 +140,16 @@ for subj = 1:length(subjects)
                 % 75% contrast gaze metrics extraction
                 c75_gaze_metrics = pop_epoch(alleeg{block}, {'63'}, analysis_window);
                 c75_trl(block) = c75_gaze_metrics.trials;
+                c75_gaze_baseline = pop_epoch(alleeg{block}, {'63'}, baseline_window);
+                c75_bl_trl(block) = c75_gaze_baseline.trials;
 
                 % Extract blink timepoints
                 blink_times = [c75_gaze_metrics.event(strcmp({c75_gaze_metrics.event.type}, 'L_blink') | strcmp({c75_gaze_metrics.event.type}, 'R_blink')).latency];
+                blink_times_bl = [c75_gaze_baseline.event(strcmp({c75_gaze_baseline.event.type}, 'L_blink') | strcmp({c75_gaze_baseline.event.type}, 'R_blink')).latency];
 
                 % Extract saccades timepoints
                 saccade_events = c75_gaze_metrics.event(strcmp({c75_gaze_metrics.event.type}, 'L_saccade') | strcmp({c75_gaze_metrics.event.type}, 'R_saccade'));
+                saccade_events_bl = c75_gaze_baseline.event(strcmp({c75_gaze_baseline.event.type}, 'L_saccade') | strcmp({c75_gaze_baseline.event.type}, 'R_saccade'));
 
                 % Exclude saccades around blinks
                 valid_saccades = 0;
@@ -129,11 +161,22 @@ for subj = 1:length(subjects)
                         valid_saccades = valid_saccades + 1;
                     end
                 end
+                valid_saccades_bl = 0;
+                for s = 1:length(saccade_events_bl)
+                    saccade_time = saccade_events_bl(s).latency;
+                    near_blink = any(abs(saccade_time - blink_times_bl) <= 50); % 50 samples = 100 ms
+                    if ~near_blink
+                        valid_saccades_bl = valid_saccades_bl + 1;
+                    end
+                end
 
                 % Count 75% contrast gaze metrics
                 c75_sacc(block) = valid_saccades;
                 c75_fix(block) = sum(ismember({c75_gaze_metrics.event.type}, {'L_fixation', 'R_fixation'}));
                 c75_blink(block) = numel(blink_times);
+                c75_bl_sacc(block) = valid_saccades_bl;
+                c75_bl_fix(block) = sum(ismember({c75_gaze_baseline.event.type}, {'L_fixation', 'R_fixation'}));
+                c75_bl_blink(block) = numel(blink_times_bl);
 
                 %% Segment 100% contrast data
                 % 100% contrast EEG data (trigger = 64)
@@ -143,12 +186,16 @@ for subj = 1:length(subjects)
                 % 100% contrast gaze metrics extraction
                 c100_gaze_metrics = pop_epoch(alleeg{block}, {'64'}, analysis_window);
                 c100_trl(block) = c100_gaze_metrics.trials;
+                c100_gaze_baseline = pop_epoch(alleeg{block}, {'64'}, baseline_window);
+                c100_bl_trl(block) = c100_gaze_baseline.trials;
 
                 % Extract blink timepoints
                 blink_times = [c100_gaze_metrics.event(strcmp({c100_gaze_metrics.event.type}, 'L_blink') | strcmp({c100_gaze_metrics.event.type}, 'R_blink')).latency];
+                blink_times_bl = [c100_gaze_baseline.event(strcmp({c100_gaze_baseline.event.type}, 'L_blink') | strcmp({c100_gaze_baseline.event.type}, 'R_blink')).latency];
 
                 % Extract saccades timepoints
                 saccade_events = c100_gaze_metrics.event(strcmp({c100_gaze_metrics.event.type}, 'L_saccade') | strcmp({c100_gaze_metrics.event.type}, 'R_saccade'));
+                saccade_events_bl = c100_gaze_baseline.event(strcmp({c100_gaze_baseline.event.type}, 'L_saccade') | strcmp({c100_gaze_baseline.event.type}, 'R_saccade'));
 
                 % Exclude saccades around blinks
                 valid_saccades = 0;
@@ -160,11 +207,22 @@ for subj = 1:length(subjects)
                         valid_saccades = valid_saccades + 1;
                     end
                 end
+                valid_saccades_bl = 0;
+                for s = 1:length(saccade_events_bl)
+                    saccade_time = saccade_events_bl(s).latency;
+                    near_blink = any(abs(saccade_time - blink_times_bl) <= 50); % 50 samples = 100 ms
+                    if ~near_blink
+                        valid_saccades_bl = valid_saccades_bl + 1;
+                    end
+                end
 
                 % Count high contrast gaze metrics
                 c100_sacc(block) = valid_saccades;
                 c100_fix(block) = sum(ismember({c100_gaze_metrics.event.type}, {'L_fixation', 'R_fixation'}));
                 c100_blink(block) = numel(blink_times);
+                c100_bl_sacc(block) = valid_saccades_bl;
+                c100_bl_fix(block) = sum(ismember({c100_gaze_baseline.event.type}, {'L_fixation', 'R_fixation'}));
+                c100_bl_blink(block) = numel(blink_times_bl);
             catch ME
                 ME.message
                 disp(['ERROR segmenting Block ' num2str(block) '!'])
@@ -178,10 +236,10 @@ for subj = 1:length(subjects)
         data_c100 = data_c100(~cellfun('isempty', data_c100));
 
         %% Equalize labels
-        update_labels(data_c25);
-        update_labels(data_c50);
-        update_labels(data_c75);
-        update_labels(data_c100);
+        data_c25 = update_labels(data_c25);
+        data_c50 = update_labels(data_c50);
+        data_c75 = update_labels(data_c75);
+        data_c100 = update_labels(data_c100);
 
         %% Add trialinfo
         for block = 1:4
@@ -231,24 +289,55 @@ for subj = 1:length(subjects)
 
         %% Compute gaze metric data
         % 25% contrast gaze metrics average across trials
-        c25_saccades = sum(c25_sacc(:)) / sum(c25_trl(:));
-        c25_fixations = sum(c25_fix(:)) / sum(c25_trl(:));
-        c25_blinks = sum(c25_blink(:)) / sum(c25_trl(:));
+        c25_saccades = sum(c25_sacc(:)) / (sum(c25_trl(:)) * analysis_duration);
+        c25_fixations = sum(c25_fix(:)) / (sum(c25_trl(:)) * analysis_duration);
+        c25_blinks = sum(c25_blink(:)) / (sum(c25_trl(:)) * analysis_duration);
+        c25_bl_saccades = sum(c25_bl_sacc(:)) / (sum(c25_bl_trl(:)) * baseline_duration);
+        c25_bl_fixations = sum(c25_bl_fix(:)) / (sum(c25_bl_trl(:)) * baseline_duration);
+        c25_bl_blinks = sum(c25_bl_blink(:)) / (sum(c25_bl_trl(:)) * baseline_duration);
 
         % 50% contrast gaze metrics average across trials
-        c50_saccades = sum(c50_sacc(:)) / sum(c50_trl(:));
-        c50_fixations = sum(c50_fix(:)) / sum(c50_trl(:));
-        c50_blinks = sum(c50_blink(:)) / sum(c50_trl(:));
+        c50_saccades = sum(c50_sacc(:)) / (sum(c50_trl(:)) * analysis_duration);
+        c50_fixations = sum(c50_fix(:)) / (sum(c50_trl(:)) * analysis_duration);
+        c50_blinks = sum(c50_blink(:)) / (sum(c50_trl(:)) * analysis_duration);
+        c50_bl_saccades = sum(c50_bl_sacc(:)) / (sum(c50_bl_trl(:)) * baseline_duration);
+        c50_bl_fixations = sum(c50_bl_fix(:)) / (sum(c50_bl_trl(:)) * baseline_duration);
+        c50_bl_blinks = sum(c50_bl_blink(:)) / (sum(c50_bl_trl(:)) * baseline_duration);
 
         % 75% contrast gaze metrics average across trials
-        c75_saccades = sum(c75_sacc(:)) / sum(c75_trl(:));
-        c75_fixations = sum(c75_fix(:)) / sum(c75_trl(:));
-        c75_blinks = sum(c75_blink(:)) / sum(c75_trl(:));
+        c75_saccades = sum(c75_sacc(:)) / (sum(c75_trl(:)) * analysis_duration);
+        c75_fixations = sum(c75_fix(:)) / (sum(c75_trl(:)) * analysis_duration);
+        c75_blinks = sum(c75_blink(:)) / (sum(c75_trl(:)) * analysis_duration);
+        c75_bl_saccades = sum(c75_bl_sacc(:)) / (sum(c75_bl_trl(:)) * baseline_duration);
+        c75_bl_fixations = sum(c75_bl_fix(:)) / (sum(c75_bl_trl(:)) * baseline_duration);
+        c75_bl_blinks = sum(c75_bl_blink(:)) / (sum(c75_bl_trl(:)) * baseline_duration);
 
         % 100% contrast gaze metrics average across trials
-        c100_saccades = sum(c100_sacc(:)) / sum(c100_trl(:));
-        c100_fixations = sum(c100_fix(:)) / sum(c100_trl(:));
-        c100_blinks = sum(c100_blink(:)) / sum(c100_trl(:));
+        c100_saccades = sum(c100_sacc(:)) / (sum(c100_trl(:)) * analysis_duration);
+        c100_fixations = sum(c100_fix(:)) / (sum(c100_trl(:)) * analysis_duration);
+        c100_blinks = sum(c100_blink(:)) / (sum(c100_trl(:)) * analysis_duration);
+        c100_bl_saccades = sum(c100_bl_sacc(:)) / (sum(c100_bl_trl(:)) * baseline_duration);
+        c100_bl_fixations = sum(c100_bl_fix(:)) / (sum(c100_bl_trl(:)) * baseline_duration);
+        c100_bl_blinks = sum(c100_bl_blink(:)) / (sum(c100_bl_trl(:)) * baseline_duration);
+
+        c25_pct_saccades = nan; c50_pct_saccades = nan; c75_pct_saccades = nan; c100_pct_saccades = nan;
+        c25_pct_fixations = nan; c50_pct_fixations = nan; c75_pct_fixations = nan; c100_pct_fixations = nan;
+        c25_pct_blinks = nan; c50_pct_blinks = nan; c75_pct_blinks = nan; c100_pct_blinks = nan;
+
+        if isfinite(c25_bl_saccades) && c25_bl_saccades > 0, c25_pct_saccades = (c25_saccades / c25_bl_saccades - 1) * 100; end
+        if isfinite(c50_bl_saccades) && c50_bl_saccades > 0, c50_pct_saccades = (c50_saccades / c50_bl_saccades - 1) * 100; end
+        if isfinite(c75_bl_saccades) && c75_bl_saccades > 0, c75_pct_saccades = (c75_saccades / c75_bl_saccades - 1) * 100; end
+        if isfinite(c100_bl_saccades) && c100_bl_saccades > 0, c100_pct_saccades = (c100_saccades / c100_bl_saccades - 1) * 100; end
+
+        if isfinite(c25_bl_fixations) && c25_bl_fixations > 0, c25_pct_fixations = (c25_fixations / c25_bl_fixations - 1) * 100; end
+        if isfinite(c50_bl_fixations) && c50_bl_fixations > 0, c50_pct_fixations = (c50_fixations / c50_bl_fixations - 1) * 100; end
+        if isfinite(c75_bl_fixations) && c75_bl_fixations > 0, c75_pct_fixations = (c75_fixations / c75_bl_fixations - 1) * 100; end
+        if isfinite(c100_bl_fixations) && c100_bl_fixations > 0, c100_pct_fixations = (c100_fixations / c100_bl_fixations - 1) * 100; end
+
+        if isfinite(c25_bl_blinks) && c25_bl_blinks > 0, c25_pct_blinks = (c25_blinks / c25_bl_blinks - 1) * 100; end
+        if isfinite(c50_bl_blinks) && c50_bl_blinks > 0, c50_pct_blinks = (c50_blinks / c50_bl_blinks - 1) * 100; end
+        if isfinite(c75_bl_blinks) && c75_bl_blinks > 0, c75_pct_blinks = (c75_blinks / c75_bl_blinks - 1) * 100; end
+        if isfinite(c100_bl_blinks) && c100_bl_blinks > 0, c100_pct_blinks = (c100_blinks / c100_bl_blinks - 1) * 100; end
 
         %% Save data
         savepath = fullfile(paths.features, subjects{subj}, 'eeg');
@@ -262,7 +351,15 @@ for subj = 1:length(subjects)
         save gaze_metrics c25_saccades c25_fixations c25_blinks ...
             c50_saccades c50_fixations c50_blinks ...
             c75_saccades c75_fixations c75_blinks ...
-            c100_saccades c100_fixations c100_blinks
+            c100_saccades c100_fixations c100_blinks ...
+            c25_bl_saccades c25_bl_fixations c25_bl_blinks ...
+            c50_bl_saccades c50_bl_fixations c50_bl_blinks ...
+            c75_bl_saccades c75_bl_fixations c75_bl_blinks ...
+            c100_bl_saccades c100_bl_fixations c100_bl_blinks ...
+            c25_pct_saccades c25_pct_fixations c25_pct_blinks ...
+            c50_pct_saccades c50_pct_fixations c50_pct_blinks ...
+            c75_pct_saccades c75_pct_fixations c75_pct_blinks ...
+            c100_pct_saccades c100_pct_fixations c100_pct_blinks
         clc
         if subj == length(subjects)
             disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. PREPROCESSING FINALIZED.'])

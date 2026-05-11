@@ -122,9 +122,12 @@ fprintf('Rows merged: %d\n', n_merge);
 %% Save outputs with GCP_ prefix
 GCP_merged_table_trials = T_merge; %#ok<NASGU>
 GCP_merged_data_trials = table2struct(T_merge); %#ok<NASGU>
+merged_table_trials = T_merge; %#ok<NASGU>
+merged_data_trials = GCP_merged_data_trials; %#ok<NASGU>
 
 save(fullfile(features_root, 'GCP_merged_data_trials.mat'), ...
-    'GCP_merged_data_trials', 'GCP_merged_table_trials');
+    'GCP_merged_data_trials', 'GCP_merged_table_trials', ...
+    'merged_data_trials', 'merged_table_trials');
 writetable(T_merge, fullfile(features_root, 'GCP_merged_data_trials.csv'));
 
 fprintf('Saved:\n');
