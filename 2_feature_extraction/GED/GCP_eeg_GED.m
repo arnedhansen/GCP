@@ -66,9 +66,9 @@ if ~exist(gcp_feature_data_path, 'dir')
     gcp_feature_data_path = gcp_root_path;
 end
 fig_save_dir_ged = fullfile(paths.figures, 'eeg', 'ged');
-fig_save_dir_component_selection = fullfile(fig_save_dir_ged, 'component_selection');
+fig_save_dir_component_selection_base = fullfile(fig_save_dir_ged, 'component_selection');
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
-if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
+if ~exist(fig_save_dir_component_selection_base, 'dir'), mkdir(fig_save_dir_component_selection_base); end
 
 %% Preallocate storage
 trials_powratio     = cell(4, nSubj);
@@ -177,7 +177,7 @@ subject_reliability_reason_late = repmat({''}, 1, nSubj);
 %% Subject loop
 for subj = 1:nSubj
     subj_runtime_tic = tic;
-    fig_save_dir_component_selection = fullfile(fig_save_dir_component_selection, subjects{subj});
+    fig_save_dir_component_selection = fullfile(fig_save_dir_component_selection_base, subjects{subj});
     if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
     datapath = fullfile(gcp_feature_data_path, subjects{subj}, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
@@ -201,6 +201,7 @@ for subj = 1:nSubj
     n_freq_calls_est = 3 * nSearch_plan + 3; % 3 windows of proxy spectra + up to 3 trial-scan batches
     ged_freq_progress_reset(subjects{subj}, subj, nSubj, n_freq_calls_est);
 
+    % Find channels
     occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|PPO|P10|P9)', 'once')), dataEEG_c25.label);
     occ_idx  = find(occ_mask);
     nOcc     = length(occ_idx);
@@ -291,7 +292,7 @@ for subj = 1:nSubj
     covStim_late  = covStim_late / nTrials_total;
     covBase_full  = covBase_full / nTrials_total;
 
-    % Covariances per window (for loop below)
+    % Covariances per window
     covStim_per_win = {covStim_full, covStim_early, covStim_late};
     plot_covariance_matrix_diagnostics( ...
         fig_save_dir_component_selection, subjects{subj}, dataEEG_c25.label, ...
@@ -727,8 +728,6 @@ for subj = 1:nSubj
         else
             all_component_selection_stats_late{subj} = comp_sel_struct;
         end
-
-        % EMG exclusion diagnostics are generated after all windows are processed.
     end
 
     W_combined_full = searchFilters_full(:, selected_idx_full);
@@ -2273,10 +2272,10 @@ for trl = 1:nTrl
     comp_base = search_filters' * x_base;
     comp_stim = search_filters' * x_stim;
     for ci = 1:nComp
-        sig_base_cells{end+1, 1} = comp_base(ci, :); %#ok<AGROW>
-        sig_stim_cells{end+1, 1} = comp_stim(ci, :); %#ok<AGROW>
-        row_comp_idx(end+1, 1) = ci; %#ok<AGROW>
-        row_trial_idx(end+1, 1) = trl; %#ok<AGROW>
+        sig_base_cells{end+1, 1} = comp_base(ci, :);
+        sig_stim_cells{end+1, 1} = comp_stim(ci, :);
+        row_comp_idx(end+1, 1) = ci;
+        row_trial_idx(end+1, 1) = trl;
     end
 end
 if isempty(sig_stim_cells)
@@ -2803,7 +2802,7 @@ for pi = 1:nMatCols
     for wi = 1:nWins
         mat_vals = abs(all_mats{wi, pi}(:));
         mat_vals = mat_vals(isfinite(mat_vals));
-        col_vals = [col_vals; mat_vals]; %#ok<AGROW>
+        col_vals = [col_vals; mat_vals];
     end
     if ~isempty(col_vals)
         clim = prctile(col_vals, 99);
@@ -3820,8 +3819,8 @@ for cond = 1:numel(dat_per_cond)
         if sum(idx_base) < 5 || sum(idx_stim) < 5
             continue;
         end
-        base_sig_cells{end+1, 1} = x_proj(idx_base); %#ok<AGROW>
-        stim_sig_cells{end+1, 1} = x_proj(idx_stim); %#ok<AGROW>
+        base_sig_cells{end+1, 1} = x_proj(idx_base);
+        stim_sig_cells{end+1, 1} = x_proj(idx_stim);
         trial_count = trial_count + 1;
     end
 end
@@ -3851,8 +3850,8 @@ for ri = 1:size(trial_pr, 1)
     if ~isfinite(nonharm_val) || abs(nonharm_val) <= eps || ~isfinite(harm_val)
         continue;
     end
-    trial_gamma(end+1, 1) = nanmean(pr_band); %#ok<AGROW>
-    lineharm_acc(end+1, 1) = max(harm_val, 0) / max(abs(nonharm_val), eps); %#ok<AGROW>
+    trial_gamma(end+1, 1) = nanmean(pr_band);
+    lineharm_acc(end+1, 1) = max(harm_val, 0) / max(abs(nonharm_val), eps);
 end
 if isempty(trial_gamma) || isempty(lineharm_acc)
     return;
@@ -4022,8 +4021,8 @@ for si = 1:nSig
     end
     x = x - mean(x);
     valid_rows(si) = true;
-    dat.trial{end+1} = x; %#ok<AGROW>
-    dat.time{end+1} = (0:(numel(x)-1)) / fs; %#ok<AGROW>
+    dat.trial{end+1} = x;
+    dat.time{end+1} = (0:(numel(x)-1)) / fs;
 end
 if ~any(valid_rows)
     return;
@@ -4195,9 +4194,9 @@ for trl = 1:nTrl
     if isempty(x_base) || isempty(x_stim)
         continue;
     end
-    sig_base_cells{end+1, 1} = (filter_vec' * x_base); %#ok<AGROW>
-    sig_stim_cells{end+1, 1} = (filter_vec' * x_stim); %#ok<AGROW>
-    row_trial_idx(end+1, 1) = trl; %#ok<AGROW>
+    sig_base_cells{end+1, 1} = (filter_vec' * x_base);
+    sig_stim_cells{end+1, 1} = (filter_vec' * x_stim);
+    row_trial_idx(end+1, 1) = trl;
 end
 if isempty(sig_stim_cells)
     return;
