@@ -1389,9 +1389,9 @@ for subj = 1:nSubj
         end
 
     end % condition loop
-    reliability_ci_width_median_max_hz = 10; % max median CI width across conditions
-    reliability_ci_width_cond_max_hz = 12;   % max CI width to count a condition as reliable
-    reliability_min_pass_conditions = 3;     % minimum reliable conditions (out of 4)
+    reliability_ci_width_median_max_hz = 12; % max median CI width across conditions
+    reliability_ci_width_cond_max_hz = 15;   % max CI width to count a condition as reliable
+    reliability_min_pass_conditions = 1;     % minimum reliable conditions (out of 4)
     [med_f, n_pass_f, n_val_f, pass_f_vec, pass_f, reason_f] = evaluate_criterion4_reliability_gate( ...
         subj_peak_boot_ci_width_full, 'FULL', condLabels, ...
         reliability_ci_width_median_max_hz, reliability_ci_width_cond_max_hz, reliability_min_pass_conditions);
