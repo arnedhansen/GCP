@@ -14,10 +14,6 @@
 %% Setup
 startup
 [subjects, paths, colors, headmodel] = setup('GCP');
-% path = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/';
-% dirs  = dir(path);
-% folders = dirs([dirs.isdir] & ~ismember({dirs.name},{'.','..'}));
-% subjects = {folders.name};
 
 % preallocate across‐all‐subjects matrix of raw data
 gaze_data = struct('ID',{},'Condition',{},'GazeDeviation',{},...
@@ -36,8 +32,9 @@ gaze_data = struct('ID',{},'Condition',{},'GazeDeviation',{},...
 
 % time‐windows
 baseline_period   = [-1.5, -0.25];
-analysis_period   = [ 0.3,  2   ];
-analysis_periodTS = [ -1 ,  2   ];
+analysis_period   = [0 2];
+analysis_periodTS = [-1 2];
+pupil_store_window = [-1.5, 2.5];
 win_size          = 50;    % blink‐removal window (samples)
 fsample           = 500;   % eye‐tracker sampling rate
 
@@ -55,6 +52,7 @@ for subj = 1:numel(subjects)
     clc
     fprintf('Loading Subject %d/%d...\n', subj, numel(subjects));
     datapath = fullfile(paths.features, subjects{subj}, 'gaze');
+    cd(datapath)
     load(fullfile(datapath,'dataET'));
 
     %% Loop over conditions
@@ -117,21 +115,21 @@ for subj = 1:numel(subjects)
         pupFT.time      = cell(1, nTrials);
         pupFT.trialinfo = dataET.trialinfo;
 
-% FieldTrip-ready microsaccade rate container (full baseline + analysis window)
-msFT = [];
-msFT.label     = {'MSRate'};   % Hz
-msFT.fsample   = fsample;
-msFT.trial     = cell(1, nTrials);
-msFT.time      = cell(1, nTrials);
-msFT.trialinfo = dataET.trialinfo;
+        % FieldTrip-ready microsaccade rate container (full baseline + analysis window)
+        msFT = [];
+        msFT.label     = {'MSRate'};   % Hz
+        msFT.fsample   = fsample;
+        msFT.trial     = cell(1, nTrials);
+        msFT.time      = cell(1, nTrials);
+        msFT.trialinfo = dataET.trialinfo;
 
-% Kernel for microsaccade rate (event density -> Hz)
-ms_sigma_s   = 0.02;                             % 20 ms (tune 10–30 ms)
-ms_sigma_smp = max(1, round(ms_sigma_s*fsample));
-ker_half     = 4 * ms_sigma_smp;                 % +/- 4 sigma
-ker_x        = -ker_half:ker_half;
-ms_kernel    = exp(-0.5 * (ker_x/ms_sigma_smp).^2);
-ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
+        % Kernel for microsaccade rate (event density -> Hz)
+        ms_sigma_s   = 0.02;                             % 20 ms (tune 10–30 ms)
+        ms_sigma_smp = max(1, round(ms_sigma_s*fsample));
+        ker_half     = 4 * ms_sigma_smp;                 % +/- 4 sigma
+        ker_x        = -ker_half:ker_half;
+        ms_kernel    = exp(-0.5 * (ker_x/ms_sigma_smp).^2);
+        ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
 
         %% Trial loop
         for trl = 1:numel(dataET.trialinfo)
@@ -308,9 +306,10 @@ ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
             end
 
             % Ensure FieldTrip format for pupil data
-            % Pupil full window [-1.5, 2]
-            t_full = tVec(full_idx);
-            p_full = raw(3, full_idx);    % 1 x N already
+            % Wider pupil storage window for edge-safe smoothing later
+            pup_idx = tVec >= pupil_store_window(1) & tVec <= pupil_store_window(2);
+            t_full = tVec(pup_idx);
+            p_full = raw(3, pup_idx);    % 1 x N already
             p_full = p_full ./ 1000;      % keep units consistent with scalar pupil features
             pupFT.trial{trl} = p_full;
             pupFT.time{trl}  = t_full;
@@ -380,20 +379,9 @@ ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
 
         % Timelocked average without baseline
         cfg = [];
-        cfg.latency    = analysis_periodTS;   % [0.3 2]
+        cfg.latency    = analysis_periodTS;   % [-1 2]
         cfg.keeptrials = 'no';
         velTS_noBL = ft_timelockanalysis(cfg, velFT);
-
-        % Subtractive baseline: mean in baseline_period subtracted
-        cfg = [];
-        cfg.baseline     = baseline_period;   % [-1.5 -0.25]
-        cfg.baselinetype = 'absolute';
-        velFT_bl = ft_timelockbaseline(cfg, velFT);
-
-        cfg = [];
-        cfg.latency    = analysis_periodTS;
-        cfg.keeptrials = 'no';
-        velTS_BL = ft_timelockanalysis(cfg, velFT_bl);
 
         % Percentage baseline: (x - baseline) / baseline * 100
         cfg = [];
@@ -409,20 +397,9 @@ ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
 
         % Timelocked average without baseline
         cfg = [];
-        cfg.latency    = analysis_periodTS;   % [-1 2] in your current script
+        cfg.latency    = pupil_store_window;   % edge-safe pupil window
         cfg.keeptrials = 'no';
         pupTS_noBL = ft_timelockanalysis(cfg, pupFT);
-
-        % Subtractive baseline
-        cfg = [];
-        cfg.baseline     = baseline_period;
-        cfg.baselinetype = 'absolute';
-        pupFT_bl = ft_timelockbaseline(cfg, pupFT);
-
-        cfg = [];
-        cfg.latency    = analysis_periodTS;
-        cfg.keeptrials = 'no';
-        pupTS_BL = ft_timelockanalysis(cfg, pupFT_bl);
 
         % Percentage baseline: relativechange * 100
         cfg = [];
@@ -431,39 +408,28 @@ ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
         pupFT_bl_pct = ft_timelockbaseline(cfg, pupFT);
 
         cfg = [];
-        cfg.latency    = analysis_periodTS;
+        cfg.latency    = pupil_store_window;
         cfg.keeptrials = 'no';
         pupTS_BL_pct = ft_timelockanalysis(cfg, pupFT_bl_pct);
         pupTS_BL_pct.avg = pupTS_BL_pct.avg * 100;
 
         % Timelocked average without baseline
-cfg = [];
-cfg.latency    = analysis_periodTS;
-cfg.keeptrials = 'no';
-msTS_noBL = ft_timelockanalysis(cfg, msFT);
+        cfg = [];
+        cfg.latency    = analysis_periodTS;
+        cfg.keeptrials = 'no';
+        msTS_noBL = ft_timelockanalysis(cfg, msFT);
 
-% Subtractive baseline (recommended for sparse rates)
-cfg = [];
-cfg.baseline     = baseline_period;
-cfg.baselinetype = 'absolute';
-msFT_bl = ft_timelockbaseline(cfg, msFT);
+        % Percentage change baseline
+        cfg = [];
+        cfg.baseline     = baseline_period;
+        cfg.baselinetype = 'relativechange';
+        msFT_bl_pct = ft_timelockbaseline(cfg, msFT);
 
-cfg = [];
-cfg.latency    = analysis_periodTS;
-cfg.keeptrials = 'no';
-msTS_BL = ft_timelockanalysis(cfg, msFT_bl);
-
-% Percentage change baseline (often unstable if baseline ~ 0)
-cfg = [];
-cfg.baseline     = baseline_period;
-cfg.baselinetype = 'relativechange';
-msFT_bl_pct = ft_timelockbaseline(cfg, msFT);
-
-cfg = [];
-cfg.latency    = analysis_periodTS;
-cfg.keeptrials = 'no';
-msTS_BL_pct = ft_timelockanalysis(cfg, msFT_bl_pct);
-msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
+        cfg = [];
+        cfg.latency    = analysis_periodTS;
+        cfg.keeptrials = 'no';
+        msTS_BL_pct = ft_timelockanalysis(cfg, msFT_bl_pct);
+        msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
 
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
@@ -515,21 +481,18 @@ msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
 
                 % Store FieldTrip velocity for this condition
                 velTS_c25        = velTS_noBL;
-                velTS_c25_bl     = velTS_BL;
                 velTS_c25_bl_pct = velTS_BL_pct;
 
                 % Store trial-level velocity structs under explicit names
                 velTS_trials_c25      = velocityData;
                 velTS_pct_trials_c25  = velocityData_pct;
 
-                % Store pupil size 
+                % Store pupil size
                 pupTS_c25        = pupTS_noBL;
-                pupTS_c25_bl     = pupTS_BL;
                 pupTS_c25_bl_pct = pupTS_BL_pct;
 
                 % Store MS
                 msTS_c25        = msTS_noBL;
-                msTS_c25_bl     = msTS_BL;
                 msTS_c25_bl_pct = msTS_BL_pct;
 
             case 'c50'
@@ -579,18 +542,15 @@ msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
 
                 velTS_c50        = velTS_noBL;
-                velTS_c50_bl     = velTS_BL;
                 velTS_c50_bl_pct = velTS_BL_pct;
 
                 velTS_trials_c50      = velocityData;
                 velTS_pct_trials_c50  = velocityData_pct;
 
                 pupTS_c50        = pupTS_noBL;
-                pupTS_c50_bl     = pupTS_BL;
                 pupTS_c50_bl_pct = pupTS_BL_pct;
 
                 msTS_c50        = msTS_noBL;
-                msTS_c50_bl     = msTS_BL;
                 msTS_c50_bl_pct = msTS_BL_pct;
 
             case 'c75'
@@ -640,18 +600,15 @@ msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
 
                 velTS_c75        = velTS_noBL;
-                velTS_c75_bl     = velTS_BL;
                 velTS_c75_bl_pct = velTS_BL_pct;
 
                 velTS_trials_c75      = velocityData;
                 velTS_pct_trials_c75  = velocityData_pct;
 
                 pupTS_c75        = pupTS_noBL;
-                pupTS_c75_bl     = pupTS_BL;
                 pupTS_c75_bl_pct = pupTS_BL_pct;
 
                 msTS_c75        = msTS_noBL;
-                msTS_c75_bl     = msTS_BL;
                 msTS_c75_bl_pct = msTS_BL_pct;
 
             case 'c100'
@@ -701,18 +658,15 @@ msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
                     'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
 
                 velTS_c100        = velTS_noBL;
-                velTS_c100_bl     = velTS_BL;
                 velTS_c100_bl_pct = velTS_BL_pct;
 
                 velTS_trials_c100      = velocityData;
                 velTS_pct_trials_c100  = velocityData_pct;
 
                 pupTS_c100        = pupTS_noBL;
-                pupTS_c100_bl     = pupTS_BL;
                 pupTS_c100_bl_pct = pupTS_BL_pct;
 
                 msTS_c100        = msTS_noBL;
-                msTS_c100_bl     = msTS_BL;
                 msTS_c100_bl_pct = msTS_BL_pct;
         end
     end
@@ -816,22 +770,19 @@ msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
     % velocity time series and FieldTrip timelocked data
     save(fullfile(savepath, 'gaze_velocity_timeseries'), ...
         'velTS_c25','velTS_c50','velTS_c75','velTS_c100', ...
-        'velTS_c25_bl','velTS_c50_bl','velTS_c75_bl','velTS_c100_bl', ...
         'velTS_c25_bl_pct','velTS_c50_bl_pct','velTS_c75_bl_pct','velTS_c100_bl_pct', ...
         'velTS_trials_c25','velTS_trials_c50','velTS_trials_c75','velTS_trials_c100', ...
         'velTS_pct_trials_c25','velTS_pct_trials_c50','velTS_pct_trials_c75','velTS_pct_trials_c100');
 
     % pupil size time series
     save(fullfile(savepath, 'gaze_pupil_timeseries'), ...
-    'pupTS_c25','pupTS_c50','pupTS_c75','pupTS_c100', ...
-    'pupTS_c25_bl','pupTS_c50_bl','pupTS_c75_bl','pupTS_c100_bl', ...
-    'pupTS_c25_bl_pct','pupTS_c50_bl_pct','pupTS_c75_bl_pct','pupTS_c100_bl_pct');
+        'pupTS_c25','pupTS_c50','pupTS_c75','pupTS_c100', ...
+        'pupTS_c25_bl_pct','pupTS_c50_bl_pct','pupTS_c75_bl_pct','pupTS_c100_bl_pct');
 
     % ms time series
     save(fullfile(savepath, 'gaze_microsaccade_timeseries'), ...
-    'msTS_c25','msTS_c50','msTS_c75','msTS_c100', ...
-    'msTS_c25_bl','msTS_c50_bl','msTS_c75_bl','msTS_c100_bl', ...
-    'msTS_c25_bl_pct','msTS_c50_bl_pct','msTS_c75_bl_pct','msTS_c100_bl_pct');
+        'msTS_c25','msTS_c50','msTS_c75','msTS_c100', ...
+        'msTS_c25_bl_pct','msTS_c50_bl_pct','msTS_c75_bl_pct','msTS_c100_bl_pct');
 
     % Append to across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
