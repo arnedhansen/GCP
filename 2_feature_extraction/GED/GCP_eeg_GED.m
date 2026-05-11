@@ -2153,16 +2153,50 @@ else
     x_use = x(valid);
     y_use = y(valid);
 end
-[peak_power, bi] = max(y_use);
-if ~isempty(bi) && isfinite(peak_power)
-    peak_hz = x_use(bi);
-    if peak_power_halfwidth_hz > 0
-        band_mask = abs(x_use - peak_hz) <= peak_power_halfwidth_hz;
-        band_power = y_use(band_mask);
-        band_power = band_power(isfinite(band_power));
-        if ~isempty(band_power)
-            peak_power = mean(band_power);
-        end
+if numel(x_use) < 3
+    return;
+end
+
+% Use local maxima only; if none pass criteria, keep NaN.
+dx = diff(x_use);
+dx = dx(isfinite(dx) & dx > 0);
+if isempty(dx)
+    return;
+end
+freq_step = median(dx);
+if ~isfinite(freq_step) || freq_step <= 0
+    return;
+end
+min_peak_width_hz = max(2 * freq_step, 2.0);
+local_spread = iqr(y_use);
+if ~isfinite(local_spread) || local_spread <= 0
+    local_spread = std(y_use, 'omitnan');
+end
+if ~isfinite(local_spread) || local_spread <= 0
+    local_spread = max(abs(y_use), [], 'omitnan');
+end
+if ~isfinite(local_spread) || local_spread <= 0
+    local_spread = 1;
+end
+min_peak_prom_db = max(0.15, 0.25 * local_spread);
+
+[pks, locs] = findpeaks(y_use, x_use, ...
+    'MinPeakProminence', min_peak_prom_db, ...
+    'MinPeakWidth', min_peak_width_hz, ...
+    'SortStr', 'descend', ...
+    'NPeaks', 1);
+if isempty(pks) || isempty(locs) || ~isfinite(pks(1)) || ~isfinite(locs(1))
+    return;
+end
+
+peak_hz = locs(1);
+peak_power = pks(1);
+if peak_power_halfwidth_hz > 0
+    band_mask = abs(x_use - peak_hz) <= peak_power_halfwidth_hz;
+    band_power = y_use(band_mask);
+    band_power = band_power(isfinite(band_power));
+    if ~isempty(band_power)
+        peak_power = mean(band_power);
     end
 end
 
