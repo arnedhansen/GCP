@@ -69,6 +69,12 @@ fig_save_dir_ged = fullfile(paths.figures, 'eeg', 'ged');
 fig_save_dir_component_selection_base = fullfile(fig_save_dir_ged, 'component_selection');
 if ~exist(fig_save_dir_ged, 'dir'), mkdir(fig_save_dir_ged); end
 if ~exist(fig_save_dir_component_selection_base, 'dir'), mkdir(fig_save_dir_component_selection_base); end
+fig_save_dir_component_selection_root = fig_save_dir_component_selection_base;
+[component_parent_dir, component_leaf_dir] = fileparts(fig_save_dir_component_selection_root);
+if any(strcmp(component_leaf_dir, subjects))
+    % Defensive guard: avoid nested subject folders (e.g., .../601/602)
+    fig_save_dir_component_selection_root = component_parent_dir;
+end
 
 %% Preallocate storage
 trials_powratio     = cell(4, nSubj);
@@ -177,7 +183,7 @@ subject_reliability_reason_late = repmat({''}, 1, nSubj);
 %% Subject loop
 for subj = 1:nSubj
     subj_runtime_tic = tic;
-    fig_save_dir_component_selection = fullfile(fig_save_dir_component_selection_base, subjects{subj});
+    fig_save_dir_component_selection = fullfile(fig_save_dir_component_selection_root, subjects{subj});
     if ~exist(fig_save_dir_component_selection, 'dir'), mkdir(fig_save_dir_component_selection); end
     datapath = fullfile(gcp_feature_data_path, subjects{subj}, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
@@ -442,7 +448,7 @@ for subj = 1:nSubj
         max_hf_slope = -0.15;                 % informative only (diagnostics); not an eligibility gate
         max_emg_score = 0.85;                 % anchor: very high EMG score
         max_components_to_combine = 10;       % top-K cap for combined GED branch
-        outlier_ratio_thr = 8.0;              % lambda1/lambda2 threshold for extreme-component outlier detection
+        outlier_ratio_thr = 3.0;              % lambda1/lambda2 threshold for extreme-component outlier detection
         outlier_mad_mult = 4.0;               % MAD multiplier on log-eigenvalue distance
         rank_stability_boot_reps = 200;       % bootstrap repetitions for rank-aggregation stability diagnostics
         topo_nonposterior_max = 0.28;         % posterior concentration below this is non-posterior
