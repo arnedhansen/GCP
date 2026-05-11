@@ -124,12 +124,18 @@ for subj = 1:numel(subjects)
         msFT.trialinfo = dataET.trialinfo;
 
         % Kernel for microsaccade rate (event density -> Hz)
-        ms_sigma_s   = 0.02;                             % 20 ms (tune 10–30 ms)
+        ms_sigma_s   = 0.05;                             % 50 ms
         ms_sigma_smp = max(1, round(ms_sigma_s*fsample));
         ker_half     = 4 * ms_sigma_smp;                 % +/- 4 sigma
         ker_x        = -ker_half:ker_half;
         ms_kernel    = exp(-0.5 * (ker_x/ms_sigma_smp).^2);
         ms_kernel    = ms_kernel ./ sum(ms_kernel);      % area = 1
+
+        % Trial-level microsaccade QC (applied before msFT is filled)
+        qc_min_valid_frac      = 0.60;                  % min valid fraction in [-1.5, 2]
+        qc_max_blink_loss_frac = 0.40;                  % max blink-loss fraction after remove_blinks
+        qc_min_valid_samples   = round(0.50 * fsample); % at least 500 ms valid data
+        qc_max_ms_rate_hz      = 8;                     % reject implausibly high trial-level MS rates
 
         %% Trial loop
         for trl = 1:numel(dataET.trialinfo)
@@ -335,27 +341,65 @@ for subj = 1:numel(subjects)
             x_val = full_dat(1,:);
             y_val = full_dat(2,:);
 
-            % Detect microsaccades (returns onset indices in this cleaned trace)
-            [~, ms_det] = detect_microsaccades(fsample, [x_val; y_val], numel(x_val));
+            % Trial-level QC before constructing msFT traces
+            n_total_full = numel(t_full_ms);
+            n_valid_before = sum(isfinite(x_full(valid_full)) & isfinite(y_full(valid_full)));
+            valid_clean = isfinite(x_val) & isfinite(y_val);
+            n_valid_after = sum(valid_clean);
 
-            % Impulse train on valid samples
-            ms_imp = zeros(1, numel(x_val));
-            if ~isempty(ms_det.Onset)
-                onsets = ms_det.Onset(:)';
-                onsets = onsets(onsets >= 1 & onsets <= numel(ms_imp));
-                ms_imp(onsets) = 1;
+            valid_frac_full = n_valid_after / max(n_total_full, 1);
+            blink_loss_frac = max(0, (n_valid_before - n_valid_after) / max(n_valid_before, 1));
+
+            if n_valid_after < qc_min_valid_samples || ...
+               valid_frac_full < qc_min_valid_frac || ...
+               blink_loss_frac > qc_max_blink_loss_frac
+                msFT.trial{trl} = nan(1, n_total_full);
+                msFT.time{trl}  = t_full_ms;
+                msrate = NaN;
+                baseline_msrate = NaN;
+            else
+                x_clean = x_val(valid_clean);
+                y_clean = y_val(valid_clean);
+
+                % Detect microsaccades in cleaned valid samples only
+                [~, ms_det] = detect_microsaccades(fsample, [x_clean; y_clean], numel(x_clean));
+
+                % Impulse train on valid samples
+                ms_imp = zeros(1, numel(x_clean));
+                onsets = [];
+                if ~isempty(ms_det.Onset)
+                    onsets = ms_det.Onset(:)';
+                    onsets = onsets(onsets >= 1 & onsets <= numel(ms_imp));
+                    ms_imp(onsets) = 1;
+                end
+
+                ms_rate_trial = numel(onsets) / (numel(x_clean) / fsample);
+                if ~isfinite(ms_rate_trial) || ms_rate_trial > qc_max_ms_rate_hz
+                    msFT.trial{trl} = nan(1, n_total_full);
+                    msFT.time{trl}  = t_full_ms;
+                    msrate = NaN;
+                    baseline_msrate = NaN;
+                else
+                    % Smooth impulses -> event density per sample.
+                    % Edge-effect correction: renormalise by local kernel mass so
+                    % boundary samples are not artificially attenuated.
+                    ms_kernel_mass = conv(ones(size(ms_imp)), ms_kernel, 'same');
+                    ms_kernel_mass(ms_kernel_mass < eps) = NaN;
+                    ms_rate_clean = conv(ms_imp, ms_kernel, 'same') ./ ms_kernel_mass * fsample;
+
+                    % Expand back to full in-bounds vector (NaN at blink/invalid samples)
+                    ms_rate_val = nan(1, numel(x_val));
+                    ms_rate_val(valid_clean) = ms_rate_clean;
+
+                    % Map back to full continuous time axis (NaN for invalid samples)
+                    ms_rate_full = nan(1, numel(t_full_ms));
+                    ms_rate_full(valid_full) = ms_rate_val;
+
+                    % Store in FieldTrip struct with the original regular time axis
+                    msFT.trial{trl} = ms_rate_full;
+                    msFT.time{trl}  = t_full_ms;
+                end
             end
-
-            % Smooth impulses -> event density per sample; convert to rate in Hz
-            ms_rate_val = conv(ms_imp, ms_kernel, 'same') * fsample;
-
-            % Map back to full continuous time axis (NaN for invalid samples)
-            ms_rate_full = nan(1, numel(t_full_ms));
-            ms_rate_full(valid_full) = ms_rate_val;
-
-            % Store in FieldTrip struct with the original regular time axis
-            msFT.trial{trl} = ms_rate_full;
-            msFT.time{trl}  = t_full_ms;
 
             % append to trial‐wise arrays
             subject_id(end+1)       = str2double(subjects{subj});
@@ -791,3 +835,5 @@ end
 %% Save files
 save(fullfile(paths.features, 'GCP_gaze_raw.mat'), 'gaze_x_c25','gaze_y_c25','gaze_x_c50','gaze_y_c50','gaze_x_c75','gaze_y_c75','gaze_x_c100','gaze_y_c100');
 save(fullfile(paths.features, 'GCP_gaze_matrix.mat'), 'gaze_data');
+clc;
+fprintf('[GCP] Gaze Fex done! %d/%d Subjects\n', subj, numel(subjects));

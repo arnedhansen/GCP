@@ -4,7 +4,6 @@
 startup
 [subjects, paths, colors, ~] = setup('GCP');
 
-%%
 % Plot labels
 channels      = {'Pupil'};
 channeltitles = {'Pupil Size'};
@@ -16,7 +15,7 @@ t_comp   = [-2 3];
 t_win    = [-1 2];
 lineW    = 2.5;
 
-% Gaussian smoothing kernel (same settings as microsaccade TC)
+% Gaussian smoothing kernel
 fsample    = 500;
 sigma_ms   = 50;
 sigma_samp = round(sigma_ms / (1000 / fsample));
