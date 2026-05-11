@@ -32,7 +32,8 @@
 %   3. Flag numerical-instability cases (near-floor baseline power across
 %      many frequencies/components) and exclude unstable trials automatically.
 %   4. Detect per-trial spectral features (dominant peak, low/high peaks,
-%      centroid) and compute peak power.
+%      centroid) and compute peak power as the mean power within
+%      peak frequency +/- 5 Hz.
 %   5. Quantify subject-level reliability separately for full/early/late windows
 %      via bootstrap peak-frequency CI width across conditions (Criterion 4).
 %
@@ -116,7 +117,8 @@ centroid_band_mask = scan_freqs >= centroid_freq_range(1) & scan_freqs <= centro
 centroid_posfrac_min = 0.20; % minimum positive-energy fraction for centroid validity
 centroid_min_peak = 0.02;    % minimum positive peak in raw spectrum
 trial_peak_smooth_n = 5;     % moving-average smoothing (5 bins ~= 5 Hz) for peak metrics
-trial_peak_edge_margin_hz = 5; % ignore edge bins near 30/90 Hz during trial-level peak detection
+peak_power_halfwidth_hz = 5; % define peak power as mean power within peak_hz +/- this band
+trial_peak_edge_margin_hz = 0; % allow trial-level peak detection across the full 30-90 Hz band
 trial_metric_outlier_enable = true;      % apply trial-level outlier rejection on extracted frequency/power metrics
 trial_metric_outlier_iqr_mult = 1.5;     % outlier threshold in IQR units around Q1/Q3
 trial_metric_outlier_min_trials = 50;    % minimum finite trials to run IQR-based outlier rejection
@@ -1390,7 +1392,7 @@ for subj = 1:nSubj
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_fullscan, scan_freqs, true(size(scan_freqs)), ...
             centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min, ...
-            trial_peak_edge_margin_hz);
+            trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
 
         trials_peaks{cond, subj} = trl_peaks;
         trials_centroid{cond, subj}     = trl_centroid;
@@ -1402,12 +1404,12 @@ for subj = 1:nSubj
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_early_fullscan, scan_freqs, true(size(scan_freqs)), ...
             centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min, ...
-            trial_peak_edge_margin_hz);
+            trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
         [trl_peaks_late, trial_peak_power_late, trl_centroid_late] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_late_fullscan, scan_freqs, true(size(scan_freqs)), ...
             centroid_band_mask, trial_peak_smooth_n, centroid_min_peak, centroid_posfrac_min, ...
-            trial_peak_edge_margin_hz);
+            trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
         % Trial-level metric outlier rejection (subject-condition specific).
         if trial_metric_outlier_enable
             [outlier_mask_freq_full, ~] = detect_trial_metric_outliers_iqr( ...
@@ -1491,9 +1493,9 @@ for subj = 1:nSubj
         subj_condition_avg_early{cond} = cond_avg_early;
         subj_condition_avg_late{cond} = cond_avg_late;
 
-        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 1, trial_peak_edge_margin_hz);
-        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 1, trial_peak_edge_margin_hz);
-        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 1, trial_peak_edge_margin_hz);
+        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 1, trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
+        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 1, trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
+        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 1, trial_peak_edge_margin_hz, peak_power_halfwidth_hz);
         [ci_width_full, ci_low_full, ci_high_full, n_boot_valid_full] = ...
             compute_bootstrap_peak_precision_from_trials( ...
             powratio_trials_full_avg, scan_freqs, trial_peak_smooth_n, trial_peak_edge_margin_hz, ...
@@ -1809,7 +1811,18 @@ for subj = 1:nSubj
         ylabel('Power [dB]');
         title('Condition-Averaged Spectra', 'FontSize', 11);
         set(gca, 'FontSize', 10, 'Box', 'on');
-        legend('Location', 'best', 'FontSize', 9);
+        peak_text_y = 0.95;
+        peak_text_step = 0.08;
+        for cond = 1:4
+            peak_hz = condpeak_source(cond);
+            if ~isfinite(peak_hz)
+                continue;
+            end
+            text(0.98, peak_text_y - (cond - 1) * peak_text_step, sprintf('%.0f Hz', peak_hz), ...
+                'Units', 'normalized', 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', ...
+                'Color', colors(cond, :), 'FontSize', 10, 'FontWeight', 'bold');
+        end
+        legend('Location', 'southwest', 'FontSize', 9);
 
         save_figure_png(fig, fullfile(comp_sel_save_dir, ...
             sprintf('GCP_eeg_GED_subj%s_trials_overview_%s.png', subjects{subj}, window_names{wi})));
@@ -2305,7 +2318,7 @@ fprintf('[GED] Runtime TOTAL: %s\n', format_runtime_hhmmss(toc(total_runtime_tic
 
 function [trl_peaks, trl_peak_power, trl_centroid] = ...
     compute_trial_peak_metrics_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, ...
-    centroid_band_mask, smooth_n, centroid_min_peak, centroid_posfrac_min, edge_margin_hz)
+    centroid_band_mask, smooth_n, centroid_min_peak, centroid_posfrac_min, edge_margin_hz, peak_power_halfwidth_hz)
 nTrl = size(powratio_trials_fullscan, 1);
 trl_peaks = nan(nTrl, 1);
 trl_peak_power = nan(nTrl, 1);
@@ -2314,6 +2327,9 @@ scan_freqs_analysis = scan_freqs_full(analysis_mask);
 freq_band = scan_freqs_full(centroid_band_mask);
 if nargin < 8 || ~isfinite(edge_margin_hz) || edge_margin_hz < 0
     edge_margin_hz = 0;
+end
+if nargin < 9 || ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
+    peak_power_halfwidth_hz = 0;
 end
 for trl = 1:nTrl
     pr_full = powratio_trials_fullscan(trl, :);
@@ -2332,7 +2348,7 @@ for trl = 1:nTrl
     % Constrained peak search: prioritize 30-90 Hz gamma band with adaptive
     % prominence threshold, then fall back to in-band maximum when no local
     % peak is detected (supports spectra entirely below 0 dB).
-    [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use, smooth_n, edge_margin_hz);
+    [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use, smooth_n, edge_margin_hz, peak_power_halfwidth_hz);
     if isfinite(peak_hz)
         trl_peaks(trl) = peak_hz;
         trl_peak_power(trl) = peak_power;
@@ -2350,7 +2366,7 @@ for trl = 1:nTrl
 end
 end
 
-function [peak_hz, peak_power] = pick_tallest_peak(y, x, smooth_n, edge_margin_hz)
+function [peak_hz, peak_power] = pick_tallest_peak(y, x, smooth_n, edge_margin_hz, peak_power_halfwidth_hz)
 peak_hz = NaN;
 peak_power = NaN;
 y = y(:)';
@@ -2360,6 +2376,9 @@ if nargin < 3 || ~isfinite(smooth_n) || smooth_n < 1
 end
 if nargin < 4 || ~isfinite(edge_margin_hz) || edge_margin_hz < 0
     edge_margin_hz = 0;
+end
+if nargin < 5 || ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
+    peak_power_halfwidth_hz = 0;
 end
 if isempty(y) || numel(y) ~= numel(x)
     return;
@@ -2386,6 +2405,14 @@ end
 [peak_power, bi] = max(y_use);
 if ~isempty(bi) && isfinite(peak_power)
     peak_hz = x_use(bi);
+    if peak_power_halfwidth_hz > 0
+        band_mask = abs(x_use - peak_hz) <= peak_power_halfwidth_hz;
+        band_power = y_use(band_mask);
+        band_power = band_power(isfinite(band_power));
+        if ~isempty(band_power)
+            peak_power = mean(band_power);
+        end
+    end
 end
 
 end
@@ -2998,7 +3025,9 @@ if nargin < 8 || isempty(lambdas)
 end
 
 fig = figure('Position', [0 0 1512 982], 'Color', 'w');
-tiledlayout(nWins, 4, 'Padding', 'compact', 'TileSpacing', 'compact');
+nMatCols = 4;
+nPlotCols = 5;
+tiledlayout(nWins, nPlotCols, 'Padding', 'compact', 'TileSpacing', 'compact');
 
 nChans = size(covBase_full, 1);
 if size(covBase_full, 2) ~= nChans
@@ -3007,7 +3036,7 @@ if size(covBase_full, 2) ~= nChans
 end
 
 % Build matrices first so column-wise shared color limits are used.
-all_mats = cell(nWins, 4);
+all_mats = cell(nWins, nMatCols);
 qc_lines_by_win = cell(nWins, 1);
 for wi = 1:nWins
     covStim_w = covStim_per_win{wi};
@@ -3077,8 +3106,8 @@ for wi = 1:nWins
         sym_stim, sym_base, min_eig_base, cond_base, top_ged(1), top_ged(2), top_ged(3));
 end
 
-col_clims = ones(1, 4);
-for pi = 1:4
+col_clims = ones(1, nMatCols);
+for pi = 1:nMatCols
     col_vals = [];
     for wi = 1:nWins
         mat_vals = abs(all_mats{wi, pi}(:));
@@ -3121,7 +3150,7 @@ for wi = 1:nWins
         sprintf('%s Stim-Base', win_names_cap{wi}), ...
         sprintf('%s R^{-1}S', win_names_cap{wi})};
 
-    for pi = 1:4
+    for pi = 1:nMatCols
         nexttile;
         mat = mats{pi};
         if all(~isfinite(mat(:)))
@@ -3133,12 +3162,6 @@ for wi = 1:nWins
         colorbar;
         title(panel_titles{pi}, 'FontSize', 10, 'Interpreter', 'none');
         set(gca, 'FontSize', 8, 'YDir', 'normal');
-        if pi == 1
-            text(0.01, 0.99, qc_lines_by_win{wi}, 'Units', 'normalized', ...
-                'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
-                'FontSize', 7, 'Color', [0.05 0.05 0.05], 'BackgroundColor', [1 1 1], ...
-                'Margin', 1, 'Interpreter', 'none');
-        end
         if nChans <= 80 && ~isempty(chan_labels) && numel(chan_labels) == nChans
             xticks(1:nChans); yticks(1:nChans);
             xticklabels(chan_labels); yticklabels(chan_labels);
@@ -3148,6 +3171,13 @@ for wi = 1:nWins
             ylabel('Channels');
         end
     end
+
+    nexttile;
+    axis off;
+    title(sprintf('%s Values', win_names_cap{wi}), 'FontSize', 10, 'Interpreter', 'none');
+    text(0.01, 0.99, qc_lines_by_win{wi}, 'Units', 'normalized', ...
+        'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
+        'FontSize', 8, 'Color', [0.05 0.05 0.05], 'Interpreter', 'none');
 end
 
 sgtitle(sprintf('GED Covariance Diagnostics: Subject %s | Shared color scale per column', subject_id), ...
