@@ -34,7 +34,7 @@ end
 if ~isfile(data_path)
     error('GED feature file not found: %s', data_path);
 end
-S = load(data_path);
+dat = load(data_path);
 
 required_vars = { ...
     'all_trial_powratio', ...
@@ -44,27 +44,27 @@ required_vars = { ...
     'all_trial_median_single', ...
     'benchmark_methods'};
 for vi = 1:numel(required_vars)
-    if ~isfield(S, required_vars{vi})
+    if ~isfield(dat, required_vars{vi})
         error('Variable "%s" is missing in %s', required_vars{vi}, data_path);
     end
 end
 
-if isfield(S, 'scan_freqs') && ~isempty(S.scan_freqs)
-    scan_freqs = S.scan_freqs;
+if isfield(dat, 'scan_freqs') && ~isempty(dat.scan_freqs)
+    scan_freqs = dat.scan_freqs;
 else
     scan_freqs = 30:90;
 end
 analysis_freq_range = [scan_freqs(1), scan_freqs(end)];
 
-if isfield(S, 'condLabels') && ~isempty(S.condLabels)
-    condLabels = S.condLabels;
+if isfield(dat, 'condLabels') && ~isempty(dat.condLabels)
+    condLabels = dat.condLabels;
 else
     condLabels = {'25%', '50%', '75%', '100%'};
 end
 nCond = numel(condLabels);
 
-if isfield(S, 'subjects') && ~isempty(S.subjects)
-    subj_labels = S.subjects;
+if isfield(dat, 'subjects') && ~isempty(dat.subjects)
+    subj_labels = dat.subjects;
 else
     subj_labels = subjects;
 end
@@ -83,7 +83,7 @@ for oi = 1:numel(plot_order)
     cond = plot_order(oi);
     subj_curves = nan(nSubj, numel(scan_freqs));
     for s = 1:nSubj
-        pr_mat_full = S.all_trial_powratio{cond, s};
+        pr_mat_full = dat.all_trial_powratio{cond, s};
         if ~isempty(pr_mat_full)
             subj_curves(s, :) = nanmean(pr_mat_full, 1);
         end
@@ -149,7 +149,7 @@ for s = 1:nSubj
     peak_freq_txt = strings(nCond, 1);
 
     for cond = 1:nCond
-        pr_mat_full = S.all_trial_powratio{cond, s};
+        pr_mat_full = dat.all_trial_powratio{cond, s};
         if ~isempty(pr_mat_full)
             mu_raw = nanmean(pr_mat_full, 1);
             subj_panel_maxabs = max(subj_panel_maxabs, max(abs(mu_raw), [], 'omitnan'));
@@ -160,7 +160,7 @@ for s = 1:nSubj
             if s == 1
                 fig_all_legend_handles(cond) = h_cond;
             end
-            md_pf = S.all_trial_median_single(cond, s);
+            md_pf = dat.all_trial_median_single(cond, s);
             if ~isnan(md_pf)
                 xline(md_pf, '--', 'Color', colors(cond, :), 'LineWidth', 1.2);
                 peak_freq_txt(cond) = sprintf('%s: %.0fHz', condLabels{cond}, md_pf);
@@ -200,14 +200,14 @@ end
 exportgraphics(fig_all, fullfile(fig_dir, 'GCP_eeg_GED_all_subjects_power_spectrum.png'), 'Resolution', 600);
 
 %% Final combined GED method index
-combined_method_idx = find(strcmpi(S.benchmark_methods, 'ged_combined_artifact_weighted'), 1, 'first');
+combined_method_idx = find(strcmpi(dat.benchmark_methods, 'ged_combined_artifact_weighted'), 1, 'first');
 if isempty(combined_method_idx)
-    nBenchmarkMethods = numel(S.benchmark_methods);
+    nBenchmarkMethods = numel(dat.benchmark_methods);
     combined_method_idx = min(3, nBenchmarkMethods);
 end
 
 time_windows = {'early', 'full', 'late'};
-time_cells = {S.all_trial_powratio_bench_early, S.all_trial_powratio_bench, S.all_trial_powratio_bench_late};
+time_cells = {dat.all_trial_powratio_bench_early, dat.all_trial_powratio_bench, dat.all_trial_powratio_bench_late};
 
 %% Subject-wise figures (three windows per subject)
 for s = 1:nSubj

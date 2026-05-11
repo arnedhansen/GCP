@@ -14,45 +14,45 @@ folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 fprintf('Building trial-level merged matrix for %d subjects.\n', numel(subjects));
 
 %% Load trial-level behavioral data
-T_behav = table();
+tbl_behav = table();
 for s = 1:numel(subjects)
     subj = subjects{s};
     fpath = fullfile(features_root, subj, 'behavioral', 'behavioral_matrix_trial.mat');
     if ~isfile(fpath)
         continue
     end
-    S = load(fpath);
-    if ~isfield(S, 'subj_data_behav_trial')
+    dat = load(fpath);
+    if ~isfield(dat, 'subj_data_behav_trial')
         continue
     end
-    B = struct2table(S.subj_data_behav_trial);
+    B = struct2table(dat.subj_data_behav_trial);
     B = standardize_id_condition_trial(B);
 
     keep = {'ID','Condition','Trial','Accuracy','ReactionTime'};
     keep = keep(ismember(keep, B.Properties.VariableNames));
     B = B(:, keep);
 
-    T_behav = [T_behav; B]; %#ok<AGROW>
+    tbl_behav = [tbl_behav; B]; %#ok<AGROW>
 end
 
 %% Load trial-level gaze data
-T_gaze = table();
+tbl_gaze = table();
 for s = 1:numel(subjects)
     subj = subjects{s};
     fpath = fullfile(features_root, subj, 'gaze', 'gaze_matrix_trial.mat');
     if ~isfile(fpath)
         continue
     end
-    S = load(fpath);
+    dat = load(fpath);
 
     cond_vars = {'subj_data_gaze_trial_c25', 'subj_data_gaze_trial_c50', ...
                  'subj_data_gaze_trial_c75', 'subj_data_gaze_trial_c100'};
 
     for ci = 1:numel(cond_vars)
-        if ~isfield(S, cond_vars{ci})
+        if ~isfield(dat, cond_vars{ci})
             continue
         end
-        G = S.(cond_vars{ci});
+        G = dat.(cond_vars{ci});
         if ~isstruct(G)
             continue
         end
@@ -71,85 +71,85 @@ for s = 1:numel(subjects)
         keep = keep(ismember(keep, GT.Properties.VariableNames));
         GT = GT(:, keep);
 
-        T_gaze = [T_gaze; GT]; %#ok<AGROW>
+        tbl_gaze = [tbl_gaze; GT]; %#ok<AGROW>
     end
 end
 
 %% Load GED trial-level table
-T_ged = table();
+tbl_ged = table();
 ged_mat = fullfile(features_root, 'GCP_eeg_GED_gamma_metrics_trials.mat');
-S = load(ged_mat);
-T_ged = S.T;
-if ~isempty(T_ged)
-    T_ged = standardize_id_condition_trial(T_ged);
+dat = load(ged_mat);
+tbl_ged = dat.T;
+if ~isempty(tbl_ged)
+    tbl_ged = standardize_id_condition_trial(tbl_ged);
 end
 
 %% Prefix non-key variables for unambiguous merged names
-T_behav = prefix_nonkeys(T_behav, {'ID','Condition','Trial'}, 'Behavior_');
-T_gaze  = prefix_nonkeys(T_gaze,  {'ID','Condition','Trial'}, 'Gaze_');
-T_ged   = prefix_nonkeys(T_ged,   {'ID','Condition','Trial'}, 'GED_');
+tbl_behav = prefix_nonkeys(tbl_behav, {'ID','Condition','Trial'}, 'Behavior_');
+tbl_gaze  = prefix_nonkeys(tbl_gaze,  {'ID','Condition','Trial'}, 'Gaze_');
+tbl_ged   = prefix_nonkeys(tbl_ged,   {'ID','Condition','Trial'}, 'GED_');
 
 %% Merge (outer over behavior and gaze; GED joined afterwards)
 keys = {'ID','Condition','Trial'};
 
-if isempty(T_behav) && isempty(T_gaze)
+if isempty(tbl_behav) && isempty(tbl_gaze)
     error('No trial-level behavioral or gaze data found.');
-elseif isempty(T_behav)
-    T_bg = T_gaze;
-elseif isempty(T_gaze)
-    T_bg = T_behav;
+elseif isempty(tbl_behav)
+    tbl_bg = tbl_gaze;
+elseif isempty(tbl_gaze)
+    tbl_bg = tbl_behav;
 else
-    T_bg = outerjoin(T_behav, T_gaze, 'Keys', keys, 'MergeKeys', true, 'Type', 'full');
+    tbl_bg = outerjoin(tbl_behav, tbl_gaze, 'Keys', keys, 'MergeKeys', true, 'Type', 'full');
 end
 
-if isempty(T_ged)
-    T_merge = T_bg;
+if isempty(tbl_ged)
+    tbl_merge = tbl_bg;
 else
-    T_merge = outerjoin(T_bg, T_ged, 'Keys', keys, 'MergeKeys', true, 'Type', 'full');
+    tbl_merge = outerjoin(tbl_bg, tbl_ged, 'Keys', keys, 'MergeKeys', true, 'Type', 'full');
 end
 
-T_merge = sortrows(T_merge, {'ID','Condition','Trial'});
+tbl_merge = sortrows(tbl_merge, {'ID','Condition','Trial'});
 
 %% Diagnostics
-n_behav = height(T_behav);
-n_gaze = height(T_gaze);
-n_ged = height(T_ged);
-n_merge = height(T_merge);
+n_behav = height(tbl_behav);
+n_gaze = height(tbl_gaze);
+n_ged = height(tbl_ged);
+n_merge = height(tbl_merge);
 
 fprintf('Rows loaded: behavior=%d, gaze=%d, ged=%d\n', n_behav, n_gaze, n_ged);
 fprintf('Rows merged: %d\n', n_merge);
 
 %% Save outputs with GCP_ prefix
-GCP_merged_table_trials = T_merge; %#ok<NASGU>
-GCP_merged_data_trials = table2struct(T_merge); %#ok<NASGU>
-merged_table_trials = T_merge; %#ok<NASGU>
+GCP_merged_table_trials = tbl_merge; %#ok<NASGU>
+GCP_merged_data_trials = table2struct(tbl_merge); %#ok<NASGU>
+merged_table_trials = tbl_merge; %#ok<NASGU>
 merged_data_trials = GCP_merged_data_trials; %#ok<NASGU>
 
 save(fullfile(features_root, 'GCP_merged_data_trials.mat'), ...
     'GCP_merged_data_trials', 'GCP_merged_table_trials', ...
     'merged_data_trials', 'merged_table_trials');
-writetable(T_merge, fullfile(features_root, 'GCP_merged_data_trials.csv'));
+writetable(tbl_merge, fullfile(features_root, 'GCP_merged_data_trials.csv'));
 
 fprintf('Saved:\n');
 fprintf('  %s\n', fullfile(features_root, 'GCP_merged_data_trials.mat'));
 fprintf('  %s\n', fullfile(features_root, 'GCP_merged_data_trials.csv'));
 
 %% Local helper functions
-function T = standardize_id_condition_trial(T)
-if ~ismember('ID', T.Properties.VariableNames)
-    if ismember('Subject', T.Properties.VariableNames)
-        T.ID = T.Subject;
+function tbl = standardize_id_condition_trial(tbl)
+if ~ismember('ID', tbl.Properties.VariableNames)
+    if ismember('Subject', tbl.Properties.VariableNames)
+        tbl.ID = tbl.Subject;
     end
 end
 
-if ismember('ID', T.Properties.VariableNames)
-    T.ID = to_numeric_col(T.ID);
+if ismember('ID', tbl.Properties.VariableNames)
+    tbl.ID = to_numeric_col(tbl.ID);
 end
-if ismember('Condition', T.Properties.VariableNames)
-    T.Condition = to_numeric_col(T.Condition);
+if ismember('Condition', tbl.Properties.VariableNames)
+    tbl.Condition = to_numeric_col(tbl.Condition);
 end
-if ismember('Trial', T.Properties.VariableNames)
-    T.Trial = to_numeric_col(T.Trial);
+if ismember('Trial', tbl.Properties.VariableNames)
+    tbl.Trial = to_numeric_col(tbl.Trial);
 end
 end
 
@@ -171,35 +171,35 @@ else
 end
 end
 
-function T = prefix_nonkeys(T, keys, prefix)
-if isempty(T)
+function tbl = prefix_nonkeys(tbl, keys, prefix)
+if isempty(tbl)
     return
 end
-vars = T.Properties.VariableNames;
+vars = tbl.Properties.VariableNames;
 for i = 1:numel(vars)
     v = vars{i};
     if ~ismember(v, keys) && ~startsWith(v, prefix)
-        T.Properties.VariableNames{v} = [prefix v];
+        tbl.Properties.VariableNames{v} = [prefix v];
     end
 end
 end
 
-function T = struct_of_vectors_to_table(S)
-fn = fieldnames(S);
+function tbl = struct_of_vectors_to_table(strct)
+fn = fieldnames(strct);
 if isempty(fn)
-    T = table();
+    tbl = table();
     return
 end
-len = numel(S.(fn{1}));
+len = numel(strct.(fn{1}));
 for i = 2:numel(fn)
-    if numel(S.(fn{i})) ~= len
-        T = table();
+    if numel(strct.(fn{i})) ~= len
+        tbl = table();
         return
     end
 end
 
-T = table();
+tbl = table();
 for i = 1:numel(fn)
-    T.(fn{i}) = S.(fn{i})(:);
+    tbl.(fn{i}) = strct.(fn{i})(:);
 end
 end

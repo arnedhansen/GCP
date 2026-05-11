@@ -19,15 +19,15 @@ if ~isfile(in_path)
     error('Missing GED-TFR input file: %s', in_path);
 end
 
-S = load(in_path);
+dat = load(in_path);
 required_vars = {'tfr_cond_avg', 'condLabels'};
 for vi = 1:numel(required_vars)
-    if ~isfield(S, required_vars{vi})
+    if ~isfield(dat, required_vars{vi})
         error('Variable "%s" missing in %s', required_vars{vi}, in_path);
     end
 end
 
-condLabels = S.condLabels;
+condLabels = dat.condLabels;
 nCond = numel(condLabels);
 nSubj = numel(subjects);
 
@@ -36,8 +36,8 @@ grand = cell(1, nCond);
 for c = 1:nCond
     valid_subj_tfr = {};
     for s = 1:nSubj
-        if c <= size(S.tfr_cond_avg, 1) && s <= size(S.tfr_cond_avg, 2)
-            cur = S.tfr_cond_avg{c, s};
+        if c <= size(dat.tfr_cond_avg, 1) && s <= size(dat.tfr_cond_avg, 2)
+            cur = dat.tfr_cond_avg{c, s};
             if ~isempty(cur)
                 valid_subj_tfr{end+1} = cur; %#ok<AGROW>
             end

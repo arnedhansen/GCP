@@ -4,28 +4,28 @@ clear
 [~, paths, colors, ~] = setup('GCP', 0);
 
 % Load and convert
-S = load(fullfile(paths.features, 'GCP_merged_data.mat'));
-if isfield(S, 'GCP_merged_data')
-    T = struct2table(S.GCP_merged_data);
-elseif isfield(S, 'merged_data')
-    T = struct2table(S.merged_data);
+dat = load(fullfile(paths.features, 'GCP_merged_data.mat'));
+if isfield(dat, 'GCP_merged_data')
+    tbl = struct2table(dat.GCP_merged_data);
+elseif isfield(dat, 'merged_data')
+    tbl = struct2table(dat.merged_data);
 else
     error('GCP_merged_data.mat does not contain GCP_merged_data or merged_data.');
 end
 
 % Identify numeric variables only (excluding ID and Condition)
-varNames    = T.Properties.VariableNames;
+varNames    = tbl.Properties.VariableNames;
 numericVars = {};
 
 for i = 1:numel(varNames)
-    v = T.(varNames{i});
+    v = tbl.(varNames{i});
     if isnumeric(v) && ~strcmp(varNames{i}, 'ID') && ~strcmp(varNames{i}, 'Condition')
         numericVars{end+1} = varNames{i};
     end
 end
 
 % Condition coding
-condRaw = T.Condition;
+condRaw = tbl.Condition;
 [condLevels, ~, condIdx] = unique(condRaw, 'stable');  % 1..K
 nCond   = numel(condLevels);
 
@@ -33,7 +33,7 @@ nCond   = numel(condLevels);
 xtickLabs = strcat(num2str(condLevels*25), "% Contrast");
 
 % Subject IDs
-subjIDs = unique(T.ID);
+subjIDs = unique(tbl.ID);
 
 % Outlier exclusion settings (applied per variable and per condition)
 useOutlierExclusion = true;
@@ -44,7 +44,7 @@ for iVar = 35%%%%%%1:numel(numericVars)
     close all
 
     varName = numericVars{iVar};
-    yRaw    = T.(varName);
+    yRaw    = tbl.(varName);
     y       = yRaw;
 
     if useOutlierExclusion
@@ -79,7 +79,7 @@ for iVar = 35%%%%%%1:numel(numericVars)
     % First: subject-wise lines across conditions (light grey)
     for s = 1:numel(subjIDs)
         thisID  = subjIDs(s);
-        idxSubj = T.ID == thisID;
+        idxSubj = tbl.ID == thisID;
 
         ySubj       = y(idxSubj);
         condSubjIdx = condIdx(idxSubj); % 1..nCond per row

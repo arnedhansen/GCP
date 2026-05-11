@@ -42,9 +42,7 @@ data_dir = paths.features;
 fig_dir = fullfile(paths.figures, 'hypotheses');
 if ~exist(fig_dir, 'dir'), mkdir(fig_dir); end
 
-%% ====================================================================
-%  LOAD TRIAL-LEVEL GAZE DATA
-%  ====================================================================
+%% LOAD TRIAL-LEVEL GAZE DATA
 fprintf('Loading trial-level gaze data...\n');
 
 gaze_Subject   = [];
@@ -67,15 +65,15 @@ for subj = 1:nSubj
         continue;
     end
 
-    S = load(trialfile);
+    dat = load(trialfile);
     sid = str2double(subjects{subj});
 
     cond_names = {'subj_data_gaze_trial_c25', 'subj_data_gaze_trial_c50', ...
                   'subj_data_gaze_trial_c75', 'subj_data_gaze_trial_c100'};
 
     for ci = 1:4
-        if ~isfield(S, cond_names{ci}), continue; end
-        d = S.(cond_names{ci});
+        if ~isfield(dat, cond_names{ci}), continue; end
+        d = dat.(cond_names{ci});
         nTrl = numel(d.Trial);
 
         gaze_Subject   = [gaze_Subject;   repmat(sid, nTrl, 1)];
@@ -113,9 +111,7 @@ end
 
 fprintf('  Gaze: %d total trials loaded.\n', numel(gaze_Subject));
 
-%% ====================================================================
-%  LOAD TRIAL-LEVEL GED DATA
-%  ====================================================================
+%% LOAD TRIAL-LEVEL GED DATA
 fprintf('Loading trial-level GED gamma data...\n');
 
 ged = load(fullfile(data_dir, 'GCP_eeg_GED_gamma_metrics.mat'));
@@ -155,9 +151,7 @@ end
 
 fprintf('  GED: %d total trials loaded.\n', numel(ged_Subject));
 
-%% ====================================================================
-%  OUTLIER REJECTION (median ± 3 MAD per condition)
-%  ====================================================================
+%% OUTLIER REJECTION (median ± 3 MAD per condition)
 fprintf('Removing outlier trials (median +/- 3 MAD per condition)...\n');
 
 % Gaze metrics
@@ -181,9 +175,7 @@ fprintf('  Gaze outliers removed: PctMS=%d, PctVel=%d, PctPup=%d, PctBCEA=%d, MS
 fprintf('  GED outliers removed: PeakFreq=%d, PeakAmp=%d, BBPow=%d, Centroid=%d, AUC=%d\n', ...
     n1, n2, n3, n4, n5);
 
-%% ====================================================================
-%  COMPUTE SUBJECT-LEVEL MEANS (for H7 cross-modal analysis)
-%  ====================================================================
+%% COMPUTE SUBJECT-LEVEL MEANS (for H7 cross-modal analysis)
 
 subj_pctMSRate = nan(4, nSubj);
 subj_pctVel2D  = nan(4, nSubj);
@@ -209,9 +201,7 @@ end
 
 % No second-pass outlier rejection on subject means — trial-level MAD is sufficient
 
-%% ====================================================================
-%  FIGURE 1: H1 — Microsaccade Rate (trial-level)
-%  ====================================================================
+%% FIGURE 1: H1 — Microsaccade Rate (trial-level)
 close all
 fprintf('\nGenerating trial-level figures...\n');
 
@@ -232,9 +222,7 @@ report_trend_trial('H1 MS Rate (% change)', gaze_PctMSRate, gaze_Condition, ...
 
 exportgraphics(fig1, fullfile(fig_dir, 'GCP_H1_microsaccade_rate_trials.png'), 'Resolution', 600);
 
-%% ====================================================================
-%  FIGURE 2: H2 — Eye Velocity (trial-level)
-%  ====================================================================
+%% FIGURE 2: H2 — Eye Velocity (trial-level)
 
 fig2 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('[H2] Eye Velocity: Contrast-Dependent Suppression — Trial-Level', ...
@@ -253,9 +241,7 @@ report_trend_trial('H2 Velocity (% change)', gaze_PctVel2D, gaze_Condition, ...
 
 exportgraphics(fig2, fullfile(fig_dir, 'GCP_H2_eye_velocity_trials.png'), 'Resolution', 600);
 
-%% ====================================================================
-%  FIGURE 3: H3 — Pupil Size (trial-level)
-%  ====================================================================
+%% FIGURE 3: H3 — Pupil Size (trial-level)
 
 fig3 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('[H3] Pupil Constriction Scales with Contrast — Trial-Level', ...
@@ -274,9 +260,7 @@ report_trend_trial('H3 Pupil (% change)', gaze_PctPupil, gaze_Condition, ...
 
 exportgraphics(fig3, fullfile(fig_dir, 'GCP_H3_pupil_trials.png'), 'Resolution', 600);
 
-%% ====================================================================
-%  FIGURE 4: H4 — BCEA (trial-level)
-%  ====================================================================
+%% FIGURE 4: H4 — BCEA (trial-level)
 
 fig4 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('[H4] BCEA Increases with Stimulus Contrast — Trial-Level', ...
@@ -295,9 +279,7 @@ report_trend_trial('H4 BCEA (% change)', gaze_PctBCEA, gaze_Condition, ...
 
 exportgraphics(fig4, fullfile(fig_dir, 'GCP_H4_bcea_trials.png'), 'Resolution', 600);
 
-%% ====================================================================
-%  FIGURE 5: H5 + H6 — Gamma Peak Frequency & Power (trial-level)
-%  ====================================================================
+%% FIGURE 5: H5 + H6 — Gamma Peak Frequency & Power (trial-level)
 
 fig5 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('[H5] Gamma Peak Frequency & [H6] Peak Power — Trial-Level', ...
@@ -356,9 +338,7 @@ report_trend_trial('H6 GED BB Power', ged_BBPower, ged_Condition, ...
 
 exportgraphics(fig5, fullfile(fig_dir, 'GCP_H5H6_gamma_trials.png'), 'Resolution', 600);
 
-%% ====================================================================
-%  FIGURE 6: H7 — Gamma–Oculomotor Relationship (subject-level means)
-%  ====================================================================
+%% FIGURE 6: H7 — Gamma–Oculomotor Relationship (subject-level means)
 
 fig6 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('[H7] Gamma Frequency vs Oculomotor Dynamics (subject means from trials)', ...
@@ -447,9 +427,7 @@ text(0.05, 0.5, txt, 'FontSize', 12, 'VerticalAlignment', 'middle');
 
 exportgraphics(fig6, fullfile(fig_dir, 'GCP_H7_gamma_oculomotor_trials.png'), 'Resolution', 600);
 
-%% ====================================================================
-%  FIGURE 7: Summary Dashboard (trial-level distributions)
-%  ====================================================================
+%% FIGURE 7: Summary Dashboard (trial-level distributions)
 
 fig7 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Hypothesis Summary — Trial-Level Distributions', ...
@@ -505,9 +483,7 @@ fprintf('  Gaze trials:  %d\n', numel(gaze_Subject));
 fprintf('  GED trials:   %d\n', numel(ged_Subject));
 fprintf('  Subjects:     %d\n', nSubj);
 
-%% ====================================================================
-%  HELPER FUNCTIONS
-%  ====================================================================
+%% HELPER FUNCTIONS
 
 function plot_raincloud_trial(data, cond_vec, colors, condLabels, y_label)
     hold on;

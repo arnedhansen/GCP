@@ -24,26 +24,26 @@ end
 if ~isfile(data_path)
     error('GED feature file not found: %s', data_path);
 end
-S = load(data_path);
+dat = load(data_path);
 
 required_vars = { ...
     'all_trial_median_single_early', ...
     'all_trial_median_single_late', ...
     'all_trial_median_single'};
 for vi = 1:numel(required_vars)
-    if ~isfield(S, required_vars{vi})
+    if ~isfield(dat, required_vars{vi})
         error('Variable "%s" is missing in %s', required_vars{vi}, data_path);
     end
 end
 
-if isfield(S, 'condLabels')
-    condLabels = S.condLabels;
+if isfield(dat, 'condLabels')
+    condLabels = dat.condLabels;
 else
     condLabels = {'25%', '50%', '75%', '100%'};
 end
 
-nCond = size(S.all_trial_median_single, 1);
-nSubj_data = size(S.all_trial_median_single, 2);
+nCond = size(dat.all_trial_median_single, 1);
+nSubj_data = size(dat.all_trial_median_single, 2);
 nSubj = min(numel(subjects), nSubj_data);
 
 window_labels = {'Early (0-0.6 s)', 'Late (1-2 s)', 'Full (0-2 s)'};
@@ -56,9 +56,9 @@ sgtitle('Peak Gamma Frequency Across GED Windows (Subject Trajectories)', ...
 for cond = 1:nCond
     subplot(2, 2, cond); hold on;
 
-    peak_mat = [S.all_trial_median_single_early(cond, 1:nSubj); ...
-                S.all_trial_median_single_late(cond, 1:nSubj); ...
-                S.all_trial_median_single(cond, 1:nSubj)]';
+    peak_mat = [dat.all_trial_median_single_early(cond, 1:nSubj); ...
+                dat.all_trial_median_single_late(cond, 1:nSubj); ...
+                dat.all_trial_median_single(cond, 1:nSubj)]';
 
     % Participant-level trajectories
     for s = 1:nSubj
