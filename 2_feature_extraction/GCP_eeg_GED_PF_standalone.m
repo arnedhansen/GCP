@@ -32,11 +32,7 @@ random_seed = 123;
 condNames = {'c25', 'c50', 'c75', 'c100'};
 trialCodes = [61, 62, 63, 64];
 
-fig_save_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/pf_computation';
-if ~exist(fig_save_dir, 'dir')
-    mkdir(fig_save_dir);
-end
-
+fig_save_dir = fullfile(paths.figures, 'eeg', 'ged', 'pf_computation');
 gcp_feature_data_path = paths.features;
 if ~exist(gcp_feature_data_path, 'dir')
     gcp_feature_data_path = paths.root;
@@ -46,7 +42,8 @@ end
 for subj = 1:nSubj
     subject_id = subjects{subj};
     subj_tag = ['subj', subject_id];
-    fprintf('\n[PF-Standalone] Subject %s (%d/%d)\n', subject_id, subj, nSubj);
+    clc
+    fprintf('\n[PF Computation] Subject %s (%d/%d)\n', subject_id, subj, nSubj);
     rng(random_seed + subj, 'twister');
 
     datapath = fullfile(gcp_feature_data_path, subject_id, 'eeg');
