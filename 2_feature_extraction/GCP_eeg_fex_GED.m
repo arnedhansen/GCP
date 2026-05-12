@@ -1521,7 +1521,7 @@ for subj = 1:nSubj
                 set(gca, 'YDir', 'normal');
             end
             title(sprintf('%s Raw', condLabels{cond}), 'FontSize', 11);
-            set(gca, 'FontSize', 10); xlim([30 90]); box on;
+            set(gca, 'FontSize', 10); xlim([30 90]); ylim([0 200]); box on;
         end
 
         % --- Row 2: Topoplot + histogram + combined spectra ---
