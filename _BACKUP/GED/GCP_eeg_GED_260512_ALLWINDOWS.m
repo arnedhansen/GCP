@@ -130,7 +130,7 @@ all_top5_topos         = cell(1, nSubj);
 all_simulated_templates = cell(1, nSubj);
 all_selected_comp_indices_multi = cell(1, nSubj);
 all_selected_comp_weights = cell(1, nSubj);
-all_component_selection_stats_full  = cell(1, nSubj);
+all_component_selection_stats  = cell(1, nSubj);
 all_component_selection_stats_early = cell(1, nSubj);
 all_component_selection_stats_late  = cell(1, nSubj);
 subject_runtime_seconds = nan(nSubj, 1);
@@ -728,7 +728,7 @@ for subj = 1:nSubj
             'rejection_flags', rejection_flags, ...
             'no_threshold_match', no_threshold_match);
         if w == 1
-            all_component_selection_stats_full{subj} = comp_sel_struct;
+            all_component_selection_stats{subj} = comp_sel_struct;
         elseif w == 2
             all_component_selection_stats_early{subj} = comp_sel_struct;
         else
@@ -759,7 +759,7 @@ for subj = 1:nSubj
         all_selected_comp_eval(subj) = evals_sorted_full(selected_idx_full(1));
         all_eigenvalues(subj) = evals_sorted_full(selected_idx_full(1));
     end
-    comp_stats_full = all_component_selection_stats_full{subj};
+    comp_stats_full = all_component_selection_stats{subj};
     comp_stats_early = all_component_selection_stats_early{subj};
     comp_stats_late = all_component_selection_stats_late{subj};
 
@@ -772,7 +772,7 @@ for subj = 1:nSubj
     comp_stats_late.selected_idx = selected_idx_late;
     comp_stats_late.selected_weights = w_combined_late;
 
-    all_component_selection_stats_full{subj} = comp_stats_full;
+    all_component_selection_stats{subj} = comp_stats_full;
     all_component_selection_stats_early{subj} = comp_stats_early;
     all_component_selection_stats_late{subj} = comp_stats_late;
 
@@ -834,8 +834,8 @@ for subj = 1:nSubj
     adequate_full = false;
     adequate_early = false;
     adequate_late = false;
-    if ~isempty(all_component_selection_stats_full{subj}) && isfield(all_component_selection_stats_full{subj}, 'selected_idx')
-        adequate_full = ~isempty(all_component_selection_stats_full{subj}.selected_idx);
+    if ~isempty(all_component_selection_stats{subj}) && isfield(all_component_selection_stats{subj}, 'selected_idx')
+        adequate_full = ~isempty(all_component_selection_stats{subj}.selected_idx);
     end
     if ~isempty(all_component_selection_stats_early{subj}) && isfield(all_component_selection_stats_early{subj}, 'selected_idx')
         adequate_early = ~isempty(all_component_selection_stats_early{subj}.selected_idx);
@@ -1997,7 +1997,7 @@ save(save_path, ...
     'all_topos', 'all_topos_early', 'all_topos_late', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
-    'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
+    'all_component_selection_stats', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
     'trials_powratio_components_full', 'trials_powratio_components_early', 'trials_powratio_components_late', ...
     'all_condition_powspctrm_full', 'all_condition_powspctrm_early', 'all_condition_powspctrm_late', ...
     'all_condition_peak_freq_full', 'all_condition_peak_freq_early', 'all_condition_peak_freq_late', ...

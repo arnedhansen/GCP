@@ -38,11 +38,13 @@ if ~isfile(ged_path)
     error('Missing GED features file: %s', ged_path);
 end
 
-Sged = load(ged_path, ...
-    'all_component_selection_stats_full', 'subjects');
-
-if ~isfield(Sged, 'all_component_selection_stats_full') || isempty(Sged.all_component_selection_stats_full)
-    error('all_component_selection_stats_full is missing/empty in %s', ged_path);
+Sged = load(ged_path, 'all_component_selection_stats', 'all_component_selection_stats', 'subjects');
+if isfield(Sged, 'all_component_selection_stats') && ~isempty(Sged.all_component_selection_stats)
+    comp_stats_all = Sged.all_component_selection_stats;
+elseif isfield(Sged, 'all_component_selection_stats') && ~isempty(Sged.all_component_selection_stats)
+    comp_stats_all = Sged.all_component_selection_stats;
+else
+    error('Component selection stats are missing in %s', ged_path);
 end
 
 out_path = fullfile(paths.features, 'GCP_eeg_GED_TFR.mat');
@@ -72,7 +74,7 @@ for subj = 1:nSubj
     nChan = numel(dat_by_cond{1}.label);
 
     % Recover selected GED component indices and weights (full window)
-    stat_full = Sged.all_component_selection_stats_full{subj};
+    stat_full = comp_stats_all{subj};
     if isempty(stat_full) || ~isfield(stat_full, 'selected_idx') || isempty(stat_full.selected_idx)
         warning('No selected GED components for %s. Skipping subject.', subjects{subj});
         continue;
