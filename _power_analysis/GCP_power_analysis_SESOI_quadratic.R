@@ -40,9 +40,10 @@ extract_powercurve_df <- function(pc, n_subjects_vec) {
 
 runSESOI <- function() {
   seed <- 123
-  nsim <- 100
+  # Fast mode: fewer simulations and a coarser N grid for screening.
+  nsim <- 40
   strict_power_target <- 0.90
-  subject_breaks <- seq(10, 100, by = 10)
+  subject_breaks <- seq(20, 100, by = 20)
   contrast_levels <- c("25", "50", "75", "100")
   trials_per_condition <- 160
 
@@ -67,7 +68,7 @@ runSESOI <- function() {
   }
 
   output_prefix <- "GCP_power_analysis_SESOI_quadratic"
-  figure_res_dpi <- 600L
+  figure_res_dpi <- 300L
   plot_title <- sprintf(
     "SESOI quadratic classical power (SESOI=%s; true(DGP)=%s; pilot c2=%s)",
     format(sesoi_beta, digits = 3),
@@ -262,24 +263,6 @@ runSESOI <- function() {
   print(heatmap_plot)
   dev.off()
   log_msg("Saved heatmap PNG.")
-
-  baseline_model <- base_model
-  sigma(baseline_model) <- baseline_residual_sd
-  baseline_pc <- suppressWarnings(powerCurve(
-    baseline_model,
-    test = fixed("contrast_num_c2"),
-    along = "Subject",
-    breaks = subject_breaks,
-    nsim = nsim,
-    progress = TRUE
-  ))
-  png(
-    file = file.path(figure_output_dir, paste0(output_prefix, "_simr_powercurve.png")),
-    width = 10, height = 6.5, units = "in", res = figure_res_dpi
-  )
-  plot(baseline_pc)
-  dev.off()
-  log_msg("Saved SIMR default powerCurve PNG.")
 
   power_df
 }
