@@ -441,9 +441,6 @@ for subj = 1:nSubj
         end
 
         % Candidate components metrics
-        pf_multi_peak_sep_min_hz = 10;        % penalize PF when another peak sits at least this far from dominant (Hz)
-        pf_multi_peak_height_ratio_min = 0.90;% rival peak height must reach this fraction of dominant peak amplitude
-        pf_multi_peak_deduct_per_peak = 0.05; % PF deduction per qualifying rival peak
         max_combined_leak = 1.30;             % artifact guard: mean(front leak, temporal leak)
         max_lineharm_ratio = 0.60;            % artifact guard: line-harmonic dominance ratio
         max_hf_slope = -0.15;                 % informative only (diagnostics); not an eligibility gate
@@ -472,8 +469,7 @@ for subj = 1:nSubj
         peak_bonus_vec = compute_peak_bonus_from_spectra( ...
             searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
         [powspctrm_form_score_vec, powspctrm_form_deduct_vec] = compute_powspctrm_form_laplacian_score_from_spectra( ...
-            searchMeanPrSpectrum, scan_freqs, analysis_freq_range, ...
-            pf_multi_peak_sep_min_hz, pf_multi_peak_height_ratio_min, pf_multi_peak_deduct_per_peak);
+            searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
         topo_posterior_vec = searchTopoPosteriorConcentration;
         topo_nonposterior_fail_vec = topo_posterior_vec < topo_nonposterior_max;
         occipital_evidence = 0.40 * normalize_robust(corr_vec) + ...
@@ -2102,7 +2098,7 @@ trl_centroid = nan(nTrl, 1);
 scan_freqs_analysis = scan_freqs_full(analysis_mask);
 centroid_band_mask = scan_freqs_full >= 30 & scan_freqs_full <= 90;
 freq_band = scan_freqs_full(centroid_band_mask);
-if nargin < 5 || ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
+if ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
     peak_power_halfwidth_hz = 0;
 end
 for trl = 1:nTrl
@@ -2141,10 +2137,10 @@ peak_hz = NaN;
 peak_power = NaN;
 y = y(:)';
 x = x(:)';
-if nargin < 3 || ~isfinite(smooth_n) || smooth_n < 1
+if ~isfinite(smooth_n) || smooth_n < 1
     smooth_n = 1;
 end
-if nargin < 4 || ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
+if ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
     peak_power_halfwidth_hz = 0;
 end
 if isempty(y) || numel(y) ~= numel(x)
@@ -2245,7 +2241,7 @@ end
 if nSig == 0
     return;
 end
-if nargin < 7 || ~isfinite(near_floor_mult) || near_floor_mult <= 0
+if ~isfinite(near_floor_mult) || near_floor_mult <= 0
     near_floor_mult = 1.5;
 end
 % Each signal is represented as one virtual channel (GED component time series).
@@ -2344,10 +2340,10 @@ end
 function [base_floor, base_median] = compute_baseline_floor_stats(base_power_vals, floor_prctile, floor_frac)
 base_floor = eps;
 base_median = eps;
-if nargin < 2 || ~isfinite(floor_prctile)
+if ~isfinite(floor_prctile)
     floor_prctile = 20;
 end
-if nargin < 3 || ~isfinite(floor_frac)
+if ~isfinite(floor_frac)
     floor_frac = 0.25;
 end
 if isempty(base_power_vals)
@@ -2371,10 +2367,10 @@ base_median = max(base_median, base_floor);
 end
 
 function ylims = compute_symmetric_ylim(vals, pad_frac, min_half_range)
-if nargin < 2 || ~isfinite(pad_frac) || pad_frac < 0
+if ~isfinite(pad_frac) || pad_frac < 0
     pad_frac = 0.15;
 end
-if nargin < 3 || ~isfinite(min_half_range) || min_half_range <= 0
+if ~isfinite(min_half_range) || min_half_range <= 0
     min_half_range = 1;
 end
 vals = vals(:);
@@ -2482,7 +2478,7 @@ stability = struct( ...
     'top1_freq', nan(nComp, 1), ...
     'rank_mean', nan(nComp, 1), ...
     'rank_std', nan(nComp, 1));
-if nargin < 6 || isempty(n_boot) || ~isfinite(n_boot) || n_boot < 1
+if isempty(n_boot) || ~isfinite(n_boot) || n_boot < 1
     n_boot = 0;
 end
 if nComp == 0
@@ -2755,17 +2751,17 @@ info_viol = [ ...
 end
 
 function plot_covariance_matrix_diagnostics(save_dir, subject_id, chan_labels, covBase_full, covStim_per_win, win_names_cap, lambdas)
-if nargin < 7 || isempty(covStim_per_win) || isempty(covBase_full)
+if isempty(covStim_per_win) || isempty(covBase_full)
     return;
 end
 nWins = min(3, numel(covStim_per_win));
 if nWins < 1
     return;
 end
-if nargin < 6 || isempty(win_names_cap)
+if isempty(win_names_cap)
     win_names_cap = {'Full', 'Early', 'Late'};
 end
-if nargin < 8 || isempty(lambdas)
+if isempty(lambdas)
     lambdas = repmat(0.05, 1, nWins);
 end
 
@@ -3145,7 +3141,7 @@ end
 end
 
 function [sel_idx, sel_w] = sanitize_selected_components(sel_idx, sel_w, nComp)
-if nargin < 3 || isempty(nComp) || ~isfinite(nComp)
+if isempty(nComp) || ~isfinite(nComp)
     nComp = 0;
 end
 sel_idx = sel_idx(:);
@@ -3176,7 +3172,7 @@ if isempty(spec_vec) || isempty(scan_freqs) || numel(spec_vec) ~= numel(scan_fre
     return;
 end
 [pf_vec, ~] = compute_powspctrm_form_laplacian_score_from_spectra( ...
-    spec_vec(:)', scan_freqs, analysis_freq_range, 10, 0.90, 0.05);
+    spec_vec(:)', scan_freqs, analysis_freq_range);
 if ~isempty(pf_vec) && isfinite(pf_vec(1))
     pf_score = pf_vec(1);
 end
@@ -3223,16 +3219,10 @@ end
 end
 
 function [pf_score_vec, pf_deduction_vec, diag] = compute_powspctrm_form_laplacian_score_from_spectra( ...
-    mean_pr_spectrum, scan_freqs, analysis_freq_range, rival_sep_min_hz, rival_height_ratio_min, deduct_per_rival)
-if nargin < 4 || isempty(rival_sep_min_hz) || ~isfinite(rival_sep_min_hz)
-    rival_sep_min_hz = 10;
-end
-if nargin < 5 || isempty(rival_height_ratio_min) || ~isfinite(rival_height_ratio_min)
-    rival_height_ratio_min = 0.90;
-end
-if nargin < 6 || isempty(deduct_per_rival) || ~isfinite(deduct_per_rival)
-    deduct_per_rival = 0.05;
-end
+    mean_pr_spectrum, scan_freqs, analysis_freq_range)
+rival_sep_min_hz = 10;
+rival_height_ratio_min = 0.90;
+deduct_per_rival = 0.05;
 deduct_per_rival = max(0, min(1, deduct_per_rival));
 nComp = size(mean_pr_spectrum, 1);
 pf_score_vec = zeros(nComp, 1);
@@ -3371,7 +3361,7 @@ end
 end
 
 function format_power_change_db_axis(axh)
-if nargin < 1 || isempty(axh) || ~isgraphics(axh, 'axes')
+if isempty(axh) || ~isgraphics(axh, 'axes')
     axh = gca;
 end
 yt = get(axh, 'YTick');
@@ -3436,16 +3426,10 @@ end
 end
 
 function [powspctrm_form_score_vec, powspctrm_form_mode_vec, diag] = compute_powspctrm_form_template_score_from_spectra( ...
-    mean_pr_spectrum, scan_freqs, analysis_freq_range, multi_peak_sep_min_hz, multi_peak_height_ratio_min, multi_peak_penalty_mult)
-if nargin < 4 || isempty(multi_peak_sep_min_hz) || ~isfinite(multi_peak_sep_min_hz)
-    multi_peak_sep_min_hz = 15;
-end
-if nargin < 5 || isempty(multi_peak_height_ratio_min) || ~isfinite(multi_peak_height_ratio_min)
-    multi_peak_height_ratio_min = 0.80;
-end
-if nargin < 6 || isempty(multi_peak_penalty_mult) || ~isfinite(multi_peak_penalty_mult)
-    multi_peak_penalty_mult = 0.62;
-end
+    mean_pr_spectrum, scan_freqs, analysis_freq_range)
+multi_peak_sep_min_hz = 15;
+multi_peak_height_ratio_min = 0.80;
+multi_peak_penalty_mult = 0.62;
 multi_peak_penalty_mult = max(0, min(1, multi_peak_penalty_mult));
 shift_max_hz = 10;
 single_widths_hz = [5 7 9 12];
@@ -4462,7 +4446,7 @@ end
 
 function ged_freq_progress_reset(subject_label, subj_idx, subj_total, call_total_estimate)
 global GED_FREQ_PROGRESS;
-if nargin < 4 || ~isfinite(call_total_estimate) || call_total_estimate < 1
+if ~isfinite(call_total_estimate) || call_total_estimate < 1
     call_total_estimate = 0;
 end
 GED_FREQ_PROGRESS = struct( ...
@@ -4476,7 +4460,7 @@ end
 
 function ged_freq_progress_set_phase(phase_label)
 global GED_FREQ_PROGRESS;
-if nargin < 1 || isempty(phase_label)
+if isempty(phase_label)
     return;
 end
 if isempty(GED_FREQ_PROGRESS) || ~isstruct(GED_FREQ_PROGRESS)
@@ -4599,7 +4583,7 @@ end
 
 function y = smooth_reflective(x, win)
 y = x;
-if nargin < 2 || isempty(win) || win <= 1 || isempty(x)
+if isempty(win) || win <= 1 || isempty(x)
     return;
 end
 win = max(1, round(win));
@@ -4617,10 +4601,10 @@ y = y_pad(pad+1:end-pad);
 end
 
 function save_figure_png(fig_handle, out_path)
-if nargin < 1 || isempty(fig_handle) || ~ishandle(fig_handle)
+if isempty(fig_handle) || ~ishandle(fig_handle)
     return;
 end
-if nargin < 2 || isempty(out_path)
+if isempty(out_path)
     return;
 end
 out_dir = fileparts(out_path);
@@ -4685,7 +4669,7 @@ n_valid_cond = 0;
 cond_pass_col = false(numel(cond_label_cell), 1);
 subj_pass = false;
 reason_str = '';
-if nargin < 2 || isempty(window_tag)
+if isempty(window_tag)
     window_tag = '?';
 elseif ~ischar(window_tag)
     window_tag = char(window_tag);
@@ -4735,13 +4719,13 @@ ci_width_hz = NaN;
 ci_low_hz = NaN;
 ci_high_hz = NaN;
 n_boot_valid = 0;
-if nargin < 5 || isempty(ci_prct) || numel(ci_prct) ~= 2
+if isempty(ci_prct) || numel(ci_prct) ~= 2
     ci_prct = [2.5 97.5];
 end
-if nargin < 4 || isempty(n_boot) || ~isfinite(n_boot) || n_boot < 1
+if isempty(n_boot) || ~isfinite(n_boot) || n_boot < 1
     n_boot = 1000;
 end
-if nargin < 3 || ~isfinite(smooth_n) || smooth_n < 1
+if ~isfinite(smooth_n) || smooth_n < 1
     smooth_n = 1;
 end
 if isempty(pr_mat) || isempty(scan_freqs) || size(pr_mat, 2) ~= numel(scan_freqs)
@@ -4765,7 +4749,7 @@ for bi = 1:n_boot
     end
     boot_avg = mean(boot_mat(boot_use, :), 1, 'omitnan');
     boot_avg = movmean(boot_avg, max(1, round(smooth_n)), 'omitnan');
-    [peak_hz_boot(bi), ~] = pick_tallest_peak(boot_avg, scan_freqs, 1);
+    [peak_hz_boot(bi), ~] = pick_tallest_peak(boot_avg, scan_freqs, 1, 0);
 end
 peak_hz_boot = peak_hz_boot(isfinite(peak_hz_boot));
 n_boot_valid = numel(peak_hz_boot);
@@ -4782,7 +4766,7 @@ ci_width_hz = ci_high_hz - ci_low_hz;
 end
 
 function runtime_str = format_runtime_hhmmss(runtime_seconds)
-if nargin < 1 || ~isfinite(runtime_seconds) || runtime_seconds < 0
+if ~isfinite(runtime_seconds) || runtime_seconds < 0
     runtime_str = 'n/a';
     return;
 end
