@@ -6,8 +6,8 @@
 % - PF metrics (0-1):
 %   (1) Current PF (full current implementation)
 %   (2) Kurtosis-based PF
-%   (3) Laplace fit PF (primary: R^2, secondary: 1-NRMSE)
-%   (4) Truncated Gaussian fit PF (primary: R^2, secondary: 1-NRMSE)
+%   (3) Laplace fit PF (R^2)
+%   (4) Truncated Gaussian fit PF (R^2)
 % - Visualizations:
 %   (a) Scree + PF curves
 %   (b) Component topographies + spectra with all PF values printed
@@ -32,7 +32,11 @@ random_seed = 123;
 condNames = {'c25', 'c50', 'c75', 'c100'};
 trialCodes = [61, 62, 63, 64];
 
-fig_save_dir = fullfile(paths.figures, 'eeg', 'ged', 'pf_computation');
+fig_save_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/eeg/ged/pf_computation';
+if ~exist(fig_save_dir, 'dir')
+    mkdir(fig_save_dir);
+end
+
 gcp_feature_data_path = paths.features;
 if ~exist(gcp_feature_data_path, 'dir')
     gcp_feature_data_path = paths.root;
@@ -42,8 +46,7 @@ end
 for subj = 1:nSubj
     subject_id = subjects{subj};
     subj_tag = ['subj', subject_id];
-    clc
-    fprintf('\n[PF Computation] Subject %s (%d/%d)\n', subject_id, subj, nSubj);
+    fprintf('\n[PF-Standalone] Subject %s (%d/%d)\n', subject_id, subj, nSubj);
     rng(random_seed + subj, 'twister');
 
     datapath = fullfile(gcp_feature_data_path, subject_id, 'eeg');
@@ -165,10 +168,10 @@ for subj = 1:nSubj
     [pf_kurtosis, kurtosis_raw] = compute_pf_kurtosis_from_spectra( ...
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
 
-    [pf_laplace, laplace_r2, laplace_1m_nrmse] = compute_pf_laplace_fit_from_spectra( ...
+    [pf_laplace, laplace_r2] = compute_pf_laplace_fit_from_spectra( ...
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
 
-    [pf_tgauss, tgauss_r2, tgauss_1m_nrmse] = compute_pf_trunc_gauss_fit_from_spectra( ...
+    [pf_tgauss, tgauss_r2] = compute_pf_trunc_gauss_fit_from_spectra( ...
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
 
     %% Figure 1: Scree + PF curves
@@ -180,7 +183,6 @@ for subj = 1:nSubj
     xlabel('Component rank');
     ylabel('\lambda');
     title('GED eigenvalue scree');
-    grid on;
     box off;
 
     subplot(2, 2, 2); hold on;
@@ -195,19 +197,17 @@ for subj = 1:nSubj
     ylabel('PF (0-1)');
     title('PF methods (primary scores)');
     legend('Location', 'southoutside', 'NumColumns', 2);
-    grid on;
     box off;
 
     subplot(2, 2, 3); hold on;
-    plot(comp_idx, laplace_1m_nrmse(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.88 0.49 0.10], 'DisplayName', 'Laplace 1-NRMSE');
-    plot(comp_idx, tgauss_1m_nrmse(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.22 0.66 0.33], 'DisplayName', 'TruncGaussian 1-NRMSE');
+    plot(comp_idx, laplace_r2(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.88 0.49 0.10], 'DisplayName', 'Laplace R^2');
+    plot(comp_idx, tgauss_r2(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.22 0.66 0.33], 'DisplayName', 'TruncGaussian R^2');
     ylim([0 1]);
     xlim([1 nSearch]);
     xlabel('Component');
-    ylabel('Secondary fit score (0-1)');
-    title('Secondary diagnostics');
+    ylabel('R^2 (0-1)');
+    title('Fit R^2 diagnostics');
     legend('Location', 'best');
-    grid on;
     box off;
 
     subplot(2, 2, 4);
@@ -218,15 +218,16 @@ for subj = 1:nSubj
     text(0.01, 0.62, 'PF settings:', 'FontSize', 11, 'FontWeight', 'bold', 'Interpreter', 'none');
     text(0.03, 0.53, '(1) Current PF = full existing method', 'FontSize', 10, 'Interpreter', 'none');
     text(0.03, 0.45, '(2) Kurtosis PF = spectral-shape kurtosis mapping', 'FontSize', 10, 'Interpreter', 'none');
-    text(0.03, 0.37, '(3) Laplace PF = R^2 (primary), 1-NRMSE (secondary)', 'FontSize', 10, 'Interpreter', 'none');
-    text(0.03, 0.29, '(4) Truncated Gaussian PF = R^2 (primary), 1-NRMSE (secondary)', 'FontSize', 10, 'Interpreter', 'none');
+    text(0.03, 0.37, '(3) Laplace PF = R^2', 'FontSize', 10, 'Interpreter', 'none');
+    text(0.03, 0.29, '(4) Truncated Gaussian PF = R^2', 'FontSize', 10, 'Interpreter', 'none');
 
     sgtitle(sprintf('GED PF comparison (full window): %s', subject_id), 'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
     save_figure_png(fig1, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_pf_scree_metrics_%s.png', subj_tag)));
     close(fig1);
 
     %% Figure 2: Topographies + spectra with all outcome values printed
-    nShow = min(5, nSearch);
+    nShow = min(10, nSearch);
+    nColsComp = 5;
     fig2 = figure('Position', [0 0 1512 982], 'Color', 'w');
 
     cfg_topo = [];
@@ -240,8 +241,15 @@ for subj = 1:nSubj
 
     for k = 1:nShow
         ci = k;
+        if ci <= nColsComp
+            topo_pos = ci;
+            spec_pos = nColsComp + ci;
+        else
+            topo_pos = (2 * nColsComp) + (ci - nColsComp);
+            spec_pos = (3 * nColsComp) + (ci - nColsComp);
+        end
 
-        subplot(2, nShow, k);
+        subplot(4, nColsComp, topo_pos);
         topo_data = [];
         topo_data.label = dataStructs{1}.label;
         topo_data.avg = searchTopos(:, ci);
@@ -261,11 +269,11 @@ for subj = 1:nSubj
             caxis([-topo_clim topo_clim]);
             colorbar;
         end
-        title(sprintf('C%d, \\lambda=%.2f', ci, evals_sorted(ci)), 'FontSize', 10, 'Interpreter', 'none');
+        title(sprintf('C%d, \\lambda=%.2f', ci, evals_sorted(ci)), 'FontSize', 9, 'Interpreter', 'none');
 
-        subplot(2, nShow, nShow + k); hold on;
+        subplot(4, nColsComp, spec_pos); hold on;
         spec = searchMeanPrSpectrum(ci, :);
-        plot(scan_freqs, spec, 'k-', 'LineWidth', 1.8);
+        plot(scan_freqs, spec, 'k-', 'LineWidth', 1.5);
         yline(0, 'k--', 'LineWidth', 0.8);
         xlim(analysis_freq_range);
         spec_finite = spec(isfinite(spec));
@@ -277,25 +285,25 @@ for subj = 1:nSubj
                 ylim([ymin - 0.12 * yr, ymax + 0.30 * yr]);
             end
         end
-        xlabel('Hz');
-        ylabel('Power [dB]');
+        xlabel('Hz', 'FontSize', 8);
+        ylabel('Power [dB]', 'FontSize', 8);
         box on;
-        grid on;
+        set(gca, 'FontSize', 8);
         format_power_change_db_axis(gca);
 
         txt = sprintf(['Current=%.2f | Kurt=%.2f\n' ...
-            'Laplace=%.2f (R^2=%.2f,1-RMSE=%.2f)\n' ...
-            'TGauss=%.2f (R^2=%.2f,1-RMSE=%.2f)'], ...
+            'Laplace=%.2f (R^2=%.2f)\n' ...
+            'TGauss=%.2f (R^2=%.2f)'], ...
             pf_current(ci), pf_kurtosis(ci), ...
-            pf_laplace(ci), laplace_r2(ci), laplace_1m_nrmse(ci), ...
-            pf_tgauss(ci), tgauss_r2(ci), tgauss_1m_nrmse(ci));
+            pf_laplace(ci), laplace_r2(ci), ...
+            pf_tgauss(ci), tgauss_r2(ci));
         text(0.02, 0.98, txt, 'Units', 'normalized', ...
             'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
-            'FontSize', 8, 'Interpreter', 'none');
-        title(sprintf('Component %d spectrum', ci), 'FontSize', 10, 'Interpreter', 'none');
+            'FontSize', 7, 'Interpreter', 'none');
+        title(sprintf('Component %d spectrum', ci), 'FontSize', 9, 'Interpreter', 'none');
     end
 
-    sgtitle(sprintf('Top components with PF values: %s', subject_id), 'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+    sgtitle(sprintf('Top 10 components with PF values: %s', subject_id), 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
     save_figure_png(fig2, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_pf_components_%s.png', subj_tag)));
     close(fig2);
 end
@@ -335,11 +343,10 @@ end
 pf_score_vec(~isfinite(pf_score_vec)) = 0;
 end
 
-function [pf_score_vec, r2_vec, one_minus_nrmse_vec] = compute_pf_laplace_fit_from_spectra(mean_pr_spectrum, scan_freqs, analysis_freq_range)
+function [pf_score_vec, r2_vec] = compute_pf_laplace_fit_from_spectra(mean_pr_spectrum, scan_freqs, analysis_freq_range)
 nComp = size(mean_pr_spectrum, 1);
 pf_score_vec = nan(nComp, 1);
 r2_vec = nan(nComp, 1);
-one_minus_nrmse_vec = nan(nComp, 1);
 freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
 for ci = 1:nComp
     y = mean_pr_spectrum(ci, :);
@@ -358,7 +365,6 @@ for ci = 1:nComp
     yscale = max(yshape);
     if ~isfinite(yscale) || yscale <= eps
         r2_vec(ci) = 0;
-        one_minus_nrmse_vec(ci) = 0;
         pf_score_vec(ci) = 0;
         continue;
     end
@@ -374,21 +380,18 @@ for ci = 1:nComp
     p_est = min(max(p_est, lb), ub);
     yhat = laplace_model(x, p_est);
 
-    [r2, one_minus_nrmse] = compute_fit_scores(yfit_target, yhat);
+    r2 = compute_r2_score(yfit_target, yhat);
     r2_vec(ci) = r2;
-    one_minus_nrmse_vec(ci) = one_minus_nrmse;
     pf_score_vec(ci) = r2; % user-selected primary metric
 end
 pf_score_vec(~isfinite(pf_score_vec)) = 0;
 r2_vec(~isfinite(r2_vec)) = 0;
-one_minus_nrmse_vec(~isfinite(one_minus_nrmse_vec)) = 0;
 end
 
-function [pf_score_vec, r2_vec, one_minus_nrmse_vec] = compute_pf_trunc_gauss_fit_from_spectra(mean_pr_spectrum, scan_freqs, analysis_freq_range)
+function [pf_score_vec, r2_vec] = compute_pf_trunc_gauss_fit_from_spectra(mean_pr_spectrum, scan_freqs, analysis_freq_range)
 nComp = size(mean_pr_spectrum, 1);
 pf_score_vec = nan(nComp, 1);
 r2_vec = nan(nComp, 1);
-one_minus_nrmse_vec = nan(nComp, 1);
 freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
 for ci = 1:nComp
     y = mean_pr_spectrum(ci, :);
@@ -407,7 +410,6 @@ for ci = 1:nComp
     yscale = max(yshape);
     if ~isfinite(yscale) || yscale <= eps
         r2_vec(ci) = 0;
-        one_minus_nrmse_vec(ci) = 0;
         pf_score_vec(ci) = 0;
         continue;
     end
@@ -423,14 +425,12 @@ for ci = 1:nComp
     p_est = min(max(p_est, lb), ub);
     yhat = trunc_gauss_model(x, p_est, analysis_freq_range);
 
-    [r2, one_minus_nrmse] = compute_fit_scores(yfit_target, yhat);
+    r2 = compute_r2_score(yfit_target, yhat);
     r2_vec(ci) = r2;
-    one_minus_nrmse_vec(ci) = one_minus_nrmse;
     pf_score_vec(ci) = r2; % user-selected primary metric
 end
 pf_score_vec(~isfinite(pf_score_vec)) = 0;
 r2_vec(~isfinite(r2_vec)) = 0;
-one_minus_nrmse_vec(~isfinite(one_minus_nrmse_vec)) = 0;
 end
 
 function v = bounded_obj(p, lb, ub, obj_fun)
@@ -464,10 +464,9 @@ if max(yhat) > 0
 end
 end
 
-function [r2, one_minus_nrmse] = compute_fit_scores(y, yhat)
+function r2 = compute_r2_score(y, yhat)
 if numel(y) ~= numel(yhat)
     r2 = 0;
-    one_minus_nrmse = 0;
     return;
 end
 valid = isfinite(y) & isfinite(yhat);
@@ -475,7 +474,6 @@ y = y(valid);
 yhat = yhat(valid);
 if numel(y) < 3
     r2 = 0;
-    one_minus_nrmse = 0;
     return;
 end
 sse = sum((y - yhat).^2);
@@ -486,15 +484,6 @@ else
     r2 = 1 - (sse / sst);
 end
 r2 = max(0, min(1, r2));
-
-rmse = sqrt(mean((y - yhat).^2));
-dyn = max(y) - min(y);
-if ~isfinite(dyn) || dyn <= eps
-    nrmse = 1;
-else
-    nrmse = rmse / dyn;
-end
-one_minus_nrmse = max(0, min(1, 1 - nrmse));
 end
 
 %% ------------------------------------------------------------------------
