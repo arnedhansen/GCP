@@ -1,8 +1,5 @@
 %% GCP Gamma Peak Frequency and Power with Generalized Eigendecomposition (GED)
 %
-% Registered report Stage 1 publication script.
-%
-% Scope
 %   - Full stimulus window only analysis (0 to 2 s) with baseline contrast
 %      against the prestimulus interval (-1.5 to -0.25 s).
 %   - Subject specific GED with regularized covariance decomposition and
@@ -12,7 +9,7 @@
 %      followed by trial peak frequency and peak power extraction.
 %   - Condition wise subject summaries.
 %
-% Main outputs
+% Outputs
 %   - `data/features/GCP_eeg_GED.mat` with full window features and GED
 %      component selection statistics (`all_component_selection_stats`).
 %   - Diagnostic and summary figures in `figures/eeg/ged`.
@@ -101,8 +98,7 @@ for subj = 1:nSubj
     rng(random_seed + subj, 'twister');
 
     subject_id = subjects{subj};
-    fprintf('[GED] Subject %s (%d/%d) full window only
-', subject_id, subj, nSubj);
+    fprintf('[GED] Subject %s (%d/%d)', subject_id, subj, nSubj);
     datapath = fullfile(gcp_feature_data_path, subject_id, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
         'dataEEG_c25', 'dataEEG_c50', 'dataEEG_c75', 'dataEEG_c100');
@@ -576,21 +572,16 @@ save(save_path, ...
     'trial_counts_initial_by_subj', 'trial_counts_retained_by_subj', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
-fprintf('[GED] DONE full window pipeline
-');
-fprintf('[GED] Feature extraction results saved to: %s
-', save_path);
+fprintf('[GED] DONE!');
+fprintf('[GED] Feature extraction results saved to: %s', save_path);
 for si = 1:nSubj
     if isfinite(subject_runtime_seconds(si))
-        fprintf('[GED] Runtime Subject %s: %s
-', subjects{si}, format_runtime_hhmmss(subject_runtime_seconds(si)));
+        fprintf('[GED] Runtime Subject %s: %s', subjects{si}, format_runtime_hhmmss(subject_runtime_seconds(si)));
     else
-        fprintf('[GED] Runtime Subject %s: n/a
-', subjects{si});
+        fprintf('[GED] Runtime Subject %s: n/a', subjects{si});
     end
 end
-fprintf('[GED] Runtime TOTAL: %s
-', format_runtime_hhmmss(toc(total_runtime_tic)));
+fprintf('[GED] Runtime TOTAL: %s', format_runtime_hhmmss(toc(total_runtime_tic)));
 
 function [trl_peaks, trl_peak_power, trl_centroid] = ...
     compute_trial_peak_metrics_from_powratio_fullscan(powratio_trials_fullscan, scan_freqs_full, analysis_mask, ...
