@@ -175,58 +175,7 @@ for subj = 1:nSubj
     [pf_tgauss, tgauss_r2] = compute_pf_trunc_gauss_fit_from_spectra( ...
         searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
 
-    %% Figure 1: Scree + PF curves
-    fig1 = figure('Position', [0 0 1512 982], 'Color', 'w');
-
-    subplot(2, 2, 1);
-    nEigPlot = min(30, numel(evals_sorted));
-    plot(1:nEigPlot, evals_sorted(1:nEigPlot), 'k-o', 'LineWidth', 1.8, 'MarkerSize', 5);
-    xlabel('Component rank');
-    ylabel('\lambda');
-    title('GED eigenvalue scree');
-    box off;
-
-    subplot(2, 2, 2); hold on;
-    comp_idx = 1:nSearch;
-    plot(comp_idx, pf_current(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.10 0.10 0.10], 'DisplayName', 'Current PF');
-    plot(comp_idx, pf_kurtosis(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.16 0.45 0.76], 'DisplayName', 'Kurtosis PF');
-    plot(comp_idx, pf_laplace(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.88 0.49 0.10], 'DisplayName', 'Laplace PF (R^2)');
-    plot(comp_idx, pf_tgauss(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.22 0.66 0.33], 'DisplayName', 'TruncGaussian PF (R^2)');
-    ylim([0 1]);
-    xlim([1 nSearch]);
-    xlabel('Component');
-    ylabel('PF (0-1)');
-    title('PF methods (primary scores)');
-    legend('Location', 'southoutside', 'NumColumns', 2);
-    box off;
-
-    subplot(2, 2, 3); hold on;
-    plot(comp_idx, laplace_r2(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.88 0.49 0.10], 'DisplayName', 'Laplace R^2');
-    plot(comp_idx, tgauss_r2(:)', '-o', 'LineWidth', 1.6, 'MarkerSize', 5, 'Color', [0.22 0.66 0.33], 'DisplayName', 'TruncGaussian R^2');
-    ylim([0 1]);
-    xlim([1 nSearch]);
-    xlabel('Component');
-    ylabel('R^2 (0-1)');
-    title('Fit R^2 diagnostics');
-    legend('Location', 'best');
-    box off;
-
-    subplot(2, 2, 4);
-    axis off;
-    text(0.01, 0.95, sprintf('Subject: %s', subject_id), 'FontSize', 12, 'FontWeight', 'bold', 'Interpreter', 'none');
-    text(0.01, 0.84, sprintf('nTrials pooled: %d', nTrials_total), 'FontSize', 11, 'Interpreter', 'none');
-    text(0.01, 0.74, sprintf('nComponents shown: %d', nSearch), 'FontSize', 11, 'Interpreter', 'none');
-    text(0.01, 0.62, 'PF settings:', 'FontSize', 11, 'FontWeight', 'bold', 'Interpreter', 'none');
-    text(0.03, 0.53, '(1) Current PF = full existing method', 'FontSize', 10, 'Interpreter', 'none');
-    text(0.03, 0.45, '(2) Kurtosis PF = spectral-shape kurtosis mapping', 'FontSize', 10, 'Interpreter', 'none');
-    text(0.03, 0.37, '(3) Laplace PF = R^2', 'FontSize', 10, 'Interpreter', 'none');
-    text(0.03, 0.29, '(4) Truncated Gaussian PF = R^2', 'FontSize', 10, 'Interpreter', 'none');
-
-    sgtitle(sprintf('GED PF comparison (full window): %s', subject_id), 'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
-    save_figure_png(fig1, fullfile(fig_save_dir, sprintf('GCP_eeg_GED_pf_scree_metrics_%s.png', subj_tag)));
-    close(fig1);
-
-    %% Figure 2: Topographies + spectra with all outcome values printed
+    %% Figure: Topographies + spectra with all outcome values printed
     nShow = min(10, nSearch);
     nColsComp = 5;
     fig2 = figure('Position', [0 0 1512 982], 'Color', 'w');
