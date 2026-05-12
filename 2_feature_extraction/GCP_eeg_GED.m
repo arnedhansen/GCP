@@ -50,7 +50,7 @@ scan_width = 2.0; % spectral smoothing (Hz) for mtmfft
 lambda = 0.05;              % regularization
 ged_search_n = 10;          % search first N GED components
 min_eigval = 1.1;           % minimum GED eigenvalue (lambda >= 1.1)
-min_peak_form = 0.5;        % minimum PF score for candidate eligibility
+min_powspctrm_form = 0.8;        % minimum PF (powspctrm-form) score for candidate eligibility
 random_seed = 123;
 trial_peak_smooth_n = 10;     % moving-average smoothing
 peak_power_halfwidth_hz = 5;  % peak power = mean power within peak_hz +/-
@@ -323,7 +323,8 @@ for subj = 1:nSubj
     hf_slope_full = []; hf_slope_early = []; hf_slope_late = [];
     emg_artifact_score_full = []; emg_artifact_score_early = []; emg_artifact_score_late = [];
     extreme_component_outlier_full = []; extreme_component_outlier_early = []; extreme_component_outlier_late = [];
-    peak_form_score_full = []; peak_form_score_early = []; peak_form_score_late = [];
+    powspctrm_form_score_full = []; powspctrm_form_score_early = []; powspctrm_form_score_late = [];
+    powspctrm_form_deduct_full = []; powspctrm_form_deduct_early = []; powspctrm_form_deduct_late = [];
     thr_max_combined_leak_full = NaN; thr_max_combined_leak_early = NaN; thr_max_combined_leak_late = NaN;
     thr_max_hf_slope_full = NaN; thr_max_hf_slope_early = NaN; thr_max_hf_slope_late = NaN;
     thr_max_emg_score_full = NaN; thr_max_emg_score_early = NaN; thr_max_emg_score_late = NaN;
@@ -440,9 +441,9 @@ for subj = 1:nSubj
         end
 
         % Candidate components metrics
-        pf_multi_peak_sep_min_hz = 5;         % penalize PF when another peak sits at least this far from the dominant (Hz)
-        pf_multi_peak_height_ratio_min = 0.8; % rival peak height must reach this fraction of the dominant peak amplitude
-        pf_multi_peak_penalty_mult = 0.35;    % base multiplier for >=5 Hz, >=80% dominant rival peaks (strong PF penalty)
+        pf_multi_peak_sep_min_hz = 10;        % penalize PF when another peak sits at least this far from dominant (Hz)
+        pf_multi_peak_height_ratio_min = 0.90;% rival peak height must reach this fraction of dominant peak amplitude
+        pf_multi_peak_deduct_per_peak = 0.05; % PF deduction per qualifying rival peak
         max_combined_leak = 1.30;             % artifact guard: mean(front leak, temporal leak)
         max_lineharm_ratio = 0.60;            % artifact guard: line-harmonic dominance ratio
         max_hf_slope = -0.15;                 % informative only (diagnostics); not an eligibility gate
@@ -470,9 +471,9 @@ for subj = 1:nSubj
             isfinite(combined_leak_vec) & isfinite(lineharm_vec);
         peak_bonus_vec = compute_peak_bonus_from_spectra( ...
             searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
-        peak_form_score_vec = compute_peak_form_template_score_from_spectra( ...
+        [powspctrm_form_score_vec, powspctrm_form_deduct_vec] = compute_powspctrm_form_laplacian_score_from_spectra( ...
             searchMeanPrSpectrum, scan_freqs, analysis_freq_range, ...
-            pf_multi_peak_sep_min_hz, pf_multi_peak_height_ratio_min, pf_multi_peak_penalty_mult);
+            pf_multi_peak_sep_min_hz, pf_multi_peak_height_ratio_min, pf_multi_peak_deduct_per_peak);
         topo_posterior_vec = searchTopoPosteriorConcentration;
         topo_nonposterior_fail_vec = topo_posterior_vec < topo_nonposterior_max;
         occipital_evidence = 0.40 * normalize_robust(corr_vec) + ...
@@ -484,7 +485,7 @@ for subj = 1:nSubj
             0.20 * normalize_robust(max(hf_slope_for_score, 0));
         enforced_min_eigval = min_eigval;
         pass_eig_gate = finite_metrics & (eval_raw_vec >= enforced_min_eigval);
-        pass_peak_gate = finite_metrics & (peak_form_score_vec >= min_peak_form);
+        pass_peak_gate = finite_metrics & (powspctrm_form_score_vec >= min_powspctrm_form);
         fail_leak = finite_metrics & (combined_leak_vec > max_combined_leak);
         fail_lineharm = finite_metrics & (lineharm_vec > max_lineharm_ratio);
         fail_hf_slope = false(nSearch, 1); % HF slope kept in EMG score only; no eligibility gate
@@ -542,7 +543,7 @@ for subj = 1:nSubj
         no_threshold_match = ~any(eligible);
         selection_pool_mask = eligible;
         searchScores = compute_calibrated_rank_aggregation_score( ...
-            eval_raw_vec, peak_form_score_vec, peak_bonus_vec, occipital_evidence, emg_artifact_score, rank_stability_boot_reps);
+            eval_raw_vec, powspctrm_form_score_vec, peak_bonus_vec, occipital_evidence, emg_artifact_score, rank_stability_boot_reps);
         searchScores(~finite_metrics) = -Inf;
         searchScores(~selection_pool_mask) = -Inf;
         [bestScore, bestIdx] = max(searchScores);
@@ -629,7 +630,8 @@ for subj = 1:nSubj
             hf_slope_full = hf_slope_vec;
             emg_artifact_score_full = emg_artifact_score;
             extreme_component_outlier_full = extreme_component_outlier_mask;
-            peak_form_score_full = peak_form_score_vec;
+            powspctrm_form_score_full = powspctrm_form_score_vec;
+            powspctrm_form_deduct_full = powspctrm_form_deduct_vec;
             thr_max_combined_leak_full = max_combined_leak;
             thr_max_hf_slope_full = max_hf_slope;
             thr_max_emg_score_full = max_emg_score;
@@ -653,7 +655,8 @@ for subj = 1:nSubj
             hf_slope_early = hf_slope_vec;
             emg_artifact_score_early = emg_artifact_score;
             extreme_component_outlier_early = extreme_component_outlier_mask;
-            peak_form_score_early = peak_form_score_vec;
+            powspctrm_form_score_early = powspctrm_form_score_vec;
+            powspctrm_form_deduct_early = powspctrm_form_deduct_vec;
             thr_max_combined_leak_early = max_combined_leak;
             thr_max_hf_slope_early = max_hf_slope;
             thr_max_emg_score_early = max_emg_score;
@@ -677,7 +680,8 @@ for subj = 1:nSubj
             hf_slope_late = hf_slope_vec;
             emg_artifact_score_late = emg_artifact_score;
             extreme_component_outlier_late = extreme_component_outlier_mask;
-            peak_form_score_late = peak_form_score_vec;
+            powspctrm_form_score_late = powspctrm_form_score_vec;
+            powspctrm_form_deduct_late = powspctrm_form_deduct_vec;
             thr_max_combined_leak_late = max_combined_leak;
             thr_max_hf_slope_late = max_hf_slope;
             thr_max_emg_score_late = max_emg_score;
@@ -794,7 +798,7 @@ for subj = 1:nSubj
         front_leak_full, temp_leak_full, combined_leak_full, ...
         lineharm_full, hf_slope_full, emg_artifact_score_full, ...
         extreme_component_outlier_full, ...
-        cfg_topo, all_topo_labels{subj}, peak_form_score_full, ...
+        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_full, powspctrm_form_deduct_full, ...
         thr_max_combined_leak_full, thr_max_hf_slope_full, ...
         thr_max_emg_score_full, thr_max_lineharm_full, ...
         selected_idx_full);
@@ -807,7 +811,7 @@ for subj = 1:nSubj
         front_leak_early, temp_leak_early, combined_leak_early, ...
         lineharm_early, hf_slope_early, emg_artifact_score_early, ...
         extreme_component_outlier_early, ...
-        cfg_topo, all_topo_labels{subj}, peak_form_score_early, ...
+        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_early, powspctrm_form_deduct_early, ...
         thr_max_combined_leak_early, thr_max_hf_slope_early, ...
         thr_max_emg_score_early, thr_max_lineharm_early, ...
         selected_idx_early);
@@ -820,7 +824,7 @@ for subj = 1:nSubj
         front_leak_late, temp_leak_late, combined_leak_late, ...
         lineharm_late, hf_slope_late, emg_artifact_score_late, ...
         extreme_component_outlier_late, ...
-        cfg_topo, all_topo_labels{subj}, peak_form_score_late, ...
+        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_late, powspctrm_form_deduct_late, ...
         thr_max_combined_leak_late, thr_max_hf_slope_late, ...
         thr_max_emg_score_late, thr_max_lineharm_late, ...
         selected_idx_late);
@@ -2464,13 +2468,13 @@ rank_vec(idx_valid) = rank_vals;
 end
 
 function [score_vec, metrics, stability] = compute_calibrated_rank_aggregation_score( ...
-    eval_raw_vec, peak_form_vec, peak_bonus_vec, occipital_evidence_vec, emg_artifact_vec, n_boot)
+    eval_raw_vec, powspctrm_form_vec, peak_bonus_vec, occipital_evidence_vec, emg_artifact_vec, n_boot)
 nComp = numel(eval_raw_vec);
 score_vec = -Inf(nComp, 1);
 metrics = struct( ...
     'score_raw', nan(nComp, 1), ...
     'eig_score', nan(nComp, 1), ...
-    'peak_form_score', nan(nComp, 1), ...
+    'powspctrm_form_score', nan(nComp, 1), ...
     'peak_bonus_score', nan(nComp, 1), ...
     'occipital_score', nan(nComp, 1), ...
     'anti_emg_score', nan(nComp, 1));
@@ -2486,7 +2490,7 @@ if nComp == 0
 end
 
 z_eig = normalize_robust(log(max(eval_raw_vec(:), eps)));
-z_pf = normalize_robust(peak_form_vec(:));
+z_pf = normalize_robust(powspctrm_form_vec(:));
 z_pb = normalize_robust(peak_bonus_vec(:));
 z_occ = normalize_robust(occipital_evidence_vec(:));
 z_anti_emg = normalize_robust(-emg_artifact_vec(:));
@@ -2515,7 +2519,7 @@ score_vec = score_raw;
 score_vec(~finite_rows) = -Inf;
 metrics.score_raw = score_raw;
 metrics.eig_score = point_mat(:, 1);
-metrics.peak_form_score = point_mat(:, 2);
+metrics.powspctrm_form_score = point_mat(:, 2);
 metrics.peak_bonus_score = point_mat(:, 3);
 metrics.occipital_score = point_mat(:, 4);
 metrics.anti_emg_score = point_mat(:, 5);
@@ -2550,7 +2554,7 @@ function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_fre
     front_leak_vec, temp_leak_vec, combined_leak_vec, lineharm_vec, hf_slope_vec, emg_score_vec, ...
     extreme_component_outlier, ...
     cfg_topo, topo_labels, ...
-    peak_form_score, ...
+    powspctrm_form_score, powspctrm_form_multi_peak_deduction, ...
     max_combined_leak_thr, max_hf_slope_thr, max_emg_score_thr, max_lineharm_ratio_thr, ...
     selected_idx)
 nComp = numel(eigval_vec);
@@ -2631,8 +2635,13 @@ for k = 1:nCols
         plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
-        title(sprintf('\\lambda=%.2f, PF=%.2f', ...
-            eigval_vec(ci), peak_form_score(ci)), 'FontSize', 7);
+        pf_deduct_ci = 0;
+        if ~isempty(powspctrm_form_multi_peak_deduction) && numel(powspctrm_form_multi_peak_deduction) >= ci && ...
+                isfinite(powspctrm_form_multi_peak_deduction(ci))
+            pf_deduct_ci = powspctrm_form_multi_peak_deduction(ci);
+        end
+        title(sprintf('\\lambda=%.2f, PF=%.2f (%.2f)', ...
+            eigval_vec(ci), powspctrm_form_score(ci), pf_deduct_ci), 'FontSize', 7);
         box on;
     else
         axis off;
@@ -2685,8 +2694,13 @@ for k = 1:nCols
         plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
-        title(sprintf('\\lambda=%.2f, PF=%.2f', ...
-            eigval_vec(ci), peak_form_score(ci)), 'FontSize', 7);
+        pf_deduct_ci = 0;
+        if ~isempty(powspctrm_form_multi_peak_deduction) && numel(powspctrm_form_multi_peak_deduction) >= ci && ...
+                isfinite(powspctrm_form_multi_peak_deduction(ci))
+            pf_deduct_ci = powspctrm_form_multi_peak_deduction(ci);
+        end
+        title(sprintf('\\lambda=%.2f, PF=%.2f (%.2f)', ...
+            eigval_vec(ci), powspctrm_form_score(ci), pf_deduct_ci), 'FontSize', 7);
         box on;
     else
         axis off;
@@ -3060,7 +3074,7 @@ for wi = 1:3
         continue;
     end
     spec_vec = sel_w(:)' * spec_mat(sel_idx, :);
-    [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
+    [pf_score, pf_peak_hz] = compute_combined_powspctrm_form_metrics( ...
         spec_vec, scan_freqs, analysis_freq_range);
     plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0);
     add_peak_point_overlay(scan_freqs, spec_vec, pf_peak_hz);
@@ -3154,15 +3168,15 @@ end
 sel_w = sel_w / sum(sel_w);
 end
 
-function [pf_score, pf_peak_hz] = compute_combined_peak_form_metrics( ...
+function [pf_score, pf_peak_hz] = compute_combined_powspctrm_form_metrics( ...
     spec_vec, scan_freqs, analysis_freq_range)
 pf_score = NaN;
 pf_peak_hz = NaN;
 if isempty(spec_vec) || isempty(scan_freqs) || numel(spec_vec) ~= numel(scan_freqs)
     return;
 end
-[pf_vec, ~, ~] = compute_peak_form_template_score_from_spectra( ...
-    spec_vec(:)', scan_freqs, analysis_freq_range);
+[pf_vec, ~] = compute_powspctrm_form_laplacian_score_from_spectra( ...
+    spec_vec(:)', scan_freqs, analysis_freq_range, 10, 0.90, 0.05);
 if ~isempty(pf_vec) && isfinite(pf_vec(1))
     pf_score = pf_vec(1);
 end
@@ -3205,6 +3219,154 @@ if ~isfinite(pf_peak_hz)
             pf_peak_hz = x_peak(idx_max);
         end
     end
+end
+end
+
+function [pf_score_vec, pf_deduction_vec, diag] = compute_powspctrm_form_laplacian_score_from_spectra( ...
+    mean_pr_spectrum, scan_freqs, analysis_freq_range, rival_sep_min_hz, rival_height_ratio_min, deduct_per_rival)
+if nargin < 4 || isempty(rival_sep_min_hz) || ~isfinite(rival_sep_min_hz)
+    rival_sep_min_hz = 10;
+end
+if nargin < 5 || isempty(rival_height_ratio_min) || ~isfinite(rival_height_ratio_min)
+    rival_height_ratio_min = 0.90;
+end
+if nargin < 6 || isempty(deduct_per_rival) || ~isfinite(deduct_per_rival)
+    deduct_per_rival = 0.05;
+end
+deduct_per_rival = max(0, min(1, deduct_per_rival));
+nComp = size(mean_pr_spectrum, 1);
+pf_score_vec = zeros(nComp, 1);
+pf_deduction_vec = zeros(nComp, 1);
+diag = struct( ...
+    'laplace_r2', zeros(nComp, 1), ...
+    'dominant_peak_hz', nan(nComp, 1), ...
+    'n_rival_peaks', zeros(nComp, 1));
+if isempty(mean_pr_spectrum) || isempty(scan_freqs)
+    return;
+end
+freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
+if ~any(freq_mask)
+    return;
+end
+for ci = 1:nComp
+    y = mean_pr_spectrum(ci, :);
+    x = scan_freqs(freq_mask);
+    y = y(freq_mask);
+    valid = isfinite(x) & isfinite(y);
+    x = x(valid);
+    y = y(valid);
+    if numel(y) < 7
+        continue;
+    end
+    [x, sidx] = sort(x(:)');
+    y = y(sidx);
+    y_smooth = movmean(y, 5, 'omitnan');
+    y_floor = prctile(y_smooth, 20);
+    if ~isfinite(y_floor)
+        y_floor = median(y_smooth, 'omitnan');
+    end
+    if ~isfinite(y_floor)
+        y_floor = 0;
+    end
+    y_pos = max(y_smooth - y_floor, 0);
+    y_scale = max(y_pos);
+    if ~isfinite(y_scale) || y_scale <= eps
+        continue;
+    end
+    y_norm = y_pos / y_scale;
+    [dom_amp, dom_idx] = max(y_pos);
+    if ~isfinite(dom_amp) || dom_amp <= eps || isempty(dom_idx)
+        continue;
+    end
+    dom_hz = x(dom_idx);
+    diag.dominant_peak_hz(ci) = dom_hz;
+
+    p0 = [1.0, dom_hz, 6.0];
+    lb = [0.20, min(x), 1.0];
+    ub = [1.50, max(x), 20.0];
+    obj = @(p) mean((y_norm - laplace_template_model(x, p)).^2, 'omitnan');
+    opts = optimset('Display', 'off', 'MaxIter', 1000, 'MaxFunEvals', 3000);
+    p_est = fminsearch(@(pp) bounded_obj(pp, lb, ub, obj), p0, opts);
+    p_est = min(max(p_est, lb), ub);
+    y_hat = laplace_template_model(x, p_est);
+    r2 = compute_r2_score(y_norm, y_hat);
+    diag.laplace_r2(ci) = r2;
+
+    robust_scale = robust_mad(y_pos);
+    if ~isfinite(robust_scale) || robust_scale <= eps
+        robust_scale = iqr(y_pos);
+    end
+    if ~isfinite(robust_scale) || robust_scale <= eps
+        robust_scale = std(y_pos(isfinite(y_pos)));
+    end
+    if ~isfinite(robust_scale) || robust_scale <= eps
+        robust_scale = 1;
+    end
+    rel_prom = 0.08 * max(y_pos);
+    min_prom = max([0, rel_prom, 0.02, 0.15 * robust_scale]);
+    [pks, locs] = findpeaks(y_pos, x, 'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
+    n_rivals = 0;
+    if ~isempty(pks) && numel(pks) >= 2
+        pks = pks(:);
+        locs = locs(:);
+        dom_mask = abs(locs - dom_hz) <= 1e-9;
+        if ~any(dom_mask)
+            [~, nearest_idx] = min(abs(locs - dom_hz));
+            dom_mask = false(size(locs));
+            dom_mask(nearest_idx) = true;
+        end
+        rival_mask = ~dom_mask & ...
+            (abs(locs - dom_hz) >= rival_sep_min_hz) & ...
+            (pks >= rival_height_ratio_min * dom_amp);
+        n_rivals = sum(rival_mask);
+    end
+    diag.n_rival_peaks(ci) = n_rivals;
+    deduct_val = min(r2, n_rivals * deduct_per_rival);
+    pf_deduction_vec(ci) = deduct_val;
+    pf_score_vec(ci) = max(0, min(1, r2 - deduct_val));
+end
+pf_score_vec(~isfinite(pf_score_vec)) = 0;
+pf_deduction_vec(~isfinite(pf_deduction_vec)) = 0;
+end
+
+function yhat = laplace_template_model(x, p)
+A = p(1);
+mu = p(2);
+b = p(3);
+yhat = A .* exp(-abs(x - mu) ./ max(b, eps));
+yhat = max(yhat, 0);
+if max(yhat) > 0
+    yhat = yhat ./ max(yhat);
+end
+end
+
+function r2 = compute_r2_score(y, yhat)
+if numel(y) ~= numel(yhat)
+    r2 = 0;
+    return;
+end
+valid = isfinite(y) & isfinite(yhat);
+y = y(valid);
+yhat = yhat(valid);
+if numel(y) < 3
+    r2 = 0;
+    return;
+end
+sse = sum((y - yhat).^2);
+sst = sum((y - mean(y)).^2);
+if ~isfinite(sst) || sst <= eps
+    r2 = 0;
+else
+    r2 = 1 - (sse / sst);
+end
+r2 = max(0, min(1, r2));
+end
+
+function v = bounded_obj(p, lb, ub, obj_fun)
+p_clip = min(max(p, lb), ub);
+v = obj_fun(p_clip);
+if ~isfinite(v)
+    v = 1e6;
 end
 end
 
@@ -3273,7 +3435,7 @@ for ci = 1:nComp
 end
 end
 
-function [peak_form_score_vec, peak_form_mode_vec, diag] = compute_peak_form_template_score_from_spectra( ...
+function [powspctrm_form_score_vec, powspctrm_form_mode_vec, diag] = compute_powspctrm_form_template_score_from_spectra( ...
     mean_pr_spectrum, scan_freqs, analysis_freq_range, multi_peak_sep_min_hz, multi_peak_height_ratio_min, multi_peak_penalty_mult)
 if nargin < 4 || isempty(multi_peak_sep_min_hz) || ~isfinite(multi_peak_sep_min_hz)
     multi_peak_sep_min_hz = 15;
@@ -3298,10 +3460,10 @@ edge_ratio_soft = 1.25;
 edge_ratio_limit = 1.75;
 edge_run_soft = 0.025;
 edge_run_limit = 0.060;
-peak_form_prom_abs_floor = 0.02;
+powspctrm_form_prom_abs_floor = 0.02;
 nComp = size(mean_pr_spectrum, 1);
-peak_form_score_vec = zeros(nComp, 1);
-peak_form_mode_vec = repmat({'none'}, nComp, 1);
+powspctrm_form_score_vec = zeros(nComp, 1);
+powspctrm_form_mode_vec = repmat({'none'}, nComp, 1);
 diag = struct( ...
     'best_single_similarity', nan(nComp, 1), ...
     'best_double_similarity', nan(nComp, 1), ...
@@ -3381,7 +3543,7 @@ for ci = 1:nComp
         robust_scale = 1;
     end
     rel_prom = 0.08 * max(y_pos);
-    min_prom = max([0, rel_prom, peak_form_prom_abs_floor, 0.15 * robust_scale]);
+    min_prom = max([0, rel_prom, powspctrm_form_prom_abs_floor, 0.15 * robust_scale]);
     [pks, locs, widths] = findpeaks(y_pos, x_band, 'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
     if isempty(pks)
         continue;
@@ -3583,15 +3745,15 @@ for ci = 1:nComp
     diag.dominant_penalty_tag{ci} = dominant_penalty_tag;
 
     if ~isfinite(best_raw)
-        peak_form_score_vec(ci) = 0;
-        peak_form_mode_vec{ci} = 'none';
+        powspctrm_form_score_vec(ci) = 0;
+        powspctrm_form_mode_vec{ci} = 'none';
     else
         score_mapped = best_raw;
         if isfinite(min_similarity) && (min_similarity > 0) && (best_raw < min_similarity)
             score_mapped = 0.75 * score_mapped;
         end
-        peak_form_score_vec(ci) = max(0, min(1, score_mapped));
-        peak_form_mode_vec{ci} = mode_raw;
+        powspctrm_form_score_vec(ci) = max(0, min(1, score_mapped));
+        powspctrm_form_mode_vec{ci} = mode_raw;
     end
 end
 end
