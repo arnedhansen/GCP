@@ -1,6 +1,6 @@
 %% GCP Gamma Peak Frequency and Power with Generalized Eigendecomposition (GED)
 %
-%   - Full stimulus window only analysis (0 to 2 s) with baseline contrast
+%   - Single stimulus window analysis (0 to 2 s) with baseline contrast
 %      against the prestimulus interval (-1.5 to -0.25 s).
 %   - Subject specific GED with regularized covariance decomposition and
 %      weighted multi component selection from occipital evidence, spectral
@@ -19,6 +19,8 @@ startup
 [subjects, paths, colors, headmodel] = setup('GCP');
 nSubj = length(subjects);
 total_runtime_tic = tic;
+global GED_FREQ_PROGRESS;
+GED_FREQ_PROGRESS = [];
 
 %% Parameters
 baseline_window = [-1.5, -0.25];
@@ -98,7 +100,8 @@ for subj = 1:nSubj
     rng(random_seed + subj, 'twister');
 
     subject_id = subjects{subj};
-    clc; fprintf('[GED] Subject %s (%d/%d)', subject_id, subj, nSubj);
+    ged_freq_progress_set(subject_id, subj, nSubj, 'TrialScan Batch');
+    fprintf('[GED] Subject %s (%d/%d)\n', subject_id, subj, nSubj);
     datapath = fullfile(gcp_feature_data_path, subject_id, 'eeg');
     eeg_data = load(fullfile(datapath, 'dataEEG.mat'), ...
         'dataEEG_c25', 'dataEEG_c50', 'dataEEG_c75', 'dataEEG_c100');
@@ -389,6 +392,36 @@ for subj = 1:nSubj
         'mixed_rescue_mask', mixed_rescue_mask);
     all_component_selection_stats{subj} = all_component_selection_stats{subj};
 
+    cfg_topo = [];
+    cfg_topo.layout = headmodel.layANThead;
+    cfg_topo.comment = 'no';
+    cfg_topo.marker = 'off';
+    cfg_topo.style = 'straight';
+    cfg_topo.gridscale = 300;
+    cfg_topo.zlim = 'maxabs';
+    cfg_topo.colormap = '*RdBu';
+    cfg_topo.figure = 'gcf';
+
+    rejection_flags = struct();
+    rejection_flags.combined_leak = combined_leak_vec > max_combined_leak;
+    rejection_flags.emg_score = emg_artifact_score > max_emg_score;
+    rejection_flags.hf_slope = false(size(rejection_flags.combined_leak));
+    rejection_flags.topo_nonposterior = false(size(rejection_flags.combined_leak));
+    extreme_component_outlier = false(size(rejection_flags.combined_leak));
+
+    plot_covariance_matrix_diagnostics_single( ...
+        fig_save_dir_component_selection, subject_id, labels, covBase, covStim, covBase_reg, covStim_reg);
+    plot_component_selection_topo_spectra_selected( ...
+        fig_save_dir_component_selection, subject_id, scan_freqs, searchTopos, ...
+        searchMeanPrSpectrum, evals_sorted(1:nSearch), searchEmgClass, eligible, ...
+        rejection_flags, searchFrontLeak, searchTempLeak, ...
+        combined_leak_vec, lineharm_vec, hf_slope_vec, emg_artifact_score, extreme_component_outlier, ...
+        cfg_topo, labels, powspctrm_form_score, powspctrm_form_deduct, ...
+        max_combined_leak, NaN, max_emg_score, NaN, selected_idx);
+    plot_combined_topo_spectra_single( ...
+        fig_save_dir_component_selection, subject_id, scan_freqs, cfg_topo, labels, ...
+        searchTopos, searchMeanPrSpectrum, selected_idx, w_combined, analysis_freq_range);
+
     trial_counts_initial_local = 0;
     trial_counts_retained_local = 0;
 
@@ -499,6 +532,10 @@ for subj = 1:nSubj
 
     trial_counts_initial_by_subj(subj) = trial_counts_initial_local;
     trial_counts_retained_by_subj(subj) = trial_counts_retained_local;
+    plot_subject_trials_overview_single( ...
+        fig_save_dir_component_selection, subject_id, scan_freqs, condLabels, colors, ...
+        trials_peaks(:, subj), all_condition_powspctrm(:, subj), all_condition_peak_freq(:, subj), ...
+        all_topos{subj}, all_topo_labels{subj}, cfg_topo);
     subject_runtime_seconds(subj) = toc(subj_runtime_tic);
 end
 
@@ -535,7 +572,7 @@ yline(0, 'k--', 'LineWidth', 0.8, 'HandleVisibility', 'off');
 xlim([analysis_freq_range(1), analysis_freq_range(2)]);
 xlabel('Frequency [Hz]');
 ylabel('Power [dB]');
-title('GED Condition Averaged Power Spectra, Full Window', 'FontWeight', 'bold');
+title('GED Condition Averaged Power Spectra, Stimulus 0 to 2 s', 'FontWeight', 'bold');
 legend(condLabels, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off');
 set(gca, 'Box', 'on');
 save_figure_png(fig_condition_avg_powspctrm, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_average_powspctrm.png'));
@@ -547,11 +584,105 @@ xticklabels(subjects);
 xtickangle(45);
 xlabel('Participant');
 ylabel('Trial count');
-title('Trial Retention, Full Window', 'FontWeight', 'bold');
+title('Trial Retention, Stimulus 0 to 2 s', 'FontWeight', 'bold');
 legend({'Initial', 'Retained'}, 'Location', 'best');
 grid on;
 set(gca, 'Box', 'on');
 save_figure_png(fig_trial_retention, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_trial_retention_by_subject.png'));
+
+fig_peakfreq_by_cond = figure('Position', [0 0 1512 982], 'Color', 'w');
+hold on;
+for cond = 1:4
+    vals = trials_mean(cond, :);
+    xj = cond + (rand(1, nSubj) - 0.5) * 0.10;
+    scatter(xj, vals, 45, 'MarkerFaceColor', colors(cond, :), 'MarkerEdgeColor', 'k', ...
+        'MarkerFaceAlpha', 0.55, 'MarkerEdgeAlpha', 0.35);
+end
+plot(1:4, nanmedian(trials_mean, 2), 'k-', 'LineWidth', 2.2);
+xlim([0.5 4.5]);
+xticks(1:4); xticklabels(condLabels);
+ylabel('Peak Frequency [Hz]');
+title('Peak frequency by condition (stimulus 0 to 2 s)', 'FontWeight', 'bold');
+set(gca, 'Box', 'on');
+save_figure_png(fig_peakfreq_by_cond, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_peak_frequency_by_condition.png'));
+
+fig_peakpower_by_cond = figure('Position', [0 0 1512 982], 'Color', 'w');
+hold on;
+for cond = 1:4
+    vals = trials_gamma_power(cond, :);
+    xj = cond + (rand(1, nSubj) - 0.5) * 0.10;
+    scatter(xj, vals, 45, 'MarkerFaceColor', colors(cond, :), 'MarkerEdgeColor', 'k', ...
+        'MarkerFaceAlpha', 0.55, 'MarkerEdgeAlpha', 0.35);
+end
+plot(1:4, nanmedian(trials_gamma_power, 2), 'k-', 'LineWidth', 2.2);
+xlim([0.5 4.5]);
+xticks(1:4); xticklabels(condLabels);
+ylabel('Peak Power [dB]');
+title('Peak power by condition (stimulus 0 to 2 s)', 'FontWeight', 'bold');
+set(gca, 'Box', 'on');
+save_figure_png(fig_peakpower_by_cond, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_peak_power_by_condition.png'));
+
+fig_cond_shift_bar_freq = figure('Position', [0 0 1512 982], 'Color', 'w');
+bar(nanmedian(trials_mean, 2), 'FaceColor', [0.25 0.55 0.85]);
+xticks(1:4); xticklabels(condLabels);
+ylabel('Median Peak Frequency [Hz]');
+title('Condition Shift Frequency', 'FontWeight', 'bold');
+set(gca, 'Box', 'on');
+save_figure_png(fig_cond_shift_bar_freq, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_bar_GammaFreq.png'));
+
+fig_condition_shift_freq = figure('Position', [0 0 1512 982], 'Color', 'w');
+hold on;
+for s = 1:nSubj
+    plot(1:4, trials_mean(:, s), '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 0.9);
+end
+plot(1:4, nanmedian(trials_mean, 2), 'k-', 'LineWidth', 2.6);
+xticks(1:4); xticklabels(condLabels);
+ylabel('Peak Frequency [Hz]');
+title('Condition Shift Frequency', 'FontWeight', 'bold');
+set(gca, 'Box', 'on');
+save_figure_png(fig_condition_shift_freq, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_frequency.png'));
+
+fig_condition_shift_power = figure('Position', [0 0 1512 982], 'Color', 'w');
+hold on;
+for s = 1:nSubj
+    plot(1:4, trials_gamma_power(:, s), '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 0.9);
+end
+plot(1:4, nanmedian(trials_gamma_power, 2), 'k-', 'LineWidth', 2.6);
+xticks(1:4); xticklabels(condLabels);
+ylabel('Peak Power [dB]');
+title('Condition Shift Power', 'FontWeight', 'bold');
+set(gca, 'Box', 'on');
+save_figure_png(fig_condition_shift_power, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_power.png'));
+
+fig_cond_slope = figure('Position', [0 0 1512 982], 'Color', 'w');
+x_cond = (1:4)';
+slope_vals = nan(nSubj, 1);
+for s = 1:nSubj
+    y = trials_mean(:, s);
+    good = isfinite(x_cond) & isfinite(y);
+    if sum(good) >= 2
+        p = polyfit(x_cond(good), y(good), 1);
+        slope_vals(s) = p(1);
+    end
+end
+histogram(slope_vals, 12, 'FaceColor', [0.25 0.55 0.85], 'EdgeColor', 'k');
+xlabel('Slope [Hz per condition step]');
+ylabel('Participant count');
+title('Condition Slope Distribution', 'FontWeight', 'bold');
+set(gca, 'Box', 'on');
+save_figure_png(fig_cond_slope, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_slope.png'));
+
+fig_cent = figure('Position', [0 0 1512 982], 'Color', 'w');
+hold on;
+for s = 1:nSubj
+    plot(1:4, trials_median_centroid(:, s), '-', 'Color', [0.75 0.75 0.75], 'LineWidth', 0.9);
+end
+plot(1:4, nanmedian(trials_median_centroid, 2), 'k-', 'LineWidth', 2.6);
+xticks(1:4); xticklabels(condLabels);
+ylabel('Centroid [Hz]');
+title('Gamma Centroid Summary', 'FontWeight', 'bold');
+set(gca, 'Box', 'on');
+save_figure_png(fig_cent, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_centroid_summary.png'));
 
 %% Save results
 save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_GED.mat');
@@ -572,7 +703,7 @@ save(save_path, ...
     'trial_counts_initial_by_subj', 'trial_counts_retained_by_subj', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
-clc; fprintf('[GED] DONE!');
+fprintf('[GED] DONE!');
 fprintf('[GED] Feature extraction results saved to: %s', save_path);
 for si = 1:nSubj
     if isfinite(subject_runtime_seconds(si))
@@ -610,7 +741,7 @@ for trl = 1:nTrl
         continue;
     end
 
-    % Peak search over the full 30-90 Hz gamma band.
+    % Peak search over the 30 to 90 Hz gamma band.
     [peak_hz, peak_power] = pick_tallest_peak(pr_proc, x_use, smooth_n, peak_power_halfwidth_hz);
     if isfinite(peak_hz)
         trl_peaks(trl) = peak_hz;
@@ -1474,8 +1605,7 @@ cfg.pad = 'nextpow2';
 cfg.keeptrials = 'yes';
 cfg.feedback = 'none';
 progress_state = ged_freq_progress_next_call();
-clc;
-clc; fprintf('[GED] Subject %s (%d/%d) %s %d/%d\n', ...
+fprintf('[GED] Subject %s (%d/%d) %s %d/%d\n', ...
     progress_state.subject, progress_state.subj_idx, progress_state.subj_total, ...
     progress_state.phase, progress_state.call_idx, progress_state.call_total);
 try
@@ -1656,6 +1786,21 @@ end
 state = GED_FREQ_PROGRESS;
 end
 
+function ged_freq_progress_set(subject_id, subj_idx, subj_total, phase_label)
+global GED_FREQ_PROGRESS;
+if nargin < 1 || isempty(subject_id), subject_id = 'NA'; end
+if nargin < 2 || ~isfinite(subj_idx), subj_idx = 0; end
+if nargin < 3 || ~isfinite(subj_total), subj_total = 0; end
+if nargin < 4 || isempty(phase_label), phase_label = 'Spectral Batch'; end
+GED_FREQ_PROGRESS = struct( ...
+    'subject', subject_id, ...
+    'subj_idx', subj_idx, ...
+    'subj_total', subj_total, ...
+    'call_idx', 0, ...
+    'call_total', 0, ...
+    'phase', phase_label);
+end
+
 function Wn = normalize_filters_to_noise_metric(W, covBase)
 Wn = W;
 if isempty(W) || isempty(covBase)
@@ -1688,6 +1833,255 @@ end
 drawnow;
 pause(0.05);
 exportgraphics(fig_handle, out_path, 'Resolution', 300);
+end
+
+function plot_covariance_matrix_diagnostics_single(save_dir, subject_id, chan_labels, cov_base, cov_stim, cov_base_reg, cov_stim_reg)
+if isempty(cov_base) || isempty(cov_stim)
+    return;
+end
+fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+mats = {cov_stim, cov_base, cov_stim_reg, cov_base_reg};
+titles = {'Stim covariance', 'Baseline covariance', 'Stim regularized', 'Baseline regularized'};
+for mi = 1:4
+    subplot(2, 2, mi);
+    mat = mats{mi};
+    if isempty(mat)
+        axis off;
+        continue;
+    end
+    mat = real(0.5 * (mat + mat'));
+    imagesc(mat);
+    axis image;
+    colorbar;
+    title(titles{mi}, 'FontSize', 11);
+    if size(mat, 1) <= 64 && numel(chan_labels) == size(mat, 1)
+        xticks(1:numel(chan_labels));
+        yticks(1:numel(chan_labels));
+        xticklabels(chan_labels);
+        yticklabels(chan_labels);
+        xtickangle(90);
+    end
+    set(gca, 'YDir', 'normal', 'FontSize', 8);
+end
+sgtitle(sprintf('GED Covariance Diagnostics: %s', subject_id), 'FontWeight', 'bold');
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_covariance_matrix.png', subject_id)));
+close(fig);
+end
+
+function plot_component_selection_topo_spectra_selected(save_dir, subject_id, scan_freqs, search_topos, ...
+    search_mean_spec, eigvals, emg_class, eligible, rejection_flags, front_leak_vec, temp_leak_vec, ...
+    combined_leak_vec, lineharm_vec, hf_slope_vec, emg_score_vec, extreme_component_outlier, cfg_topo, topo_labels, ...
+    powspctrm_form_score, powspctrm_form_deduct, max_combined_leak_thr, max_hf_slope_thr, max_emg_score_thr, max_lineharm_ratio_thr, ...
+    selected_idx)
+if isempty(eigvals)
+    return;
+end
+n_comp = numel(eigvals);
+sel_idx = selected_idx(:);
+sel_idx = sel_idx(isfinite(sel_idx) & sel_idx >= 1 & sel_idx <= n_comp);
+sel_idx = unique(round(sel_idx));
+if isempty(sel_idx)
+    sel_idx = 1:min(3, n_comp);
+end
+rej_idx = find(~eligible(:));
+rej_idx = rej_idx(~ismember(rej_idx, sel_idx));
+if isempty(rej_idx)
+    rej_idx = setdiff((1:n_comp)', sel_idx);
+end
+n_cols = 5;
+n_show_sel = min(n_cols, numel(sel_idx));
+n_show_rej = min(n_cols, numel(rej_idx));
+
+fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+for k = 1:n_cols
+    subplot(4, n_cols, k);
+    if k <= n_show_sel
+        ci = sel_idx(k);
+        safe_component_topoplot(cfg_topo, topo_labels, search_topos(:, ci));
+        ttl = sprintf('C%d %s', ci, emg_class{ci});
+        title(ttl, 'FontSize', 8, 'Interpreter', 'none');
+    else
+        axis off;
+    end
+
+    subplot(4, n_cols, n_cols + k); hold on;
+    if k <= n_show_sel
+        ci = sel_idx(k);
+        plot(scan_freqs, search_mean_spec(ci, :), 'k-', 'LineWidth', 1.3);
+        yline(0, 'k--', 'LineWidth', 0.8);
+        xlim([scan_freqs(1), scan_freqs(end)]);
+        pf_deduct = 0;
+        if numel(powspctrm_form_deduct) >= ci && isfinite(powspctrm_form_deduct(ci))
+            pf_deduct = powspctrm_form_deduct(ci);
+        end
+        title(sprintf('\\lambda=%.2f PF=%.2f (%.2f)', eigvals(ci), powspctrm_form_score(ci), pf_deduct), ...
+            'FontSize', 7);
+        xlabel('Hz');
+        ylabel('Power [dB]');
+        set(gca, 'Box', 'on');
+    else
+        axis off;
+    end
+
+    subplot(4, n_cols, 2 * n_cols + k);
+    if k <= n_show_rej
+        ci = rej_idx(k);
+        safe_component_topoplot(cfg_topo, topo_labels, search_topos(:, ci));
+        title(sprintf('C%d %s', ci, emg_class{ci}), 'FontSize', 8, 'Interpreter', 'none');
+    else
+        axis off;
+    end
+
+    subplot(4, n_cols, 3 * n_cols + k); hold on;
+    if k <= n_show_rej
+        ci = rej_idx(k);
+        plot(scan_freqs, search_mean_spec(ci, :), 'k-', 'LineWidth', 1.3);
+        yline(0, 'k--', 'LineWidth', 0.8);
+        xlim([scan_freqs(1), scan_freqs(end)]);
+        crit_txt = sprintf('L=%.2f E=%.2f', combined_leak_vec(ci), emg_score_vec(ci));
+        if numel(front_leak_vec) >= ci && numel(temp_leak_vec) >= ci
+            crit_txt = sprintf('%s F/T=%.2f/%.2f', crit_txt, front_leak_vec(ci), temp_leak_vec(ci));
+        end
+        text(0.02, 0.98, crit_txt, 'Units', 'normalized', 'HorizontalAlignment', 'left', ...
+            'VerticalAlignment', 'top', 'FontSize', 7, 'Interpreter', 'none');
+        xlabel('Hz');
+        ylabel('Power [dB]');
+        set(gca, 'Box', 'on');
+    else
+        axis off;
+    end
+end
+sgtitle(sprintf('Top 5 selected and rejected components: %s, stimulus 0 to 2 s', subject_id), ...
+    'FontSize', 14, 'FontWeight', 'bold');
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected.png', subject_id)));
+close(fig);
+end
+
+function plot_combined_topo_spectra_single(save_dir, subject_id, scan_freqs, cfg_topo, topo_labels, ...
+    search_topos, search_mean_spec, selected_idx, selected_weights, analysis_freq_range)
+sel_idx = selected_idx(:);
+sel_idx = sel_idx(isfinite(sel_idx) & sel_idx >= 1 & sel_idx <= size(search_topos, 2));
+sel_idx = unique(round(sel_idx));
+if isempty(sel_idx)
+    return;
+end
+if isempty(selected_weights) || numel(selected_weights) ~= numel(sel_idx)
+    selected_weights = ones(numel(sel_idx), 1);
+else
+    selected_weights = selected_weights(:);
+end
+selected_weights(~isfinite(selected_weights) | selected_weights <= 0) = 0;
+if sum(selected_weights) <= 0
+    selected_weights = ones(numel(sel_idx), 1);
+end
+selected_weights = selected_weights / sum(selected_weights);
+
+topo_vec = search_topos(:, sel_idx) * selected_weights;
+spec_vec = selected_weights' * search_mean_spec(sel_idx, :);
+
+fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+subplot(1, 2, 1);
+safe_component_topoplot(cfg_topo, topo_labels, topo_vec);
+title(sprintf('Combined Topography, n=%d', numel(sel_idx)), 'FontSize', 11);
+subplot(1, 2, 2); hold on;
+plot(scan_freqs, spec_vec, 'k-', 'LineWidth', 2.0);
+yline(0, 'k--', 'LineWidth', 0.8);
+xlim([analysis_freq_range(1), analysis_freq_range(2)]);
+xlabel('Hz');
+ylabel('Power [dB]');
+title('Combined Spectrum', 'FontSize', 11);
+set(gca, 'Box', 'on');
+sgtitle(sprintf('Combined GED Components: %s', subject_id), 'FontWeight', 'bold');
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_combined.png', subject_id)));
+close(fig);
+end
+
+function plot_subject_trials_overview_single(save_dir, subject_id, scan_freqs, cond_labels, colors, ...
+    peaks_by_cond, cond_spectra, cond_peak_freq, topo_vec, topo_labels, cfg_topo)
+fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+tiledlayout(2, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+
+nexttile;
+safe_component_topoplot(cfg_topo, topo_labels, topo_vec);
+title('Weighted GED Topography', 'FontSize', 11);
+
+nexttile; hold on;
+edges = 30:2:90;
+for cond = 1:4
+    vals = peaks_by_cond{cond};
+    if isempty(vals)
+        continue;
+    end
+    vals = vals(isfinite(vals));
+    if isempty(vals)
+        continue;
+    end
+    h = histogram(vals, edges, 'DisplayStyle', 'stairs', 'LineWidth', 1.8);
+    h.EdgeColor = colors(cond, :);
+end
+xlabel('Peak Frequency [Hz]');
+ylabel('Trial Count');
+title('Trial Peak Distribution', 'FontSize', 11);
+legend(cond_labels, 'Location', 'best', 'Box', 'off');
+set(gca, 'Box', 'on');
+
+nexttile([1 2]); hold on;
+for cond = 1:4
+    curve = cond_spectra{cond};
+    if isempty(curve) || numel(curve) ~= numel(scan_freqs)
+        continue;
+    end
+    good = isfinite(curve) & isfinite(scan_freqs);
+    if sum(good) < 3
+        continue;
+    end
+    plot(scan_freqs(good), curve(good), '-', 'Color', colors(cond, :), 'LineWidth', 2.2, ...
+        'DisplayName', cond_labels{cond});
+    ph = cond_peak_freq(cond);
+    if isfinite(ph)
+        xline(ph, ':', 'Color', colors(cond, :), 'LineWidth', 1.2, 'HandleVisibility', 'off');
+    end
+end
+yline(0, 'k--', 'LineWidth', 0.8, 'HandleVisibility', 'off');
+xlabel('Frequency [Hz]');
+ylabel('Power [dB]');
+title('Condition Averaged Spectra', 'FontSize', 11);
+set(gca, 'Box', 'on');
+legend('Location', 'best', 'Box', 'off');
+
+sgtitle(sprintf('Subject %s, stimulus 0 to 2 s', subject_id), 'FontWeight', 'bold');
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_trials_overview.png', subject_id)));
+close(fig);
+end
+
+function safe_component_topoplot(cfg_topo, topo_labels, topo_vec)
+if isempty(topo_vec)
+    axis off;
+    return;
+end
+topo_vals = topo_vec(isfinite(topo_vec));
+if isempty(topo_vals)
+    topo_vals = 0;
+end
+topo_clim = max(abs(topo_vals));
+if ~isfinite(topo_clim) || topo_clim <= 0
+    topo_clim = 1;
+end
+topo_data = [];
+topo_data.label = topo_labels;
+topo_data.avg = topo_vec(:);
+topo_data.dimord = 'chan';
+cfg_use = cfg_topo;
+cfg_use.zlim = [-topo_clim topo_clim];
+try
+    ft_topoplotER(cfg_use, topo_data);
+catch
+    imagesc(topo_vec(:));
+    axis tight;
+    colorbar;
+    caxis([-topo_clim topo_clim]);
+end
+set(gca, 'Box', 'on');
 end
 
 function avg_curve = compute_condition_average_powratio_ft(pr_mat, scan_freqs)
