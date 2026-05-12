@@ -10,14 +10,11 @@
 %      profile quality, and artifact indicators.
 %   - Trial resolved spectral power ratio scans in dB across 30 to 90 Hz,
 %      followed by trial peak frequency and peak power extraction.
-%   - Condition wise subject summaries and bootstrap based reliability
-%      assessment via peak frequency confidence interval width.
+%   - Condition wise subject summaries.
 %
 % Main outputs
 %   - `data/features/GCP_eeg_GED.mat` with full window features and GED
 %      component selection statistics (`all_component_selection_stats`).
-%   - Subject reliability table in controls folder:
-%      `GCP_eeg_GED_subject_reliability.csv`.
 %   - Diagnostic and summary figures in `figures/eeg/ged`.
 
 %% Setup
@@ -39,15 +36,15 @@ lambda = 0.05;
 ged_search_n = 10;
 min_eigval = 1.1;
 min_powspctrm_form = 0.8;
+occ_class_thr = 0.60;
+emg_class_thr = 0.50;
+min_occ_margin = 0.05;
+mixed_rescue_min_occ_evidence = 0.50;
+mixed_rescue_max_negative_margin = 0.05;
+mixed_rescue_min_posterior_concentration = 0.95;
 random_seed = 123;
 trial_peak_smooth_n = 10; % moving-average smoothing
 peak_power_halfwidth_hz = 5; % peak power = mean power within peak_hz +/-
-
-peak_bootstrap_reps = 1000; % bootstrap repetitions
-peak_bootstrap_ci_prct = [2.5 97.5]; % bootstrap confidence interval percentile
-reliability_ci_width_median_max_hz = 8; % median CI width maximum (Hz)
-reliability_ci_width_cond_max_hz = 10; % condition-wise CI width maximum (Hz)
-reliability_min_pass_conditions = 3; % minimum number of conditions to pass reliability criteria
 
 condNames = {'c25', 'c50', 'c75', 'c100'};
 condLabels = {'25%', '50%', '75%', '100%'}; 
@@ -96,16 +93,6 @@ trials_powratio_components = cell(4, nSubj);
 trial_counts_initial_by_subj = zeros(nSubj, 1);
 trial_counts_retained_by_subj = zeros(nSubj, 1);
 
-subject_peak_boot_ci_width = nan(4, nSubj);
-subject_peak_boot_ci_low = nan(4, nSubj);
-subject_peak_boot_ci_high = nan(4, nSubj);
-subject_peak_boot_n_valid = zeros(4, nSubj);
-subject_reliability_median_ci_width = nan(1, nSubj);
-subject_reliability_n_pass_conditions = zeros(1, nSubj);
-subject_reliability_n_valid_conditions = zeros(1, nSubj);
-subject_reliability_condition_pass = false(4, nSubj);
-subject_reliability_pass = false(1, nSubj);
-subject_reliability_reason = repmat({''}, 1, nSubj);
 subject_runtime_seconds = nan(nSubj, 1);
 
 %% Subject loop
@@ -320,8 +307,38 @@ for subj = 1:nSubj
     pass_eig_gate = finite_metrics & (eval_raw_vec >= min_eigval);
     pass_peak_gate = finite_metrics & (powspctrm_form_score_full >= min_powspctrm_form);
     artifact_flags = finite_metrics & ((combined_leak_vec > max_combined_leak) | (emg_artifact_score_full > max_emg_score));
-    occipital_class_mask = occipital_evidence > emg_artifact_score_full;
-    eligible_full = pass_eig_gate & pass_peak_gate & ~artifact_flags & occipital_class_mask;
+    occ_minus_emg_vec = occipital_evidence - emg_artifact_score_full;
+    for ci = 1:nSearch
+        occ_minus_emg_ci = occ_minus_emg_vec(ci);
+        if (occipital_evidence(ci) >= occ_class_thr) && ...
+                (emg_artifact_score_full(ci) < emg_class_thr) && ...
+                (occ_minus_emg_ci >= min_occ_margin)
+            searchEmgClass_full{ci} = 'occipital';
+        elseif (occipital_evidence(ci) < occ_class_thr) && ...
+                (emg_artifact_score_full(ci) >= emg_class_thr) && ...
+                (-occ_minus_emg_ci >= min_occ_margin)
+            searchEmgClass_full{ci} = 'EMG';
+        elseif (occipital_evidence(ci) >= occ_class_thr) && ...
+                (emg_artifact_score_full(ci) >= emg_class_thr)
+            if abs(occ_minus_emg_ci) < min_occ_margin
+                searchEmgClass_full{ci} = 'mixed';
+            elseif occ_minus_emg_ci >= 0
+                searchEmgClass_full{ci} = 'occipital';
+            else
+                searchEmgClass_full{ci} = 'EMG';
+            end
+        else
+            searchEmgClass_full{ci} = 'mixed';
+        end
+    end
+    occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass_full(:));
+    mixed_class_mask = cellfun(@(c) strcmpi(c, 'mixed'), searchEmgClass_full(:));
+    mixed_rescue_mask = mixed_class_mask & ...
+        (occipital_evidence >= mixed_rescue_min_occ_evidence) & ...
+        (occ_minus_emg_vec >= -mixed_rescue_max_negative_margin) & ...
+        (searchTopoPosteriorConcentration >= mixed_rescue_min_posterior_concentration);
+    eligible_full = pass_eig_gate & pass_peak_gate & ~artifact_flags & ...
+        (occipital_class_mask | mixed_rescue_mask);
 
     searchScores = compute_calibrated_rank_aggregation_score( ...
         eval_raw_vec, powspctrm_form_score_full, peak_bonus_vec, occipital_evidence, emg_artifact_score_full, 200);
@@ -370,7 +387,10 @@ for subj = 1:nSubj
         'powspctrm_form_deduct', powspctrm_form_deduct_full, ...
         'rejection_flags', artifact_flags, ...
         'emg_artifact_score', emg_artifact_score_full, ...
-        'occipital_evidence', occipital_evidence);
+        'occipital_evidence', occipital_evidence, ...
+        'occ_minus_emg', occ_minus_emg_vec, ...
+        'emg_class', {searchEmgClass_full}, ...
+        'mixed_rescue_mask', mixed_rescue_mask);
     all_component_selection_stats{subj} = all_component_selection_stats{subj};
 
     trial_counts_initial_local = 0;
@@ -479,25 +499,7 @@ for subj = 1:nSubj
         all_condition_peak_freq(cond, subj) = peak_hz;
         all_condition_peak_power(cond, subj) = peak_pow;
 
-        [ci_w, ci_l, ci_h, n_valid_boot] = compute_bootstrap_peak_precision_from_trials( ...
-            powratio_plot, scan_freqs, trial_peak_smooth_n, peak_bootstrap_reps, peak_bootstrap_ci_prct);
-        subject_peak_boot_ci_width(cond, subj) = ci_w;
-        subject_peak_boot_ci_low(cond, subj) = ci_l;
-        subject_peak_boot_ci_high(cond, subj) = ci_h;
-        subject_peak_boot_n_valid(cond, subj) = n_valid_boot;
     end
-
-    [median_ci_width, n_pass_cond, n_valid_cond, cond_pass_col, subj_pass, reason_str] = ...
-        evaluate_criterion4_reliability_gate( ...
-        subject_peak_boot_ci_width(:, subj)', 'FULL', condLabels, ...
-        reliability_ci_width_median_max_hz, reliability_ci_width_cond_max_hz, reliability_min_pass_conditions);
-
-    subject_reliability_median_ci_width(subj) = median_ci_width;
-    subject_reliability_n_pass_conditions(subj) = n_pass_cond;
-    subject_reliability_n_valid_conditions(subj) = n_valid_cond;
-    subject_reliability_condition_pass(:, subj) = cond_pass_col;
-    subject_reliability_pass(subj) = subj_pass;
-    subject_reliability_reason{subj} = reason_str;
 
     trial_counts_initial_by_subj(subj) = trial_counts_initial_local;
     trial_counts_retained_by_subj(subj) = trial_counts_retained_local;
@@ -572,44 +574,12 @@ save(save_path, ...
     'trials_powratio_components', 'all_condition_powspctrm', ...
     'all_condition_peak_freq', 'all_condition_peak_power', ...
     'trial_counts_initial_by_subj', 'trial_counts_retained_by_subj', ...
-    'subject_peak_boot_ci_width', 'subject_peak_boot_ci_low', 'subject_peak_boot_ci_high', ...
-    'subject_peak_boot_n_valid', 'subject_reliability_median_ci_width', ...
-    'subject_reliability_n_pass_conditions', 'subject_reliability_n_valid_conditions', ...
-    'subject_reliability_condition_pass', 'subject_reliability_pass', 'subject_reliability_reason', ...
-    'scan_freqs', 'subjects', 'condLabels', 'condNames', ...
-    'peak_bootstrap_reps', 'peak_bootstrap_ci_prct', ...
-    'reliability_ci_width_median_max_hz', 'reliability_ci_width_cond_max_hz', ...
-    'reliability_min_pass_conditions');
-
-csv_output_dir = paths.controls;
-if ~exist(csv_output_dir, 'dir')
-    mkdir(csv_output_dir);
-end
-T_rel = table( ...
-    subjects(:), ...
-    subject_reliability_pass(:), ...
-    subject_reliability_median_ci_width(:), ...
-    subject_reliability_n_pass_conditions(:), ...
-    subject_reliability_n_valid_conditions(:), ...
-    subject_peak_boot_ci_width(1, :)', ...
-    subject_peak_boot_ci_width(2, :)', ...
-    subject_peak_boot_ci_width(3, :)', ...
-    subject_peak_boot_ci_width(4, :)', ...
-    subject_reliability_reason(:), ...
-    'VariableNames', {'subject', 'criterion4_pass', ...
-    'criterion4_median_ci_width_hz', 'criterion4_n_pass_conditions', ...
-    'criterion4_n_valid_conditions', 'ci_width_25_hz', 'ci_width_50_hz', ...
-    'ci_width_75_hz', 'ci_width_100_hz', 'criterion4_reason'});
-writetable(T_rel, fullfile(csv_output_dir, 'GCP_eeg_GED_subject_reliability.csv'));
+    'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
 fprintf('[GED] DONE full window pipeline
 ');
 fprintf('[GED] Feature extraction results saved to: %s
 ', save_path);
-fprintf('[GED] Reliability summary saved to: %s
-', csv_output_dir);
-fprintf('[GED] Criterion 4 reliability pass FULL: %d/%d
-', sum(subject_reliability_pass), nSubj);
 for si = 1:nSubj
     if isfinite(subject_runtime_seconds(si))
         fprintf('[GED] Runtime Subject %s: %s
@@ -1771,111 +1741,6 @@ end
 if all(~isfinite(avg_curve))
     avg_curve = mean(pr_mat(valid_trials, :), 1, 'omitnan');
 end
-end
-
-function [median_ci_width, n_pass_cond, n_valid_cond, cond_pass_col, subj_pass, reason_str] = ...
-    evaluate_criterion4_reliability_gate(ci_width_row, window_tag, cond_label_cell, ...
-    median_max_hz, cond_max_hz, min_pass_cond)
-median_ci_width = NaN;
-n_pass_cond = 0;
-n_valid_cond = 0;
-cond_pass_col = false(numel(cond_label_cell), 1);
-subj_pass = false;
-reason_str = '';
-if isempty(window_tag)
-    window_tag = '?';
-elseif ~ischar(window_tag)
-    window_tag = char(window_tag);
-end
-if isempty(ci_width_row)
-    reason_str = sprintf('%s: FAIL: no CI-width data.', window_tag);
-    return;
-end
-ci_width_row = ci_width_row(:)';
-n_cond = numel(cond_label_cell);
-if numel(ci_width_row) < n_cond
-    ci_width_row = [ci_width_row nan(1, n_cond - numel(ci_width_row))];
-elseif numel(ci_width_row) > n_cond
-    ci_width_row = ci_width_row(1:n_cond);
-end
-cond_pass = isfinite(ci_width_row) & (ci_width_row <= cond_max_hz);
-cond_pass_col = cond_pass(:);
-n_pass_cond = sum(cond_pass);
-n_valid_cond = sum(isfinite(ci_width_row));
-valid_ci = ci_width_row(isfinite(ci_width_row));
-if ~isempty(valid_ci)
-    median_ci_width = median(valid_ci);
-end
-subj_pass = isfinite(median_ci_width) && ...
-    (median_ci_width <= median_max_hz) && ...
-    (n_pass_cond >= min_pass_cond);
-if subj_pass
-    reason_str = sprintf('%s: PASS: median CI width %.2f Hz; reliable conditions %d/%d.', ...
-        window_tag, median_ci_width, n_pass_cond, n_cond);
-elseif n_valid_cond == 0
-    reason_str = sprintf('%s: FAIL: no conditions with retained trials for bootstrap reliability.', ...
-        window_tag);
-elseif ~isfinite(median_ci_width) || median_ci_width > median_max_hz
-    reason_str = sprintf(['%s: FAIL: median CI width %.2f Hz exceeds threshold %.2f Hz ', ...
-        '(%d reliable conditions).'], ...
-        window_tag, median_ci_width, median_max_hz, n_pass_cond);
-else
-    reason_str = sprintf(['%s: FAIL: only %d/%d conditions passed CI-width threshold %.2f Hz ', ...
-        '(requires >=%d).'], ...
-        window_tag, n_pass_cond, n_cond, cond_max_hz, min_pass_cond);
-end
-end
-
-function [ci_width_hz, ci_low_hz, ci_high_hz, n_boot_valid] = ...
-    compute_bootstrap_peak_precision_from_trials(pr_mat, scan_freqs, smooth_n, n_boot, ci_prct)
-ci_width_hz = NaN;
-ci_low_hz = NaN;
-ci_high_hz = NaN;
-n_boot_valid = 0;
-if isempty(ci_prct) || numel(ci_prct) ~= 2
-    ci_prct = [2.5 97.5];
-end
-if isempty(n_boot) || ~isfinite(n_boot) || n_boot < 1
-    n_boot = 1000;
-end
-if ~isfinite(smooth_n) || smooth_n < 1
-    smooth_n = 1;
-end
-if isempty(pr_mat) || isempty(scan_freqs) || size(pr_mat, 2) ~= numel(scan_freqs)
-    return;
-end
-valid_trials = any(isfinite(pr_mat), 2);
-trial_rows = find(valid_trials);
-n_valid_trials = numel(trial_rows);
-if n_valid_trials == 0
-    return;
-end
-peak_hz_boot = nan(n_boot, 1);
-for bi = 1:n_boot
-    sample_idx = trial_rows(randi(n_valid_trials, n_valid_trials, 1));
-    boot_mat = pr_mat(sample_idx, :);
-    % Uniform trial mean only (matches compute_condition_average_powratio_ft fallback);
-    % avoids ft_selectdata here — otherwise ~n_boot FieldTrip calls per condition/window.
-    boot_use = any(isfinite(boot_mat), 2);
-    if ~any(boot_use)
-        continue;
-    end
-    boot_avg = mean(boot_mat(boot_use, :), 1, 'omitnan');
-    boot_avg = movmean(boot_avg, max(1, round(smooth_n)), 'omitnan');
-    [peak_hz_boot(bi), ~] = pick_tallest_peak(boot_avg, scan_freqs, 1, 0);
-end
-peak_hz_boot = peak_hz_boot(isfinite(peak_hz_boot));
-n_boot_valid = numel(peak_hz_boot);
-if n_boot_valid < max(20, ceil(0.20 * n_boot))
-    return;
-end
-ci_bounds = prctile(peak_hz_boot, ci_prct);
-if numel(ci_bounds) ~= 2 || any(~isfinite(ci_bounds))
-    return;
-end
-ci_low_hz = ci_bounds(1);
-ci_high_hz = ci_bounds(2);
-ci_width_hz = ci_high_hz - ci_low_hz;
 end
 
 function runtime_str = format_runtime_hhmmss(runtime_seconds)
