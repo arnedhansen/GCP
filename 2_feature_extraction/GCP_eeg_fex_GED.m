@@ -50,7 +50,7 @@ ged_search_n = 10;          % search first N GED components
 min_eigval = 1.1;           % minimum GED eigenvalue (lambda >= 1.1)
 min_powspctrm_form = 0.8;        % minimum PF (powspctrm-form) score for candidate eligibility
 random_seed = 123;
-trial_peak_smooth_n = 10;     % moving-average smoothing
+trial_peak_smooth_n = 5;     % moving-average smoothing
 peak_power_halfwidth_hz = 5;  % peak power = mean power within peak_hz +/-
 
 % Condition info
@@ -142,6 +142,8 @@ all_condition_powspctrm_late = cell(4, nSubj);
 all_condition_powspctrm_full_unsmoothed = cell(4, nSubj);
 all_condition_powspctrm_early_unsmoothed = cell(4, nSubj);
 all_condition_powspctrm_late_unsmoothed = cell(4, nSubj);
+freq_powspctrm_full = cell(4, nSubj);
+freq_powspctrm_full_unsmoothed = cell(4, nSubj);
 all_condition_peak_freq_full = nan(4, nSubj);
 all_condition_peak_freq_early = nan(4, nSubj);
 all_condition_peak_freq_late = nan(4, nSubj);
@@ -1265,6 +1267,10 @@ for subj = 1:nSubj
         all_condition_powspctrm_full{cond, subj} = cond_avg_full;
         all_condition_powspctrm_early{cond, subj} = cond_avg_early;
         all_condition_powspctrm_late{cond, subj} = cond_avg_late;
+        freq_powspctrm_full_unsmoothed{cond, subj} = ged_powcurve_to_freq_ft( ...
+            all_condition_powspctrm_full_unsmoothed{cond, subj}, scan_freqs, dataEEG_c25);
+        freq_powspctrm_full{cond, subj} = ged_powcurve_to_freq_ft( ...
+            all_condition_powspctrm_full{cond, subj}, scan_freqs, dataEEG_c25);
         subj_condition_avg_full{cond} = cond_avg_full;
         subj_condition_avg_early{cond} = cond_avg_early;
         subj_condition_avg_late{cond} = cond_avg_late;
@@ -1912,6 +1918,12 @@ save(save_path, ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
 clc
+powspctrm_save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_powspctrm_GED.mat');
+save(powspctrm_save_path, ...
+    'freq_powspctrm_full', 'freq_powspctrm_full_unsmoothed', ...
+    'all_condition_peak_freq_full', 'scan_freqs', 'condLabels', 'subjects');
+fprintf('[GED] Subject-level freq (full-window GED spectra) saved to: %s\n', powspctrm_save_path);
+
 fprintf('[GED] DONE!\n');
 fprintf('[GED] Feature extraction results saved to: %s\n', save_path);
 for si = 1:nSubj
@@ -4447,6 +4459,43 @@ end
 drawnow;
 pause(0.05);
 exportgraphics(fig_handle, out_path, 'Resolution', 300);
+end
+
+function freq = ged_powcurve_to_freq_ft(pow_vec, scan_freqs, data_recording)
+% One-row FieldTrip freq struct (dimord chan_freq) for a subject-level GED spectrum in dB.
+% Optional data_recording (e.g. preprocessed timelock/raw): attach elec/grad and topolabel.
+% powspctrm remains one virtual channel; elec describes the original EEG montage when present.
+freq = struct();
+freq.label = {'comp'};
+freq.freq = scan_freqs(:)';
+freq.dimord = 'chan_freq';
+nf = numel(scan_freqs);
+if isempty(scan_freqs)
+    freq.powspctrm = nan(1, 0);
+    return;
+end
+if isempty(pow_vec) || ~isnumeric(pow_vec) || numel(pow_vec) ~= nf
+    freq.powspctrm = nan(1, nf);
+else
+    freq.powspctrm = reshape(double(pow_vec(:)).', 1, nf);
+end
+if nargin >= 3 && isstruct(data_recording)
+    if isfield(data_recording, 'elec')
+        el = data_recording.elec;
+        if isstruct(el) && isfield(el, 'label') && ~isempty(el.label)
+            freq.elec = el;
+        end
+    end
+    if isfield(data_recording, 'grad')
+        g = data_recording.grad;
+        if isstruct(g) && isfield(g, 'label') && ~isempty(g.label)
+            freq.grad = g;
+        end
+    end
+    if isfield(data_recording, 'label') && ~isempty(data_recording.label)
+        freq.topolabel = data_recording.label(:);
+    end
+end
 end
 
 function avg_curve = compute_condition_average_powratio_ft(pr_mat, scan_freqs)
