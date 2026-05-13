@@ -139,6 +139,9 @@ trials_powratio_components_late  = cell(4, nSubj);
 all_condition_powspctrm_full = cell(4, nSubj);
 all_condition_powspctrm_early = cell(4, nSubj);
 all_condition_powspctrm_late = cell(4, nSubj);
+all_condition_powspctrm_full_unsmoothed = cell(4, nSubj);
+all_condition_powspctrm_early_unsmoothed = cell(4, nSubj);
+all_condition_powspctrm_late_unsmoothed = cell(4, nSubj);
 all_condition_peak_freq_full = nan(4, nSubj);
 all_condition_peak_freq_early = nan(4, nSubj);
 all_condition_peak_freq_late = nan(4, nSubj);
@@ -1253,6 +1256,9 @@ for subj = 1:nSubj
         cond_avg_full = compute_condition_average_powratio_ft(powratio_trials_full_avg, scan_freqs);
         cond_avg_early = compute_condition_average_powratio_ft(powratio_trials_early_avg, scan_freqs);
         cond_avg_late = compute_condition_average_powratio_ft(powratio_trials_late_avg, scan_freqs);
+        all_condition_powspctrm_full_unsmoothed{cond, subj} = cond_avg_full;
+        all_condition_powspctrm_early_unsmoothed{cond, subj} = cond_avg_early;
+        all_condition_powspctrm_late_unsmoothed{cond, subj} = cond_avg_late;
         cond_avg_full = movmean(cond_avg_full, max(1, round(trial_peak_smooth_n)), 'omitnan');
         cond_avg_early = movmean(cond_avg_early, max(1, round(trial_peak_smooth_n)), 'omitnan');
         cond_avg_late = movmean(cond_avg_late, max(1, round(trial_peak_smooth_n)), 'omitnan');
@@ -1896,6 +1902,7 @@ save(save_path, ...
     'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
     'trials_powratio_components_full', 'trials_powratio_components_early', 'trials_powratio_components_late', ...
     'all_condition_powspctrm_full', 'all_condition_powspctrm_early', 'all_condition_powspctrm_late', ...
+    'all_condition_powspctrm_full_unsmoothed', 'all_condition_powspctrm_early_unsmoothed', 'all_condition_powspctrm_late_unsmoothed', ...
     'all_condition_peak_freq_full', 'all_condition_peak_freq_early', 'all_condition_peak_freq_late', ...
     'all_condition_peak_power_full', 'all_condition_peak_power_early', 'all_condition_peak_power_late', ...
     'trials_outlier_mask_freq_full', 'trials_outlier_mask_freq_early', 'trials_outlier_mask_freq_late', ...
