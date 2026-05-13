@@ -486,6 +486,7 @@ for subj = 1:nSubj
         fail_lineharm = finite_metrics & (lineharm_vec > max_lineharm_ratio);
         fail_hf_slope = false(nSearch, 1); % HF slope kept in EMG score only; no eligibility gate
         fail_emg_score = finite_metrics & (emg_artifact_score > max_emg_score);
+        hard_artifact_flags = fail_leak | fail_emg_score;
         artifact_flags = fail_leak | fail_emg_score | ...
             topo_nonposterior_fail_vec;
         warn_any = fail_lineharm;
@@ -501,8 +502,9 @@ for subj = 1:nSubj
             'hf_slope', fail_hf_slope, ...
             'emg_score', fail_emg_score, ...
             'topo_nonposterior', topo_nonposterior_fail_vec);
+        occ_minus_emg_vec = occipital_evidence - emg_artifact_score;
         for ci = 1:nSearch
-            occ_minus_emg_ci = occipital_evidence(ci) - emg_artifact_score(ci);
+            occ_minus_emg_ci = occ_minus_emg_vec(ci);
             if (occipital_evidence(ci) >= occ_class_thr) && ...
                     (emg_artifact_score(ci) < emg_class_thr) && ...
                     (occ_minus_emg_ci >= min_occ_margin)
@@ -526,16 +528,20 @@ for subj = 1:nSubj
             end
         end
         extreme_component_outlier_mask = false(nSearch, 1);
+        occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
+        mixed_class_mask = cellfun(@(c) strcmpi(c, 'mixed'), searchEmgClass(:));
+        mixed_rescue_mask = mixed_class_mask & ...
+            ~hard_artifact_flags;
+        eligible_class_mask = (~artifact_flags & occipital_class_mask) | mixed_rescue_mask;
         raw_eligible_for_outlier = pass_eig_gate & pass_peak_gate & ...
-            ~artifact_flags & cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
+            eligible_class_mask;
         [~, extreme_component_outlier_idx] = exclude_extreme_component_outlier( ...
             evals_sorted(1:nSearch), raw_eligible_for_outlier, outlier_ratio_thr, outlier_mad_mult);
         if ~isempty(extreme_component_outlier_idx)
             extreme_component_outlier_mask(extreme_component_outlier_idx) = true;
         end
-        occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
-        eligible = pass_eig_gate & pass_peak_gate & ~artifact_flags & ...
-            ~extreme_component_outlier_mask & occipital_class_mask;
+        eligible = pass_eig_gate & pass_peak_gate & ...
+            ~extreme_component_outlier_mask & eligible_class_mask;
         no_threshold_match = ~any(eligible);
         selection_pool_mask = eligible;
         searchScores = compute_calibrated_rank_aggregation_score( ...
@@ -722,7 +728,9 @@ for subj = 1:nSubj
             'best_leak', bestLeak, ...
             'emg_artifact_score', emg_artifact_score, ...
             'occipital_evidence', occipital_evidence, ...
+            'occ_minus_emg', occ_minus_emg_vec, ...
             'emg_class', {searchEmgClass}, ...
+            'mixed_rescue_mask', mixed_rescue_mask, ...
             'reject_flags', artifact_flags, ...
             'warn_flags', warn_flags, ...
             'rejection_flags', rejection_flags, ...
@@ -2565,8 +2573,7 @@ if ~isempty(selected_idx)
     selected_idx = round(selected_idx);
     selected_mask(selected_idx) = true;
 end
-occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), emg_class(:));
-final_eligible_mask = logical(eligible(:)) & occipital_class_mask;
+final_eligible_mask = logical(eligible(:));
 final_rejected_mask = ~final_eligible_mask;
 sel_idx = find(selected_mask);
 rej_idx = find(final_rejected_mask & ~selected_mask);
@@ -2604,8 +2611,7 @@ for k = 1:nCols
             imagesc(topo_data.avg(:)); axis tight;
             caxis([-topo_clim_ci topo_clim_ci]);
         end
-        rej_reason = build_rejection_reason_short(ci, emg_class, rejection_flags, extreme_component_outlier);
-        ttl = sprintf('C%d (%s) - rejected: %s', ci, emg_class{ci}, rej_reason);
+        ttl = sprintf('C%d (%s)', ci, emg_class{ci});
         title(ttl, 'FontSize', 8, 'Interpreter', 'none');
     else
         axis off;
