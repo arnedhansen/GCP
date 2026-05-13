@@ -151,8 +151,6 @@ all_condition_peak_freq_late = nan(4, nSubj);
 all_condition_peak_power_full = nan(4, nSubj);
 all_condition_peak_power_early = nan(4, nSubj);
 all_condition_peak_power_late = nan(4, nSubj);
-trial_counts_initial_by_subj_window = zeros(nSubj, 3);
-trial_counts_retained_by_subj_window = zeros(nSubj, 3);
 
 %% Subject loop
 for subj = 1:nSubj
@@ -897,8 +895,6 @@ for subj = 1:nSubj
     filters.late.selected_idx = selected_idx_late_norm;
     filters.late.w_combined = w_combined_late_norm;
 
-    trial_counts_initial_local = zeros(1, 3);
-    trial_counts_retained_local = zeros(1, 3);
     subj_powratio_fullscan = cell(1, 4);
     subj_powratio_early = cell(1, 4);
     subj_powratio_late = cell(1, 4);
@@ -1247,13 +1243,6 @@ for subj = 1:nSubj
         valid_s_early = ~isnan(trl_peaks_early);
         valid_s_late = ~isnan(trl_peaks_late);
 
-        trial_counts_initial_local(1) = trial_counts_initial_local(1) + nTrl;
-        trial_counts_initial_local(2) = trial_counts_initial_local(2) + nTrl;
-        trial_counts_initial_local(3) = trial_counts_initial_local(3) + nTrl;
-        trial_counts_retained_local(1) = trial_counts_retained_local(1) + sum(valid_s);
-        trial_counts_retained_local(2) = trial_counts_retained_local(2) + sum(valid_s_early);
-        trial_counts_retained_local(3) = trial_counts_retained_local(3) + sum(valid_s_late);
-
         % Condition-level spectra and peak metrics from trial-averaged spectra
         % (FieldTrip averaging over the trial dimension).
         cond_avg_full = compute_condition_average_powratio_ft(powratio_trials_full_avg, scan_freqs);
@@ -1547,97 +1536,8 @@ for subj = 1:nSubj
         save_figure_png(fig, fullfile(fig_save_dir_component_selection, ...
             sprintf('GCP_eeg_GED_subj%s_trials_overview_%s.png', subjects{subj}, window_names{wi})));
     end
-    trial_counts_initial_by_subj_window(subj, :) = trial_counts_initial_local;
-    trial_counts_retained_by_subj_window(subj, :) = trial_counts_retained_local;
     subject_runtime_seconds(subj) = toc(subj_runtime_tic);
 end % subject loop
-
-%% Grand-average condition-level spectra from trial-averaged data
-fig_condition_avg_powspctrm = figure('Position', [0 0 1512 982], 'Color', 'w');
-tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
-window_names_condavg = {'EARLY', 'FULL', 'LATE'};
-window_cells_condavg = {all_condition_powspctrm_early, all_condition_powspctrm_full, all_condition_powspctrm_late};
-peak_cells_condavg = {all_condition_peak_freq_early, all_condition_peak_freq_full, all_condition_peak_freq_late};
-for wi = 1:3
-    nexttile; hold on;
-    panel_min = inf;
-    panel_max = -inf;
-    for cond = 1:4
-        subj_curves = nan(nSubj, numel(scan_freqs));
-        for s = 1:nSubj
-            curv = window_cells_condavg{wi}{cond, s};
-            if ~isempty(curv) && numel(curv) == numel(scan_freqs)
-                subj_curves(s, :) = curv(:)';
-            end
-        end
-        med_curve = nanmedian(subj_curves, 1);
-        mad_curve = nan(1, numel(scan_freqs));
-        for fi = 1:numel(scan_freqs)
-            mad_curve(fi) = robust_mad(subj_curves(:, fi));
-        end
-        good = isfinite(scan_freqs) & isfinite(med_curve) & isfinite(mad_curve);
-        if sum(good) < 3
-            continue;
-        end
-        x = scan_freqs(good);
-        y = med_curve(good);
-        e = mad_curve(good);
-        fill([x, fliplr(x)], [y - e, fliplr(y + e)], colors(cond, :), ...
-            'FaceAlpha', 0.14, 'EdgeColor', 'none', 'HandleVisibility', 'off');
-        plot(x, y, '-', 'Color', colors(cond, :), 'LineWidth', 3.2, 'DisplayName', condLabels{cond});
-        % Group xline reflects the across-subject summary of analysis peaks
-        % (subject-level condition-averaged spectra), not the argmax of the
-        % group-median spectrum shown for visualization.
-        peak_freq_group = nanmedian(peak_cells_condavg{wi}(cond, :));
-        if isfinite(peak_freq_group)
-            xline(peak_freq_group, ':', 'Color', colors(cond, :), 'LineWidth', 2.0, 'HandleVisibility', 'off');
-        end
-        panel_min = min(panel_min, min(y - e));
-        panel_max = max(panel_max, max(y + e));
-    end
-    yline(0, 'k--', 'LineWidth', 0.8, 'HandleVisibility', 'off');
-    xlim([analysis_freq_range(1), analysis_freq_range(2)]);
-    if isfinite(panel_min) && isfinite(panel_max) && panel_max > panel_min
-        yr = panel_max - panel_min;
-        ylim([panel_min - 0.10 * yr, panel_max + 0.12 * yr]);
-    end
-    xlabel('Frequency [Hz]');
-    ylabel('Power [dB]');
-    title(window_names_condavg{wi}, 'FontSize', 14, 'FontWeight', 'bold');
-    set(gca, 'FontSize', 11, 'Box', 'on');
-end
-legend(condLabels, 'Location', 'southoutside', 'Orientation', 'horizontal', 'Box', 'off', 'FontSize', 11);
-sgtitle('GED Condition-Averaged Power Spectra (trial-averaged per subject)', ...
-    'FontSize', 16, 'FontWeight', 'bold');
-save_figure_png(fig_condition_avg_powspctrm, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_average_powspctrm_windows.png'));
-
-%% Trial retention figure by participant and window
-fig_trial_retention = figure('Position', [0 0 1512 982], 'Color', 'w');
-window_labels = {'Full', 'Early', 'Late'};
-for wi = 1:3
-    subplot(1, 3, wi); hold on;
-    x_subj = 1:nSubj;
-    y_init = trial_counts_initial_by_subj_window(:, wi);
-    y_keep = trial_counts_retained_by_subj_window(:, wi);
-    b = bar(x_subj, [y_init y_keep], 'grouped');
-    b(1).FaceColor = [0.85 0.85 0.85];
-    b(1).EdgeColor = [0.45 0.45 0.45];
-    b(2).FaceColor = [0.20 0.55 0.85];
-    b(2).EdgeColor = [0.10 0.30 0.55];
-    xlabel('Participant');
-    ylabel('Trial count');
-    title(sprintf('%s Window', window_labels{wi}), 'FontSize', 14, 'FontWeight', 'bold');
-    xticks(x_subj);
-    xticklabels(subjects);
-    xtickangle(45);
-    box on;
-    grid on;
-    if wi == 1
-        legend({'Initial', 'Retained'}, 'Location', 'best');
-    end
-end
-sgtitle('Trial Retention by Participant and Time Window', 'FontSize', 18, 'FontWeight', 'bold');
-save_figure_png(fig_trial_retention, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_trial_retention_by_subject_window.png'));
 
 % CENTROID METRIC: Subject/group summaries and concordance
 fig_cent = figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -1914,12 +1814,13 @@ save(save_path, ...
     'all_condition_peak_power_full', 'all_condition_peak_power_early', 'all_condition_peak_power_late', ...
     'trials_outlier_mask_freq_full', 'trials_outlier_mask_freq_early', 'trials_outlier_mask_freq_late', ...
     'trials_outlier_mask_power_full', 'trials_outlier_mask_power_early', 'trials_outlier_mask_power_late', ...
-    'trial_counts_initial_by_subj_window', 'trial_counts_retained_by_subj_window', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames');
 
 clc
 powspctrm_save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_powspctrm_GED.mat');
+% freq_* cells: one FieldTrip freq per (cond, subj), chan_freq, for ft_freqgrandaverage like AOC powl2{subj}.
+% Virtual channel label must not be 'comp' when topolabel is set (FieldTrip would treat as ICA comp).
 save(powspctrm_save_path, ...
     'freq_powspctrm_full', 'freq_powspctrm_full_unsmoothed', ...
     'all_condition_peak_freq_full', 'scan_freqs', 'condLabels', 'subjects');
@@ -4078,7 +3979,7 @@ end
 
 valid_rows = false(nSig, 1);
 dat = [];
-dat.label = {'comp'};
+dat.label = {'GED'};
 dat.fsample = fs;
 dat.trial = {};
 dat.time = {};
@@ -4466,8 +4367,10 @@ function freq = ged_powcurve_to_freq_ft(pow_vec, scan_freqs, data_recording)
 % One-row FieldTrip freq struct (dimord chan_freq) for a subject-level GED spectrum in dB.
 % Optional data_recording (e.g. preprocessed timelock/raw): attach elec/grad and topolabel.
 % powspctrm remains one virtual channel; elec describes the original EEG montage when present.
+% Virtual channel must not be labeled 'comp' together with topolabel, or FieldTrip classifies
+% the struct as ICA comp data (expects topo) instead of freq.
 freq = struct();
-freq.label = {'comp'};
+freq.label = {'GED'};
 freq.freq = scan_freqs(:)';
 freq.dimord = 'chan_freq';
 nf = numel(scan_freqs);
@@ -4512,7 +4415,7 @@ if ~any(valid_trials)
     return;
 end
 freq_dat = [];
-freq_dat.label = {'comp'};
+freq_dat.label = {'GED'};
 freq_dat.freq = scan_freqs(:)';
 freq_dat.dimord = 'rpt_chan_freq';
 freq_dat.powspctrm = nan(sum(valid_trials), 1, numel(scan_freqs));

@@ -1,3 +1,4 @@
+
 %% GCP GED Power Spectrum Visualizations
 %
 %  Grand average and single subjects (smoothed and unsmoothed).
@@ -5,7 +6,7 @@
 
 %% Setup
 startup
-[subjects, paths, colors, headmodel] = setup('GCP');
+[subjects, paths, colors, ~] = setup('GCP');
 data_path = fullfile(paths.features, 'GCP_eeg_powspctrm_GED.mat');
 fig_dir = fullfile(paths.figures, 'eeg', 'powspctrm');
 
@@ -26,7 +27,15 @@ for cond = 1:nCond
     cfg = [];
     cfg.keepindividual = 'yes';
     cfg.parameter = 'powspctrm';
-    ga = ft_freqgrandaverage(cfg, dat.freq_powspctrm_full{cond, :}{:});
+    pow_per_subj = dat.freq_powspctrm_full(cond, :);
+    pow_per_subj = pow_per_subj(~cellfun(@isempty, pow_per_subj));
+    if isempty(pow_per_subj)
+        warning('GCP_eeg_powspctrm_GED:NoData', ...
+            'No non-empty freq structs for condition %d (%s); skipping grand average trace.', ...
+            cond, condLabels{cond});
+        continue;
+    end
+    ga = ft_freqgrandaverage(cfg, pow_per_subj{:});
     nf = numel(ga.freq);
     pow = reshape(double(ga.powspctrm), size(ga.powspctrm, 1), nf);
     n_fin = sum(isfinite(pow), 1);
@@ -115,7 +124,15 @@ for cond = 1:nCond
     cfg = [];
     cfg.keepindividual = 'yes';
     cfg.parameter = 'powspctrm';
-    ga = ft_freqgrandaverage(cfg, dat.freq_powspctrm_full_unsmoothed{cond, :}{:});
+    pow_per_subj = dat.freq_powspctrm_full_unsmoothed(cond, :);
+    pow_per_subj = pow_per_subj(~cellfun(@isempty, pow_per_subj));
+    if isempty(pow_per_subj)
+        warning('GCP_eeg_powspctrm_GED:NoData', ...
+            'No non-empty freq structs for condition %d (%s); skipping grand average trace.', ...
+            cond, condLabels{cond});
+        continue;
+    end
+    ga = ft_freqgrandaverage(cfg, pow_per_subj{:});
     nf = numel(ga.freq);
     pow = reshape(double(ga.powspctrm), size(ga.powspctrm, 1), nf);
     n_fin = sum(isfinite(pow), 1);
