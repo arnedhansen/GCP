@@ -37,12 +37,12 @@ full_window = [0, 2.0];
 early_window = [0, 0.5];
 late_window = [1.0, 2.0];
 
-% Gamma analysis
+% Gamma analysis (frequency grid and FieldTrip mtmfft multitaper bandwidth)
 analysis_freq_range = [30 90];
-scan_freq_step_hz = 1; % analysis grid resolution (Hz)
+scan_freq_step_hz = 1; % frequency grid step (Hz); powratio_*_freq_smooth_bins count bins on this grid
 scan_freqs = analysis_freq_range(1):scan_freq_step_hz:analysis_freq_range(2);
 nFreqs = length(scan_freqs);
-scan_width = 2.0; % spectral smoothing (Hz) for mtmfft
+mtmfft_tapsmofrq_hz = 3; % FieldTrip cfg.tapsmofrq for mtmfft (Hz)
 
 % GED
 lambda = 0.05;              % regularization
@@ -50,7 +50,8 @@ ged_search_n = 10;          % search first N GED components
 min_eigval = 1.1;           % minimum GED eigenvalue (lambda >= 1.1)
 min_powspctrm_form = 0.8;        % minimum PF (powspctrm-form) score for candidate eligibility
 random_seed = 123;
-trial_peak_smooth_n = 5;     % moving-average smoothing
+powratio_trial_freq_smooth_bins = 5;      % movmean length (frequency bins) on per-trial powratio for peak/centroid
+powratio_condition_freq_smooth_bins = 5;  % movmean length on condition-mean powratio before condition-level peaks/plots
 peak_power_halfwidth_hz = 5;  % peak power = mean power within peak_hz +/-
 
 % Condition info
@@ -397,7 +398,7 @@ for subj = 1:nSubj
             topo_posterior_concentration_ci = posterior_mass / max(total_mass, eps);
             % Lightweight artifact proxies from trial-level component spectra
             proxy_ci = estimate_component_artifact_proxies( ...
-                w_ci, dat_per_cond, stim_windows{w}, baseline_window, fsample, scan_freqs, scan_width);
+                w_ci, dat_per_cond, stim_windows{w}, baseline_window, fsample, scan_freqs, mtmfft_tapsmofrq_hz);
 
             searchFilters(:, ci) = w_ci;
             searchTopos(:, ci) = topo_ci;
@@ -1016,13 +1017,13 @@ for subj = 1:nSubj
             ged_freq_progress_set_phase('Full TrialScan Batch');
             [ratio_cube_full, near_floor_count_full] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.full.W_combined, 'x_full', trial_mask_full, ...
-                fsample, scan_freqs, scan_width, base_floor_full, instability_near_floor_mult);
+                fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_full, instability_near_floor_mult);
             powratio_components = ratio_cube_full;
             filter_vec_full = build_combined_filter_vector(filters.full.W_combined, filters.full.w_combined);
             [ratio_trials_full_combined, near_floor_count_full_combined, valid_freq_counts_full_combined] = ...
                 compute_scan_ratio_for_combined_filter_batch( ...
                 trial_cache, filter_vec_full, 'x_full', trial_mask_full, ...
-                fsample, scan_freqs, scan_width, base_floor_full, instability_near_floor_mult);
+                fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_full, instability_near_floor_mult);
             for trl = 1:nTrl
                 if mod(trl-1, trial_print_step) == 0 || trl == nTrl
                     clc
@@ -1055,13 +1056,13 @@ for subj = 1:nSubj
             ged_freq_progress_set_phase('Early TrialScan Batch');
             [ratio_cube_early, near_floor_count_early] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.early.W_combined, 'x_early', trial_mask_early, ...
-                fsample, scan_freqs, scan_width, base_floor_early, instability_near_floor_mult);
+                fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_early, instability_near_floor_mult);
             powratio_components_early = ratio_cube_early;
             filter_vec_early = build_combined_filter_vector(filters.early.W_combined, filters.early.w_combined);
             [ratio_trials_early_combined, near_floor_count_early_combined, valid_freq_counts_early_combined] = ...
                 compute_scan_ratio_for_combined_filter_batch( ...
                 trial_cache, filter_vec_early, 'x_early', trial_mask_early, ...
-                fsample, scan_freqs, scan_width, base_floor_early, instability_near_floor_mult);
+                fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_early, instability_near_floor_mult);
             for trl = 1:nTrl
                 if mod(trl-1, trial_print_step) == 0 || trl == nTrl
                     fprintf('[GED] Subject %s (%d/%d) Trial %d/%d Early Window\n', ...
@@ -1093,13 +1094,13 @@ for subj = 1:nSubj
             ged_freq_progress_set_phase('Late TrialScan Batch');
             [ratio_cube_late, near_floor_count_late] = compute_scan_ratio_for_window_batch( ...
                 trial_cache, filters.late.W_combined, 'x_late', trial_mask_late, ...
-                fsample, scan_freqs, scan_width, base_floor_late, instability_near_floor_mult);
+                fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_late, instability_near_floor_mult);
             powratio_components_late = ratio_cube_late;
             filter_vec_late = build_combined_filter_vector(filters.late.W_combined, filters.late.w_combined);
             [ratio_trials_late_combined, near_floor_count_late_combined, valid_freq_counts_late_combined] = ...
                 compute_scan_ratio_for_combined_filter_batch( ...
                 trial_cache, filter_vec_late, 'x_late', trial_mask_late, ...
-                fsample, scan_freqs, scan_width, base_floor_late, instability_near_floor_mult);
+                fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_late, instability_near_floor_mult);
             for trl = 1:nTrl
                 if mod(trl-1, trial_print_step) == 0 || trl == nTrl
                     fprintf('[GED] Subject %s (%d/%d) Trial %d/%d Late Window\n', ...
@@ -1178,7 +1179,7 @@ for subj = 1:nSubj
         [trl_peaks, trial_peak_power_full, trl_centroid] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            trial_peak_smooth_n, peak_power_halfwidth_hz);
+            powratio_trial_freq_smooth_bins, peak_power_halfwidth_hz);
 
         trials_peaks{cond, subj} = trl_peaks;
         trials_centroid{cond, subj}     = trl_centroid;
@@ -1189,11 +1190,11 @@ for subj = 1:nSubj
         [trl_peaks_early, trial_peak_power_early, trl_centroid_early] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_early_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            trial_peak_smooth_n, peak_power_halfwidth_hz);
+            powratio_trial_freq_smooth_bins, peak_power_halfwidth_hz);
         [trl_peaks_late, trial_peak_power_late, trl_centroid_late] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_late_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            trial_peak_smooth_n, peak_power_halfwidth_hz);
+            powratio_trial_freq_smooth_bins, peak_power_halfwidth_hz);
         % Trial-level metric outlier rejection (subject-condition specific).
         [outlier_mask_freq_full, ~] = detect_trial_metric_outliers_iqr( ...
             trl_peaks, trial_metric_outlier_iqr_mult);
@@ -1261,9 +1262,9 @@ for subj = 1:nSubj
         all_condition_powspctrm_full_unsmoothed{cond, subj} = cond_avg_full;
         all_condition_powspctrm_early_unsmoothed{cond, subj} = cond_avg_early;
         all_condition_powspctrm_late_unsmoothed{cond, subj} = cond_avg_late;
-        cond_avg_full = movmean(cond_avg_full, max(1, round(trial_peak_smooth_n)), 'omitnan');
-        cond_avg_early = movmean(cond_avg_early, max(1, round(trial_peak_smooth_n)), 'omitnan');
-        cond_avg_late = movmean(cond_avg_late, max(1, round(trial_peak_smooth_n)), 'omitnan');
+        cond_avg_full = movmean(cond_avg_full, max(1, round(powratio_condition_freq_smooth_bins)), 'omitnan');
+        cond_avg_early = movmean(cond_avg_early, max(1, round(powratio_condition_freq_smooth_bins)), 'omitnan');
+        cond_avg_late = movmean(cond_avg_late, max(1, round(powratio_condition_freq_smooth_bins)), 'omitnan');
         all_condition_powspctrm_full{cond, subj} = cond_avg_full;
         all_condition_powspctrm_early{cond, subj} = cond_avg_early;
         all_condition_powspctrm_late{cond, subj} = cond_avg_late;
@@ -2055,7 +2056,7 @@ end
 
 end
 
-function [ratio_db, near_floor_freq_mask, near_floor_row_mask] = compute_scan_ratio_from_timeseries(sig_stim, sig_base, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult)
+function [ratio_db, near_floor_freq_mask, near_floor_row_mask] = compute_scan_ratio_from_timeseries(sig_stim, sig_base, fs, scan_freqs, tapsmofrq_hz, base_floor, near_floor_mult)
 if ~iscell(sig_stim) && isvector(sig_stim)
     sig_stim = sig_stim(:)';
 end
@@ -2092,7 +2093,7 @@ if ~isfinite(near_floor_mult) || near_floor_mult <= 0
     near_floor_mult = 1.5;
 end
 % Each signal is represented as one virtual channel (GED component time series).
-[p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(sig_stim, sig_base, fs, scan_freqs, scan_width_hz);
+[p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(sig_stim, sig_base, fs, scan_freqs, tapsmofrq_hz);
 if isempty(p_stim_scan) || isempty(p_base_scan)
     return;
 end
@@ -2132,7 +2133,7 @@ for fi = 1:numel(scan_freqs)
 end
 end
 
-function [ratio_cube, near_floor_freq_count_per_trial] = compute_scan_ratio_for_window_batch(trial_cache, search_filters, stim_field, trial_mask, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult)
+function [ratio_cube, near_floor_freq_count_per_trial] = compute_scan_ratio_for_window_batch(trial_cache, search_filters, stim_field, trial_mask, fs, scan_freqs, tapsmofrq_hz, base_floor, near_floor_mult)
 nTrl = numel(trial_cache);
 nComp = size(search_filters, 2);
 nFreq = numel(scan_freqs);
@@ -2170,7 +2171,7 @@ if isempty(sig_stim_cells)
 end
 
 [ratio_rows, ~, near_floor_row_mask] = compute_scan_ratio_from_timeseries( ...
-    sig_stim_cells, sig_base_cells, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult);
+    sig_stim_cells, sig_base_cells, fs, scan_freqs, tapsmofrq_hz, base_floor, near_floor_mult);
 for ri = 1:size(ratio_rows, 1)
     ratio_cube(row_comp_idx(ri), row_trial_idx(ri), :) = ratio_rows(ri, :);
 end
@@ -3853,7 +3854,7 @@ if ~isfinite(m) || m <= eps
 end
 end
 
-function proxy = estimate_component_artifact_proxies(filter_w, dat_per_cond, stim_window, base_window, fs, scan_freqs, scan_width)
+function proxy = estimate_component_artifact_proxies(filter_w, dat_per_cond, stim_window, base_window, fs, scan_freqs, tapsmofrq_hz)
 proxy = struct( ...
     'lineharm_ratio', NaN, ...
     'stationarity_cv', NaN, ...
@@ -3909,7 +3910,7 @@ end
 if ~isfinite(fs) || fs <= 0
     return;
 end
-trial_pr = compute_simple_power_ratio_scan_batch(stim_sig_cells, base_sig_cells, fs, scan_freqs, scan_width);
+trial_pr = compute_simple_power_ratio_scan_batch(stim_sig_cells, base_sig_cells, fs, scan_freqs, tapsmofrq_hz);
 if isempty(trial_pr)
     return;
 end
@@ -3986,14 +3987,14 @@ tmp(zabs > mad_mult) = true;
 bad_mask(valid) = tmp;
 end
 
-function pr_scan = compute_simple_power_ratio_scan(x_stim, x_base, fs, scan_freqs, scan_width)
+function pr_scan = compute_simple_power_ratio_scan(x_stim, x_base, fs, scan_freqs, tapsmofrq_hz)
 pr_scan = nan(size(scan_freqs));
 if isempty(x_stim) || isempty(x_base) || fs <= 0
     return;
 end
 x_stim = x_stim(:)';
 x_base = x_base(:)';
-[p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(x_stim, x_base, fs, scan_freqs, scan_width);
+[p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(x_stim, x_base, fs, scan_freqs, tapsmofrq_hz);
 if isempty(p_stim_scan) || isempty(p_base_scan)
     return;
 end
@@ -4025,13 +4026,13 @@ for fi = 1:numel(scan_freqs)
 end
 end
 
-function pr_mat = compute_simple_power_ratio_scan_batch(sig_stim_cells, sig_base_cells, fs, scan_freqs, scan_width)
+function pr_mat = compute_simple_power_ratio_scan_batch(sig_stim_cells, sig_base_cells, fs, scan_freqs, tapsmofrq_hz)
 nRows = numel(sig_stim_cells);
 pr_mat = nan(nRows, numel(scan_freqs));
 if nRows == 0 || numel(sig_base_cells) ~= nRows || fs <= 0
     return;
 end
-[p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(sig_stim_cells, sig_base_cells, fs, scan_freqs, scan_width);
+[p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(sig_stim_cells, sig_base_cells, fs, scan_freqs, tapsmofrq_hz);
 if isempty(p_stim_scan) || isempty(p_base_scan)
     return;
 end
@@ -4058,7 +4059,7 @@ for ri = 1:nRows
 end
 end
 
-function p_scan = compute_scan_power_mtmfft_ft(sig, fs, scan_freqs, scan_width_hz)
+function p_scan = compute_scan_power_mtmfft_ft(sig, fs, scan_freqs, tapsmofrq_hz)
 if ~iscell(sig) && isvector(sig)
     sig = sig(:)';
 end
@@ -4068,7 +4069,7 @@ else
     nSig = size(sig, 1);
 end
 p_scan = nan(nSig, numel(scan_freqs));
-if isempty(sig) || fs <= 0 || isempty(scan_freqs) || ~isfinite(scan_width_hz) || scan_width_hz <= 0
+if isempty(sig) || fs <= 0 || isempty(scan_freqs) || ~isfinite(tapsmofrq_hz) || tapsmofrq_hz <= 0
     return;
 end
 if ~iscell(sig) && size(sig, 2) < 8
@@ -4120,7 +4121,7 @@ cfg.method = 'mtmfft';
 cfg.output = 'pow';
 cfg.taper = 'dpss';
 cfg.foi = scan_freqs;
-cfg.tapsmofrq = scan_width_hz;
+cfg.tapsmofrq = tapsmofrq_hz;
 cfg.pad = 'nextpow2';
 cfg.keeptrials = 'yes';
 cfg.feedback = 'none';
@@ -4176,7 +4177,7 @@ end
 p_scan(valid_rows, :) = pow;
 end
 
-function [p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(sig_stim, sig_base, fs, scan_freqs, scan_width_hz)
+function [p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(sig_stim, sig_base, fs, scan_freqs, tapsmofrq_hz)
 if ~iscell(sig_stim) && isvector(sig_stim)
     sig_stim = sig_stim(:)';
 end
@@ -4211,7 +4212,7 @@ end
 if isempty(sig_all)
     return;
 end
-p_all = compute_scan_power_mtmfft_ft(sig_all, fs, scan_freqs, scan_width_hz);
+p_all = compute_scan_power_mtmfft_ft(sig_all, fs, scan_freqs, tapsmofrq_hz);
 if isempty(p_all) || size(p_all, 1) < 2 * nStim
     return;
 end
@@ -4245,7 +4246,7 @@ end
 end
 
 function [ratio_trials, near_floor_freq_count_per_trial, valid_freq_count_per_trial] = ...
-    compute_scan_ratio_for_combined_filter_batch(trial_cache, filter_vec, stim_field, trial_mask, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult)
+    compute_scan_ratio_for_combined_filter_batch(trial_cache, filter_vec, stim_field, trial_mask, fs, scan_freqs, tapsmofrq_hz, base_floor, near_floor_mult)
 nTrl = numel(trial_cache);
 ratio_trials = nan(nTrl, numel(scan_freqs));
 near_floor_freq_count_per_trial = zeros(nTrl, 1);
@@ -4280,7 +4281,7 @@ if isempty(sig_stim_cells)
 end
 
 [ratio_rows, ~, near_floor_row_mask] = compute_scan_ratio_from_timeseries( ...
-    sig_stim_cells, sig_base_cells, fs, scan_freqs, scan_width_hz, base_floor, near_floor_mult);
+    sig_stim_cells, sig_base_cells, fs, scan_freqs, tapsmofrq_hz, base_floor, near_floor_mult);
 for ri = 1:size(ratio_rows, 1)
     trl = row_trial_idx(ri);
     ratio_trials(trl, :) = ratio_rows(ri, :);
