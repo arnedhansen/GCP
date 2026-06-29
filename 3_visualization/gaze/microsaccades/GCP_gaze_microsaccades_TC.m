@@ -33,7 +33,7 @@ fontSize = 50;
 
 %% Condition definitions
 condFields = {'msTS_c25_bl_db', 'msTS_c50_bl_db', 'msTS_c75_bl_db', 'msTS_c100_bl_db'};
-condLabels = {'25% contrast', '50% contrast', '75% contrast', '100% contrast'};
+condLabels = {'25% Contrast', '50% Contrast', '75% Contrast', '100% Contrast'};
 nConds     = length(condFields);
 
 %% Process all conditions
@@ -146,15 +146,15 @@ end
 xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
 yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
 xlim(t_win);
+ylim([-1.75 1.25])
 xlabel('Time [s]', 'FontSize', fontSize*0.8);
 ylabel('Microsaccade Rate [dB]', 'FontSize', fontSize*0.8);
 leg_p_db = gobjects(nConds, 1);
 for c = 1:nConds
     leg_p_db(c) = patch(nan, nan, colors(c, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
 end
-legend(leg_p_db, condLabels, 'Location', 'best', 'FontSize', fontSize*0.8, 'Box', 'off');
 set(gca, 'FontSize', fontSize*0.8);
+legend(leg_p_db, condLabels, 'Location', 'northeast', 'FontSize', fontSize*0.666, 'Box', 'off');
 box off
 hold off
-
 exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate_db.png'), 'Resolution', 600);

@@ -11,10 +11,10 @@ addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 % Plot labels (three distinct velocity measures)
 velocityYLabels = {'Eye Velocity X [dB]', ...
     'Eye Velocity Y [dB]', ...
-    'Combined Eye Velocity [dB]'};
+    'Eye Velocity [dB]'};
 channels      = {'VelH', 'VelV', 'Vel2D'};
 channeltitles = {'Horizontal Velocity', 'Vertical Velocity', 'Combined Velocity'};
-labels        = {'25% contrast', '50% contrast', '75% contrast', '100% contrast'};
+labels        = {'25% Contrast', '50% Contrast', '75% Contrast', '100% Contrast'};
 if numel(velocityYLabels) ~= numel(channels)
     error('Velocity y-labels must match number of channels.');
 end
@@ -57,64 +57,9 @@ conditionData   = {ga25et, ga50et, ga75et, ga100et};
 conditionColors = colors(1:4, :);
 conditionLabels = labels(1:4);
 
-%% Overview figure (all channels)
+%% Plot
 close all
-figure('Position', [0 0 1512 982], 'Color', 'w');
-for c = 1:numel(channels)
-    subplot(3, 1, c);
-    hold on
-
-    cfg = [];
-    cfg.channel     = channels{c};
-    cfg.avgoverchan = 'yes';
-    cfg.latency     = t_store;
-    ets = cell(1, numel(conditionData));
-    for k = 1:numel(conditionData)
-        ets{k} = ft_selectdata(cfg, conditionData{k});
-    end
-
-    for k = 1:numel(ets)
-        x_store = ets{k}.time(:);
-        disp_idx = x_store >= t_win(1) & x_store <= t_win(2);
-        x = x_store(disp_idx);
-
-        yi = squeeze(ets{k}.individual); % [subj x time]
-        if isvector(yi)
-            yi = yi(:)';
-        end
-        yi_disp = yi(:, disp_idx);
-
-        mu = nanmean(yi_disp, 1)';
-        nValid = sum(~isnan(yi_disp(:, 1)));
-        sem = nanstd(yi_disp, 0, 1)' ./ sqrt(max(nValid, 1));
-
-        eb = shadedErrorBar(x, mu, sem, 'lineProps', {'-'}, 'transparent', true);
-        set(eb.mainLine, 'Color', conditionColors(k, :), 'LineWidth', lineW);
-        set(eb.patch, 'FaceColor', conditionColors(k, :), 'FaceAlpha', 0.20);
-        set(eb.edge(1), 'Color', 'none');
-        set(eb.edge(2), 'Color', 'none');
-    end
-
-    xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
-    yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
-    xlim(t_win);
-    xlabel('Time [s]', 'FontSize', fontSize*0.8);
-    ylabel(velocityYLabels{c}, 'FontSize', fontSize*0.8);
-    leg_p = gobjects(numel(ets), 1);
-    for k = 1:numel(ets)
-        leg_p(k) = patch(nan, nan, conditionColors(k, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
-    end
-    legend(leg_p, conditionLabels, 'Location', 'northeast', 'FontSize', fontSize*0.8, 'Box', 'off');
-    set(gca, 'FontSize', fontSize*0.8);
-    box off
-    hold off
-end
-
-exportgraphics(gcf, fullfile(outdir, 'GCP_gaze_velocity_overview_TC_db.png'), ...
-    'Resolution', 600);
-
-%% Single-channel figures
-for c = 1:numel(channels)
+for c = 3%%%%%1:numel(channels)
     figure('Position', [0 0 1512 982], 'Color', 'w');
     hold on
 
@@ -152,18 +97,20 @@ for c = 1:numel(channels)
     xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
     yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
     xlim(t_win);
+    if c == 3
+        ylim([-200 1400])
+    end
     xlabel('Time [s]', 'FontSize', fontSize*0.8);
     ylabel(velocityYLabels{c}, 'FontSize', fontSize*0.8);
     leg_p = gobjects(numel(ets), 1);
     for k = 1:numel(ets)
         leg_p(k) = patch(nan, nan, conditionColors(k, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
     end
-    legend(leg_p, conditionLabels, 'Location', 'northeast', 'FontSize', fontSize*0.8, 'Box', 'off');
     set(gca, 'FontSize', fontSize*0.8);
+    legend(leg_p, conditionLabels, 'Location', 'best', 'FontSize', fontSize*0.666, 'Box', 'off');
     box off
     hold off
 
     exportgraphics(gcf, fullfile(outdir, sprintf('GCP_gaze_velocity_%s_TC_db.png', channels{c})), ...
         'Resolution', 600);
-    close(gcf);
 end
