@@ -12,6 +12,7 @@
 clear; close all;
 startup
 [subjects, paths, colors, ~] = setup('GCP', 0);
+subjects = gcp_subject_inclusion(subjects, paths);
 
 ged_path = fullfile(paths.features, 'GCP_eeg_GED.mat');
 if ~isfile(ged_path)
@@ -20,11 +21,9 @@ end
 
 ged = load(ged_path);
 condLabels = ged.condLabels;
-if isfield(ged, 'subjects')
-    subjects = ged.subjects;
-end
+subj_idx = arrayfun(@(s) find(strcmp(ged.subjects, subjects{s}), 1), 1:numel(subjects));
 nCond = numel(condLabels);
-nSubj = size(ged.trials_peaks, 2);
+nSubj = numel(subj_idx);
 peak_power_halfwidth_hz = 5;
 
 fig_dir = fullfile(paths.figures, 'eeg', 'ged');
@@ -40,7 +39,7 @@ end
 
 [y_freq, g_freq, s_freq, y_power, g_power, s_power] = pool_ged_trial_metrics( ...
     ged.trials_peaks, ged.trials_powratio_fullscan, ged.scan_freqs, ...
-    power_outlier_masks, peak_power_halfwidth_hz, nCond, nSubj, subjects);
+    power_outlier_masks, peak_power_halfwidth_hz, nCond, subj_idx, subjects);
 
 fprintf('Trial-level GED data pooled: freq n=%d, power n=%d\n', ...
     numel(y_freq), numel(y_power));
@@ -62,7 +61,7 @@ fprintf('Saved figures to %s\n', fig_dir);
 
 function [y_freq, g_freq, s_freq, y_power, g_power, s_power] = pool_ged_trial_metrics( ...
     trials_peaks, trials_powratio_fullscan, scan_freqs, ...
-    trials_outlier_mask_power_full, peak_power_halfwidth_hz, nCond, nSubj, subjects)
+    trials_outlier_mask_power_full, peak_power_halfwidth_hz, nCond, subj_idx, subjects)
 
 y_freq = [];
 g_freq = [];
@@ -72,9 +71,10 @@ g_power = [];
 s_power = {};
 
 for c = 1:nCond
-    for s = 1:nSubj
-        pf = trials_peaks{c, s};
-        pr = trials_powratio_fullscan{c, s};
+    for s = 1:numel(subj_idx)
+        si = subj_idx(s);
+        pf = trials_peaks{c, si};
+        pr = trials_powratio_fullscan{c, si};
         if isempty(pf) || isempty(pr)
             continue
         end
@@ -84,15 +84,15 @@ for c = 1:nCond
         if size(pr, 1) ~= nTrl
             warning('GCP_eeg_GED_trial_boxplots:SizeMismatch', ...
                 'Condition %d, subject %d: %d peak freqs but %d spectra; skipping.', ...
-                c, s, nTrl, size(pr, 1));
+                c, si, nTrl, size(pr, 1));
             continue
         end
 
         pp = reconstruct_trial_peak_power(pf, pr, scan_freqs, peak_power_halfwidth_hz);
 
         if ~isempty(trials_outlier_mask_power_full) && ...
-                ~isempty(trials_outlier_mask_power_full{c, s})
-            mask = trials_outlier_mask_power_full{c, s}(:);
+                ~isempty(trials_outlier_mask_power_full{c, si})
+            mask = trials_outlier_mask_power_full{c, si}(:);
             if numel(mask) == nTrl
                 pp(mask) = NaN;
             end

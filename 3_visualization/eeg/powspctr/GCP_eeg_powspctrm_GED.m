@@ -5,16 +5,18 @@
 %% Setup
 startup
 [subjects, paths, colors, ~] = setup('GCP');
+subjects = gcp_subject_inclusion(subjects, paths);
 data_path = fullfile(paths.features, 'GCP_eeg_powspctrm_GED.mat');
 fig_dir = fullfile(paths.figures, 'eeg', 'powspctrm');
 
 %% Load data
 dat = load(data_path);
+nSubj = numel(subjects);
+subj_idx = arrayfun(@(s) find(strcmp(dat.subjects, subjects{s}), 1), 1:nSubj);
 scan_freqs = dat.scan_freqs;
 analysis_freq_range = [scan_freqs(1), scan_freqs(end)];
 condLabels = dat.condLabels;
 nCond = numel(condLabels);
-nSubj = numel(subjects);
 peak_hz = dat.all_condition_peak_freq_full;
 
 %% Grand average powerspectrum (smoothed)
@@ -25,7 +27,13 @@ for cond = 1:nCond
     cfg = [];
     cfg.keepindividual = 'yes';
     cfg.parameter = 'powspctrm';
-    pow_per_subj = dat.freq_powspctrm_full(cond, :);
+    pow_per_subj = cell(1, numel(subj_idx));
+    for i = 1:numel(subj_idx)
+        si = subj_idx(i);
+        if si <= size(dat.freq_powspctrm_full, 2)
+            pow_per_subj{i} = dat.freq_powspctrm_full{cond, si};
+        end
+    end
     pow_per_subj = pow_per_subj(~cellfun(@isempty, pow_per_subj));
     if isempty(pow_per_subj)
         warning('GCP_eeg_powspctrm_GED:NoData', ...
@@ -59,23 +67,24 @@ exportgraphics(fig_grand, fullfile(fig_dir, 'GCP_eeg_GED_powspctrm_grand_average
 close all
 fig_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
 nRows = ceil(nSubj / 5);
-for subj = 1:nSubj
-    subplot(nRows, 5, subj);
+for i = 1:nSubj
+    subj = subj_idx(i);
+    subplot(nRows, 5, i);
     hold on;
     panel_min = inf;
     panel_max = -inf;
+    plotted_any = false;
     for cond = 1:nCond
         fq = dat.freq_powspctrm_full{cond, subj};
         if isempty(fq)
-            text(31, 0.1, 'NO ELIGIBLE GED COMPONENTS', 'FontSize', 8, 'Color', 'r', 'FontWeight', 'bold');
             continue;
         end
         curv = squeeze(fq.powspctrm(1, :));
         if numel(curv) ~= numel(scan_freqs)
-            text(31, 0.1, 'NO ELIGIBLE GED COMPONENTS', 'FontSize', 8, 'Color', 'r', 'FontWeight', 'bold');
             continue;
         end
         plot(scan_freqs, curv(:)', '-', 'Color', colors(cond, :), 'LineWidth', 3);
+        plotted_any = true;
         panel_min = min(panel_min, min(curv, [], 'omitnan'));
         panel_max = max(panel_max, max(curv, [], 'omitnan'));
         pk = peak_hz(cond, subj);
@@ -94,17 +103,23 @@ for subj = 1:nSubj
     for cond = 1:nCond
         pk = peak_hz(cond, subj);
         if ~isfinite(pk)
-            text(31, 0.1, 'NO ELIGIBLE GED COMPONENTS', 'FontSize', 8, 'Color', 'r', 'FontWeight', 'bold');
             continue;
         end
         text(0.98, peak_text_y - (cond - 1) * peak_text_step, sprintf('%.0f Hz', pk), ...
             'Units', 'normalized', 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', ...
             'Color', colors(cond, :), 'FontSize', 9, 'FontWeight', 'bold');
     end
-    title(sprintf('Participant %d', subj));
+    title(sprintf('Participant %s', subjects{i}));
     set(gca, 'FontSize', 15, 'Box', 'on');
-    if subj == 1 || subj == 6
-        legend(condLabels, 'Location', 'northwest', 'Box', 'off');
+    if ~plotted_any
+        text(31, 0.1, 'NO ELIGIBLE GED COMPONENTS', 'FontSize', 8, 'Color', 'r', 'FontWeight', 'bold');
+        leg_h = gobjects(nCond, 1);
+        for cond = 1:nCond
+            leg_h(cond) = patch(NaN, NaN, colors(cond, :), 'EdgeColor', 'none');
+        end
+        legend(leg_h, condLabels, 'Location', 'best', 'Box', 'off');
+    end
+    if i == 1 || i == 6
         ylabel('Power [dB]');
     end
     xlabel('Frequency [Hz]');
@@ -122,7 +137,13 @@ for cond = 1:nCond
     cfg = [];
     cfg.keepindividual = 'yes';
     cfg.parameter = 'powspctrm';
-    pow_per_subj = dat.freq_powspctrm_full_unsmoothed(cond, :);
+    pow_per_subj = cell(1, numel(subj_idx));
+    for i = 1:numel(subj_idx)
+        si = subj_idx(i);
+        if si <= size(dat.freq_powspctrm_full_unsmoothed, 2)
+            pow_per_subj{i} = dat.freq_powspctrm_full_unsmoothed{cond, si};
+        end
+    end
     pow_per_subj = pow_per_subj(~cellfun(@isempty, pow_per_subj));
     if isempty(pow_per_subj)
         warning('GCP_eeg_powspctrm_GED:NoData', ...
@@ -156,23 +177,24 @@ exportgraphics(fig_grand, fullfile(fig_dir, 'GCP_eeg_GED_powspctrm_grand_average
 close all
 fig_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
 nRows = ceil(nSubj / 5);
-for subj = 1:nSubj
-    subplot(nRows, 5, subj);
+for i = 1:nSubj
+    subj = subj_idx(i);
+    subplot(nRows, 5, i);
     hold on;
     panel_min = inf;
     panel_max = -inf;
+    plotted_any = false;
     for cond = 1:nCond
         fq = dat.freq_powspctrm_full_unsmoothed{cond, subj};
         if isempty(fq)
-            text(31, 0.1, 'NO ELIGIBLE GED COMPONENTS', 'FontSize', 8, 'Color', 'r', 'FontWeight', 'bold');
             continue;
         end
         curv = squeeze(fq.powspctrm(1, :));
         if numel(curv) ~= numel(scan_freqs)
-            text(31, 0.1, 'NO ELIGIBLE GED COMPONENTS', 'FontSize', 8, 'Color', 'r', 'FontWeight', 'bold');
             continue;
         end
         plot(scan_freqs, curv(:)', '-', 'Color', colors(cond, :), 'LineWidth', 3);
+        plotted_any = true;
         panel_min = min(panel_min, min(curv, [], 'omitnan'));
         panel_max = max(panel_max, max(curv, [], 'omitnan'));
         pk = peak_hz(cond, subj);
@@ -191,17 +213,23 @@ for subj = 1:nSubj
     for cond = 1:nCond
         pk = peak_hz(cond, subj);
         if ~isfinite(pk)
-            text(31, 0.1, 'NO ELIGIBLE GED COMPONENTS', 'FontSize', 8, 'Color', 'r', 'FontWeight', 'bold');
             continue;
         end
         text(0.98, peak_text_y - (cond - 1) * peak_text_step, sprintf('%.0f Hz', pk), ...
             'Units', 'normalized', 'HorizontalAlignment', 'right', 'VerticalAlignment', 'top', ...
             'Color', colors(cond, :), 'FontSize', 9, 'FontWeight', 'bold');
     end
-    title(sprintf('Participant %d', subj));
+    title(sprintf('Participant %s', subjects{i}));
     set(gca, 'FontSize', 15, 'Box', 'on');
-    if subj == 1 || subj == 6
-        legend(condLabels, 'Location', 'northwest', 'Box', 'off');
+    if ~plotted_any
+        text(31, 0.1, 'NO ELIGIBLE GED COMPONENTS', 'FontSize', 8, 'Color', 'r', 'FontWeight', 'bold');
+        leg_h = gobjects(nCond, 1);
+        for cond = 1:nCond
+            leg_h(cond) = patch(NaN, NaN, colors(cond, :), 'EdgeColor', 'none');
+        end
+        legend(leg_h, condLabels, 'Location', 'best', 'Box', 'off');
+    end
+    if i == 1 || i == 6
         ylabel('Power [dB]');
     end
     xlabel('Frequency [Hz]');

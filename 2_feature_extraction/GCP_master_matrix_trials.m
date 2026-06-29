@@ -75,11 +75,12 @@ for s = 1:numel(subjects)
     end
 end
 
-%% Load GED trial-level table
-tbl_ged = table();
-ged_mat = fullfile(features_root, 'GCP_eeg_GED_gamma_metrics_trials.mat');
-dat = load(ged_mat);
-tbl_ged = dat.T;
+%% Load GED trial-level table (current pipeline: GCP_eeg_GED.mat)
+% Per-trial peak gamma frequency [Hz] (trials_peaks) and peak gamma power [dB]
+% (mean powratio within peak +/- 5 Hz, with the same power-outlier mask used
+% by GCP_eeg_fex_GED.m / GCP_stats_rainclouds.py) so the trial-level merged
+% table matches the GED spectra and the subject-level boxplots.
+tbl_ged = build_ged_trial_table(features_root, subjects);
 if ~isempty(tbl_ged)
     tbl_ged = standardize_id_condition_trial(tbl_ged);
 end
@@ -109,6 +110,10 @@ else
 end
 
 tbl_merge = sortrows(tbl_merge, {'ID','Condition','Trial'});
+inc = load(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion');
+inc = inc.subject_inclusion;
+[~, loc] = ismember(tbl_merge.ID, inc.SubjID);
+tbl_merge.Include = inc.Include(loc);
 
 %% Diagnostics
 n_behav = height(tbl_behav);
@@ -201,5 +206,100 @@ end
 tbl = table();
 for i = 1:numel(fn)
     tbl.(fn{i}) = strct.(fn{i})(:);
+end
+end
+
+function tbl_ged = build_ged_trial_table(features_root, subjects)
+tbl_ged = table();
+
+ged_path = fullfile(features_root, 'GCP_eeg_GED.mat');
+if ~isfile(ged_path)
+    warning('GCP_master_matrix_trials:NoGED', ...
+        'Current GED file not found: %s. GED trial columns will be empty.', ged_path);
+    return
+end
+
+dat = load(ged_path, 'trials_peaks', 'trials_powratio_fullscan', ...
+    'trials_outlier_mask_power_full', 'scan_freqs', 'subjects');
+if ~isfield(dat, 'trials_peaks') || ~isfield(dat, 'trials_powratio_fullscan')
+    warning('GCP_master_matrix_trials:BadGED', ...
+        'GED file missing trial-level fields; GED trial columns will be empty.');
+    return
+end
+
+scan_freqs = dat.scan_freqs(:)';
+peak_power_halfwidth_hz = 5;  % matches GCP_eeg_fex_GED.m / GCP_stats_rainclouds.py
+
+if isfield(dat, 'subjects') && ~isempty(dat.subjects)
+    ged_subjects = dat.subjects;
+else
+    ged_subjects = subjects;
+end
+
+nCond = size(dat.trials_peaks, 1);
+nSubj = size(dat.trials_peaks, 2);
+
+ID = [];
+Condition = [];
+Trial = [];
+GammaFrequency = [];
+GammaPower = [];
+
+for c = 1:nCond
+    for s = 1:nSubj
+        pf = dat.trials_peaks{c, s};
+        pr = dat.trials_powratio_fullscan{c, s};
+        if isempty(pf) || isempty(pr)
+            continue
+        end
+
+        pf = pf(:);
+        nTrl = numel(pf);
+        if size(pr, 1) ~= nTrl
+            continue
+        end
+
+        pp = reconstruct_trial_peak_power(pf, pr, scan_freqs, peak_power_halfwidth_hz);
+
+        if isfield(dat, 'trials_outlier_mask_power_full') && ...
+                ~isempty(dat.trials_outlier_mask_power_full) && ...
+                c <= size(dat.trials_outlier_mask_power_full, 1) && ...
+                s <= size(dat.trials_outlier_mask_power_full, 2)
+            mask = dat.trials_outlier_mask_power_full{c, s};
+            if ~isempty(mask) && numel(mask) == nTrl
+                pp(logical(mask(:))) = NaN;
+            end
+        end
+
+        sid = str2double(ged_subjects{s});
+        ID = [ID; repmat(sid, nTrl, 1)]; %#ok<AGROW>
+        Condition = [Condition; repmat(c, nTrl, 1)]; %#ok<AGROW>
+        Trial = [Trial; (1:nTrl)']; %#ok<AGROW>
+        GammaFrequency = [GammaFrequency; pf]; %#ok<AGROW>
+        GammaPower = [GammaPower; pp(:)]; %#ok<AGROW>
+    end
+end
+
+if isempty(ID)
+    return
+end
+
+tbl_ged = table(ID, Condition, Trial, GammaFrequency, GammaPower);
+end
+
+function pp = reconstruct_trial_peak_power(pf, pr, scan_freqs, halfwidth_hz)
+nTrl = numel(pf);
+pp = nan(nTrl, 1);
+scan_freqs = scan_freqs(:)';
+
+for t = 1:nTrl
+    if ~isfinite(pf(t))
+        continue
+    end
+    band = abs(scan_freqs - pf(t)) <= halfwidth_hz;
+    if ~any(band)
+        continue
+    end
+    pp(t) = mean(pr(t, band), 'omitnan');
 end
 end

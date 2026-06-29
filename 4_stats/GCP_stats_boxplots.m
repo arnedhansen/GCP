@@ -1,17 +1,26 @@
 %% GCP Stats Overview
 % One figure per variable: boxplots + subject lines + jittered dots
+startup
 [~, paths, colors, ~] = setup('GCP', 0);
 
 % Load merged data
 dat = load(fullfile(paths.features, 'GCP_merged_data.mat'));
 tbl = struct2table(dat.GCP_merged_data);
 
+if ismember('Include', tbl.Properties.VariableNames)
+    nRowsBefore = height(tbl);
+    tbl = tbl(tbl.Include, :);
+    fprintf('GED cohort filter: %d rows kept (%d excluded).\n', ...
+        height(tbl), nRowsBefore - height(tbl));
+end
+
 % Identify numeric variables only (excluding ID and Condition)
 varNames    = tbl.Properties.VariableNames;
 numericVars = {};
 for i = 1:numel(varNames)
     v = tbl.(varNames{i});
-    if isnumeric(v) && ~strcmp(varNames{i}, 'ID') && ~strcmp(varNames{i}, 'Condition')
+    if isnumeric(v) && ~strcmp(varNames{i}, 'ID') && ~strcmp(varNames{i}, 'Condition') ...
+            && ~strcmp(varNames{i}, 'Include')
         numericVars{end+1} = varNames{i};
     end
 end
@@ -26,7 +35,7 @@ xtickLabs = strcat(num2str(condLevels*25), "% Contrast");
 subjIDs = unique(tbl.ID);
 
 % Outlier exclusion settings (applied per variable and per condition)
-useOutlierExclusion = true;
+useOutlierExclusion = false;
 madThreshold = 5; % robust z-threshold based on MAD
 
 % Plot aesthetics
@@ -175,6 +184,7 @@ for iVar = 1:numel(numericVars)
     elseif strcmp(varName, 'Power')
         ylabStr = 'Power [dB]';
         titleStr = 'Gamma Power';
+        ylim([1 9])
     elseif strcmp(varName, 'dBGazeDeviation')
         ylabStr = 'Gaze Deviation [dB]';
         titleStr = 'Gaze Deviation';
@@ -227,8 +237,9 @@ for iVar = 1:numel(numericVars)
     exportgraphics(gcf, fullfile(paths.figures, 'stats', 'boxplots', ['GCP_stats_boxplot_' varName '.png']), 'Resolution', 600);
 end
 
+%%
 function styleCurrentBoxplot(boxColors)
-% Color box faces and edges to match condition scatter colors (IAB style).
+% Color box faces and edges to match condition scatter colors
 hBoxes = findobj(gca, 'Tag', 'Box');
 if isempty(hBoxes)
     return;

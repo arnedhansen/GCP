@@ -1,18 +1,21 @@
-%% GCP Pupil Size
+%% GCP Pupil Size Time Course
+% Loads dB-baselined pupil time courses from
+% 2_feature_extraction/GCP_gaze_fex.m (pupTS_cXX_bl_db).
 
 %% Setup
 startup
 [subjects, paths, colors, ~] = setup('GCP');
+subjects = gcp_subject_inclusion(subjects, paths);
+addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 
 % Plot labels
 channels      = {'Pupil'};
 channeltitles = {'Pupil Size'};
-ylabs_px      = {'Pupil Size [a.u.]'};
-ylabs_pct     = {'Pupil Size [%]'};
+ylabs_db      = {'Pupil Size [dB]'};
 labels        = {'25% contrast', '50% contrast', '75% contrast', '100% contrast'};
-fontSize = 20;
+fontSize = 50;
 t_comp   = [-2 3];
-t_win    = [-1 2];
+t_win    = [-0.5 2];
 lineW    = 2.5;
 
 % Gaussian smoothing kernel
@@ -38,10 +41,10 @@ for subj = 1:numel(subjects)
     datapath = fullfile(paths.features, subjects{subj}, 'gaze');
     disp(['[GCP Pupil Size] Loading Subject ', num2str(subjects{subj})])
     dat = load(fullfile(datapath, 'gaze_pupil_timeseries'));
-    alltlk25et{subj}  = dat.pupTS_c25_bl_pct;
-    alltlk50et{subj}  = dat.pupTS_c50_bl_pct;
-    alltlk75et{subj}  = dat.pupTS_c75_bl_pct;
-    alltlk100et{subj} = dat.pupTS_c100_bl_pct;
+    alltlk25et{subj}  = dat.pupTS_c25_bl_db;
+    alltlk50et{subj}  = dat.pupTS_c50_bl_db;
+    alltlk75et{subj}  = dat.pupTS_c75_bl_db;
+    alltlk100et{subj} = dat.pupTS_c100_bl_db;
 end
 
 %% Grand average
@@ -51,7 +54,7 @@ ga25et  = ft_timelockgrandaverage(cfg, alltlk25et{:});
 ga50et  = ft_timelockgrandaverage(cfg, alltlk50et{:});
 ga75et  = ft_timelockgrandaverage(cfg, alltlk75et{:});
 ga100et = ft_timelockgrandaverage(cfg, alltlk100et{:});
-ylabs = ylabs_pct;
+ylabs = ylabs_db;
 
 %% Figure Pupil Time Course
 close all
@@ -68,7 +71,6 @@ et75  = ft_selectdata(cfg, ga75et);
 et100 = ft_selectdata(cfg, ga100et);
 ets = {et25, et50, et75, et100};
 
-leg_p = gobjects(numel(ets), 1);
 for k = 1:numel(ets)
     x_store = ets{k}.time(:);
     disp_idx = x_store >= t_win(1) & x_store <= t_win(2);
@@ -89,20 +91,24 @@ for k = 1:numel(ets)
     nValid = sum(~isnan(yi_disp), 1)';
     sem = nanstd(yi_disp, 0, 1)' ./ sqrt(max(nValid, 1));
 
-    fill([x; flipud(x)], ...
-        [mu + sem; flipud(mu - sem)], ...
-        colors(k, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-        'HandleVisibility', 'off');
-    plot(x, mu, '-', 'Color', colors(k, :), 'LineWidth', lineW);
-    leg_p(k) = patch(NaN, NaN, colors(k, :), 'EdgeColor', 'none');
+    eb = shadedErrorBar(x, mu, sem, 'lineProps', {'-'}, 'transparent', true);
+    set(eb.mainLine, 'Color', colors(k, :), 'LineWidth', lineW);
+    set(eb.patch, 'FaceColor', colors(k, :), 'FaceAlpha', 0.20);
+    set(eb.edge(1), 'Color', 'none');
+    set(eb.edge(2), 'Color', 'none');
 end
 
-xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
-yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
+xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
+yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
 xlim(t_win);
-xlabel('Time [s]');
-ylabel(ylabs{1});
-legend(leg_p, labels, 'Location', 'southeast', 'FontSize', fontSize - 4, 'Box', 'off');
-set(gca, 'FontSize', fontSize);
+xlabel('Time [s]', 'FontSize', fontSize*0.8);
+ylabel(ylabs{1}, 'FontSize', fontSize*0.8);
+leg_p = gobjects(numel(ets), 1);
+for k = 1:numel(ets)
+    leg_p(k) = patch(nan, nan, colors(k, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
+end
+legend(leg_p, labels, 'Location', 'southeast', 'FontSize', fontSize*0.8, 'Box', 'off');
+set(gca, 'FontSize', fontSize*0.8);
+box off
 hold off
-exportgraphics(gcf, fullfile(outdir, sprintf('GCP_gaze_pupil_size_TC.png')), 'Resolution', 600);
+exportgraphics(gcf, fullfile(outdir, 'GCP_gaze_pupil_size_TC_db.png'), 'Resolution', 600);

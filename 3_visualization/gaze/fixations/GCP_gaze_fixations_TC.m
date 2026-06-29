@@ -1,15 +1,14 @@
-%% GCP Gaze Fixation Time Course — Contrast Conditions
+%% GCP Gaze Fixation Time Course Contrast Conditions
 % Builds fixation-rate time courses per contrast condition from
 % EyeLink fixation events. Fixation rate is reconstructed from fixation
 % onset events (L_fixation, R_fixation) as fixations/s, then baseline-
-% normalised as percentage change and plotted with SEM.
-%
-% This script outputs percentage-change fixation time courses:
-%   1. Percentage-change baseline-corrected fixation rate
+% normalised as dB change (10*log10(stim/baseline)) and plotted with SEM.
 
 %% Setup
 startup
 [subjects, paths, colors, ~] = setup('GCP');
+subjects = gcp_subject_inclusion(subjects, paths);
+addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 
 figpath  = fullfile(paths.figures, 'gaze', 'fixations');
 mkdir(figpath);
@@ -47,7 +46,7 @@ disp_idx = t_store_vec >= t_win(1) & t_store_vec <= t_win(2);
 n_disp   = sum(disp_idx);
 t_vec    = t_store_vec(disp_idx);
 
-% Baseline period for percentage-change normalisation
+% Baseline period for dB normalisation
 bl_win = [-1 -0.25];                                     % seconds
 bl_idx = t_store_vec >= bl_win(1) & t_store_vec <= bl_win(2);
 
@@ -182,53 +181,56 @@ for subj = 1:nSubj
     end
 end
 
-%% Percentage-change baseline normalisation (per subject, per condition)
-subjFix_pct = nan(size(subjFix));
+%% dB baseline normalisation (per subject, per condition)
+subjFix_db = nan(size(subjFix));
 for subj = 1:nSubj
     for c = 1:nConds
         fix_ts = subjFix(subj, :, c);
         if all(isnan(fix_ts)); continue; end
         bl_mean = nanmean(fix_ts(bl_idx));
-        if bl_mean == 0 || isnan(bl_mean); continue; end
-        subjFix_pct(subj, :, c) = (fix_ts - bl_mean) ./ bl_mean * 100;
+        if bl_mean <= 0 || isnan(bl_mean); continue; end
+        ratio = fix_ts ./ bl_mean;
+        db_ts = 10 * log10(ratio);
+        db_ts(~isfinite(fix_ts) | ~isfinite(ratio) | ratio <= 0) = NaN;
+        subjFix_db(subj, :, c) = db_ts;
     end
 end
 
-%% Grand averages — display portion only (percentage change)
-subjFix_pct_disp = subjFix_pct(:, disp_idx, :);
-grandMean_pct = squeeze(nanmean(subjFix_pct_disp, 1));                          % n_disp x nConds
-nValid_pct    = squeeze(sum(~isnan(subjFix_pct_disp(:, 1, :)), 1));             % nConds x 1
-grandSEM_pct  = squeeze(nanstd(subjFix_pct_disp, 0, 1)) ./ sqrt(nValid_pct');   % n_disp x nConds
+%% Grand averages display portion only (dB change)
+subjFix_db_disp = subjFix_db(:, disp_idx, :);
+grandMean_db = squeeze(nanmean(subjFix_db_disp, 1));                          % n_disp x nConds
+nValid_db    = squeeze(sum(~isnan(subjFix_db_disp(:, 1, :)), 1));             % nConds x 1
+grandSEM_db  = squeeze(nanstd(subjFix_db_disp, 0, 1)) ./ sqrt(nValid_db');   % n_disp x nConds
 
-%% FIGURE Fixation Rate (% change)
+%% FIGURE Fixation Rate (dB change)
 close all; figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on
 
 for c = 1:nConds
-    mu  = grandMean_pct(:, c);
-    sem = grandSEM_pct(:, c);
+    mu  = grandMean_db(:, c);
+    sem = grandSEM_db(:, c);
 
-    fill([t_vec, fliplr(t_vec)], ...
-         [(mu + sem)', fliplr((mu - sem)')], ...
-         colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-         'HandleVisibility', 'off');
-
-    plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
+    eb = shadedErrorBar(t_vec, mu, sem, 'lineProps', {'-'}, 'transparent', true);
+    set(eb.mainLine, 'Color', colors(c, :), 'LineWidth', 2.5);
+    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.20);
+    set(eb.edge(1), 'Color', 'none');
+    set(eb.edge(2), 'Color', 'none');
 end
 
 xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
 yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
 xlim(t_win);
 xlabel('Time [s]');
-ylabel('Fixations [%]');
-leg_p_pct = gobjects(nConds, 1);
+ylabel('Fixations [dB]');
+leg_p_db = gobjects(nConds, 1);
 for c = 1:nConds
-    leg_p_pct(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
+    leg_p_db(c) = patch(nan, nan, colors(c, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
 end
-legend(leg_p_pct, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
+legend(leg_p_db, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
 set(gca, 'FontSize', fontSize);
+box off
 hold off
 
-exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_fixations_rate_pct.png'), 'Resolution', 600);
+exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_fixations_rate_db.png'), 'Resolution', 600);
 
 fprintf('\n=== All fixation figures saved to %s ===\n', figpath);

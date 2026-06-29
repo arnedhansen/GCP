@@ -167,6 +167,27 @@ def load_merged_trial_metrics(csv_path: str) -> pd.DataFrame:
     return dat
 
 
+def filter_gcp_analysis_cohort(dat: pd.DataFrame, controls_dir: str) -> pd.DataFrame:
+    if "Include" in dat.columns:
+        out = dat.loc[dat["Include"].astype(bool)].copy()
+        print(f"GED cohort filter (Include column): {out['ID'].nunique()} subjects kept.")
+        return out
+
+    inclusion_path = os.path.join(controls_dir, "GCP_subject_inclusion.mat")
+    if not os.path.isfile(inclusion_path):
+        print(f"WARNING: inclusion file not found: {inclusion_path}")
+        return dat
+
+    inc = scipy.io.loadmat(inclusion_path, squeeze_me=True, struct_as_record=False)
+    tbl = inc["subject_inclusion"]
+    subj_ids = np.atleast_1d(tbl.SubjID).astype(int)
+    include = np.atleast_1d(tbl.Include).astype(bool)
+    included = {str(sid) for sid, flag in zip(subj_ids, include) if flag}
+    out = dat.loc[dat["ID"].isin(included)].copy()
+    print(f"GED cohort filter (controls mat): {out['ID'].nunique()} subjects kept.")
+    return out
+
+
 def label_condition(dat: pd.DataFrame) -> pd.DataFrame:
     out = dat.copy()
     out["Condition"] = pd.Categorical(out["Condition"], categories=CONDITION_ORDER, ordered=True)
@@ -349,6 +370,7 @@ def plot_raincloud(
 def main() -> None:
     base_dir = "/Volumes/g_psyplafor_methlab$/Students/Arne/GCP"
     features_dir = os.path.join(base_dir, "data", "features")
+    controls_dir = os.path.join(base_dir, "data", "controls")
     output_dir = os.path.join(base_dir, "figures", "stats", "rainclouds")
     os.makedirs(output_dir, exist_ok=True)
 
@@ -360,8 +382,14 @@ def main() -> None:
     if not os.path.isfile(ged_mat):
         raise FileNotFoundError(f"GED MAT file not found: {ged_mat}")
 
-    merged = label_condition(load_merged_trial_metrics(merged_csv))
-    ged = label_condition(load_ged_trial_metrics(ged_mat))
+    merged = filter_gcp_analysis_cohort(
+        label_condition(load_merged_trial_metrics(merged_csv)),
+        controls_dir,
+    )
+    ged = filter_gcp_analysis_cohort(
+        label_condition(load_ged_trial_metrics(ged_mat)),
+        controls_dir,
+    )
 
     data_by_var = {
         "GammaFrequency": ged,

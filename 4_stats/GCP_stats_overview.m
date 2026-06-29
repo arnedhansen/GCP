@@ -6,13 +6,18 @@
 load(fullfile(paths.features, 'GCP_merged_data.mat'))
 T = struct2table(merged_data);
 
+if ismember('Include', T.Properties.VariableNames)
+    T = T(T.Include, :);
+end
+
 % Identify numeric variables only (excluding ID and Condition)
 var_names = T.Properties.VariableNames;
 numeric_vars = {};
 
 for i = 1:numel(var_names)
     v = T.(var_names{i});
-    if isnumeric(v) && ~strcmp(var_names{i}, 'ID') && ~strcmp(var_names{i}, 'Condition')
+    if isnumeric(v) && ~strcmp(var_names{i}, 'ID') && ~strcmp(var_names{i}, 'Condition') ...
+            && ~strcmp(var_names{i}, 'Include')
         numeric_vars{end+1} = var_names{i};
     end
 end

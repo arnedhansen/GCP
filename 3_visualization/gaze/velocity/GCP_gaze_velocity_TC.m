@@ -1,13 +1,17 @@
-%% GCP Eye Velocity
+%% GCP Eye Velocity Time Course
+% Loads dB-baselined velocity time courses from
+% 2_feature_extraction/GCP_gaze_fex.m (velTS_cXX_bl_db).
 
 %% Setup
 startup
 [subjects, paths, colors, ~] = setup('GCP');
+subjects = gcp_subject_inclusion(subjects, paths);
+addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 
 % Plot labels (three distinct velocity measures)
-velocityYLabels = {'Eye Velocity X [%]', ...
-    'Eye Velocity Y [%]', ...
-    'Combined Eye Velocity [%]'};
+velocityYLabels = {'Eye Velocity X [dB]', ...
+    'Eye Velocity Y [dB]', ...
+    'Combined Eye Velocity [dB]'};
 channels      = {'VelH', 'VelV', 'Vel2D'};
 channeltitles = {'Horizontal Velocity', 'Vertical Velocity', 'Combined Velocity'};
 labels        = {'25% contrast', '50% contrast', '75% contrast', '100% contrast'};
@@ -16,15 +20,15 @@ if numel(velocityYLabels) ~= numel(channels)
 end
 
 % Plotting style aligned to microsaccade TC template
-fontSize = 20;
+fontSize = 50;
 t_store  = [-1.5 2.5];
-t_win    = [-1 2];
+t_win    = [-0.5 2];
 lineW    = 2.5;
 
 outdir = fullfile(paths.figures, 'gaze', 'velocity');
 mkdir(outdir);
 
-%% Load percentage-change data (per subject)
+%% Load dB-baselined data (per subject)
 clc
 alltlk25et  = cell(1, numel(subjects));
 alltlk50et  = cell(1, numel(subjects));
@@ -35,10 +39,10 @@ for subj = 1:numel(subjects)
     datapath = fullfile(paths.features, subjects{subj}, 'gaze');
     disp(['[GCP Eye Velocity] Loading Subject ', num2str(subjects{subj})])
     dat = load(fullfile(datapath, 'gaze_velocity_timeseries'));
-    alltlk25et{subj}  = dat.velTS_c25_bl_pct;
-    alltlk50et{subj}  = dat.velTS_c50_bl_pct;
-    alltlk75et{subj}  = dat.velTS_c75_bl_pct;
-    alltlk100et{subj} = dat.velTS_c100_bl_pct;
+    alltlk25et{subj}  = dat.velTS_c25_bl_db;
+    alltlk50et{subj}  = dat.velTS_c50_bl_db;
+    alltlk75et{subj}  = dat.velTS_c75_bl_db;
+    alltlk100et{subj} = dat.velTS_c100_bl_db;
 end
 
 %% Grand average
@@ -69,7 +73,6 @@ for c = 1:numel(channels)
         ets{k} = ft_selectdata(cfg, conditionData{k});
     end
 
-    leg_p = gobjects(numel(ets), 1);
     for k = 1:numel(ets)
         x_store = ets{k}.time(:);
         disp_idx = x_store >= t_win(1) & x_store <= t_win(2);
@@ -85,25 +88,29 @@ for c = 1:numel(channels)
         nValid = sum(~isnan(yi_disp(:, 1)));
         sem = nanstd(yi_disp, 0, 1)' ./ sqrt(max(nValid, 1));
 
-        fill([x; flipud(x)], ...
-            [mu + sem; flipud(mu - sem)], ...
-            conditionColors(k, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-            'HandleVisibility', 'off');
-        plot(x, mu, '-', 'Color', conditionColors(k, :), 'LineWidth', lineW);
-        leg_p(k) = patch(NaN, NaN, conditionColors(k, :), 'EdgeColor', 'none');
+        eb = shadedErrorBar(x, mu, sem, 'lineProps', {'-'}, 'transparent', true);
+        set(eb.mainLine, 'Color', conditionColors(k, :), 'LineWidth', lineW);
+        set(eb.patch, 'FaceColor', conditionColors(k, :), 'FaceAlpha', 0.20);
+        set(eb.edge(1), 'Color', 'none');
+        set(eb.edge(2), 'Color', 'none');
     end
 
-    xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
-    yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
+    xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
+    yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
     xlim(t_win);
-    xlabel('Time [s]');
-    ylabel(velocityYLabels{c});
-    legend(leg_p, conditionLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
-    set(gca, 'FontSize', fontSize);
+    xlabel('Time [s]', 'FontSize', fontSize*0.8);
+    ylabel(velocityYLabels{c}, 'FontSize', fontSize*0.8);
+    leg_p = gobjects(numel(ets), 1);
+    for k = 1:numel(ets)
+        leg_p(k) = patch(nan, nan, conditionColors(k, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
+    end
+    legend(leg_p, conditionLabels, 'Location', 'northeast', 'FontSize', fontSize*0.8, 'Box', 'off');
+    set(gca, 'FontSize', fontSize*0.8);
+    box off
     hold off
 end
 
-exportgraphics(gcf, fullfile(outdir, 'GCP_gaze_velocity_overview_TC.png'), ...
+exportgraphics(gcf, fullfile(outdir, 'GCP_gaze_velocity_overview_TC_db.png'), ...
     'Resolution', 600);
 
 %% Single-channel figures
@@ -120,7 +127,6 @@ for c = 1:numel(channels)
         ets{k} = ft_selectdata(cfg, conditionData{k});
     end
 
-    leg_p = gobjects(numel(ets), 1);
     for k = 1:numel(ets)
         x_store = ets{k}.time(:);
         disp_idx = x_store >= t_win(1) & x_store <= t_win(2);
@@ -136,24 +142,28 @@ for c = 1:numel(channels)
         nValid = sum(~isnan(yi_disp(:, 1)));
         sem = nanstd(yi_disp, 0, 1)' ./ sqrt(max(nValid, 1));
 
-        fill([x; flipud(x)], ...
-            [mu + sem; flipud(mu - sem)], ...
-            conditionColors(k, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-            'HandleVisibility', 'off');
-        plot(x, mu, '-', 'Color', conditionColors(k, :), 'LineWidth', lineW);
-        leg_p(k) = patch(NaN, NaN, conditionColors(k, :), 'EdgeColor', 'none');
+        eb = shadedErrorBar(x, mu, sem, 'lineProps', {'-'}, 'transparent', true);
+        set(eb.mainLine, 'Color', conditionColors(k, :), 'LineWidth', lineW);
+        set(eb.patch, 'FaceColor', conditionColors(k, :), 'FaceAlpha', 0.20);
+        set(eb.edge(1), 'Color', 'none');
+        set(eb.edge(2), 'Color', 'none');
     end
 
-    xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
-    yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
+    xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
+    yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
     xlim(t_win);
-    xlabel('Time [s]');
-    ylabel(velocityYLabels{c});
-    legend(leg_p, conditionLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
-    set(gca, 'FontSize', fontSize);
+    xlabel('Time [s]', 'FontSize', fontSize*0.8);
+    ylabel(velocityYLabels{c}, 'FontSize', fontSize*0.8);
+    leg_p = gobjects(numel(ets), 1);
+    for k = 1:numel(ets)
+        leg_p(k) = patch(nan, nan, conditionColors(k, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
+    end
+    legend(leg_p, conditionLabels, 'Location', 'northeast', 'FontSize', fontSize*0.8, 'Box', 'off');
+    set(gca, 'FontSize', fontSize*0.8);
+    box off
     hold off
 
-    exportgraphics(gcf, fullfile(outdir, sprintf('GCP_gaze_velocity_%s_TC.png', channels{c})), ...
+    exportgraphics(gcf, fullfile(outdir, sprintf('GCP_gaze_velocity_%s_TC_db.png', channels{c})), ...
         'Resolution', 600);
     close(gcf);
 end

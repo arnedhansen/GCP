@@ -1,16 +1,18 @@
-%% GCP Gaze Microsaccade Suppression — Contrast Conditions
-% Loads already processed microsaccade percentage-change time courses from
-% 2_feature_extraction/GCP_gaze_fex.m (msTS_cXX_bl_pct) and plots
+%% GCP Gaze Microsaccade Suppression Contrast Conditions
+% Loads already processed microsaccade dB-baselined time courses from
+% 2_feature_extraction/GCP_gaze_fex.m (msTS_cXX_bl_db) and plots
 % per-condition grand-average traces with SEM shading.
 %
 % Important:
 %   - Baseline correction has already been applied during feature extraction
-%     (FieldTrip relativechange, then multiplied by 100).
+%     (FieldTrip baselinetype = 'db', i.e. 10*log10(stim/baseline)).
 %   - A light additional display smoothing is applied here.
 
 %% Setup
 startup
 [subjects, paths, colors, ~] = setup('GCP');
+subjects = gcp_subject_inclusion(subjects, paths);
+addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 
 datapath = paths.features;
 figpath  = fullfile(paths.figures, 'gaze', 'microsaccades');
@@ -26,11 +28,11 @@ x_kern = -kHalf:kHalf;
 gKernel = exp(-x_kern.^2 / (2 * sigma_samp^2));
 gKernel = gKernel ./ sum(gKernel);
 
-t_win = [-1 2];
-fontSize = 20;
+t_win = [-0.5 2];
+fontSize = 50;
 
 %% Condition definitions
-condFields = {'msTS_c25_bl_pct', 'msTS_c50_bl_pct', 'msTS_c75_bl_pct', 'msTS_c100_bl_pct'};
+condFields = {'msTS_c25_bl_db', 'msTS_c50_bl_db', 'msTS_c75_bl_db', 'msTS_c100_bl_db'};
 condLabels = {'25% contrast', '50% contrast', '75% contrast', '100% contrast'};
 nConds     = length(condFields);
 
@@ -108,52 +110,51 @@ if isempty(t_vec)
     error('No valid microsaccade time-course data found.');
 end
 n_disp = numel(t_vec);
-subjRates_pct = nan(nSubj, n_disp, nConds);
+subjRates_db = nan(nSubj, n_disp, nConds);
 
 for subj = 1:nSubj
     for c = 1:nConds
         if ~isempty(subjCurves{subj, c})
-            subjRates_pct(subj, :, c) = subjCurves{subj, c};
+            subjRates_db(subj, :, c) = subjCurves{subj, c};
         end
     end
 end
 
 %% Grand averages
-grandMean_pct = squeeze(nanmean(subjRates_pct, 1));                                % n_disp x nConds
-nValid_ts     = squeeze(sum(~isnan(subjRates_pct), 1));                            % n_disp x nConds
-grandSEM_pct  = squeeze(nanstd(subjRates_pct, 0, 1)) ./ sqrt(max(nValid_ts, 1));  % n_disp x nConds
-grandSEM_pct(nValid_ts < 2) = NaN;
+grandMean_db = squeeze(nanmean(subjRates_db, 1));                                % n_disp x nConds
+nValid_ts    = squeeze(sum(~isnan(subjRates_db), 1));                            % n_disp x nConds
+grandSEM_db  = squeeze(nanstd(subjRates_db, 0, 1)) ./ sqrt(max(nValid_ts, 1));  % n_disp x nConds
+grandSEM_db(nValid_ts < 2) = NaN;
 
-%% FIGURE Percentage-Change MS Rate Time Courses per Condition
+%% FIGURE dB-baselined MS rate time courses per condition
 close all
 figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on
 
 % Per-condition lines with SEM shading
 for c = 1:nConds
-    mu  = grandMean_pct(:, c);
-    sem = grandSEM_pct(:, c);
+    mu  = grandMean_db(:, c);
+    sem = grandSEM_db(:, c);
 
-    % SEM ribbon
-    fill([t_vec, fliplr(t_vec)], ...
-         [(mu + sem)', fliplr((mu - sem)')], ...
-         colors(c, :), 'FaceAlpha', 0.2, 'EdgeColor', 'none', ...
-         'HandleVisibility', 'off');
-
-    plot(t_vec, mu, '-', 'Color', colors(c, :), 'LineWidth', 2.5);
+    eb = shadedErrorBar(t_vec, mu, sem, 'lineProps', {'-'}, 'transparent', true);
+    set(eb.mainLine, 'Color', colors(c, :), 'LineWidth', 2.5);
+    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.20);
+    set(eb.edge(1), 'Color', 'none');
+    set(eb.edge(2), 'Color', 'none');
 end
 
-xline(0, 'k--', 'LineWidth', 1.5, 'HandleVisibility', 'off');
-yline(0, 'k:', 'LineWidth', 1, 'HandleVisibility', 'off');
+xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
+yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
 xlim(t_win);
-xlabel('Time [s]');
-ylabel('Microsaccade Rate [%]');
-leg_p_pct = gobjects(nConds, 1);
+xlabel('Time [s]', 'FontSize', fontSize*0.8);
+ylabel('Microsaccade Rate [dB]', 'FontSize', fontSize*0.8);
+leg_p_db = gobjects(nConds, 1);
 for c = 1:nConds
-    leg_p_pct(c) = patch(NaN, NaN, colors(c, :), 'EdgeColor', 'none');
+    leg_p_db(c) = patch(nan, nan, colors(c, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
 end
-legend(leg_p_pct, condLabels, 'Location', 'best', 'FontSize', fontSize - 4, 'Box', 'off');
-set(gca, 'FontSize', fontSize);
+legend(leg_p_db, condLabels, 'Location', 'best', 'FontSize', fontSize*0.8, 'Box', 'off');
+set(gca, 'FontSize', fontSize*0.8);
+box off
 hold off
 
-exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate_pct.png'), 'Resolution', 600);
+exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate_db.png'), 'Resolution', 600);

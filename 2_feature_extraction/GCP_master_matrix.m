@@ -61,6 +61,10 @@ else
 end
 
 tbl_merge = sortrows(tbl_merge, {'ID','Condition'});
+inc = load(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion');
+inc = inc.subject_inclusion;
+[~, loc] = ismember(tbl_merge.ID, inc.SubjID);
+tbl_merge.Include = inc.Include(loc);
 
 %% Diagnostics
 n_behav = height(tbl_behav);
@@ -153,37 +157,33 @@ end
 function tbl_ged = load_subject_level_ged_table(features_root, subjects)
 tbl_ged = table();
 
-% Preferred GED summary file
-ged_summary_path = fullfile(features_root, 'GCP_eeg_GED_gamma_metrics.mat');
-if isfile(ged_summary_path)
-    dat = load(ged_summary_path);
-
-    if isfield(dat, 'T') && istable(dat.T)
-        tbl_ged = standardize_id_condition(dat.T);
-    elseif isfield(dat, 'GCP_eeg_GED_gamma_metrics')
-        G = dat.GCP_eeg_GED_gamma_metrics;
-        if istable(G)
-            tbl_ged = standardize_id_condition(G);
-        elseif isstruct(G)
-            tbl_ged = standardize_id_condition(struct2table(G));
-        end
-    elseif isfield(dat, 'eeg_data') && isstruct(dat.eeg_data)
-        tbl_ged = standardize_id_condition(struct2table(dat.eeg_data));
-    else
-        tbl_ged = build_ged_table_from_arrays(dat, subjects);
-    end
+% Subject-level GED gamma metrics come from the current GED pipeline output
+% (GCP_eeg_fex_GED.m -> GCP_eeg_GED.mat). Power is the subject-condition
+% robust mean of per-trial peak gamma power [dB] (trials_gamma_power_plotstat);
+% Frequency is the median per-trial peak gamma frequency [Hz] (trials_median).
+% This is the same per-trial peak definition the trial-level rainclouds use,
+% so the subject-level boxplots and the single-subject GED spectra share one
+% source instead of a stale legacy matrix.
+ged_path = fullfile(features_root, 'GCP_eeg_GED.mat');
+if ~isfile(ged_path)
+    warning('GCP_master_matrix:NoGED', ...
+        'Current GED file not found: %s. GED columns will be empty.', ged_path);
+    return
 end
 
-% Fallback to legacy EEG matrix if GED summary is unavailable
-if isempty(tbl_ged)
-    legacy_path = fullfile(features_root, 'GCP_eeg_matrix.mat');
-    if isfile(legacy_path)
-        dat = load(legacy_path);
-        if isfield(dat, 'eeg_data') && isstruct(dat.eeg_data)
-            tbl_ged = standardize_id_condition(struct2table(dat.eeg_data));
-        end
-    end
+dat = load(ged_path, 'trials_gamma_power_plotstat', 'trials_gamma_power', ...
+    'trials_median', 'trials_mean', 'subjects');
+
+pow_mat = pick_first_numeric_matrix(dat, {'trials_gamma_power_plotstat', 'trials_gamma_power'});
+freq_mat = pick_first_numeric_matrix(dat, {'trials_median', 'trials_mean'});
+
+if isfield(dat, 'subjects') && ~isempty(dat.subjects)
+    ged_subjects = dat.subjects;
+else
+    ged_subjects = subjects;
 end
+
+tbl_ged = build_ged_table_from_arrays(pow_mat, freq_mat, ged_subjects);
 
 % Keep only key GED fields expected in downstream stats
 if ~isempty(tbl_ged)
@@ -195,14 +195,8 @@ if ~isempty(tbl_ged)
 end
 end
 
-function tbl = build_ged_table_from_arrays(dat, subjects)
+function tbl = build_ged_table_from_arrays(pow_mat, freq_mat, subjects)
 tbl = table();
-
-freq_names = {'all_trial_median_single', 'all_trial_mean_single'};
-pow_names = {'all_trial_gamma_power_plotstat', 'all_trial_gamma_power'};
-
-freq_mat = pick_first_numeric_matrix(dat, freq_names);
-pow_mat = pick_first_numeric_matrix(dat, pow_names);
 
 if isempty(freq_mat) && isempty(pow_mat)
     return

@@ -21,7 +21,7 @@
 %
 % Dependencies:
 %   - Per-subject gaze_matrix_trial.mat  (gaze_fex output)
-%   - GCP_eeg_GED_gamma_metrics.mat      (GED trial-level cell arrays)
+%   - GCP_eeg_GED.mat                    (current GED trial-level cell arrays)
 %   - FieldTrip on path
 
 clear; close all; clc
@@ -29,10 +29,11 @@ clear; close all; clc
 %% Setup
 startup
 [subjects, paths, colors, ~] = setup('GCP', 0);
+subjects = gcp_subject_inclusion(subjects, paths);
 
 nSubj = length(subjects);
-fprintf('Subjects (N=%d): %s\n', nSubj, strjoin(subjects, ', '));
-fprintf('No manual exclusions — outlier trials are rejected data-driven (median +/- 3 MAD).\n');
+fprintf('Subjects (N=%d, GED cohort): %s\n', nSubj, strjoin(subjects, ', '));
+fprintf('Outlier trials are rejected data-driven (median +/- 3 MAD).\n');
 
 condLabels    = {'25%', '50%', '75%', '100%'};
 contrast_vals = [25, 50, 75, 100];
@@ -111,19 +112,28 @@ end
 
 fprintf('  Gaze: %d total trials loaded.\n', numel(gaze_Subject));
 
-%% LOAD TRIAL-LEVEL GED DATA
+%% LOAD TRIAL-LEVEL GED DATA (current pipeline: GCP_eeg_GED.mat)
 fprintf('Loading trial-level GED gamma data...\n');
 
-ged = load(fullfile(data_dir, 'GCP_eeg_GED_gamma_metrics.mat'));
+% Per-trial peak gamma frequency (trials_peaks), peak gamma power [dB]
+% (mean powratio within peak +/- 5 Hz, with the power-outlier mask), and
+% spectral centroid (trials_centroid). Broadband power and AUC are not
+% computed by the current GED pipeline, so they are left empty (NaN).
+ged = load(fullfile(data_dir, 'GCP_eeg_GED.mat'), ...
+    'trials_peaks', 'trials_centroid', 'trials_powratio_fullscan', ...
+    'trials_outlier_mask_power_full', 'scan_freqs', 'subjects');
+
+ged_scan_freqs = ged.scan_freqs(:)';
+ged_peak_power_halfwidth_hz = 5;  % matches GCP_eeg_fex_GED.m
 
 ged_Subject   = [];
 ged_Condition = [];
 ged_Trial     = [];
 ged_PeakFreq  = [];
-ged_PeakAmp   = [];
-ged_BBPower   = [];
+ged_PeakAmp   = [];   % GED peak gamma power [dB] (current pipeline)
+ged_BBPower   = [];   % retired metric (not computed by current pipeline)
 ged_Centroid  = [];
-ged_AUC       = [];
+ged_AUC       = [];   % retired metric (not computed by current pipeline)
 
 ged_subj_order = ged.subjects;
 
@@ -133,19 +143,31 @@ for subj = 1:nSubj
     sid = str2double(subjects{subj});
 
     for cond = 1:4
-        pf = ged.trl_peak_freq{cond, gi};
+        pf = ged.trials_peaks{cond, gi};
         if isempty(pf), continue; end
+        pf = pf(:);
         nTrl = numel(pf);
+
+        pr = ged.trials_powratio_fullscan{cond, gi};
+        pp = reconstruct_trial_peak_power(pf, pr, ged_scan_freqs, ged_peak_power_halfwidth_hz);
+        if isfield(ged, 'trials_outlier_mask_power_full')
+            mask = ged.trials_outlier_mask_power_full{cond, gi};
+            if ~isempty(mask) && numel(mask) == nTrl
+                pp(logical(mask(:))) = NaN;
+            end
+        end
+
+        cen = ged.trials_centroid{cond, gi};
 
         ged_Subject   = [ged_Subject;   repmat(sid, nTrl, 1)];
         ged_Condition = [ged_Condition;  repmat(cond, nTrl, 1)];
         ged_Trial     = [ged_Trial;     (1:nTrl)'];
 
-        ged_PeakFreq  = [ged_PeakFreq;  pf(:)];
-        ged_PeakAmp   = [ged_PeakAmp;   ged.trl_peak_amp{cond, gi}(:)];
-        ged_BBPower   = [ged_BBPower;   ged.trl_bb_power{cond, gi}(:)];
-        ged_Centroid  = [ged_Centroid;  ged.trl_centroid{cond, gi}(:)];
-        ged_AUC       = [ged_AUC;       ged.trl_auc{cond, gi}(:)];
+        ged_PeakFreq  = [ged_PeakFreq;  pf];
+        ged_PeakAmp   = [ged_PeakAmp;   pp(:)];
+        ged_BBPower   = [ged_BBPower;   nan(nTrl, 1)];
+        ged_Centroid  = [ged_Centroid;  cen(:)];
+        ged_AUC       = [ged_AUC;       nan(nTrl, 1)];
     end
 end
 
@@ -298,17 +320,17 @@ title('[H5] Spectral Centroid', 'FontSize', 13, 'FontWeight', 'bold');
 subplot(2, 3, 3);
 plot_raincloud_trial(ged_AUC, ged_Condition, colors, condLabels, ...
     'AUC [a.u.]');
-title('GED AUC', 'FontSize', 13, 'FontWeight', 'bold');
+title('GED AUC (not computed)', 'FontSize', 13, 'FontWeight', 'bold');
 
 subplot(2, 3, 4);
 plot_raincloud_trial(ged_PeakAmp, ged_Condition, colors, condLabels, ...
-    'Peak Amplitude [\Delta PR]');
-title('[H6] GED Peak Amplitude', 'FontSize', 13, 'FontWeight', 'bold');
+    'GED Peak Power [dB]');
+title('[H6] GED Peak Power', 'FontSize', 13, 'FontWeight', 'bold');
 
 subplot(2, 3, 5);
 plot_raincloud_trial(ged_BBPower, ged_Condition, colors, condLabels, ...
     'Broadband Power [ratio]');
-title('[H6] GED Broadband Power', 'FontSize', 13, 'FontWeight', 'bold');
+title('[H6] GED Broadband Power (not computed)', 'FontSize', 13, 'FontWeight', 'bold');
 
 % Panel 6: empty — inverted-U test summary
 subplot(2, 3, 6); hold on;
@@ -324,7 +346,11 @@ for pp = 1:3
     valOth = [pdat(pcond == 1); pdat(pcond == 2); pdat(pcond == 4)];
     val75  = val75(~isnan(val75));
     valOth = valOth(~isnan(valOth));
-    [~, p_rs] = ranksum(val75, valOth);
+    if isempty(val75) || isempty(valOth)
+        p_rs = NaN;
+    else
+        [~, p_rs] = ranksum(val75, valOth);
+    end
     txt{end+1} = sprintf('%s: 75%% vs others p = %.4f', plbl, p_rs);
 end
 text(0.1, 0.5, txt, 'FontSize', 12, 'VerticalAlignment', 'middle');
@@ -439,7 +465,7 @@ summary_cond   = {gaze_Condition, gaze_Condition, gaze_Condition, ...
                   gaze_Condition, ged_Condition, ged_Condition};
 summary_names  = {'[H1] MS Rate [%\Delta]', '[H2] Velocity [%\Delta]', ...
                   '[H3] Pupil [%\Delta]', '[H4] BCEA [%\Delta]', ...
-                  '[H5] \gamma Peak Freq', '[H6] \gamma Peak Amp'};
+                  '[H5] \gamma Peak Freq', '[H6] \gamma Peak Power'};
 summary_expect = {'decrease', 'decrease', 'decrease', ...
                   'increase', 'increase', 'inverted-U'};
 
@@ -562,8 +588,13 @@ function report_trend_trial(label, data, cond_vec, subj_vec, contrast_vals)
             r_per_subj(si) = corr(contrast_vals(:), subj_means, 'rows', 'complete');
         end
     end
-    r_mean = nanmean(r_per_subj);
-    [~, p] = ttest(r_per_subj);
+    valid_r = ~isnan(r_per_subj);
+    r_mean = mean(r_per_subj(valid_r));
+    if sum(valid_r) >= 2
+        [~, p] = ttest(r_per_subj(valid_r));
+    else
+        p = NaN;
+    end
     fprintf('  Linear trend (per-subj means): mean r = %.3f, t-test p = %.4f\n\n', r_mean, p);
 end
 
@@ -605,6 +636,25 @@ function plot_scatter_by_cond(x_data, y_data, colors, condLabels, nSubj)
 
     legend(h, condLabels, 'Location', 'best', 'FontSize', 9);
      box on;
+end
+
+function pp = reconstruct_trial_peak_power(pf, pr, scan_freqs, halfwidth_hz)
+nTrl = numel(pf);
+pp = nan(nTrl, 1);
+scan_freqs = scan_freqs(:)';
+if isempty(pr) || size(pr, 1) ~= nTrl
+    return
+end
+for t = 1:nTrl
+    if ~isfinite(pf(t))
+        continue
+    end
+    band = abs(scan_freqs - pf(t)) <= halfwidth_hz;
+    if ~any(band)
+        continue
+    end
+    pp(t) = mean(pr(t, band), 'omitnan');
+end
 end
 
 function [data_out, n_removed] = reject_outliers_by_cond(data, cond_vec)
