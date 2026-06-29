@@ -1,8 +1,6 @@
-
 %% GCP GED Power Spectrum Visualizations
 %
 %  Grand average and single subjects (smoothed and unsmoothed).
-%  Data: GCP_eeg_powspctrm_GED.mat (FieldTrip freq per subject).
 
 %% Setup
 startup
@@ -106,7 +104,7 @@ for subj = 1:nSubj
     title(sprintf('Participant %d', subj));
     set(gca, 'FontSize', 15, 'Box', 'on');
     if subj == 1 || subj == 6
-        legend(condLabels, 'Location', 'best', 'Box', 'off');
+        legend(condLabels, 'Location', 'northwest', 'Box', 'off');
         ylabel('Power [dB]');
     end
     xlabel('Frequency [Hz]');
@@ -203,7 +201,7 @@ for subj = 1:nSubj
     title(sprintf('Participant %d', subj));
     set(gca, 'FontSize', 15, 'Box', 'on');
     if subj == 1 || subj == 6
-        legend(condLabels, 'Location', 'best', 'Box', 'off');
+        legend(condLabels, 'Location', 'northwest', 'Box', 'off');
         ylabel('Power [dB]');
     end
     xlabel('Frequency [Hz]');
