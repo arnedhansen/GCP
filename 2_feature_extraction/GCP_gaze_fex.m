@@ -4,9 +4,9 @@
 %   Gaze deviation (Euclidean distances)
 %   Gaze standard deviation
 %   BCEA (Bivariate Contour Ellipse Area, k=2.291, 95%)
-%   Pupil size (Time Series Raw, Baselined, Baselined Percentage Changes)
+%   Pupil size (Time Series Raw, Baselined, Baselined dB)
 %   Microsaccades
-%   Eye Velocity (Time Series Raw, Baselined, Baselined Percentage Changes)
+%   Eye Velocity (Time Series Raw, Baselined, Baselined dB)
 %
 % Gaze metrics labelled by eye-tracker (saccades, blinks and
 % fixations) are extracted already in GCP_preprocessing.m
@@ -25,17 +25,17 @@ gaze_data = struct('ID',{},'Condition',{},'GazeDeviation',{},...
     'BaselineBCEA',{},'BaselinePupilSize',{},'BaselineMSRate',{},...
     'BaselineVelH',{},'BaselineVelV',{},'BaselineVel2D',{}, ...
     'BaselineBlinks',{},'BaselineFixations',{},'BaselineSaccades',{}, ...
-    'PctGazeDeviation',{},'PctGazeStdX',{},'PctGazeStdY',{},...
-    'PctBCEA',{},'PctPupilSize',{},'PctMSRate',{},...
-    'PctVelH',{},'PctVelV',{},'PctVel2D',{}, ...
-    'PctBlinks',{},'PctFixations',{},'PctSaccades',{});
+    'dBGazeDeviation',{},'dBGazeStdX',{},'dBGazeStdY',{},...
+    'dBBCEA',{},'dBPupilSize',{},'dBMSRate',{},...
+    'dBVelH',{},'dBVelV',{},'dBVel2D',{}, ...
+    'dBBlinks',{},'dBFixations',{},'dBSaccades',{});
 
 % time‐windows
 baseline_period   = [-1.5, -0.25];
 analysis_period   = [0 2];
 analysis_periodTS = [-1 2];
 pupil_store_window = [-1.5, 2.5];
-win_size          = 50;    % blink‐removal window (samples)
+win_size          = 25;    % blink‐removal window (samples)
 fsample           = 500;   % eye‐tracker sampling rate
 
 % prepare raw gaze storage across all subjects
@@ -83,9 +83,9 @@ for subj = 1:numel(subjects)
         velocityData     = dataET;    % copy meta-info
         velocityData.label = {'VelH','VelV','Vel2D'};
 
-        % trial-level percentage-change (scalar baseline) as before
-        velocityData_pct = dataET;
-        velocityData_pct.label = {'PctVelH','PctVelV','PctVel2D'};
+        % trial-level dB baseline (scalar baseline per trial)
+        velocityData_db = dataET;
+        velocityData_db.label = {'dBVelH','dBVelV','dBVel2D'};
 
         fsample          = dataET.fsample;
         vel_win_size     = round(0.1 * fsample);   % 100 ms window
@@ -280,35 +280,23 @@ for subj = 1:numel(subjects)
                 velVert(trl)   = mean(abs(vy), 'omitnan');
                 vel2D(trl)     = mean(speed,   'omitnan');
 
-                % Baseline-normalised velocity time series (% change, scalar baseline)
-                if ~isnan(baselineVelH(trl))
-                    pct_vx    = (abs(vx) ./ baselineVelH(trl)  - 1) * 100;
-                else
-                    pct_vx    = nan(size(vx));
-                end
-                if ~isnan(baselineVelV(trl))
-                    pct_vy    = (abs(vy) ./ baselineVelV(trl)  - 1) * 100;
-                else
-                    pct_vy    = nan(size(vy));
-                end
-                if ~isnan(baselineVel2D(trl))
-                    pct_speed = (speed   ./ baselineVel2D(trl) - 1) * 100;
-                else
-                    pct_speed = nan(size(speed));
-                end
+                % Baseline-normalised velocity time series (dB, scalar baseline)
+                db_vx    = compute_db_baseline(abs(vx), baselineVelH(trl));
+                db_vy    = compute_db_baseline(abs(vy), baselineVelV(trl));
+                db_speed = compute_db_baseline(speed, baselineVel2D(trl));
 
-                velocityData_pct.trial{trl} = zeros(3, numel(speed));
-                velocityData_pct.trial{trl}(1,:) = pct_vx;
-                velocityData_pct.trial{trl}(2,:) = pct_vy;
-                velocityData_pct.trial{trl}(3,:) = pct_speed;
-                velocityData_pct.time{trl}       = t_vel;
+                velocityData_db.trial{trl} = zeros(3, numel(speed));
+                velocityData_db.trial{trl}(1,:) = db_vx;
+                velocityData_db.trial{trl}(2,:) = db_vy;
+                velocityData_db.trial{trl}(3,:) = db_speed;
+                velocityData_db.time{trl}       = t_vel;
 
             else
                 % Too few points → fill with NaNs
                 velocityData.trial{trl}      = nan(3,0);
                 velocityData.time{trl}       = [];
-                velocityData_pct.trial{trl}  = nan(3,0);
-                velocityData_pct.time{trl}   = [];
+                velocityData_db.trial{trl}  = nan(3,0);
+                velocityData_db.time{trl}   = [];
             end
 
             % Ensure FieldTrip format for pupil data
@@ -427,17 +415,16 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         velTS_noBL = ft_timelockanalysis(cfg, velFT);
 
-        % Percentage baseline: (x - baseline) / baseline * 100
+        % dB baseline: 10*log10(stim/baseline)
         cfg = [];
         cfg.baseline     = baseline_period;
-        cfg.baselinetype = 'relativechange';
-        velFT_bl_pct = ft_timelockbaseline(cfg, velFT);
+        cfg.baselinetype = 'db';
+        velFT_bl_db = ft_timelockbaseline(cfg, velFT);
 
         cfg = [];
         cfg.latency    = analysis_periodTS;
         cfg.keeptrials = 'no';
-        velTS_BL_pct = ft_timelockanalysis(cfg, velFT_bl_pct);
-        velTS_BL_pct.avg = velTS_BL_pct.avg * 100;
+        velTS_BL_db = ft_timelockanalysis(cfg, velFT_bl_db);
 
         % Timelocked average without baseline
         cfg = [];
@@ -445,17 +432,16 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         pupTS_noBL = ft_timelockanalysis(cfg, pupFT);
 
-        % Percentage baseline: relativechange * 100
+        % dB baseline
         cfg = [];
         cfg.baseline     = baseline_period;
-        cfg.baselinetype = 'relativechange';
-        pupFT_bl_pct = ft_timelockbaseline(cfg, pupFT);
+        cfg.baselinetype = 'db';
+        pupFT_bl_db = ft_timelockbaseline(cfg, pupFT);
 
         cfg = [];
         cfg.latency    = pupil_store_window;
         cfg.keeptrials = 'no';
-        pupTS_BL_pct = ft_timelockanalysis(cfg, pupFT_bl_pct);
-        pupTS_BL_pct.avg = pupTS_BL_pct.avg * 100;
+        pupTS_BL_db = ft_timelockanalysis(cfg, pupFT_bl_db);
 
         % Timelocked average without baseline
         cfg = [];
@@ -463,17 +449,27 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         msTS_noBL = ft_timelockanalysis(cfg, msFT);
 
-        % Percentage change baseline
+        % dB baseline
         cfg = [];
         cfg.baseline     = baseline_period;
-        cfg.baselinetype = 'relativechange';
-        msFT_bl_pct = ft_timelockbaseline(cfg, msFT);
+        cfg.baselinetype = 'db';
+        msFT_bl_db = ft_timelockbaseline(cfg, msFT);
 
         cfg = [];
         cfg.latency    = analysis_periodTS;
         cfg.keeptrials = 'no';
-        msTS_BL_pct = ft_timelockanalysis(cfg, msFT_bl_pct);
-        msTS_BL_pct.avg = msTS_BL_pct.avg * 100;
+        msTS_BL_db = ft_timelockanalysis(cfg, msFT_bl_db);
+
+        % Trial-level dB baselines for scalar gaze metrics
+        dBGazeDeviation = compute_db_baseline(gazeDev, baselineGazeDev);
+        dBGazeStdX      = compute_db_baseline(gazeSDx, baselineGazeSDx);
+        dBGazeStdY      = compute_db_baseline(gazeSDy, baselineGazeSDy);
+        dBBCEA          = compute_db_baseline(bcea, baselineBcea);
+        dBPupilSize     = compute_db_baseline(pupilSize, baselinePupilSize);
+        dBMSRate        = compute_db_baseline(microsaccadeRate, baselineMSRate);
+        dBVelH          = compute_db_baseline(velHorz, baselineVelH);
+        dBVelV          = compute_db_baseline(velVert, baselineVelV);
+        dBVel2D         = compute_db_baseline(vel2D, baselineVel2D);
 
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
@@ -499,45 +495,44 @@ for subj = 1:numel(subjects)
                 c25_vel2D        = mean(vel2D,'omitnan');
                 c25_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Percentage change relative to baseline
-                c25_pct_gdev    = (c25_gdev    - c25_bl_gdev   ) / c25_bl_gdev   * 100;
-                c25_pct_gSDx    = (c25_gSDx    - c25_bl_gSDx   ) / c25_bl_gSDx   * 100;
-                c25_pct_gSDy    = (c25_gSDy    - c25_bl_gSDy   ) / c25_bl_gSDy   * 100;
-                c25_pct_bcea    = (c25_bcea    - c25_bl_bcea   ) / c25_bl_bcea   * 100;
-                c25_pct_pups    = (c25_pups    - c25_bl_pups   ) / c25_bl_pups   * 100;
-                c25_pct_msrate  = (c25_msrate  - c25_bl_msrate ) / c25_bl_msrate * 100;
-
-                c25_pct_velHorz = (c25_velHorz - c25_bl_velHorz) / c25_bl_velHorz * 100;
-                c25_pct_velVert = (c25_velVert - c25_bl_velVert) / c25_bl_velVert * 100;
-                c25_pct_vel2D   = (c25_vel2D   - c25_bl_vel2D  ) / c25_bl_vel2D  * 100;
+                % Condition mean of trial-level dB metrics
+                c25_db_gdev    = mean(dBGazeDeviation, 'omitnan');
+                c25_db_gSDx    = mean(dBGazeStdX, 'omitnan');
+                c25_db_gSDy    = mean(dBGazeStdY, 'omitnan');
+                c25_db_bcea    = mean(dBBCEA, 'omitnan');
+                c25_db_pups    = mean(dBPupilSize, 'omitnan');
+                c25_db_msrate  = mean(dBMSRate, 'omitnan');
+                c25_db_velHorz = mean(dBVelH, 'omitnan');
+                c25_db_velVert = mean(dBVelV, 'omitnan');
+                c25_db_vel2D   = mean(dBVel2D, 'omitnan');
 
                 subj_data_gaze_trial_c25 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'PctGazeDeviation',(gazeDev./baselineGazeDev-1)*100, ...
-                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'PctGazeStdX',      (gazeSDx./baselineGazeSDx-1)*100, ...
-                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
-                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'PctBCEA',          (bcea./baselineBcea-1)*100, ...
-                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
-                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
-                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
-                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
+                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'dBGazeDeviation',dBGazeDeviation, ...
+                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'dBGazeStdX',      dBGazeStdX, ...
+                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'dBGazeStdY',      dBGazeStdY, ...
+                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'dBBCEA',          dBBCEA, ...
+                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'dBPupilSize',     dBPupilSize, ...
+                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'dBMSRate',        dBMSRate, ...
+                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'dBVelH',          dBVelH, ...
+                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'dBVelV',          dBVelV, ...
+                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'dBVel2D',         dBVel2D );
 
                 % Store FieldTrip velocity for this condition
                 velTS_c25        = velTS_noBL;
-                velTS_c25_bl_pct = velTS_BL_pct;
+                velTS_c25_bl_db = velTS_BL_db;
 
                 % Store trial-level velocity structs under explicit names
                 velTS_trials_c25      = velocityData;
-                velTS_pct_trials_c25  = velocityData_pct;
+                velTS_db_trials_c25  = velocityData_db;
 
                 % Store pupil size
                 pupTS_c25        = pupTS_noBL;
-                pupTS_c25_bl_pct = pupTS_BL_pct;
+                pupTS_c25_bl_db = pupTS_BL_db;
 
                 % Store MS
                 msTS_c25        = msTS_noBL;
-                msTS_c25_bl_pct = msTS_BL_pct;
+                msTS_c25_bl_db = msTS_BL_db;
 
             case 'c50'
                 c50_gdev      = mean(gazeDev,'omitnan');
@@ -561,41 +556,40 @@ for subj = 1:numel(subjects)
                 c50_vel2D        = mean(vel2D,'omitnan');
                 c50_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Percentage change relative to baseline
-                c50_pct_gdev    = (c50_gdev    - c50_bl_gdev   ) / c50_bl_gdev   * 100;
-                c50_pct_gSDx    = (c50_gSDx    - c50_bl_gSDx   ) / c50_bl_gSDx   * 100;
-                c50_pct_gSDy    = (c50_gSDy    - c50_bl_gSDy   ) / c50_bl_gSDy   * 100;
-                c50_pct_bcea    = (c50_bcea    - c50_bl_bcea   ) / c50_bl_bcea   * 100;
-                c50_pct_pups    = (c50_pups    - c50_bl_pups   ) / c50_bl_pups   * 100;
-                c50_pct_msrate  = (c50_msrate  - c50_bl_msrate ) / c50_bl_msrate * 100;
-
-                c50_pct_velHorz = (c50_velHorz - c50_bl_velHorz) / c50_bl_velHorz * 100;
-                c50_pct_velVert = (c50_velVert - c50_bl_velVert) / c50_bl_velVert * 100;
-                c50_pct_vel2D   = (c50_vel2D   - c50_bl_vel2D  ) / c50_bl_vel2D  * 100;
+                % Condition mean of trial-level dB metrics
+                c50_db_gdev    = mean(dBGazeDeviation, 'omitnan');
+                c50_db_gSDx    = mean(dBGazeStdX, 'omitnan');
+                c50_db_gSDy    = mean(dBGazeStdY, 'omitnan');
+                c50_db_bcea    = mean(dBBCEA, 'omitnan');
+                c50_db_pups    = mean(dBPupilSize, 'omitnan');
+                c50_db_msrate  = mean(dBMSRate, 'omitnan');
+                c50_db_velHorz = mean(dBVelH, 'omitnan');
+                c50_db_velVert = mean(dBVelV, 'omitnan');
+                c50_db_vel2D   = mean(dBVel2D, 'omitnan');
 
                 subj_data_gaze_trial_c50 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'PctGazeDeviation',(gazeDev./baselineGazeDev-1)*100, ...
-                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'PctGazeStdX',      (gazeSDx./baselineGazeSDx-1)*100, ...
-                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
-                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'PctBCEA',          (bcea./baselineBcea-1)*100, ...
-                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
-                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
-                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
-                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
+                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'dBGazeDeviation',dBGazeDeviation, ...
+                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'dBGazeStdX',      dBGazeStdX, ...
+                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'dBGazeStdY',      dBGazeStdY, ...
+                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'dBBCEA',          dBBCEA, ...
+                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'dBPupilSize',     dBPupilSize, ...
+                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'dBMSRate',        dBMSRate, ...
+                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'dBVelH',          dBVelH, ...
+                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'dBVelV',          dBVelV, ...
+                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'dBVel2D',         dBVel2D );
 
                 velTS_c50        = velTS_noBL;
-                velTS_c50_bl_pct = velTS_BL_pct;
+                velTS_c50_bl_db = velTS_BL_db;
 
                 velTS_trials_c50      = velocityData;
-                velTS_pct_trials_c50  = velocityData_pct;
+                velTS_db_trials_c50  = velocityData_db;
 
                 pupTS_c50        = pupTS_noBL;
-                pupTS_c50_bl_pct = pupTS_BL_pct;
+                pupTS_c50_bl_db = pupTS_BL_db;
 
                 msTS_c50        = msTS_noBL;
-                msTS_c50_bl_pct = msTS_BL_pct;
+                msTS_c50_bl_db = msTS_BL_db;
 
             case 'c75'
                 c75_gdev      = mean(gazeDev,'omitnan');
@@ -619,41 +613,40 @@ for subj = 1:numel(subjects)
                 c75_vel2D        = mean(vel2D,'omitnan');
                 c75_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Percentage change relative to baseline
-                c75_pct_gdev    = (c75_gdev    - c75_bl_gdev   ) / c75_bl_gdev   * 100;
-                c75_pct_gSDx    = (c75_gSDx    - c75_bl_gSDx   ) / c75_bl_gSDx   * 100;
-                c75_pct_gSDy    = (c75_gSDy    - c75_bl_gSDy   ) / c75_bl_gSDy   * 100;
-                c75_pct_bcea    = (c75_bcea    - c75_bl_bcea   ) / c75_bl_bcea   * 100;
-                c75_pct_pups    = (c75_pups    - c75_bl_pups   ) / c75_bl_pups   * 100;
-                c75_pct_msrate  = (c75_msrate  - c75_bl_msrate ) / c75_bl_msrate * 100;
-
-                c75_pct_velHorz = (c75_velHorz - c75_bl_velHorz) / c75_bl_velHorz * 100;
-                c75_pct_velVert = (c75_velVert - c75_bl_velVert) / c75_bl_velVert * 100;
-                c75_pct_vel2D   = (c75_vel2D   - c75_bl_vel2D  ) / c75_bl_vel2D  * 100;
+                % Condition mean of trial-level dB metrics
+                c75_db_gdev    = mean(dBGazeDeviation, 'omitnan');
+                c75_db_gSDx    = mean(dBGazeStdX, 'omitnan');
+                c75_db_gSDy    = mean(dBGazeStdY, 'omitnan');
+                c75_db_bcea    = mean(dBBCEA, 'omitnan');
+                c75_db_pups    = mean(dBPupilSize, 'omitnan');
+                c75_db_msrate  = mean(dBMSRate, 'omitnan');
+                c75_db_velHorz = mean(dBVelH, 'omitnan');
+                c75_db_velVert = mean(dBVelV, 'omitnan');
+                c75_db_vel2D   = mean(dBVel2D, 'omitnan');
 
                 subj_data_gaze_trial_c75 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'PctGazeDeviation',(gazeDev./baselineGazeDev-1)*100, ...
-                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'PctGazeStdX',      (gazeSDx./baselineGazeSDx-1)*100, ...
-                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
-                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'PctBCEA',          (bcea./baselineBcea-1)*100, ...
-                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
-                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
-                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
-                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
+                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'dBGazeDeviation',dBGazeDeviation, ...
+                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'dBGazeStdX',      dBGazeStdX, ...
+                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'dBGazeStdY',      dBGazeStdY, ...
+                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'dBBCEA',          dBBCEA, ...
+                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'dBPupilSize',     dBPupilSize, ...
+                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'dBMSRate',        dBMSRate, ...
+                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'dBVelH',          dBVelH, ...
+                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'dBVelV',          dBVelV, ...
+                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'dBVel2D',         dBVel2D );
 
                 velTS_c75        = velTS_noBL;
-                velTS_c75_bl_pct = velTS_BL_pct;
+                velTS_c75_bl_db = velTS_BL_db;
 
                 velTS_trials_c75      = velocityData;
-                velTS_pct_trials_c75  = velocityData_pct;
+                velTS_db_trials_c75  = velocityData_db;
 
                 pupTS_c75        = pupTS_noBL;
-                pupTS_c75_bl_pct = pupTS_BL_pct;
+                pupTS_c75_bl_db = pupTS_BL_db;
 
                 msTS_c75        = msTS_noBL;
-                msTS_c75_bl_pct = msTS_BL_pct;
+                msTS_c75_bl_db = msTS_BL_db;
 
             case 'c100'
                 c100_gdev      = mean(gazeDev,'omitnan');
@@ -677,41 +670,40 @@ for subj = 1:numel(subjects)
                 c100_vel2D        = mean(vel2D,'omitnan');
                 c100_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Percentage change relative to baseline
-                c100_pct_gdev    = (c100_gdev    - c100_bl_gdev   ) / c100_bl_gdev   * 100;
-                c100_pct_gSDx    = (c100_gSDx    - c100_bl_gSDx   ) / c100_bl_gSDx   * 100;
-                c100_pct_gSDy    = (c100_gSDy    - c100_bl_gSDy   ) / c100_bl_gSDy   * 100;
-                c100_pct_bcea    = (c100_bcea    - c100_bl_bcea   ) / c100_bl_bcea   * 100;
-                c100_pct_pups    = (c100_pups    - c100_bl_pups   ) / c100_bl_pups   * 100;
-                c100_pct_msrate  = (c100_msrate  - c100_bl_msrate ) / c100_bl_msrate * 100;
-
-                c100_pct_velHorz = (c100_velHorz - c100_bl_velHorz) / c100_bl_velHorz * 100;
-                c100_pct_velVert = (c100_velVert - c100_bl_velVert) / c100_bl_velVert * 100;
-                c100_pct_vel2D   = (c100_vel2D   - c100_bl_vel2D  ) / c100_bl_vel2D  * 100;
+                % Condition mean of trial-level dB metrics
+                c100_db_gdev    = mean(dBGazeDeviation, 'omitnan');
+                c100_db_gSDx    = mean(dBGazeStdX, 'omitnan');
+                c100_db_gSDy    = mean(dBGazeStdY, 'omitnan');
+                c100_db_bcea    = mean(dBBCEA, 'omitnan');
+                c100_db_pups    = mean(dBPupilSize, 'omitnan');
+                c100_db_msrate  = mean(dBMSRate, 'omitnan');
+                c100_db_velHorz = mean(dBVelH, 'omitnan');
+                c100_db_velVert = mean(dBVelV, 'omitnan');
+                c100_db_vel2D   = mean(dBVel2D, 'omitnan');
 
                 subj_data_gaze_trial_c100 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'PctGazeDeviation',(gazeDev./baselineGazeDev-1)*100, ...
-                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'PctGazeStdX',      (gazeSDx./baselineGazeSDx-1)*100, ...
-                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'PctGazeStdY',      (gazeSDy./baselineGazeSDy-1)*100, ...
-                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'PctBCEA',          (bcea./baselineBcea-1)*100, ...
-                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'PctPupilSize',     (pupilSize./baselinePupilSize-1)*100, ...
-                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'PctMSRate',        (microsaccadeRate./baselineMSRate-1)*100, ...
-                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'PctVelH',          (velHorz./baselineVelH-1)*100, ...
-                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'PctVelV',          (velVert./baselineVelV-1)*100, ...
-                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'PctVel2D',         (vel2D./baselineVel2D-1)*100 );
+                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'dBGazeDeviation',dBGazeDeviation, ...
+                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'dBGazeStdX',      dBGazeStdX, ...
+                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'dBGazeStdY',      dBGazeStdY, ...
+                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'dBBCEA',          dBBCEA, ...
+                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'dBPupilSize',     dBPupilSize, ...
+                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'dBMSRate',        dBMSRate, ...
+                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'dBVelH',          dBVelH, ...
+                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'dBVelV',          dBVelV, ...
+                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'dBVel2D',         dBVel2D );
 
                 velTS_c100        = velTS_noBL;
-                velTS_c100_bl_pct = velTS_BL_pct;
+                velTS_c100_bl_db = velTS_BL_db;
 
                 velTS_trials_c100      = velocityData;
-                velTS_pct_trials_c100  = velocityData_pct;
+                velTS_db_trials_c100  = velocityData_db;
 
                 pupTS_c100        = pupTS_noBL;
-                pupTS_c100_bl_pct = pupTS_BL_pct;
+                pupTS_c100_bl_db = pupTS_BL_db;
 
                 msTS_c100        = msTS_noBL;
-                msTS_c100_bl_pct = msTS_BL_pct;
+                msTS_c100_bl_db = msTS_BL_db;
         end
     end
 
@@ -725,10 +717,20 @@ for subj = 1:numel(subjects)
         'c25_saccades','c50_saccades','c75_saccades','c100_saccades', ...
         'c25_bl_blinks','c50_bl_blinks','c75_bl_blinks','c100_bl_blinks', ...
         'c25_bl_fixations','c50_bl_fixations','c75_bl_fixations','c100_bl_fixations', ...
-        'c25_bl_saccades','c50_bl_saccades','c75_bl_saccades','c100_bl_saccades', ...
-        'c25_pct_blinks','c50_pct_blinks','c75_pct_blinks','c100_pct_blinks', ...
-        'c25_pct_fixations','c50_pct_fixations','c75_pct_fixations','c100_pct_fixations', ...
-        'c25_pct_saccades','c50_pct_saccades','c75_pct_saccades','c100_pct_saccades');
+        'c25_bl_saccades','c50_bl_saccades','c75_bl_saccades','c100_bl_saccades');
+
+    c25_db_blinks     = compute_db_baseline(c25_blinks, c25_bl_blinks);
+    c50_db_blinks     = compute_db_baseline(c50_blinks, c50_bl_blinks);
+    c75_db_blinks     = compute_db_baseline(c75_blinks, c75_bl_blinks);
+    c100_db_blinks    = compute_db_baseline(c100_blinks, c100_bl_blinks);
+    c25_db_fixations  = compute_db_baseline(c25_fixations, c25_bl_fixations);
+    c50_db_fixations  = compute_db_baseline(c50_fixations, c50_bl_fixations);
+    c75_db_fixations  = compute_db_baseline(c75_fixations, c75_bl_fixations);
+    c100_db_fixations = compute_db_baseline(c100_fixations, c100_bl_fixations);
+    c25_db_saccades   = compute_db_baseline(c25_saccades, c25_bl_saccades);
+    c50_db_saccades   = compute_db_baseline(c50_saccades, c50_bl_saccades);
+    c75_db_saccades   = compute_db_baseline(c75_saccades, c75_bl_saccades);
+    c100_db_saccades  = compute_db_baseline(c100_saccades, c100_bl_saccades);
 
     subj_data_gaze = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
@@ -757,18 +759,18 @@ for subj = 1:numel(subjects)
         'BaselineBlinks',        num2cell([c25_bl_blinks; c50_bl_blinks; c75_bl_blinks; c100_bl_blinks]), ...
         'BaselineFixations',     num2cell([c25_bl_fixations; c50_bl_fixations; c75_bl_fixations; c100_bl_fixations]), ...
         'BaselineSaccades',      num2cell([c25_bl_saccades; c50_bl_saccades; c75_bl_saccades; c100_bl_saccades]), ...
-        'PctGazeDeviation', num2cell([c25_pct_gdev;   c50_pct_gdev;   c75_pct_gdev;   c100_pct_gdev]), ...
-        'PctGazeStdX',      num2cell([c25_pct_gSDx;   c50_pct_gSDx;   c75_pct_gSDx;   c100_pct_gSDx]), ...
-        'PctGazeStdY',      num2cell([c25_pct_gSDy;   c50_pct_gSDy;   c75_pct_gSDy;   c100_pct_gSDy]), ...
-        'PctBCEA',          num2cell([c25_pct_bcea;   c50_pct_bcea;   c75_pct_bcea;   c100_pct_bcea]), ...
-        'PctPupilSize',     num2cell([c25_pct_pups;   c50_pct_pups;   c75_pct_pups;   c100_pct_pups]), ...
-        'PctMSRate',        num2cell([c25_pct_msrate; c50_pct_msrate; c75_pct_msrate; c100_pct_msrate]), ...
-        'PctVelH',          num2cell([c25_pct_velHorz;   c50_pct_velHorz;   c75_pct_velHorz;   c100_pct_velHorz]), ...
-        'PctVelV',          num2cell([c25_pct_velVert;   c50_pct_velVert;   c75_pct_velVert;   c100_pct_velVert]), ...
-        'PctVel2D',         num2cell([c25_pct_vel2D;  c50_pct_vel2D;  c75_pct_vel2D;  c100_pct_vel2D]), ...
-        'PctBlinks',        num2cell([c25_pct_blinks; c50_pct_blinks; c75_pct_blinks; c100_pct_blinks]), ...
-        'PctFixations',     num2cell([c25_pct_fixations; c50_pct_fixations; c75_pct_fixations; c100_pct_fixations]), ...
-        'PctSaccades',      num2cell([c25_pct_saccades; c50_pct_saccades; c75_pct_saccades; c100_pct_saccades]) );
+        'dBGazeDeviation', num2cell([c25_db_gdev;   c50_db_gdev;   c75_db_gdev;   c100_db_gdev]), ...
+        'dBGazeStdX',      num2cell([c25_db_gSDx;   c50_db_gSDx;   c75_db_gSDx;   c100_db_gSDx]), ...
+        'dBGazeStdY',      num2cell([c25_db_gSDy;   c50_db_gSDy;   c75_db_gSDy;   c100_db_gSDy]), ...
+        'dBBCEA',          num2cell([c25_db_bcea;   c50_db_bcea;   c75_db_bcea;   c100_db_bcea]), ...
+        'dBPupilSize',     num2cell([c25_db_pups;   c50_db_pups;   c75_db_pups;   c100_db_pups]), ...
+        'dBMSRate',        num2cell([c25_db_msrate; c50_db_msrate; c75_db_msrate; c100_db_msrate]), ...
+        'dBVelH',          num2cell([c25_db_velHorz;   c50_db_velHorz;   c75_db_velHorz;   c100_db_velHorz]), ...
+        'dBVelV',          num2cell([c25_db_velVert;   c50_db_velVert;   c75_db_velVert;   c100_db_velVert]), ...
+        'dBVel2D',         num2cell([c25_db_vel2D;  c50_db_vel2D;  c75_db_vel2D;  c100_db_vel2D]), ...
+        'dBBlinks',        num2cell([c25_db_blinks; c50_db_blinks; c75_db_blinks; c100_db_blinks]), ...
+        'dBFixations',     num2cell([c25_db_fixations; c50_db_fixations; c75_db_fixations; c100_db_fixations]), ...
+        'dBSaccades',      num2cell([c25_db_saccades; c50_db_saccades; c75_db_saccades; c100_db_saccades]) );
 
     subj_data_gaze_baseline = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
@@ -786,21 +788,21 @@ for subj = 1:numel(subjects)
         'BaselineFixations',     num2cell([c25_bl_fixations; c50_bl_fixations; c75_bl_fixations; c100_bl_fixations]), ...
         'BaselineSaccades',      num2cell([c25_bl_saccades; c50_bl_saccades; c75_bl_saccades; c100_bl_saccades]) );
 
-    subj_data_gaze_pctchange = struct( ...
+    subj_data_gaze_dbchange = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
         'Condition', num2cell([1;2;3;4]), ...
-        'PctGazeDeviation', num2cell([c25_pct_gdev;   c50_pct_gdev;   c75_pct_gdev;   c100_pct_gdev]), ...
-        'PctGazeStdX',      num2cell([c25_pct_gSDx;   c50_pct_gSDx;   c75_pct_gSDx;   c100_pct_gSDx]), ...
-        'PctGazeStdY',      num2cell([c25_pct_gSDy;   c50_pct_gSDy;   c75_pct_gSDy;   c100_pct_gSDy]), ...
-        'PctBCEA',          num2cell([c25_pct_bcea;   c50_pct_bcea;   c75_pct_bcea;   c100_pct_bcea]), ...
-        'PctPupilSize',     num2cell([c25_pct_pups;   c50_pct_pups;   c75_pct_pups;   c100_pct_pups]), ...
-        'PctMSRate',        num2cell([c25_pct_msrate; c50_pct_msrate; c75_pct_msrate; c100_pct_msrate]), ...
-        'PctVelH',          num2cell([c25_pct_velHorz;   c50_pct_velHorz;   c75_pct_velHorz;   c100_pct_velHorz]), ...
-        'PctVelV',          num2cell([c25_pct_velVert;   c50_pct_velVert;   c75_pct_velVert;   c100_pct_velVert]), ...
-        'PctVel2D',         num2cell([c25_pct_vel2D;  c50_pct_vel2D;  c75_pct_vel2D;  c100_pct_vel2D]), ...
-        'PctBlinks',        num2cell([c25_pct_blinks; c50_pct_blinks; c75_pct_blinks; c100_pct_blinks]), ...
-        'PctFixations',     num2cell([c25_pct_fixations; c50_pct_fixations; c75_pct_fixations; c100_pct_fixations]), ...
-        'PctSaccades',      num2cell([c25_pct_saccades; c50_pct_saccades; c75_pct_saccades; c100_pct_saccades]) );
+        'dBGazeDeviation', num2cell([c25_db_gdev;   c50_db_gdev;   c75_db_gdev;   c100_db_gdev]), ...
+        'dBGazeStdX',      num2cell([c25_db_gSDx;   c50_db_gSDx;   c75_db_gSDx;   c100_db_gSDx]), ...
+        'dBGazeStdY',      num2cell([c25_db_gSDy;   c50_db_gSDy;   c75_db_gSDy;   c100_db_gSDy]), ...
+        'dBBCEA',          num2cell([c25_db_bcea;   c50_db_bcea;   c75_db_bcea;   c100_db_bcea]), ...
+        'dBPupilSize',     num2cell([c25_db_pups;   c50_db_pups;   c75_db_pups;   c100_db_pups]), ...
+        'dBMSRate',        num2cell([c25_db_msrate; c50_db_msrate; c75_db_msrate; c100_db_msrate]), ...
+        'dBVelH',          num2cell([c25_db_velHorz;   c50_db_velHorz;   c75_db_velHorz;   c100_db_velHorz]), ...
+        'dBVelV',          num2cell([c25_db_velVert;   c50_db_velVert;   c75_db_velVert;   c100_db_velVert]), ...
+        'dBVel2D',         num2cell([c25_db_vel2D;  c50_db_vel2D;  c75_db_vel2D;  c100_db_vel2D]), ...
+        'dBBlinks',        num2cell([c25_db_blinks; c50_db_blinks; c75_db_blinks; c100_db_blinks]), ...
+        'dBFixations',     num2cell([c25_db_fixations; c50_db_fixations; c75_db_fixations; c100_db_fixations]), ...
+        'dBSaccades',      num2cell([c25_db_saccades; c50_db_saccades; c75_db_saccades; c100_db_saccades]) );
 
 
     %% Save
@@ -809,24 +811,24 @@ for subj = 1:numel(subjects)
         'subj_data_gaze_trial_c75',  'subj_data_gaze_trial_c100');
     save(fullfile(savepath,'gaze_matrix_subj'),   'subj_data_gaze');
     save(fullfile(savepath,'gaze_matrix_baseline'),'subj_data_gaze_baseline');
-    save(fullfile(savepath,'gaze_matrix_pctchange'),'subj_data_gaze_pctchange');
+    save(fullfile(savepath,'gaze_matrix_dbchange'),'subj_data_gaze_dbchange');
 
     % velocity time series and FieldTrip timelocked data
     save(fullfile(savepath, 'gaze_velocity_timeseries'), ...
         'velTS_c25','velTS_c50','velTS_c75','velTS_c100', ...
-        'velTS_c25_bl_pct','velTS_c50_bl_pct','velTS_c75_bl_pct','velTS_c100_bl_pct', ...
+        'velTS_c25_bl_db','velTS_c50_bl_db','velTS_c75_bl_db','velTS_c100_bl_db', ...
         'velTS_trials_c25','velTS_trials_c50','velTS_trials_c75','velTS_trials_c100', ...
-        'velTS_pct_trials_c25','velTS_pct_trials_c50','velTS_pct_trials_c75','velTS_pct_trials_c100');
+        'velTS_db_trials_c25','velTS_db_trials_c50','velTS_db_trials_c75','velTS_db_trials_c100');
 
     % pupil size time series
     save(fullfile(savepath, 'gaze_pupil_timeseries'), ...
         'pupTS_c25','pupTS_c50','pupTS_c75','pupTS_c100', ...
-        'pupTS_c25_bl_pct','pupTS_c50_bl_pct','pupTS_c75_bl_pct','pupTS_c100_bl_pct');
+        'pupTS_c25_bl_db','pupTS_c50_bl_db','pupTS_c75_bl_db','pupTS_c100_bl_db');
 
     % ms time series
     save(fullfile(savepath, 'gaze_microsaccade_timeseries'), ...
         'msTS_c25','msTS_c50','msTS_c75','msTS_c100', ...
-        'msTS_c25_bl_pct','msTS_c50_bl_pct','msTS_c75_bl_pct','msTS_c100_bl_pct');
+        'msTS_c25_bl_db','msTS_c50_bl_db','msTS_c75_bl_db','msTS_c100_bl_db');
 
     % Append to across‐subjects raw struct
     gaze_data = [gaze_data; subj_data_gaze];
@@ -837,3 +839,10 @@ save(fullfile(paths.features, 'GCP_gaze_raw.mat'), 'gaze_x_c25','gaze_y_c25','ga
 save(fullfile(paths.features, 'GCP_gaze_matrix.mat'), 'gaze_data');
 clc;
 fprintf('[GCP] Gaze Fex done! %d/%d Subjects\n', subj, numel(subjects));
+
+function db = compute_db_baseline(stim, baseline)
+% Power-style dB ratio: 10*log10(stim/baseline). Non-positive ratios -> NaN.
+ratio = stim ./ baseline;
+db = 10 * log10(ratio);
+db(~isfinite(stim) | ~isfinite(baseline) | ~isfinite(ratio) | ratio <= 0) = NaN;
+end

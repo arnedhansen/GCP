@@ -38,9 +38,12 @@ if ~isfile(ged_path)
     error('Missing GED features file: %s', ged_path);
 end
 
-Sged = load(ged_path, 'all_component_selection_stats', 'all_component_selection_stats', 'subjects');
-if isfield(Sged, 'all_component_selection_stats') && ~isempty(Sged.all_component_selection_stats)
-    comp_stats_all = Sged.all_component_selection_stats;
+Sged = load(ged_path, ...
+    'all_component_selection_stats_full', ...
+    'all_component_selection_stats', ...
+    'subjects');
+if isfield(Sged, 'all_component_selection_stats_full') && ~isempty(Sged.all_component_selection_stats_full)
+    comp_stats_all = Sged.all_component_selection_stats_full;
 elseif isfield(Sged, 'all_component_selection_stats') && ~isempty(Sged.all_component_selection_stats)
     comp_stats_all = Sged.all_component_selection_stats;
 else

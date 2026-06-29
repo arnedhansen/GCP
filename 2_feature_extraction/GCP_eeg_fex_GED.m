@@ -51,7 +51,7 @@ min_eigval = 1.1;           % minimum GED eigenvalue (lambda >= 1.1)
 min_powspctrm_form = 0.8;        % minimum PF (powspctrm-form) score for candidate eligibility
 random_seed = 123;
 powratio_trial_freq_smooth_bins = 5;      % movmean length (frequency bins) on per-trial powratio for peak/centroid
-powratio_condition_freq_smooth_bins = 5;  % movmean length on condition-mean powratio before condition-level peaks/plots
+powratio_condition_freq_smooth_bins = 1;  % movmean length on condition-mean powratio before condition-level peaks/plots
 peak_power_halfwidth_hz = 5;  % peak power = mean power within peak_hz +/-
 
 % Condition info
@@ -1820,7 +1820,7 @@ save(save_path, ...
 clc
 powspctrm_save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_powspctrm_GED.mat');
 % freq_* cells: one FieldTrip freq per (cond, subj), chan_freq, for ft_freqgrandaverage like AOC powl2{subj}.
-% Virtual channel label must not be 'comp' when topolabel is set (FieldTrip would treat as ICA comp).
+% Do not add topolabel to those structs: FieldTrip ft_datatype sets iscomp if topolabel is present.
 save(powspctrm_save_path, ...
     'freq_powspctrm_full', 'freq_powspctrm_full_unsmoothed', ...
     'all_condition_peak_freq_full', 'scan_freqs', 'condLabels', 'subjects');
@@ -4365,10 +4365,9 @@ end
 
 function freq = ged_powcurve_to_freq_ft(pow_vec, scan_freqs, data_recording)
 % One-row FieldTrip freq struct (dimord chan_freq) for a subject-level GED spectrum in dB.
-% Optional data_recording (e.g. preprocessed timelock/raw): attach elec/grad and topolabel.
-% powspctrm remains one virtual channel; elec describes the original EEG montage when present.
-% Virtual channel must not be labeled 'comp' together with topolabel, or FieldTrip classifies
-% the struct as ICA comp data (expects topo) instead of freq.
+% Optional data_recording (e.g. preprocessed timelock/raw): attach elec/grad only.
+% Do not set topolabel: ft_datatype treats any struct with topolabel as comp, so
+% ft_checkdata then calls ft_datatype_comp and expects topo (see FieldTrip ft_datatype.m).
 freq = struct();
 freq.label = {'GED'};
 freq.freq = scan_freqs(:)';
@@ -4395,9 +4394,6 @@ if nargin >= 3 && isstruct(data_recording)
         if isstruct(g) && isfield(g, 'label') && ~isempty(g.label)
             freq.grad = g;
         end
-    end
-    if isfield(data_recording, 'label') && ~isempty(data_recording.label)
-        freq.topolabel = data_recording.label(:);
     end
 end
 end

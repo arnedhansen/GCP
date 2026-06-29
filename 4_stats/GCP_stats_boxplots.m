@@ -1,22 +1,14 @@
 %% GCP Stats Overview
 % One figure per variable: boxplots + subject lines + jittered dots
-clear
 [~, paths, colors, ~] = setup('GCP', 0);
 
-% Load and convert
+% Load merged data
 dat = load(fullfile(paths.features, 'GCP_merged_data.mat'));
-if isfield(dat, 'GCP_merged_data')
-    tbl = struct2table(dat.GCP_merged_data);
-elseif isfield(dat, 'merged_data')
-    tbl = struct2table(dat.merged_data);
-else
-    error('GCP_merged_data.mat does not contain GCP_merged_data or merged_data.');
-end
+tbl = struct2table(dat.GCP_merged_data);
 
 % Identify numeric variables only (excluding ID and Condition)
 varNames    = tbl.Properties.VariableNames;
 numericVars = {};
-
 for i = 1:numel(varNames)
     v = tbl.(varNames{i});
     if isnumeric(v) && ~strcmp(varNames{i}, 'ID') && ~strcmp(varNames{i}, 'Condition')
@@ -28,8 +20,6 @@ end
 condRaw = tbl.Condition;
 [condLevels, ~, condIdx] = unique(condRaw, 'stable');  % 1..K
 nCond   = numel(condLevels);
-
-% Nice x-tick labels for contrast (change here if Condition is something else)
 xtickLabs = strcat(num2str(condLevels*25), "% Contrast");
 
 % Subject IDs
@@ -37,10 +27,25 @@ subjIDs = unique(tbl.ID);
 
 % Outlier exclusion settings (applied per variable and per condition)
 useOutlierExclusion = true;
-madThreshold = 3.5; % robust z-threshold based on MAD
+madThreshold = 5; % robust z-threshold based on MAD
+
+% Plot aesthetics
+fontSize        = 50;
+xTickFontSize   = fontSize - 20;
+yTickFontSize   = fontSize - 15;
+ylabelFontSize  = fontSize - 10;
+titleFontSize   = fontSize;
+legendFontSize  = fontSize - 30;
+dotSize         = 400;
+dotAlpha        = 0.85;
+jitter          = 0.4;
+boxWidth        = 0.55;
+showXTickLabels = true;
+showLegend      = false;
+showTitle       = false;
 
 %% Loop through variables
-for iVar = 35%%%%%%1:numel(numericVars)
+for iVar = 1:numel(numericVars)
     close all
 
     varName = numericVars{iVar};
@@ -76,101 +81,168 @@ for iVar = 35%%%%%%1:numel(numericVars)
     figure('Position', [0 0 1512 982], 'Color', 'w');
     hold on
 
-    % First: subject-wise lines across conditions (light grey)
+    % One jittered x position per subject per condition (shared by lines and dots)
+    xJit = nan(size(y));
     for s = 1:numel(subjIDs)
         thisID  = subjIDs(s);
         idxSubj = tbl.ID == thisID;
-
-        ySubj       = y(idxSubj);
-        condSubjIdx = condIdx(idxSubj); % 1..nCond per row
-
-        % sort within subject by condition order
-        [condSubjIdx, sortIdx] = sort(condSubjIdx);
-        ySubj = ySubj(sortIdx);
-
-        % skip if fewer than 2 conditions for this subject
-        if numel(ySubj) < 2
-            continue
+        for c = 1:nCond
+            idxPt = idxSubj & condIdx == c & ~isnan(y);
+            if any(idxPt)
+                xJit(idxPt) = c + jitter * (rand - 0.5);
+            end
         end
-
-        plot(condSubjIdx, ySubj, '-', ...
-            'Color', [0.8 0.8 0.8], ...
-            'LineWidth', 1);
     end
 
-    % Boxplot per condition (using condIdx so positions are 1..nCond)
-    boxplot(y, condIdx, 'Colors', 'k', 'Symbol', '');
-
-    hold on
-    % Overlay jittered dots + mean/range markers per condition
+    % Boxplot per condition (separate calls avoid grouped-box misalignment)
     for c = 1:nCond
         idxC = condIdx == c & ~isnan(y);
         yC   = y(idxC);
-
-        xJit = c + (rand(sum(idxC),1)-0.5)*0.1;
-        scatter(xJit, yC, 250, colors(c,:), 'filled', ...
-            'MarkerEdgeColor','k', 'LineWidth',0.5)
+        if isempty(yC)
+            continue
+        end
+        boxplot(yC, ones(numel(yC), 1), 'Positions', c, 'Symbol', '', ...
+            'Widths', boxWidth, 'Colors', 'k');
     end
+    styleCurrentBoxplot(colors(1:nCond, :));
 
     % Zero line
     yline(0, '--', 'Color', [0.6 0.6 0.6], 'LineWidth', 1);
 
+    % Subject-wise lines across conditions (connect jittered dot positions)
+    for s = 1:numel(subjIDs)
+        thisID  = subjIDs(s);
+        idxSubj = tbl.ID == thisID;
+
+        xSubj = xJit(idxSubj);
+        ySubj = y(idxSubj);
+        condSubjIdx = condIdx(idxSubj);
+
+        valid = ~isnan(ySubj) & ~isnan(xSubj);
+        xSubj = xSubj(valid);
+        ySubj = ySubj(valid);
+        condSubjIdx = condSubjIdx(valid);
+
+        if numel(ySubj) < 2
+            continue
+        end
+
+        [condSubjIdx, sortIdx] = sort(condSubjIdx);
+        xSubj = xSubj(sortIdx);
+        ySubj = ySubj(sortIdx);
+
+        plot(xSubj, ySubj, '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
+    end
+
+    % Jittered dots on top (foreground)
+    for c = 1:nCond
+        idxC = condIdx == c & ~isnan(y);
+        scatter(xJit(idxC), y(idxC), dotSize, colors(c, :), 'filled', ...
+            'MarkerFaceAlpha', dotAlpha);
+    end
+
     % Axes formatting
     xlabel('');
-    maxval = max(abs(y), [], 'omitnan');
-    if isempty(maxval) || isnan(maxval)
-        maxval = 1;
-    end
-    if contains(varName, 'Pct')
-        if maxval == 0
-            ylim([-1 1])
-        else
-            ylim([-maxval*1.1 maxval*1.1])
-        end
-    elseif strcmp(varName, 'Frequency')
-        ylim([30 90])
-    % elseif strcmp(varName, 'Power')
-        %set(gca, 'YScale', 'log')
+    yMin = min(y, [], 'omitnan');
+    yMax = max(y, [], 'omitnan');
+    yPadFrac = 0.1;
+    if isempty(yMin) || isnan(yMin) || isempty(yMax) || isnan(yMax)
+        ylim([0 1]);
     else
-        if maxval == 0
-            ylim([0 1])
-        else
-            ylim([0 maxval*1.1])
+        yRange = yMax - yMin;
+        if yRange == 0
+            yRange = max(abs(yMax), abs(yMin), 1) * 0.1;
         end
+        yPad = yRange * yPadFrac;
+        ylim([yMin - yPad, yMax + yPad]);
     end
     xlim([0.5 nCond + 0.5]);
     xticks(1:nCond);
-    xticklabels(xtickLabs);
-    prettyName = strrep(varName, '_', ' ');
-    ylabel(prettyName, 'Interpreter', 'none');
-    set(gca, 'FontSize', 20, 'Box', 'off');
-    title(prettyName, 'FontSize', 30, 'FontWeight', 'bold');
-    if strcmp(varName, 'PctMSRate')
-        ylabel('Microsaccade Rate [%]')
-        title('Microsaccade Rate', 'FontSize', 30, 'FontWeight', 'bold')
-    elseif strcmp(varName, 'PctPupilSize')
-        ylabel('Pupil Size [%]')
-        title('Pupil Size', 'FontSize', 30, 'FontWeight', 'bold')
-    elseif strcmp(varName, 'Power')
-        ylabel('Power [dB]')
-        title('Gamma Power', 'FontSize', 30, 'FontWeight', 'bold')
-    elseif strcmp(varName, 'PctGazeDeviation')
-        ylabel('Gaze Deviation [%]')
-        title('Gaze Deviation', 'FontSize', 30, 'FontWeight', 'bold')
-    elseif strcmp(varName, 'PctVel2D')
-        ylabel('Eye Velocity [%]')
-        title('Combined Eye Velocity', 'FontSize', 30, 'FontWeight', 'bold')
-    elseif strcmp(varName, 'PctFixations')
-        ylabel('Fixations [%]')
-        title('Fixations', 'FontSize', 30, 'FontWeight', 'bold')
-    elseif strcmp(varName, 'PctBlinks')
-        ylabel('Blinks [%]')
-        title('Blinks', 'FontSize', 30, 'FontWeight', 'bold')
-    elseif strcmp(varName, 'PctSaccades')
-        ylabel('Saccades [%]')
-        title('Saccades', 'FontSize', 30, 'FontWeight', 'bold')
+    if showXTickLabels
+        xticklabels(xtickLabs);
+    else
+        xticklabels({});
     end
+    prettyName = strrep(varName, '_', ' ');
+    ylabStr = prettyName;
+    titleStr = prettyName;
+    if strcmp(varName, 'dBMSRate')
+        ylabStr = 'Microsaccade Rate [dB]';
+        titleStr = 'Microsaccade Rate';
+    elseif strcmp(varName, 'dBPupilSize')
+        ylabStr = 'Pupil Size [dB]';
+        titleStr = 'Pupil Size';
+    elseif strcmp(varName, 'Power')
+        ylabStr = 'Power [dB]';
+        titleStr = 'Gamma Power';
+    elseif strcmp(varName, 'dBGazeDeviation')
+        ylabStr = 'Gaze Deviation [dB]';
+        titleStr = 'Gaze Deviation';
+    elseif strcmp(varName, 'dBVel2D')
+        ylabStr = 'Eye Velocity [dB]';
+        titleStr = 'Combined Eye Velocity';
+    elseif strcmp(varName, 'dBFixations')
+        ylabStr = 'Fixations [dB]';
+        titleStr = 'Fixations';
+    elseif strcmp(varName, 'dBBlinks')
+        ylabStr = 'Blinks [dB]';
+        titleStr = 'Blinks';
+    elseif strcmp(varName, 'dBSaccades')
+        ylabStr = 'Saccades [dB]';
+        titleStr = 'Saccades';
+    elseif strcmp(varName, 'Frequency')
+        ylabStr = 'Frequency [Hz]';
+        titleStr = 'Gamma Frequency';
+    end
+
+    hYlab = ylabel(ylabStr, 'Interpreter', 'none', 'FontSize', ylabelFontSize);
+    if showTitle
+        hTitle = title(titleStr, 'FontSize', titleFontSize, 'FontWeight', 'bold');
+    else
+        hTitle = title('');
+    end
+
+    if showLegend
+        hLeg = gobjects(nCond, 1);
+        for c = 1:nCond
+            hLeg(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.25, ...
+                'EdgeColor', colors(c, :), 'LineWidth', 1.5);
+        end
+        legend(hLeg, xtickLabs, 'FontSize', legendFontSize, 'Location', 'northeast', 'Box', 'off');
+    end
+
+    ax = gca;
+    ax.XAxis.FontSize = xTickFontSize;
+    ax.YAxis.FontSize = yTickFontSize;
+    hYlab.FontSize = ylabelFontSize;
+    if showTitle
+        hTitle.FontSize = titleFontSize;
+    end
+    set(ax, 'Box', 'off');
+    box off;
+    hold off;
+
     % Save
     drawnow;
     exportgraphics(gcf, fullfile(paths.figures, 'stats', 'boxplots', ['GCP_stats_boxplot_' varName '.png']), 'Resolution', 600);
+end
+
+function styleCurrentBoxplot(boxColors)
+% Color box faces and edges to match condition scatter colors (IAB style).
+hBoxes = findobj(gca, 'Tag', 'Box');
+if isempty(hBoxes)
+    return;
+end
+nB = numel(hBoxes);
+mx = zeros(nB, 1);
+for ii = 1:nB
+    xd = get(hBoxes(ii), 'XData');
+    mx(ii) = mean(xd(:), 'omitnan');
+end
+[~, ord] = sort(mx);
+hBoxes = hBoxes(ord);
+for bi = 1:min(numel(hBoxes), size(boxColors, 1))
+    patch(get(hBoxes(bi), 'XData'), get(hBoxes(bi), 'YData'), ...
+        boxColors(bi, :), 'FaceAlpha', 0.25, 'EdgeColor', boxColors(bi, :), 'LineWidth', 1.5);
+end
 end

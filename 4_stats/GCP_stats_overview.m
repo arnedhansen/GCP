@@ -1,8 +1,5 @@
 %% GCP Stats Overview
 % Quick overview plots: boxplots per variable across conditions
-clear
-clc
-close all
 [~, paths] = setup('GCP', 0);
 
 % Load and convert

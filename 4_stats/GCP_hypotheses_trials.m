@@ -48,10 +48,10 @@ fprintf('Loading trial-level gaze data...\n');
 gaze_Subject   = [];
 gaze_Condition = [];
 gaze_Trial     = [];
-gaze_PctMSRate = [];
-gaze_PctVel2D  = [];
-gaze_PctPupil  = [];
-gaze_PctBCEA   = [];
+gaze_dBMSRate = [];
+gaze_dBVel2D  = [];
+gaze_dBPupil  = [];
+gaze_dBBCEA   = [];
 gaze_MSRate    = [];
 gaze_Vel2D     = [];
 gaze_PupilSize = [];
@@ -85,25 +85,25 @@ for subj = 1:nSubj
         gaze_PupilSize = [gaze_PupilSize; d.PupilSize(:)];
         gaze_BCEA      = [gaze_BCEA;      d.BCEA(:)];
 
-        if isfield(d, 'PctMSRate')
-            gaze_PctMSRate = [gaze_PctMSRate; d.PctMSRate(:)];
+        if isfield(d, 'dBMSRate')
+            gaze_dBMSRate = [gaze_dBMSRate; d.dBMSRate(:)];
         else
-            gaze_PctMSRate = [gaze_PctMSRate; nan(nTrl, 1)];
+            gaze_dBMSRate = [gaze_dBMSRate; nan(nTrl, 1)];
         end
-        if isfield(d, 'PctVel2D')
-            gaze_PctVel2D = [gaze_PctVel2D; d.PctVel2D(:)];
+        if isfield(d, 'dBVel2D')
+            gaze_dBVel2D = [gaze_dBVel2D; d.dBVel2D(:)];
         else
-            gaze_PctVel2D = [gaze_PctVel2D; nan(nTrl, 1)];
+            gaze_dBVel2D = [gaze_dBVel2D; nan(nTrl, 1)];
         end
-        if isfield(d, 'PctPupilSize')
-            gaze_PctPupil = [gaze_PctPupil; d.PctPupilSize(:)];
+        if isfield(d, 'dBPupilSize')
+            gaze_dBPupil = [gaze_dBPupil; d.dBPupilSize(:)];
         else
-            gaze_PctPupil = [gaze_PctPupil; nan(nTrl, 1)];
+            gaze_dBPupil = [gaze_dBPupil; nan(nTrl, 1)];
         end
-        if isfield(d, 'PctBCEA')
-            gaze_PctBCEA = [gaze_PctBCEA; d.PctBCEA(:)];
+        if isfield(d, 'dBBCEA')
+            gaze_dBBCEA = [gaze_dBBCEA; d.dBBCEA(:)];
         else
-            gaze_PctBCEA = [gaze_PctBCEA; nan(nTrl, 1)];
+            gaze_dBBCEA = [gaze_dBBCEA; nan(nTrl, 1)];
         end
     end
     fprintf('  Subject %s (%d/%d)\n', subjects{subj}, subj, nSubj);
@@ -155,15 +155,15 @@ fprintf('  GED: %d total trials loaded.\n', numel(ged_Subject));
 fprintf('Removing outlier trials (median +/- 3 MAD per condition)...\n');
 
 % Gaze metrics
-[gaze_PctMSRate, n1] = reject_outliers_by_cond(gaze_PctMSRate, gaze_Condition);
-[gaze_PctVel2D,  n2] = reject_outliers_by_cond(gaze_PctVel2D,  gaze_Condition);
-[gaze_PctPupil,  n3] = reject_outliers_by_cond(gaze_PctPupil,  gaze_Condition);
-[gaze_PctBCEA,   n4] = reject_outliers_by_cond(gaze_PctBCEA,   gaze_Condition);
+[gaze_dBMSRate, n1] = reject_outliers_by_cond(gaze_dBMSRate, gaze_Condition);
+[gaze_dBVel2D,  n2] = reject_outliers_by_cond(gaze_dBVel2D,  gaze_Condition);
+[gaze_dBPupil,  n3] = reject_outliers_by_cond(gaze_dBPupil,  gaze_Condition);
+[gaze_dBBCEA,   n4] = reject_outliers_by_cond(gaze_dBBCEA,   gaze_Condition);
 [gaze_MSRate,    n5] = reject_outliers_by_cond(gaze_MSRate,    gaze_Condition);
 [gaze_Vel2D,     n6] = reject_outliers_by_cond(gaze_Vel2D,     gaze_Condition);
 [gaze_PupilSize, n7] = reject_outliers_by_cond(gaze_PupilSize, gaze_Condition);
 [gaze_BCEA,      n8] = reject_outliers_by_cond(gaze_BCEA,      gaze_Condition);
-fprintf('  Gaze outliers removed: PctMS=%d, PctVel=%d, PctPup=%d, PctBCEA=%d, MS=%d, Vel=%d, Pup=%d, BCEA=%d\n', ...
+fprintf('  Gaze outliers removed: dBMS=%d, dBVel=%d, dBPup=%d, dBBCEA=%d, MS=%d, Vel=%d, Pup=%d, BCEA=%d\n', ...
     n1, n2, n3, n4, n5, n6, n7, n8);
 
 % GED metrics
@@ -177,9 +177,9 @@ fprintf('  GED outliers removed: PeakFreq=%d, PeakAmp=%d, BBPow=%d, Centroid=%d,
 
 %% COMPUTE SUBJECT-LEVEL MEANS (for H7 cross-modal analysis)
 
-subj_pctMSRate = nan(4, nSubj);
-subj_pctVel2D  = nan(4, nSubj);
-subj_pctBCEA   = nan(4, nSubj);
+subj_dBMSRate = nan(4, nSubj);
+subj_dBVel2D  = nan(4, nSubj);
+subj_dBBCEA   = nan(4, nSubj);
 subj_gedFreq   = nan(4, nSubj);
 
 for s = 1:nSubj
@@ -187,9 +187,9 @@ for s = 1:nSubj
     for c = 1:4
         idx_g = gaze_Subject == sid & gaze_Condition == c;
         if any(idx_g)
-            subj_pctMSRate(c, s) = nanmean(gaze_PctMSRate(idx_g));
-            subj_pctVel2D(c, s)  = nanmean(gaze_PctVel2D(idx_g));
-            subj_pctBCEA(c, s)   = nanmean(gaze_PctBCEA(idx_g));
+            subj_dBMSRate(c, s) = nanmean(gaze_dBMSRate(idx_g));
+            subj_dBVel2D(c, s)  = nanmean(gaze_dBVel2D(idx_g));
+            subj_dBBCEA(c, s)   = nanmean(gaze_dBBCEA(idx_g));
         end
 
         idx_e = ged_Subject == sid & ged_Condition == c;
@@ -210,14 +210,14 @@ sgtitle('[H1] Microsaccade Rate Decreases with Contrast — Trial-Level', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
 subplot(1, 2, 1);
-plot_raincloud_trial(gaze_PctMSRate, gaze_Condition, colors, condLabels, ...
-    'MS Rate [% change]');
+plot_raincloud_trial(gaze_dBMSRate, gaze_Condition, colors, condLabels, ...
+    'MS Rate [dB]');
 
 subplot(1, 2, 2);
 plot_raincloud_trial(gaze_MSRate, gaze_Condition, colors, condLabels, ...
     'MS Rate [Hz]');
 
-report_trend_trial('H1 MS Rate (% change)', gaze_PctMSRate, gaze_Condition, ...
+report_trend_trial('H1 MS Rate (dB)', gaze_dBMSRate, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
 exportgraphics(fig1, fullfile(fig_dir, 'GCP_H1_microsaccade_rate_trials.png'), 'Resolution', 600);
@@ -229,14 +229,14 @@ sgtitle('[H2] Eye Velocity: Contrast-Dependent Suppression — Trial-Level', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
 subplot(1, 2, 1);
-plot_raincloud_trial(gaze_PctVel2D, gaze_Condition, colors, condLabels, ...
-    'Eye Velocity [% change]');
+plot_raincloud_trial(gaze_dBVel2D, gaze_Condition, colors, condLabels, ...
+    'Eye Velocity [dB]');
 
 subplot(1, 2, 2);
 plot_raincloud_trial(gaze_Vel2D, gaze_Condition, colors, condLabels, ...
     'Eye Velocity [px/s]');
 
-report_trend_trial('H2 Velocity (% change)', gaze_PctVel2D, gaze_Condition, ...
+report_trend_trial('H2 Velocity (dB)', gaze_dBVel2D, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
 exportgraphics(fig2, fullfile(fig_dir, 'GCP_H2_eye_velocity_trials.png'), 'Resolution', 600);
@@ -248,14 +248,14 @@ sgtitle('[H3] Pupil Constriction Scales with Contrast — Trial-Level', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
 subplot(1, 2, 1);
-plot_raincloud_trial(gaze_PctPupil, gaze_Condition, colors, condLabels, ...
-    'Pupil Size [% change]');
+plot_raincloud_trial(gaze_dBPupil, gaze_Condition, colors, condLabels, ...
+    'Pupil Size [dB]');
 
 subplot(1, 2, 2);
 plot_raincloud_trial(gaze_PupilSize, gaze_Condition, colors, condLabels, ...
     'Pupil Size [a.u.]');
 
-report_trend_trial('H3 Pupil (% change)', gaze_PctPupil, gaze_Condition, ...
+report_trend_trial('H3 Pupil (dB)', gaze_dBPupil, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
 exportgraphics(fig3, fullfile(fig_dir, 'GCP_H3_pupil_trials.png'), 'Resolution', 600);
@@ -267,14 +267,14 @@ sgtitle('[H4] BCEA Increases with Stimulus Contrast — Trial-Level', ...
     'FontSize', 18, 'FontWeight', 'bold');
 
 subplot(1, 2, 1);
-plot_raincloud_trial(gaze_PctBCEA, gaze_Condition, colors, condLabels, ...
-    'BCEA [% change]');
+plot_raincloud_trial(gaze_dBBCEA, gaze_Condition, colors, condLabels, ...
+    'BCEA [dB]');
 
 subplot(1, 2, 2);
 plot_raincloud_trial(gaze_BCEA, gaze_Condition, colors, condLabels, ...
     'BCEA [px^2]');
 
-report_trend_trial('H4 BCEA (% change)', gaze_PctBCEA, gaze_Condition, ...
+report_trend_trial('H4 BCEA (dB)', gaze_dBBCEA, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
 exportgraphics(fig4, fullfile(fig_dir, 'GCP_H4_bcea_trials.png'), 'Resolution', 600);
@@ -345,18 +345,18 @@ sgtitle('[H7] Gamma Frequency vs Oculomotor Dynamics (subject means from trials)
     'FontSize', 18, 'FontWeight', 'bold');
 
 subplot(2, 3, 1); hold on;
-plot_scatter_by_cond(subj_gedFreq, subj_pctMSRate, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('MS Rate [% change]');
+plot_scatter_by_cond(subj_gedFreq, subj_dBMSRate, colors, condLabels, nSubj);
+xlabel('GED Peak Frequency [Hz]'); ylabel('MS Rate [dB]');
 title('\gamma Freq vs MS Rate'); set(gca, 'FontSize', fontSize - 3);
 
 subplot(2, 3, 2); hold on;
-plot_scatter_by_cond(subj_gedFreq, subj_pctVel2D, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('Eye Velocity [% change]');
+plot_scatter_by_cond(subj_gedFreq, subj_dBVel2D, colors, condLabels, nSubj);
+xlabel('GED Peak Frequency [Hz]'); ylabel('Eye Velocity [dB]');
 title('\gamma Freq vs Velocity'); set(gca, 'FontSize', fontSize - 3);
 
 subplot(2, 3, 3); hold on;
-plot_scatter_by_cond(subj_gedFreq, subj_pctBCEA, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('BCEA [% change]');
+plot_scatter_by_cond(subj_gedFreq, subj_dBBCEA, colors, condLabels, nSubj);
+xlabel('GED Peak Frequency [Hz]'); ylabel('BCEA [dB]');
 title('\gamma Freq vs BCEA'); set(gca, 'FontSize', fontSize - 3);
 
 % Dual CRF overlay (from trial-level data, consistent with rainclouds)
@@ -366,7 +366,7 @@ mu_ms    = nan(4,1); sem_ms   = nan(4,1);
 for c = 1:4
     vf = ged_PeakFreq(ged_Condition == c);  vf = vf(~isnan(vf));
     mu_freq(c)  = mean(vf);  sem_freq(c) = std(vf)/sqrt(numel(vf));
-    vm = gaze_PctMSRate(gaze_Condition == c); vm = vm(~isnan(vm));
+    vm = gaze_dBMSRate(gaze_Condition == c); vm = vm(~isnan(vm));
     mu_ms(c)    = mean(vm);  sem_ms(c)   = std(vm)/sqrt(numel(vm));
 end
 
@@ -379,7 +379,7 @@ set(gca, 'YColor', 'b');
 yyaxis right
 errorbar(contrast_vals, mu_ms, sem_ms, 'r-s', 'LineWidth', 2.5, ...
     'MarkerSize', 8, 'MarkerFaceColor', 'r', 'CapSize', 8);
-ylabel('MS Rate [% change]');
+ylabel('MS Rate [dB]');
 set(gca, 'YColor', 'r');
 
 xlabel('Contrast [%]');
@@ -391,7 +391,7 @@ legend({'\gamma Peak Freq', 'MS Rate'}, 'Location', 'best', 'FontSize', 10);
 % Trial counts per condition
 subplot(2, 3, 5); hold on;
 for c = 1:4
-    n_gaze = sum(gaze_Condition == c & ~isnan(gaze_PctMSRate));
+    n_gaze = sum(gaze_Condition == c & ~isnan(gaze_dBMSRate));
     n_ged  = sum(ged_Condition == c & ~isnan(ged_PeakFreq));
     bar(c - 0.15, n_gaze, 0.3, 'FaceColor', colors(c,:), 'FaceAlpha', 0.5, ...
         'EdgeColor', 'k');
@@ -404,8 +404,8 @@ ylabel('N trials'); title('Trial Counts'); legend({'Gaze', 'GED'}, 'FontSize', 1
 
 % Correlation summary text
 subplot(2, 3, 6); hold on; axis off;
-gf = subj_gedFreq(:); ms = subj_pctMSRate(:);
-vl = subj_pctVel2D(:); bc = subj_pctBCEA(:);
+gf = subj_gedFreq(:); ms = subj_dBMSRate(:);
+vl = subj_dBVel2D(:); bc = subj_dBBCEA(:);
 txt = {'\bf{H7 Correlations (subject-condition pairs):}'};
 
 valid = ~isnan(gf) & ~isnan(ms);
@@ -433,8 +433,8 @@ fig7 = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Hypothesis Summary — Trial-Level Distributions', ...
     'FontSize', 16, 'FontWeight', 'bold');
 
-summary_data   = {gaze_PctMSRate, gaze_PctVel2D, gaze_PctPupil, ...
-                  gaze_PctBCEA, ged_PeakFreq, ged_PeakAmp};
+summary_data   = {gaze_dBMSRate, gaze_dBVel2D, gaze_dBPupil, ...
+                  gaze_dBBCEA, ged_PeakFreq, ged_PeakAmp};
 summary_cond   = {gaze_Condition, gaze_Condition, gaze_Condition, ...
                   gaze_Condition, ged_Condition, ged_Condition};
 summary_names  = {'[H1] MS Rate [%\Delta]', '[H2] Velocity [%\Delta]', ...
