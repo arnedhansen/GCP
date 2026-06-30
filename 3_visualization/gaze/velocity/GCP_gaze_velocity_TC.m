@@ -14,7 +14,7 @@ velocityYLabels = {'Eye Velocity X [dB]', ...
     'Eye Velocity [dB]'};
 channels      = {'VelH', 'VelV', 'Vel2D'};
 channeltitles = {'Horizontal Velocity', 'Vertical Velocity', 'Combined Velocity'};
-labels        = {'25% Contrast', '50% Contrast', '75% Contrast', '100% Contrast'};
+    labels        = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
 if numel(velocityYLabels) ~= numel(channels)
     error('Velocity y-labels must match number of channels.');
 end
@@ -104,10 +104,10 @@ for c = 3%%%%%1:numel(channels)
     ylabel(velocityYLabels{c}, 'FontSize', fontSize*0.8);
     leg_p = gobjects(numel(ets), 1);
     for k = 1:numel(ets)
-        leg_p(k) = patch(nan, nan, conditionColors(k, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
+        leg_p(k) = patch(nan, nan, conditionColors(k, :), 'EdgeColor', 'none');
     end
     set(gca, 'FontSize', fontSize*0.8);
-    legend(leg_p, conditionLabels, 'Location', 'best', 'FontSize', fontSize*0.666, 'Box', 'off');
+    legend(leg_p, conditionLabels, 'Location', 'best', 'FontSize', fontSize*0.5, 'Box', 'off');
     box off
     hold off
 

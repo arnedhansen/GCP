@@ -12,7 +12,7 @@ addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 channels      = {'Pupil'};
 channeltitles = {'Pupil Size'};
 ylabs_db      = {'Pupil Size [dB]'};
-labels        = {'25% Contrast', '50% Contrast', '75% Contrast', '100% Contrast'};
+labels        = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
 fontSize = 50;
 t_comp   = [-2 3];
 t_win    = [-0.5 2];
@@ -106,10 +106,10 @@ xlabel('Time [s]', 'FontSize', fontSize*0.8);
 ylabel(ylabs{1}, 'FontSize', fontSize*0.8);
 leg_p = gobjects(numel(ets), 1);
 for k = 1:numel(ets)
-    leg_p(k) = patch(nan, nan, colors(k, :), 'EdgeColor', 'none', 'FaceAlpha', 0.60);
+    leg_p(k) = patch(nan, nan, colors(k, :), 'EdgeColor', 'none');
 end
 set(gca, 'FontSize', fontSize*0.8);
-legend(leg_p, labels, 'Location', 'best', 'FontSize', fontSize*0.666, 'Box', 'off');
+legend(leg_p, labels, 'Location', 'best', 'FontSize', fontSize*0.5, 'Box', 'off');
 box off
 hold off
 exportgraphics(gcf, fullfile(outdir, 'GCP_gaze_pupil_size_TC_db.png'), 'Resolution', 600);

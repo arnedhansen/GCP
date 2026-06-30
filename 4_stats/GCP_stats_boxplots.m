@@ -184,7 +184,7 @@ for iVar = 1:numel(numericVars)
     elseif strcmp(varName, 'Power')
         ylabStr = 'Power [dB]';
         titleStr = 'Gamma Power';
-        ylim([1 9])
+        ylim([1 4.5])
     elseif strcmp(varName, 'dBGazeDeviation')
         ylabStr = 'Gaze Deviation [dB]';
         titleStr = 'Gaze Deviation';
