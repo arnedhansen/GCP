@@ -1827,7 +1827,7 @@ save(powspctrm_save_path, ...
 fprintf('[GED] Subject-level freq (full-window GED spectra) saved to: %s\n', powspctrm_save_path);
 
 %% Save GED analysis cohort (subjects with valid gamma power)
-SubjID = str2double(string(subjects));
+SubjID = str2double(string(subjects(:)));
 Include = any(isfinite(trials_gamma_power_plotstat), 1)';
 subject_inclusion = table(SubjID, Include, 'VariableNames', {'SubjID', 'Include'});
 save(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion', '-v7.3');
