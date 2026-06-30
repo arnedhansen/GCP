@@ -1,270 +1,47 @@
-## Classical (SIMR) power for quadratic contrast effect with residual-SD sensitivity.
-## Outputs: CSV, line plot, heatmap, and additional default SIMR powerCurve plot.
+## SESOI power simulation for quadratic contrast (subject-level condition means).
+## Residual and random-effects sensitivity axes from pilot variance-partition bootstrap.
 
-ensure_packages <- function(pkgs) {
-  missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
-  if (length(missing) > 0) {
-    install.packages(missing, repos = "https://cloud.r-project.org")
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(scales))
+
+engine_path <- file.path(getwd(), "_power_analysis", "GCP_power_analysis_SESOI_engine.R")
+if (!file.exists(engine_path)) {
+  cmd <- commandArgs(trailingOnly = FALSE)
+  file_arg <- grep("^--file=", cmd, value = TRUE)
+  if (length(file_arg) > 0) {
+    engine_path <- file.path(dirname(sub("^--file=", "", file_arg[1])), "GCP_power_analysis_SESOI_engine.R")
   }
 }
-
-ensure_packages(c("lme4", "simr", "ggplot2", "scales"))
-suppressPackageStartupMessages({
-  library(lme4)
-  library(simr)
-  library(ggplot2)
-  library(scales)
-})
-
-resolve_gcp_root <- function() {
-  if (.Platform$OS.type == "windows") {
-    return("W:/Students/Arne/GCP")
-  }
-  "/Volumes/g_psyplafor_methlab$/Students/Arne/GCP"
+if (!file.exists(engine_path)) {
+  stop("Could not find GCP_power_analysis_SESOI_engine.R")
 }
+source(engine_path)
 
-extract_powercurve_df <- function(pc, n_subjects_vec) {
-  do.call(rbind, lapply(seq_along(pc$ps), function(i) {
-    z <- pc$ps[[i]]
-    ci <- suppressWarnings(confint(z))
-    data.frame(
-      n_subjects = n_subjects_vec[i],
-      power = as.numeric(z$x / z$n),
-      lower = as.numeric(ci[1, 1]),
-      upper = as.numeric(ci[1, 2]),
-      nsim = as.integer(z$n),
-      stringsAsFactors = FALSE
-    )
-  }))
+runSESOI <- function(
+    plot_only = FALSE,
+    nsim = 1000,
+    subject_breaks = seq(10, 100, by = 10),
+    parallel_workers = 8) {
+  config <- list(
+    label = "SESOI quadratic PeakAmplitude",
+    pilot_outcome = "PeakAmplitude",
+    model_scope = "quadratic",
+    sim_col = "PeakAmplitude",
+    target_term = "contrast_num_c2",
+    sesoi_beta = -0.10,
+    true_beta = 1.5 * (-0.10),
+    linear_nuisance_beta = 0.048,
+    subject_dropout_rate = 0.10,
+    default_outcome_mean = 0.471,
+    output_prefix_base = "GCP_power_analysis_SESOI_quadratic",
+    plot_title_base = "Power Analysis: SESOI Quadratic Slope (subject-level condition means)"
+  )
+  run_sesoi_power(
+    config = config,
+    plot_only = plot_only,
+    nsim = nsim,
+    subject_breaks = subject_breaks,
+    parallel_workers = parallel_workers,
+    sensitivity_axes = c("residual", "random_effects")
+  )
 }
-
-runSESOI <- function() {
-  seed <- 123
-  # Fast mode: fewer simulations and a coarser N grid for screening.
-  nsim <- 40
-  strict_power_target <- 0.90
-  subject_breaks <- seq(20, 100, by = 20)
-  contrast_levels <- c("25", "50", "75", "100")
-  trials_per_condition <- 160
-
-  sesoi_beta <- -0.10
-  true_beta <- 1.5 * sesoi_beta
-  pilot_beta_contrast_num_c2 <- -0.0858938094095276
-
-  linear_nuisance_beta <- 0.0478688311147751
-  outcome_mean <- 0.471001962697814
-  baseline_random_intercept_sd <- 0.328361971585703
-
-  # Pilot N=10 weakly identifies slope variances; apply conservative non-zero floors.
-  baseline_random_slope_sd <- 0.05
-  baseline_random_quadratic_slope_sd <- 0.05
-
-  residual_sd_levels <- c(0.10, 0.30, 0.47)
-  baseline_residual_sd <- residual_sd_levels[2L]
-  residual_multipliers <- residual_sd_levels / baseline_residual_sd
-  log_msg <- function(...) {
-    cat(sprintf("[%s] ", format(Sys.time(), "%H:%M:%S")), ..., "\n", sep = "")
-    flush.console()
-  }
-
-  output_prefix <- "GCP_power_analysis_SESOI_quadratic"
-  figure_res_dpi <- 300L
-  plot_title <- sprintf(
-    "SESOI quadratic classical power (SESOI=%s; true(DGP)=%s; pilot c2=%s)",
-    format(sesoi_beta, digits = 3),
-    format(true_beta, digits = 3),
-    format(pilot_beta_contrast_num_c2, digits = 3)
-  )
-
-  gcp_root <- resolve_gcp_root()
-  figure_output_dir <- file.path(gcp_root, "figures", "power_analysis")
-  data_output_dir <- file.path(gcp_root, "data", "power_analysis")
-  dir.create(figure_output_dir, recursive = TRUE, showWarnings = FALSE)
-  dir.create(data_output_dir, recursive = TRUE, showWarnings = FALSE)
-
-  make_template <- function(n_subjects) {
-    Subject <- factor(rep(seq_len(n_subjects), each = length(contrast_levels) * trials_per_condition))
-    contrast <- factor(
-      rep(rep(contrast_levels, each = trials_per_condition), times = n_subjects),
-      levels = contrast_levels,
-      ordered = TRUE
-    )
-    contrast_num <- as.numeric(as.character(contrast))
-    contrast_num_c <- as.numeric(scale(contrast_num, center = TRUE, scale = TRUE))
-    contrast_num_c2 <- contrast_num_c^2
-    data.frame(Subject = Subject, contrast_num_c = contrast_num_c, contrast_num_c2 = contrast_num_c2)
-  }
-
-  simulate_response <- function(dat, beta_lin, beta_quad, ri_sd, rs_lin_sd, rs_quad_sd, residual_sd, mu) {
-    n_sub <- nlevels(dat$Subject)
-    u0 <- rnorm(n_sub, mean = 0, sd = ri_sd)
-    u1 <- rnorm(n_sub, mean = 0, sd = rs_lin_sd)
-    u2 <- rnorm(n_sub, mean = 0, sd = rs_quad_sd)
-    x <- dat$contrast_num_c
-    x2 <- dat$contrast_num_c2
-    y_mu <- mu + u0[dat$Subject] + (beta_lin + u1[dat$Subject]) * x + (beta_quad + u2[dat$Subject]) * x2
-    y_mu + rnorm(nrow(dat), mean = 0, sd = residual_sd)
-  }
-
-  set.seed(seed)
-  log_msg("Building simulation template and base model.")
-  template_dat <- make_template(max(subject_breaks))
-  template_dat$gamma_power <- simulate_response(
-    template_dat,
-    beta_lin = linear_nuisance_beta,
-    beta_quad = true_beta,
-    ri_sd = baseline_random_intercept_sd,
-    rs_lin_sd = baseline_random_slope_sd,
-    rs_quad_sd = baseline_random_quadratic_slope_sd,
-    residual_sd = baseline_residual_sd,
-    mu = outcome_mean
-  )
-
-  base_model <- lmer(
-    gamma_power ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 | Subject),
-    data = template_dat,
-    REML = FALSE,
-    control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-  )
-
-  fixef(base_model)["(Intercept)"] <- outcome_mean
-  fixef(base_model)["contrast_num_c"] <- linear_nuisance_beta
-  fixef(base_model)["contrast_num_c2"] <- true_beta
-  VarCorr(base_model) <- list(
-    Subject = matrix(
-      c(
-        baseline_random_intercept_sd^2, 0, 0,
-        0, baseline_random_slope_sd^2, 0,
-        0, 0, baseline_random_quadratic_slope_sd^2
-      ),
-      nrow = 3,
-      byrow = TRUE
-    )
-  )
-
-  scenario_df <- data.frame(
-    scenario_label = sprintf("res_%.2f", residual_multipliers),
-    residual_sd = residual_sd_levels,
-    residual_sd_label = sprintf("%.2f", residual_sd_levels),
-    stringsAsFactors = FALSE
-  )
-
-  power_rows <- lapply(seq_len(nrow(scenario_df)), function(i) {
-    sc <- scenario_df[i, , drop = FALSE]
-    log_msg(sprintf("Running scenario %d/%d | residual SD=%s | nsim=%d", i, nrow(scenario_df), sc$residual_sd_label, nsim))
-    model_sc <- base_model
-    sigma(model_sc) <- sc$residual_sd
-    pc <- suppressWarnings(powerCurve(
-      model_sc,
-      test = fixed("contrast_num_c2"),
-      along = "Subject",
-      breaks = subject_breaks,
-      nsim = nsim,
-      progress = TRUE
-    ))
-    out <- extract_powercurve_df(pc, subject_breaks)
-    out$scenario_label <- sc$scenario_label
-    out$residual_sd <- sc$residual_sd
-    out$residual_sd_label <- sc$residual_sd_label
-    out
-  })
-  power_df <- do.call(rbind, power_rows)
-
-  power_df$power_unconditional <- power_df$power
-  power_df$lower_unconditional <- power_df$lower
-  power_df$upper_unconditional <- power_df$upper
-
-  write.csv(power_df, file.path(data_output_dir, paste0(output_prefix, "_curve.csv")), row.names = FALSE)
-  log_msg("Saved curve CSV.")
-
-  summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
-    df <- df[order(df$n_subjects), , drop = FALSE]
-    hit <- df[df$power_unconditional >= strict_power_target, "n_subjects", drop = TRUE]
-    data.frame(
-      scenario_label = as.character(df$scenario_label[1]),
-      residual_sd = as.numeric(df$residual_sd[1]),
-      N_min_for_90 = if (length(hit) > 0) min(hit) else NA_integer_,
-      power_at_max_N = df$power_unconditional[which.max(df$n_subjects)],
-      stringsAsFactors = FALSE
-    )
-  }))
-  write.csv(summary_rows, file.path(data_output_dir, paste0(output_prefix, "_summary.csv")), row.names = FALSE)
-  log_msg("Saved summary CSV.")
-
-  curve_plot <- ggplot(
-    power_df,
-    aes(x = .data$n_subjects, y = .data$power_unconditional, color = .data$residual_sd_label, group = .data$residual_sd_label)
-  ) +
-    geom_errorbar(aes(ymin = .data$lower_unconditional, ymax = .data$upper_unconditional), linewidth = 0.6, width = 1.6, alpha = 0.70) +
-    geom_line(linewidth = 0.9, linetype = "dotted") +
-    geom_point(size = 2.8) +
-    geom_hline(yintercept = strict_power_target, linetype = "dashed", color = "grey45", linewidth = 0.7) +
-    scale_color_manual(
-      values = stats::setNames(c("#1B9E77", "#D95F02", "#7570B3"), sprintf("%.2f", residual_sd_levels)),
-      breaks = sprintf("%.2f", residual_sd_levels),
-      labels = sprintf("%.2f", residual_sd_levels)
-    ) +
-    scale_x_continuous(breaks = sort(unique(subject_breaks))) +
-    scale_y_continuous(labels = scales::percent_format(accuracy = 1), limits = c(0, 1), breaks = c(0, 0.25, 0.50, 0.75, 0.90, 1)) +
-    labs(x = "Subjects", y = "Classical power", color = "Residuals SD", title = plot_title) +
-    theme_classic(base_size = 18, base_family = "Arial") +
-    theme(
-      panel.background = element_rect(fill = "white", color = NA),
-      plot.background = element_rect(fill = "white", color = NA),
-      panel.grid = element_blank(),
-      axis.line = element_line(color = "black", linewidth = 1.2),
-      axis.ticks = element_line(color = "black", linewidth = 1.0),
-      axis.ticks.length = grid::unit(0.25, "cm"),
-      axis.title = element_text(size = 20),
-      axis.text = element_text(size = 16, color = "black"),
-      legend.position = "right",
-      legend.title = element_text(size = 15),
-      legend.text = element_text(size = 13),
-      plot.title = element_text(size = 24, face = "plain", hjust = 0.5)
-    )
-
-  png(
-    file = file.path(figure_output_dir, paste0(output_prefix, ".png")),
-    width = 10, height = 6.5, units = "in", res = figure_res_dpi
-  )
-  print(curve_plot)
-  dev.off()
-  log_msg("Saved line plot PNG.")
-
-  heatmap_plot <- ggplot(power_df, aes(x = factor(.data$n_subjects), y = .data$residual_sd_label, fill = .data$power_unconditional)) +
-    geom_tile(color = "white", linewidth = 1.1) +
-    geom_text(aes(label = sprintf("%.2f", .data$power_unconditional)), color = "white", size = 3.5, fontface = "bold", family = "Arial") +
-    scale_fill_gradientn(
-      colours = c("#8E0F1F", "#F46D43", "#FEE08B", "#66BD63", "#0B6E3A"),
-      values = c(0.00, 0.60, 0.79, 0.80, 1.00),
-      limits = c(0, 1),
-      breaks = seq(0, 1, by = 0.2),
-      labels = sprintf("%.2f", seq(0, 1, by = 0.2))
-    ) +
-    coord_fixed() +
-    labs(x = "Subjects", y = "Residuals SD", fill = "Classical power", title = plot_title) +
-    theme_minimal(base_size = 16, base_family = "Arial") +
-    theme(
-      panel.grid = element_blank(),
-      panel.background = element_rect(fill = "white", color = NA),
-      plot.background = element_rect(fill = "white", color = NA),
-      axis.title = element_text(size = 13),
-      axis.text = element_text(size = 11),
-      legend.position = "right",
-      legend.title = element_text(size = 11),
-      legend.text = element_text(size = 10),
-      plot.title = element_text(size = 20, face = "plain", hjust = 0.5)
-    )
-
-  png(
-    file = file.path(figure_output_dir, paste0(output_prefix, "_heatmap.png")),
-    width = 11, height = 6.5, units = "in", res = figure_res_dpi
-  )
-  print(heatmap_plot)
-  dev.off()
-  log_msg("Saved heatmap PNG.")
-
-  power_df
-}
-
-result <- runSESOI()

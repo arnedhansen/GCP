@@ -1,5 +1,6 @@
 ## GCP Pilot Statistics for Power Parameterization
-## This script exports pilot descriptive statistics for simulation-based power analyses.
+## Exports descriptive statistics and subject-level variance-partition bootstrap
+## from the subject-level master matrix (GCP_merged_data.csv).
 
 ensure_packages <- function(pkgs) {
   missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
@@ -12,6 +13,19 @@ ensure_packages(c("lme4"))
 suppressPackageStartupMessages({
   library(lme4)
 })
+
+helper_path <- file.path(getwd(), "_power_analysis", "GCP_power_analysis_helpers.R")
+if (!file.exists(helper_path)) {
+  cmd <- commandArgs(trailingOnly = FALSE)
+  file_arg <- grep("^--file=", cmd, value = TRUE)
+  if (length(file_arg) > 0) {
+    helper_path <- file.path(dirname(sub("^--file=", "", file_arg[1])), "GCP_power_analysis_helpers.R")
+  }
+}
+if (!file.exists(helper_path)) {
+  stop("Could not find GCP_power_analysis_helpers.R")
+}
+source(helper_path)
 
 set.seed(123)
 
@@ -40,21 +54,21 @@ roots <- resolve_project_roots()
 PREFERRED_OUTPUT_DIR <- file.path(roots$data_root, "data", "pilot_stats")
 FALLBACK_OUTPUT_DIR <- file.path(getwd(), "data", "pilot_stats")
 
-resolve_input_file <- function() {
+resolve_master_matrix_file <- function() {
   candidates <- c(
-    file.path(roots$data_root, "data", "features", "GCP_eeg_GED_gamma_metrics_trials.csv"),
-    file.path(getwd(), "data", "features", "GCP_eeg_GED_gamma_metrics_trials.csv")
+    file.path(roots$data_root, "data", "features", "GCP_merged_data.csv"),
+    file.path(getwd(), "data", "features", "GCP_merged_data.csv")
   )
   hit <- candidates[file.exists(candidates)]
   if (length(hit) == 0) {
     stop(
-      "Could not find GCP_eeg_GED_gamma_metrics_trials.csv. Checked: ",
+      "Could not find GCP_merged_data.csv (subject-level master matrix). Checked: ",
       paste(candidates, collapse = " | ")
     )
   }
   hit[1]
 }
-INPUT_FILE <- resolve_input_file()
+INPUT_FILE <- resolve_master_matrix_file()
 
 resolve_merged_trials_csv <- function() {
   candidates <- c(
@@ -318,6 +332,67 @@ normalize_pilot_contrast_numbers <- function(cond) {
   num
 }
 
+prepare_master_matrix_gamma <- function(dat) {
+  id_col <- if ("ID" %in% names(dat)) {
+    "ID"
+  } else if ("Subject" %in% names(dat)) {
+    "Subject"
+  } else {
+    NA_character_
+  }
+  if (is.na(id_col) || !"Condition" %in% names(dat)) {
+    stop("Master matrix must contain ID/Subject and Condition columns.")
+  }
+
+  freq_col <- intersect(c("Frequency", "PeakFrequency", "GED_PeakFrequency"), names(dat))[1]
+  pow_col <- intersect(c("Power", "PeakAmplitude", "GED_PeakAmplitude"), names(dat))[1]
+  if (is.na(freq_col) || is.na(pow_col)) {
+    stop(
+      "Master matrix must contain gamma frequency and power columns ",
+      "(Frequency/Power or PeakFrequency/PeakAmplitude)."
+    )
+  }
+
+  out <- data.frame(
+    Subject = dat[[id_col]],
+    Condition = dat$Condition,
+    PeakFrequency = as.numeric(dat[[freq_col]]),
+    PeakAmplitude = as.numeric(dat[[pow_col]]),
+    stringsAsFactors = FALSE
+  )
+
+  if ("Include" %in% names(dat)) {
+    include_flag <- dat$Include
+    if (is.logical(include_flag)) {
+      out <- out[include_flag, , drop = FALSE]
+    } else {
+      out <- out[as.integer(include_flag) == 1L, , drop = FALSE]
+    }
+  }
+
+  out$contrast_num <- normalize_pilot_contrast_numbers(out$Condition)
+  out <- out[is.finite(out$contrast_num), , drop = FALSE]
+  out$Contrast <- factor(out$contrast_num, levels = c(25, 50, 75, 100), ordered = TRUE)
+  out$Subject <- factor(out$Subject)
+  out$contrast_num_c <- as.numeric(scale(out$contrast_num, center = TRUE, scale = TRUE))
+  out$contrast_num_c2 <- out$contrast_num_c^2
+  out <- out[is.finite(out$PeakFrequency) & is.finite(out$PeakAmplitude), , drop = FALSE]
+
+  # Collapse accidental duplicate subject-condition rows by averaging.
+  out <- stats::aggregate(
+    cbind(PeakFrequency, PeakAmplitude) ~ Subject + Contrast + contrast_num + contrast_num_c + contrast_num_c2,
+    data = out,
+    FUN = mean,
+    na.rm = TRUE
+  )
+  assert_one_row_per_subject_condition(out)
+
+  out[, c(
+    "Subject", "Contrast", "contrast_num", "contrast_num_c", "contrast_num_c2",
+    "PeakFrequency", "PeakAmplitude"
+  )]
+}
+
 ## Subject-level nonparametric bootstrap of residual SD (sigma) for the interaction lmer.
 bootstrap_interaction_residual_sigma <- function(take, B = 500L, rng_seed = 123L) {
   set.seed(as.integer(rng_seed))
@@ -387,76 +462,6 @@ bootstrap_interaction_residual_sigma <- function(take, B = 500L, rng_seed = 123L
   )
 }
 
-## Subject-level bootstrap of residual SD (sigma) for PeakFrequency / PeakAmplitude lmers (same
-## formula as the final mm_freq / mm_power objects, including after singular refit).
-bootstrap_subject_level_residual_sigma <- function(subject_level_means, formula_obj, B = 500L, rng_seed = 123L) {
-  set.seed(as.integer(rng_seed))
-  slm <- subject_level_means
-  slm$Subject <- factor(slm$Subject)
-  subj_levels <- levels(slm$Subject)
-  n_sub <- length(subj_levels)
-  sig <- rep(NA_real_, B)
-  singular_boot <- 0L
-  for (b in seq_len(B)) {
-    idx <- sample.int(n_sub, replace = TRUE)
-    parts <- vector("list", length(idx))
-    for (j in seq_along(idx)) {
-      sb <- subj_levels[idx[j]]
-      ch <- slm[slm$Subject == sb, , drop = FALSE]
-      if (nrow(ch) == 0) {
-        next
-      }
-      ch$Subject <- factor(rep(paste0(as.character(sb), ".__b", j), nrow(ch)))
-      parts[[j]] <- ch
-    }
-    ok_parts <- parts[!vapply(parts, is.null, logical(1))]
-    if (length(ok_parts) == 0) {
-      next
-    }
-    take_b <- do.call(rbind, ok_parts)
-    take_b$contrast_num_c <- as.numeric(scale(take_b$contrast_num, center = TRUE, scale = TRUE))
-    take_b$contrast_num_c2 <- take_b$contrast_num_c^2
-    if (nlevels(droplevels(take_b$Subject)) < 3L) {
-      next
-    }
-    fit <- tryCatch(
-      suppressMessages(lmer(
-        formula_obj,
-        data = take_b,
-        REML = FALSE,
-        control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-      )),
-      error = function(e) NULL
-    )
-    if (!is.null(fit)) {
-      if (isTRUE(lme4::isSingular(fit, tol = 1e-4))) {
-        singular_boot <- singular_boot + 1L
-      }
-      sg <- tryCatch(sigma(fit), error = function(e) NA_real_)
-      if (is.finite(sg)) {
-        sig[b] <- sg
-      }
-    }
-  }
-  ok <- is.finite(sig)
-  rate <- mean(ok)
-  n_ok <- sum(ok)
-  if (n_ok < 10L) {
-    stop(
-      "Subject-level residual bootstrap produced too few valid sigma draws (",
-      n_ok, " < 10; success rate ", sprintf("%.2f", rate), ").",
-      call. = FALSE
-    )
-  }
-  qs <- stats::quantile(sig[ok], probs = c(0.025, 0.5, 0.975), names = FALSE)
-  list(
-    quantiles = qs,
-    success_rate = rate,
-    sigma_vector = sig,
-    singular_replicates = singular_boot,
-    B = B
-  )
-}
 
 fit_and_export_interaction_pilot <- function(merged_path, output_dir) {
   if (is.na(merged_path) || length(merged_path) != 1L || !nzchar(merged_path) || !file.exists(merged_path)) {
@@ -643,56 +648,28 @@ fit_and_export_interaction_pilot <- function(merged_path, output_dir) {
   out
 }
 
-message("Loading pilot data from: ", INPUT_FILE)
-dat <- read.csv(INPUT_FILE, stringsAsFactors = FALSE)
-
-required_cols <- c("Subject", "Contrast", "PeakFrequency", "PeakAmplitude")
-missing_cols <- setdiff(required_cols, names(dat))
-if (length(missing_cols) > 0) {
-  stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
+message("Loading subject-level master matrix from: ", INPUT_FILE)
+raw_dat <- read.csv(INPUT_FILE, stringsAsFactors = FALSE)
+subject_level_means <- prepare_master_matrix_gamma(raw_dat)
+if (nrow(subject_level_means) < 20L || nlevels(subject_level_means$Subject) < 3L) {
+  stop(
+    "Insufficient subject-level master matrix rows for power parameterization (need >=20 rows, >=3 subjects)."
+  )
 }
+message(sprintf(
+  "Prepared %d subject-condition rows across %d subjects.",
+  nrow(subject_level_means), nlevels(subject_level_means$Subject)
+))
 
-dat$Subject <- factor(dat$Subject)
-dat$Contrast <- factor(dat$Contrast, levels = c(25, 50, 75, 100), ordered = TRUE)
-dat$contrast_num <- as.numeric(as.character(dat$Contrast))
-dat$contrast_num_c <- as.numeric(scale(dat$contrast_num, center = TRUE, scale = TRUE))
-dat$contrast_num_c2 <- dat$contrast_num_c^2
-
-message("Computing trial-count diagnostics.")
-trial_counts_by_subject_condition <- aggregate(
-  rep(1, nrow(dat)) ~ Subject + Contrast,
-  data = dat,
-  FUN = length
+message("Computing subject-condition counts.")
+subject_counts_by_condition <- aggregate(
+  Subject ~ Contrast,
+  data = subject_level_means,
+  FUN = function(x) length(unique(x))
 )
-names(trial_counts_by_subject_condition)[3] <- "n_trials"
+names(subject_counts_by_condition)[2] <- "n_subjects"
 
-message("Computing trial-level descriptive stats by condition.")
-trial_level_frequency <- do.call(
-  rbind,
-  lapply(levels(dat$Contrast), function(cc) {
-    x <- dat$PeakFrequency[dat$Contrast == cc]
-    cbind(outcome = "PeakFrequency", contrast = cc, summary_stats(x))
-  })
-)
-
-trial_level_power <- do.call(
-  rbind,
-  lapply(levels(dat$Contrast), function(cc) {
-    x <- dat$PeakAmplitude[dat$Contrast == cc]
-    cbind(outcome = "PeakAmplitude", contrast = cc, summary_stats(x))
-  })
-)
-
-trial_level_descriptives <- rbind(trial_level_frequency, trial_level_power)
-
-message("Computing subject-level means and descriptive stats.")
-subject_level_means <- aggregate(
-  cbind(PeakFrequency, PeakAmplitude) ~ Subject + Contrast + contrast_num + contrast_num_c + contrast_num_c2,
-  data = dat,
-  FUN = mean,
-  na.rm = TRUE
-)
-
+message("Computing subject-level descriptive stats by condition.")
 subject_level_frequency <- do.call(
   rbind,
   lapply(levels(subject_level_means$Contrast), function(cc) {
@@ -710,97 +687,156 @@ subject_level_power <- do.call(
 )
 
 subject_level_descriptives <- rbind(subject_level_frequency, subject_level_power)
+trial_level_descriptives <- subject_level_descriptives
+trial_counts_by_subject_condition <- aggregate(
+  rep(1, nrow(subject_level_means)) ~ Subject + Contrast,
+  data = subject_level_means,
+  FUN = length
+)
+names(trial_counts_by_subject_condition)[3] <- "n_rows"
 
 message("Running paired condition contrasts on subject-level means.")
 pairwise_frequency <- paired_contrasts(subject_level_means, "PeakFrequency")
 pairwise_power <- paired_contrasts(subject_level_means, "PeakAmplitude")
 pairwise_contrasts <- rbind(pairwise_frequency, pairwise_power)
 
-message("Fitting mixed models for parameterization guidance.")
-mm_freq <- fit_subject_level_model_stable(
-  formula_correlated = PeakFrequency ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 | Subject),
-  formula_uncorrelated = PeakFrequency ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 || Subject),
-  formula_linear_uncorrelated = PeakFrequency ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c || Subject),
-  data = subject_level_means,
-  outcome_label = "PeakFrequency (subject-level means)"
+message("Fitting subject-level mixed models for power parameterization.")
+mm_freq_linear_fit <- fit_lmer_with_fallbacks(
+  build_subject_level_formula_list("PeakFrequency", model_scope = "linear"),
+  subject_level_means
 )
+if (is.null(mm_freq_linear_fit)) {
+  stop("Linear subject-level PeakFrequency model failed to fit.")
+}
+mm_freq_linear <- mm_freq_linear_fit$fit
 
-mm_power <- fit_subject_level_model_stable(
-  formula_correlated = PeakAmplitude ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 | Subject),
-  formula_uncorrelated = PeakAmplitude ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c + contrast_num_c2 || Subject),
-  formula_linear_uncorrelated = PeakAmplitude ~ contrast_num_c + contrast_num_c2 + (1 + contrast_num_c || Subject),
-  data = subject_level_means,
-  outcome_label = "PeakAmplitude (subject-level means)"
+mm_power_fit <- fit_lmer_with_fallbacks(
+  build_subject_level_formula_list("PeakAmplitude", model_scope = "quadratic"),
+  subject_level_means
 )
+if (is.null(mm_power_fit)) {
+  stop("Quadratic subject-level PeakAmplitude model failed to fit.")
+}
+mm_power <- mm_power_fit$fit
 
 mixed_model_stats <- rbind(
-  extract_mixed_model_stats(mm_freq, "PeakFrequency"),
-  extract_mixed_model_stats(mm_power, "PeakAmplitude")
+  cbind(extract_mixed_model_stats(mm_freq_linear, "PeakFrequency"), model_scope = "linear"),
+  cbind(extract_mixed_model_stats(mm_power, "PeakAmplitude"), model_scope = "quadratic")
 )
 
 random_effects_summary <- rbind(
-  data.frame(outcome = "PeakFrequency", as.data.frame(VarCorr(mm_freq))),
-  data.frame(outcome = "PeakAmplitude", as.data.frame(VarCorr(mm_power)))
+  cbind(outcome = "PeakFrequency", model_scope = "linear", as.data.frame(VarCorr(mm_freq_linear))),
+  cbind(outcome = "PeakAmplitude", model_scope = "quadratic", as.data.frame(VarCorr(mm_power)))
 )
 
-triangulated_manifest <- build_triangulated_manifest(subject_level_means, mm_freq, mm_power)
+triangulated_manifest <- build_triangulated_manifest(subject_level_means, mm_freq_linear, mm_power)
 
 SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B <- 500L
+pilot_n_subjects <- nlevels(subject_level_means$Subject)
+freq_formula <- stats::formula(mm_freq_linear)
+power_formula <- stats::formula(mm_power)
+
 message(
-  "Bootstrapping residual SD for subject-level models (B=",
-  SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B, ", PeakFrequency) …"
+  "Bootstrapping full variance partition for linear PeakFrequency (B=",
+  SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B, ") …"
 )
-bs_sigma_freq <- bootstrap_subject_level_residual_sigma(
+bs_freq <- bootstrap_subject_level_variance_partition(
   subject_level_means,
-  stats::formula(mm_freq),
+  freq_formula,
   B = SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B,
   rng_seed = 123L
 )
 message(
-  "  sigma q2.5 / q50 / q97.5: ",
-  sprintf("%.4f, %.4f, %.4f", bs_sigma_freq$quantiles[1], bs_sigma_freq$quantiles[2], bs_sigma_freq$quantiles[3]),
-  " | valid: ", sprintf("%.1f%%", 100 * bs_sigma_freq$success_rate)
+  "  residual sigma q2.5/q50/q97.5: ",
+  paste(sprintf("%.4f", component_quantile(bs_freq$draws$residual_sd)), collapse = ", "),
+  " | RI: ",
+  paste(sprintf("%.4f", component_quantile(bs_freq$draws$random_intercept_sd)), collapse = ", ")
 )
-if (bs_sigma_freq$singular_replicates > 0L) {
-  note_pilot_warning(sprintf(
-    "PeakFrequency subject-level residual bootstrap: %d of %d replicate lmer fits were singular (tol=1e-4).",
-    as.integer(bs_sigma_freq$singular_replicates),
-    as.integer(SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B)
-  ))
-}
+
 message(
-  "Bootstrapping residual SD for subject-level models (B=",
-  SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B, ", PeakAmplitude) …"
+  "Bootstrapping full variance partition for quadratic PeakAmplitude (B=",
+  SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B, ") …"
 )
-bs_sigma_power <- bootstrap_subject_level_residual_sigma(
+bs_power <- bootstrap_subject_level_variance_partition(
   subject_level_means,
-  stats::formula(mm_power),
+  power_formula,
   B = SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B,
   rng_seed = 124L
 )
 message(
-  "  sigma q2.5 / q50 / q97.5: ",
-  sprintf("%.4f, %.4f, %.4f", bs_sigma_power$quantiles[1], bs_sigma_power$quantiles[2], bs_sigma_power$quantiles[3]),
-  " | valid: ", sprintf("%.1f%%", 100 * bs_sigma_power$success_rate)
+  "  residual sigma q2.5/q50/q97.5: ",
+  paste(sprintf("%.4f", component_quantile(bs_power$draws$residual_sd)), collapse = ", ")
 )
-if (bs_sigma_power$singular_replicates > 0L) {
+
+power_fe <- lme4::fixef(mm_power)
+pilot_variance_partition_summary <- rbind(
+  summarize_variance_partition_bootstrap(
+    bs_freq, "PeakFrequency", "linear", basename(INPUT_FILE), pilot_n_subjects,
+    paste(trimws(deparse(freq_formula)), collapse = " "),
+    outcome_mean = mean(subject_level_means$PeakFrequency, na.rm = TRUE),
+    linear_nuisance_beta = NA_real_
+  ),
+  summarize_variance_partition_bootstrap(
+    bs_power, "PeakAmplitude", "quadratic", basename(INPUT_FILE), pilot_n_subjects,
+    paste(trimws(deparse(power_formula)), collapse = " "),
+    outcome_mean = mean(subject_level_means$PeakAmplitude, na.rm = TRUE),
+    linear_nuisance_beta = if ("contrast_num_c" %in% names(power_fe)) {
+      unname(power_fe[["contrast_num_c"]])
+    } else {
+      NA_real_
+    }
+  )
+)
+
+if (bs_freq$singular_replicates > 0L) {
   note_pilot_warning(sprintf(
-    "PeakAmplitude subject-level residual bootstrap: %d of %d replicate lmer fits were singular (tol=1e-4).",
-    as.integer(bs_sigma_power$singular_replicates),
-    as.integer(SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B)
+    "PeakFrequency variance bootstrap: %d of %d replicate fits were singular.",
+    bs_freq$singular_replicates, SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B
   ))
 }
+if (bs_power$singular_replicates > 0L) {
+  note_pilot_warning(sprintf(
+    "PeakAmplitude variance bootstrap: %d of %d replicate fits were singular.",
+    bs_power$singular_replicates, SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B
+  ))
+}
+
 pilot_subject_level_residual_bootstrap <- data.frame(
   outcome = c("PeakFrequency", "PeakAmplitude"),
-  residual_sd_q025 = c(bs_sigma_freq$quantiles[1], bs_sigma_power$quantiles[1]),
-  residual_sd_q50 = c(bs_sigma_freq$quantiles[2], bs_sigma_power$quantiles[2]),
-  residual_sd_q975 = c(bs_sigma_freq$quantiles[3], bs_sigma_power$quantiles[3]),
+  model_scope = c("linear", "quadratic"),
+  analysis_unit = rep("subject_level_condition_mean", 2L),
+  observations_per_subject = rep(SUBJECT_CONDITIONS_PER_SUBJECT, 2L),
+  data_source = rep(basename(INPUT_FILE), 2L),
+  residual_sd_q025 = c(
+    component_quantile(bs_freq$draws$residual_sd)[1],
+    component_quantile(bs_power$draws$residual_sd)[1]
+  ),
+  residual_sd_q50 = c(
+    component_quantile(bs_freq$draws$residual_sd)[2],
+    component_quantile(bs_power$draws$residual_sd)[2]
+  ),
+  residual_sd_q975 = c(
+    component_quantile(bs_freq$draws$residual_sd)[3],
+    component_quantile(bs_power$draws$residual_sd)[3]
+  ),
+  random_intercept_sd_q50 = c(
+    component_quantile(bs_freq$draws$random_intercept_sd)[2],
+    component_quantile(bs_power$draws$random_intercept_sd)[2]
+  ),
+  random_slope_sd_q50 = c(
+    component_quantile(bs_freq$draws$random_slope_sd)[2],
+    component_quantile(bs_power$draws$random_slope_sd)[2]
+  ),
+  random_quadratic_slope_sd_q50 = c(
+    component_quantile(bs_freq$draws$random_quadratic_slope_sd)[2],
+    component_quantile(bs_power$draws$random_quadratic_slope_sd)[2]
+  ),
   residual_bootstrap_B = SUBJECT_LEVEL_RESIDUAL_BOOTSTRAP_B,
-  residual_bootstrap_success_rate = c(bs_sigma_freq$success_rate, bs_sigma_power$success_rate),
-  singular_replicates = c(bs_sigma_freq$singular_replicates, bs_sigma_power$singular_replicates),
+  residual_bootstrap_success_rate = c(bs_freq$success_rate, bs_power$success_rate),
+  singular_replicates = c(bs_freq$singular_replicates, bs_power$singular_replicates),
   lmer_formula = c(
-    paste(trimws(deparse(stats::formula(mm_freq))), collapse = " "),
-    paste(trimws(deparse(stats::formula(mm_power))), collapse = " ")
+    paste(trimws(deparse(freq_formula)), collapse = " "),
+    paste(trimws(deparse(power_formula)), collapse = " ")
   ),
   stringsAsFactors = FALSE
 )
@@ -854,9 +890,14 @@ write.csv(
   file.path(output_dir, "pilot_subject_level_residual_sigma_bootstrap.csv"),
   row.names = FALSE
 )
+write.csv(
+  pilot_variance_partition_summary,
+  file.path(output_dir, "pilot_subject_level_variance_partition_summary.csv"),
+  row.names = FALSE
+)
 message(
   "Wrote: ",
-  file.path(output_dir, "pilot_subject_level_residual_sigma_bootstrap.csv")
+  file.path(output_dir, "pilot_subject_level_variance_partition_summary.csv")
 )
 
 interaction_pilot_params <- fit_and_export_interaction_pilot(MERGED_TRIALS_FILE, output_dir)
@@ -872,6 +913,11 @@ saveRDS(
     mixed_model_random_effects = random_effects_summary,
     triangulated_manifest = triangulated_manifest,
     pilot_subject_level_residual_bootstrap = pilot_subject_level_residual_bootstrap,
+    pilot_variance_partition_summary = pilot_variance_partition_summary,
+    variance_partition_bootstrap_draws = list(
+      PeakFrequency = bs_freq$draws,
+      PeakAmplitude = bs_power$draws
+    ),
     interaction_pilot_params = interaction_pilot_params
   ),
   file = file.path(output_dir, "pilot_stats_for_power_analysis.rds")
