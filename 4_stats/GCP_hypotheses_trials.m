@@ -242,7 +242,8 @@ plot_raincloud_trial(gaze_MSRate, gaze_Condition, colors, condLabels, ...
 report_trend_trial('H1 MS Rate (dB)', gaze_dBMSRate, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
-exportgraphics(fig1, fullfile(fig_dir, 'GCP_H1_microsaccade_rate_trials.png'), 'Resolution', 600);
+set(fig1, 'PaperPositionMode', 'auto');
+print(fig1, fullfile(fig_dir, 'GCP_H1_microsaccade_rate_trials.png'), '-dpng', '-r600');
 
 %% FIGURE 2: H2 — Eye Velocity (trial-level)
 
@@ -261,7 +262,8 @@ plot_raincloud_trial(gaze_Vel2D, gaze_Condition, colors, condLabels, ...
 report_trend_trial('H2 Velocity (dB)', gaze_dBVel2D, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
-exportgraphics(fig2, fullfile(fig_dir, 'GCP_H2_eye_velocity_trials.png'), 'Resolution', 600);
+set(fig2, 'PaperPositionMode', 'auto');
+print(fig2, fullfile(fig_dir, 'GCP_H2_eye_velocity_trials.png'), '-dpng', '-r600');
 
 %% FIGURE 3: H3 — Pupil Size (trial-level)
 
@@ -280,7 +282,8 @@ plot_raincloud_trial(gaze_PupilSize, gaze_Condition, colors, condLabels, ...
 report_trend_trial('H3 Pupil (dB)', gaze_dBPupil, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
-exportgraphics(fig3, fullfile(fig_dir, 'GCP_H3_pupil_trials.png'), 'Resolution', 600);
+set(fig3, 'PaperPositionMode', 'auto');
+print(fig3, fullfile(fig_dir, 'GCP_H3_pupil_trials.png'), '-dpng', '-r600');
 
 %% FIGURE 4: H4 — BCEA (trial-level)
 
@@ -299,7 +302,8 @@ plot_raincloud_trial(gaze_BCEA, gaze_Condition, colors, condLabels, ...
 report_trend_trial('H4 BCEA (dB)', gaze_dBBCEA, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
-exportgraphics(fig4, fullfile(fig_dir, 'GCP_H4_bcea_trials.png'), 'Resolution', 600);
+set(fig4, 'PaperPositionMode', 'auto');
+print(fig4, fullfile(fig_dir, 'GCP_H4_bcea_trials.png'), '-dpng', '-r600');
 
 %% FIGURE 5: H5 + H6 — Gamma Peak Frequency & Power (trial-level)
 
@@ -362,7 +366,8 @@ report_trend_trial('H6 GED Peak Amp', ged_PeakAmp, ged_Condition, ...
 report_trend_trial('H6 GED BB Power', ged_BBPower, ged_Condition, ...
     ged_Subject, contrast_vals);
 
-exportgraphics(fig5, fullfile(fig_dir, 'GCP_H5H6_gamma_trials.png'), 'Resolution', 600);
+set(fig5, 'PaperPositionMode', 'auto');
+print(fig5, fullfile(fig_dir, 'GCP_H5H6_gamma_trials.png'), '-dpng', '-r600');
 
 %% FIGURE 6: H7 — Gamma–Oculomotor Relationship (subject-level means)
 
@@ -451,7 +456,8 @@ if sum(valid) > 5
 end
 text(0.05, 0.5, txt, 'FontSize', 12, 'VerticalAlignment', 'middle');
 
-exportgraphics(fig6, fullfile(fig_dir, 'GCP_H7_gamma_oculomotor_trials.png'), 'Resolution', 600);
+set(fig6, 'PaperPositionMode', 'auto');
+print(fig6, fullfile(fig_dir, 'GCP_H7_gamma_oculomotor_trials.png'), '-dpng', '-r600');
 
 %% FIGURE 7: Summary Dashboard (trial-level distributions)
 
@@ -499,7 +505,8 @@ for mi = 1:6
     box on; 
 end
 
-exportgraphics(fig7, fullfile(fig_dir, 'GCP_hypotheses_summary_trials.png'), 'Resolution', 600);
+set(fig7, 'PaperPositionMode', 'auto');
+print(fig7, fullfile(fig_dir, 'GCP_hypotheses_summary_trials.png'), '-dpng', '-r600');
 
 %% Done
 fprintf('\n=== GCP Trial-Level Hypothesis Testing Complete ===\n');

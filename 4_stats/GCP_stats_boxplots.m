@@ -234,7 +234,8 @@ for iVar = 1:numel(numericVars)
 
     % Save
     drawnow;
-    exportgraphics(gcf, fullfile(paths.figures, 'stats', 'boxplots', ['GCP_stats_boxplot_' varName '.png']), 'Resolution', 600);
+    set(gcf, 'PaperPositionMode', 'auto');
+    print(gcf, fullfile(paths.figures, 'stats', 'boxplots', ['GCP_stats_boxplot_' varName '.png']), '-dpng', '-r600');
 end
 
 %%

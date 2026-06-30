@@ -94,7 +94,8 @@ for subjIdx = 1:numSubjects
         mkdir(savepath)
         cd(savepath)
         saveName = fullfile(savepath, [num2str(subjects{subjIdx}) '_Validations.png']);
-        exportgraphics(gcf, saveName)
+        set(gcf, 'PaperPositionMode', 'auto');
+        print(gcf, saveName, '-dpng', '-r600');
     catch
         disp(['Could not create VALIDATION overview for subject ' num2str(subjects{subjIdx})])
     end

@@ -156,7 +156,8 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Gaze Density [a.u.]', 'FontSize', 32); % Label the colorbar
 
-exportgraphics(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_lc.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_lc.png'), '-dpng', '-r600');
 
 %% Plot high contrast condition
 freq.powspctrm(1,:,:) = squeeze(hc_gdensity)';
@@ -189,7 +190,8 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Gaze Density [a.u.]', 'FontSize', 32); % Label the colorbar
 
-exportgraphics(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_hc.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_hc.png'), '-dpng', '-r600');
 
 %% Plot difference (hc - lc)
 diff = hc_gdensity - lc_gdensity;
@@ -223,7 +225,8 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Gaze Density [a.u.]', 'FontSize', 32); % Label the colorbar
 
-exportgraphics(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_diff.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_diff.png'), '-dpng', '-r600');
 
 %% Plot t-value stats
 mycolormap = customcolormap_preset('red-white-blue');
@@ -255,7 +258,8 @@ ylabel('Screen Height [px]');
 cb = colorbar; % Create the colorbar
 ylabel(cb, 'Effect Size [Cohen''s d]', 'FontSize', 32); % Label the colorbar
 
-exportgraphics(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_stats_raw.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_stats_raw.png'), '-dpng', '-r600');
 
 %% Plot differnces between load 2 & load 8 for all subs  - INDIVIDUAL PLOTS
 for subj = 1:length(subjects)
@@ -290,7 +294,8 @@ for subj = 1:length(subjects)
     xlim([0 800]);
     ylim([0 600]);
 
-    exportgraphics(gcf, fullfile(paths.figures, 'gaze', 'heatmap', ['GCP_gaze_heatmap_diff_subj' num2str(subj) '.png']), 'Resolution', 600);
+    set(gcf, 'PaperPositionMode', 'auto');
+    print(gcf, fullfile(paths.figures, 'gaze', 'heatmap', ['GCP_gaze_heatmap_diff_subj' num2str(subj) '.png']), '-dpng', '-r600');
 end
 
 %% MONTECARLO
@@ -358,4 +363,5 @@ plot(centerX, centerY, '+', 'MarkerSize', 15, 'LineWidth', 1, 'Color', 'k');
 xlim([0 800]);
 ylim([0 600]);
 
-exportgraphics(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_stats_montecarlo.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'gaze', 'heatmap', 'GCP_gaze_heatmap_stats_montecarlo.png'), '-dpng', '-r600');

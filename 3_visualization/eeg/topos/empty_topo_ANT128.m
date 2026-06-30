@@ -23,4 +23,5 @@ cfg.ylim = [1000 1005];
 try
  ft_topoplotER(cfg, pow_c25_fooof_bl_smooth);
 end
-exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'topos', 'ANT128_channel_locations.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'eeg', 'topos', 'ANT128_channel_locations.png'), '-dpng', '-r600');

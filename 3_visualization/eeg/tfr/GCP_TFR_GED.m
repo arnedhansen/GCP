@@ -104,7 +104,8 @@ end
 
 set(gcf, 'Renderer', 'painters');
 drawnow;
-exportgraphics(gcf, fullfile(fig_dir, 'GCP_eeg_tfr_GED.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(fig_dir, 'GCP_eeg_tfr_GED.png'), '-dpng', '-r600');
 
 %% Difference: 100% - 25%
 if nCond < 4 || isempty(grand{4}) || isempty(grand{1})
@@ -141,5 +142,6 @@ else
 
     set(gcf, 'Renderer', 'painters');
     drawnow;
-    exportgraphics(gcf, fullfile(fig_dir, 'GCP_eeg_tfr_GED_diff.png'), 'Resolution', 600);
+    set(gcf, 'PaperPositionMode', 'auto');
+    print(gcf, fullfile(fig_dir, 'GCP_eeg_tfr_GED_diff.png'), '-dpng', '-r600');
 end

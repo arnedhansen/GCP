@@ -74,4 +74,5 @@ ax.XLabel.Position(2) = ax.XLabel.Position(2) - 0.02;
 ax.YLabel.Position(1) = ax.YLabel.Position(1) - 0.02;
 
 % Save
+set(fig, 'PaperPositionMode', 'auto');
 print(set(fig, 'Renderer', 'painters'), fullfile(paths.figures, 'hypotheses', 'GCP_hypotheses.png'), '-dpng', '-r600')

@@ -23,7 +23,7 @@ end
 fontSize = 50;
 t_store  = [-1.5 2.5];
 t_win    = [-0.5 2];
-lineW    = 2.5;
+lineW    = 4;
 
 outdir = fullfile(paths.figures, 'gaze', 'velocity');
 mkdir(outdir);
@@ -89,7 +89,7 @@ for c = 3%%%%%1:numel(channels)
 
         eb = shadedErrorBar(x, mu, sem, 'lineProps', {'-'}, 'transparent', true);
         set(eb.mainLine, 'Color', conditionColors(k, :), 'LineWidth', lineW);
-        set(eb.patch, 'FaceColor', conditionColors(k, :), 'FaceAlpha', 0.20);
+        set(eb.patch, 'FaceColor', conditionColors(k, :), 'FaceAlpha', 0.125);
         set(eb.edge(1), 'Color', 'none');
         set(eb.edge(2), 'Color', 'none');
     end
@@ -98,7 +98,7 @@ for c = 3%%%%%1:numel(channels)
     yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
     xlim(t_win);
     if c == 3
-        ylim([-200 1400])
+        ylim([-200 1250])
     end
     xlabel('Time [s]', 'FontSize', fontSize*0.8);
     ylabel(velocityYLabels{c}, 'FontSize', fontSize*0.8);
@@ -107,10 +107,10 @@ for c = 3%%%%%1:numel(channels)
         leg_p(k) = patch(nan, nan, conditionColors(k, :), 'EdgeColor', 'none');
     end
     set(gca, 'FontSize', fontSize*0.8);
-    legend(leg_p, conditionLabels, 'Location', 'best', 'FontSize', fontSize*0.5, 'Box', 'off');
+    legend(leg_p, conditionLabels, 'Location', 'best', 'FontSize', fontSize*0.65, 'Box', 'off');
     box off
     hold off
 
-    exportgraphics(gcf, fullfile(outdir, sprintf('GCP_gaze_velocity_%s_TC_db.png', channels{c})), ...
-        'Resolution', 600);
+    set(gcf, 'PaperPositionMode', 'auto');
+    print(gcf, fullfile(outdir, sprintf('GCP_gaze_velocity_%s_TC_db.png', channels{c})), '-dpng', '-r600');
 end

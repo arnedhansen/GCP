@@ -77,7 +77,8 @@ title('Grating Task Accuracy', 'FontName', 'Arial', 'FontSize', 25);
 hold off;
 
 % Save the plot
-exportgraphics(gcf, fullfile(paths.figures, 'behavioral', 'GCP_acc_boxplot.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'behavioral', 'GCP_acc_boxplot.png'), '-dpng', '-r600');
 
 % Stats
 means = mean(dataAcc, 'omitnan');

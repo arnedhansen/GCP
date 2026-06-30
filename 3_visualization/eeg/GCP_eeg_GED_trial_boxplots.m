@@ -49,13 +49,13 @@ run_ged_trial_glmm(y_power, g_power, s_power, condLabels, 'GammaPower');
 
 plot_ged_trial_boxplot(y_freq, g_freq, condLabels, colors, nCond, ...
     'Peak Gamma Frequency [Hz]', 'GED Trial Gamma Frequency', [30 90]);
-exportgraphics(gcf, fullfile(fig_dir, 'GCP_eeg_GED_boxplot_trial_gamma_freq.png'), ...
-    'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(fig_dir, 'GCP_eeg_GED_boxplot_trial_gamma_freq.png'), '-dpng', '-r600');
 
 plot_ged_trial_boxplot(y_power, g_power, condLabels, colors, nCond, ...
     'Peak Gamma Power [dB]', 'GED Trial Gamma Power', []);
-exportgraphics(gcf, fullfile(fig_dir, 'GCP_eeg_GED_boxplot_trial_gamma_power.png'), ...
-    'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(fig_dir, 'GCP_eeg_GED_boxplot_trial_gamma_power.png'), '-dpng', '-r600');
 
 fprintf('Saved figures to %s\n', fig_dir);
 

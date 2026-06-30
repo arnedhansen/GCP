@@ -60,4 +60,5 @@ legend({'Low Contrast', 'High Contrast'}); % Show legend
 % grid on;
 hold off;
 
-exportgraphics(gcf, fullfile(paths.figures, 'paradigm', 'GCP_gratings_rgb_distribution.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'paradigm', 'GCP_gratings_rgb_distribution.png'), '-dpng', '-r600');

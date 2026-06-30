@@ -29,6 +29,7 @@ gKernel = exp(-x_kern.^2 / (2 * sigma_samp^2));
 gKernel = gKernel ./ sum(gKernel);
 
 t_win = [-0.5 2];
+lineW = 4;
 fontSize = 50;
 
 %% Condition definitions
@@ -137,8 +138,8 @@ for c = 1:nConds
     sem = grandSEM_db(:, c);
 
     eb = shadedErrorBar(t_vec, mu, sem, 'lineProps', {'-'}, 'transparent', true);
-    set(eb.mainLine, 'Color', colors(c, :), 'LineWidth', 2.5);
-    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.20);
+    set(eb.mainLine, 'Color', colors(c, :), 'LineWidth', lineW);
+    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.125);
     set(eb.edge(1), 'Color', 'none');
     set(eb.edge(2), 'Color', 'none');
 end
@@ -154,7 +155,8 @@ for c = 1:nConds
     leg_p_db(c) = patch(nan, nan, colors(c, :), 'EdgeColor', 'none');
 end
 set(gca, 'FontSize', fontSize*0.8);
-legend(leg_p_db, condLabels, 'Location', 'northeast', 'FontSize', fontSize*0.5, 'Box', 'off');
+legend(leg_p_db, condLabels, 'Location', 'northeast', 'FontSize', fontSize*0.65, 'Box', 'off');
 box off
 hold off
-exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate_db.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(figpath, 'GCP_gaze_microsaccades_rate_db.png'), '-dpng', '-r600');

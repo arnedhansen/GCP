@@ -16,7 +16,7 @@ labels        = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contr
 fontSize = 50;
 t_comp   = [-2 3];
 t_win    = [-0.5 2];
-lineW    = 2.5;
+lineW    = 4;
 
 % Gaussian smoothing kernel
 fsample    = 500;
@@ -93,7 +93,7 @@ for k = 1:numel(ets)
 
     eb = shadedErrorBar(x, mu, sem, 'lineProps', {'-'}, 'transparent', true);
     set(eb.mainLine, 'Color', colors(k, :), 'LineWidth', lineW);
-    set(eb.patch, 'FaceColor', colors(k, :), 'FaceAlpha', 0.20);
+    set(eb.patch, 'FaceColor', colors(k, :), 'FaceAlpha', 0.125);
     set(eb.edge(1), 'Color', 'none');
     set(eb.edge(2), 'Color', 'none');
 end
@@ -109,7 +109,8 @@ for k = 1:numel(ets)
     leg_p(k) = patch(nan, nan, colors(k, :), 'EdgeColor', 'none');
 end
 set(gca, 'FontSize', fontSize*0.8);
-legend(leg_p, labels, 'Location', 'best', 'FontSize', fontSize*0.5, 'Box', 'off');
+legend(leg_p, labels, 'Location', 'best', 'FontSize', fontSize*0.65, 'Box', 'off');
 box off
 hold off
-exportgraphics(gcf, fullfile(outdir, 'GCP_gaze_pupil_size_TC_db.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(outdir, 'GCP_gaze_pupil_size_TC_db.png'), '-dpng', '-r600');

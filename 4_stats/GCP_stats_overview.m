@@ -49,4 +49,5 @@ for i = 1:nVars
 end
 
 sgtitle('Merged Data Overview: Boxplots per Condition');
-exportgraphics(gcf, fullfile(paths.figures, 'stats', 'overview', 'GCP_stats_overview.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'stats', 'overview', 'GCP_stats_overview.png'), '-dpng', '-r600');

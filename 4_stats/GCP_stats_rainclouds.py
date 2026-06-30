@@ -58,7 +58,7 @@ mpl.rcParams.update({
     "savefig.dpi": FIGURE_SAVE_DPI,
     "savefig.transparent": False,
     "savefig.facecolor": "white",
-    "savefig.bbox": "tight",
+    "savefig.bbox": None,
     "ps.fonttype": 42,
     "font.size": 18,
     "axes.titlesize": 18,

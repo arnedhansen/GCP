@@ -138,7 +138,8 @@ title('100% Contrast');
 
 % Save
 set(gcf, 'Renderer', 'painters');
-exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr.png'), 'Resolution', 600);%% Difference
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr.png'), '-dpng', '-r600');%% Difference
 diff = gatfr100;
 diff.powspctrm = gatfr100.powspctrm - gatfr50.powspctrm;
 
@@ -155,4 +156,5 @@ ylabel('Frequency [Hz]');
 set(gca, 'FontSize', 25)
 title('TFR Difference: 100% Contrast - 50% Contrast');
 set(gcf, 'Renderer', 'painters');
-exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_diff.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'eeg', 'tfr', 'GCP_eeg_tfr_diff.png'), '-dpng', '-r600');

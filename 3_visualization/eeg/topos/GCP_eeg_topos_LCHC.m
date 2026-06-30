@@ -101,7 +101,8 @@ ylabel(cb, 'Power [dB]', 'FontSize', 25);
 title('DIFFERENCE (HC-LC)', 'FontSize', 25);
 
 % Save figure
-exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_eeg_topos_ga.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_eeg_topos_ga.png'), '-dpng', '-r600');
 
 %% Topoplots for Individual Subjects (HC, LC, and Difference)
 close all;
@@ -155,7 +156,8 @@ for subj = 1:length(subjects)
     ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
     % Save individual figure
-    exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'topos', sprintf('GCP_topoplot_subj%s_HC_LC_Diff.png', subjects{subj})), 'Resolution', 600);
+    set(gcf, 'PaperPositionMode', 'auto');
+    print(gcf, fullfile(paths.figures, 'eeg', 'topos', sprintf('GCP_topoplot_subj%s_HC_LC_Diff.png', subjects{subj})), '-dpng', '-r600');
 end
 
 %% Subplot of All Subjects (HC, LC, and Difference)
@@ -202,4 +204,5 @@ for subj = 1:num_subs
 end
 
 % Save the combined subplot figure with all subjects
-exportgraphics(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_topoplot_allsubs_HC_LC_Diff.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_topoplot_allsubs_HC_LC_Diff.png'), '-dpng', '-r600');

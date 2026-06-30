@@ -4366,7 +4366,8 @@ if ~isempty(out_dir) && ~exist(out_dir, 'dir')
 end
 drawnow;
 pause(0.05);
-exportgraphics(fig_handle, out_path, 'Resolution', 300);
+set(fig_handle, 'PaperPositionMode', 'auto');
+print(fig_handle, out_path, '-dpng', '-r300');
 end
 
 function freq = ged_powcurve_to_freq_ft(pow_vec, scan_freqs, data_recording)

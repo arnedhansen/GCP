@@ -231,6 +231,7 @@ set(gca, 'FontSize', fontSize);
 box off
 hold off
 
-exportgraphics(gcf, fullfile(figpath, 'GCP_gaze_fixations_rate_db.png'), 'Resolution', 600);
+set(gcf, 'PaperPositionMode', 'auto');
+print(gcf, fullfile(figpath, 'GCP_gaze_fixations_rate_db.png'), '-dpng', '-r600');
 
 fprintf('\n=== All fixation figures saved to %s ===\n', figpath);

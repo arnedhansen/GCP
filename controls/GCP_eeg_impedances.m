@@ -84,7 +84,8 @@ for i = 1%:length(cntFiles)
 
     % Save figure
     saveFileName = fullfile(saveDir, [subjectID '_impedances.png']);
-    exportgraphics(gcf, saveFileName, 'Resolution', 600);
+    set(gcf, 'PaperPositionMode', 'auto');
+    print(gcf, saveFileName, '-dpng', '-r600');
     close(gcf);
 end
 
