@@ -1,4 +1,4 @@
-## Shared SESOI subject-level power simulation engine (residual and random-effects axes).
+## Shared SESOI subject-level power simulation engine.
 
 source_power_helpers <- function() {
   helper_path <- file.path(getwd(), "_power_analysis", "GCP_power_analysis_helpers.R")
@@ -16,19 +16,42 @@ source_power_helpers <- function() {
   helper_path
 }
 
+power_binomial_se <- function(successes, n) {
+  if (n <= 0) {
+    return(NA_real_)
+  }
+  p <- successes / n
+  sqrt(p * (1 - p) / n)
+}
+
 run_sesoi_power <- function(
     config,
     plot_only = FALSE,
     nsim = 1000,
-    subject_breaks = seq(10, 100, by = 10),
+    subject_breaks = seq(20, 100, by = 10),
     parallel_workers = 8,
-    sensitivity_axes = c("residual", "random_effects")) {
+    sensitivity_axes = c("residual", "random_effects", "fixed_multiplier")) {
   helper_path <- source_power_helpers()
   suppressPackageStartupMessages(library(lme4))
+  if (requireNamespace("lmerTest", quietly = TRUE)) {
+    suppressPackageStartupMessages(library(lmerTest))
+  }
 
   gcp_root <- resolve_gcp_root()
   partition <- load_variance_partition_summary(gcp_root, config$pilot_outcome, config$model_scope)
   formula_list <- build_subject_level_formula_list(config$sim_col, model_scope = config$model_scope)
+
+  manifest <- load_manifest_effects(
+    gcp_root = gcp_root,
+    pilot_outcome = config$pilot_outcome,
+    target_term = config$target_term,
+    true_beta_multiplier = config$true_beta_multiplier %||% 1.5,
+    fallback_sesoi_beta = config$sesoi_beta,
+    fallback_true_beta = config$true_beta
+  )
+  config$sesoi_beta <- manifest$sesoi_beta
+  config$true_beta <- manifest$true_beta
+  config$manifest_source <- manifest$source
 
   outcome_mean <- partition$point_estimates$outcome_mean
   if (is.null(outcome_mean) || !is.finite(outcome_mean)) {
@@ -39,6 +62,11 @@ run_sesoi_power <- function(
     linear_nuisance_beta <- config$linear_nuisance_beta %||% 0
   }
   config$linear_nuisance_beta <- linear_nuisance_beta
+
+  message(sprintf(
+    "Manifest SESOI beta=%.4f | true beta=%.4f | source=%s",
+    config$sesoi_beta, config$true_beta, config$manifest_source
+  ))
 
   results <- list()
   for (axis in sensitivity_axes) {
@@ -74,10 +102,11 @@ run_sesoi_power_axis <- function(
     gcp_root) {
   seed <- 123
   sesoi_decision_alpha <- 0.05
+  detection_alpha <- 0.05
   strict_power_target <- 0.90
   contrast_levels <- c("25", "50", "75", "100")
   subject_dropout_rate <- config$subject_dropout_rate %||% 0.10
-  parallel_round_chunk_nsim <- 1L
+  parallel_round_chunk_nsim <- 10L
 
   scenario_df <- build_power_scenarios(partition, sensitivity_axis)
   output_prefix <- paste0(config$output_prefix_base, "_", sensitivity_axis)
@@ -109,6 +138,7 @@ run_sesoi_power_axis <- function(
       n_subjects,
       formula_list,
       sesoi_decision_alpha,
+      detection_alpha,
       beta_raw,
       true_beta,
       outcome_mean,
@@ -125,6 +155,7 @@ run_sesoi_power_axis <- function(
       model_scope) {
     valid_fits <- 0L
     sesoi_successes <- 0L
+    detection_successes <- 0L
     sign_errors <- 0L
     type_m_sum <- 0
     type_m_count <- 0L
@@ -163,11 +194,15 @@ run_sesoi_power_axis <- function(
         next
       }
       fit_full <- fit_info$fit
-      coef_tbl <- tryCatch(summary(fit_full)$coefficients, error = function(e) NULL)
-      sesoi_out <- sesoi_success_from_fit(
-        coef_tbl, target_term, beta_raw, sesoi_decision_alpha, true_beta
+      infer_out <- inference_from_fit(
+        fit = fit_full,
+        term = target_term,
+        beta_raw = beta_raw,
+        sesoi_decision_alpha = sesoi_decision_alpha,
+        true_beta = true_beta,
+        detection_alpha = detection_alpha
       )
-      if (!sesoi_out$valid) {
+      if (!infer_out$valid) {
         next
       }
 
@@ -175,10 +210,11 @@ run_sesoi_power_axis <- function(
       singular_count <- singular_count + as.integer(fit_info$singular)
       conv_msgs <- fit_full@optinfo$conv$lme4$messages
       convergence_warn_count <- convergence_warn_count + as.integer(length(conv_msgs) > 0)
-      sesoi_successes <- sesoi_successes + as.integer(sesoi_out$success)
-      sign_errors <- sign_errors + as.integer(sesoi_out$sign_error)
-      if (isTRUE(sesoi_out$success)) {
-        type_m_sum <- type_m_sum + abs(sesoi_out$est / true_beta)
+      sesoi_successes <- sesoi_successes + as.integer(infer_out$sesoi_success)
+      detection_successes <- detection_successes + as.integer(infer_out$detection_success)
+      sign_errors <- sign_errors + as.integer(infer_out$sign_error)
+      if (isTRUE(infer_out$sesoi_success)) {
+        type_m_sum <- type_m_sum + abs(infer_out$est / true_beta)
         type_m_count <- type_m_count + 1L
       }
     }
@@ -187,6 +223,7 @@ run_sesoi_power_axis <- function(
       chunk_nsim = as.integer(chunk_nsim),
       valid_fits = as.integer(valid_fits),
       sesoi_successes = as.integer(sesoi_successes),
+      detection_successes = as.integer(detection_successes),
       sign_errors = as.integer(sign_errors),
       type_m_sum = as.numeric(type_m_sum),
       type_m_count = as.integer(type_m_count),
@@ -199,7 +236,12 @@ run_sesoi_power_axis <- function(
     set.seed(seed)
     cl <- parallel::makeCluster(as.integer(parallel_workers), type = "PSOCK")
     on.exit(parallel::stopCluster(cl), add = TRUE)
-    parallel::clusterEvalQ(cl, suppressPackageStartupMessages(library(lme4)))
+    parallel::clusterEvalQ(cl, {
+      suppressPackageStartupMessages(library(lme4))
+      if (requireNamespace("lmerTest", quietly = TRUE)) {
+        suppressPackageStartupMessages(library(lmerTest))
+      }
+    })
     parallel::clusterExport(cl, "helper_path", envir = environment())
     parallel::clusterEvalQ(cl, source(helper_path))
     parallel::clusterSetRNGStream(cl, iseed = seed)
@@ -207,7 +249,7 @@ run_sesoi_power_axis <- function(
       cl,
       varlist = c(
         "estimate_power_chunk", "contrast_levels", "make_subject_level_design",
-        "apply_subject_dropout", "fit_lmer_with_fallbacks", "sesoi_success_from_fit",
+        "apply_subject_dropout", "fit_lmer_with_fallbacks", "inference_from_fit",
         "subject_level_fit_eligible", "SUBJECT_CONDITIONS_PER_SUBJECT"
       ),
       envir = environment()
@@ -226,6 +268,7 @@ run_sesoi_power_axis <- function(
         total_nsim <- 0L
         total_valid_fits <- 0L
         total_sesoi_successes <- 0L
+        total_detection_successes <- 0L
         total_sign_errors <- 0L
         total_type_m_sum <- 0
         total_type_m_count <- 0L
@@ -234,10 +277,12 @@ run_sesoi_power_axis <- function(
 
         while (total_nsim < nsim) {
           remaining <- nsim - total_nsim
-          workers_this_round <- min(length(cl), remaining)
+          workers_this_round <- min(length(cl), ceiling(remaining / parallel_round_chunk_nsim))
+          workers_this_round <- max(workers_this_round, 1L)
           chunk_sizes <- rep(parallel_round_chunk_nsim, workers_this_round)
-          overflow <- (workers_this_round * parallel_round_chunk_nsim) - remaining
-          if (overflow > 0) {
+          total_chunk <- sum(chunk_sizes)
+          if (total_chunk > remaining) {
+            overflow <- total_chunk - remaining
             for (k in seq_len(overflow)) {
               idx2 <- ((k - 1) %% workers_this_round) + 1L
               chunk_sizes[idx2] <- chunk_sizes[idx2] - 1L
@@ -252,6 +297,7 @@ run_sesoi_power_axis <- function(
             n_subjects = n_subjects,
             formula_list = formula_list,
             sesoi_decision_alpha = sesoi_decision_alpha,
+            detection_alpha = detection_alpha,
             beta_raw = config$sesoi_beta,
             true_beta = config$true_beta,
             outcome_mean = outcome_mean,
@@ -271,6 +317,7 @@ run_sesoi_power_axis <- function(
           total_nsim <- total_nsim + sum(vapply(chunk_results, function(x) x$chunk_nsim, integer(1)))
           total_valid_fits <- total_valid_fits + sum(vapply(chunk_results, function(x) x$valid_fits, integer(1)))
           total_sesoi_successes <- total_sesoi_successes + sum(vapply(chunk_results, function(x) x$sesoi_successes, integer(1)))
+          total_detection_successes <- total_detection_successes + sum(vapply(chunk_results, function(x) x$detection_successes, integer(1)))
           total_sign_errors <- total_sign_errors + sum(vapply(chunk_results, function(x) x$sign_errors, integer(1)))
           total_type_m_sum <- total_type_m_sum + sum(vapply(chunk_results, function(x) x$type_m_sum, numeric(1)))
           total_type_m_count <- total_type_m_count + sum(vapply(chunk_results, function(x) x$type_m_count, integer(1)))
@@ -278,10 +325,18 @@ run_sesoi_power_axis <- function(
           total_convergence_warn <- total_convergence_warn + sum(vapply(chunk_results, function(x) x$convergence_warn_count, integer(1)))
         }
 
-        power <- if (total_valid_fits > 0) total_sesoi_successes / total_valid_fits else NA_real_
-        cat(sprintf(" | SESOI POWER : %s\n", sub("^0", "", sprintf("%.3f", power))))
+        power_sesoi_cond <- if (total_valid_fits > 0) total_sesoi_successes / total_valid_fits else NA_real_
+        power_sesoi_uncond <- if (total_nsim > 0) total_sesoi_successes / total_nsim else NA_real_
+        power_detection_cond <- if (total_valid_fits > 0) total_detection_successes / total_valid_fits else NA_real_
+        power_detection_uncond <- if (total_nsim > 0) total_detection_successes / total_nsim else NA_real_
+        cat(sprintf(
+          " | SESOI uncond=%.3f detect uncond=%.3f | fit=%.0f%%\n",
+          power_sesoi_uncond, power_detection_uncond, 100 * total_valid_fits / total_nsim
+        ))
         flush.console()
-        se <- if (total_valid_fits > 0) sqrt(power * (1 - power) / total_valid_fits) else NA_real_
+
+        se_sesoi_uncond <- power_binomial_se(total_sesoi_successes, total_nsim)
+        se_detection_uncond <- power_binomial_se(total_detection_successes, total_nsim)
 
         data.frame(
           scenario_label = scenario$scenario_label,
@@ -293,9 +348,35 @@ run_sesoi_power_axis <- function(
           random_quadratic_slope_sd = scenario$random_quadratic_slope_sd,
           residual_sd = scenario$residual_sd,
           n_subjects = n_subjects,
-          power = power,
-          lower = if (is.finite(se)) pmax(0, power - 1.96 * se) else NA_real_,
-          upper = if (is.finite(se)) pmin(1, power + 1.96 * se) else NA_real_,
+          sesoi_beta = config$sesoi_beta,
+          true_beta = config$true_beta,
+          power_sesoi_conditional = power_sesoi_cond,
+          power_sesoi_unconditional = power_sesoi_uncond,
+          power_detection_conditional = power_detection_cond,
+          power_detection_unconditional = power_detection_uncond,
+          lower_sesoi_unconditional = if (is.finite(se_sesoi_uncond)) {
+            pmax(0, power_sesoi_uncond - 1.96 * se_sesoi_uncond)
+          } else {
+            NA_real_
+          },
+          upper_sesoi_unconditional = if (is.finite(se_sesoi_uncond)) {
+            pmin(1, power_sesoi_uncond + 1.96 * se_sesoi_uncond)
+          } else {
+            NA_real_
+          },
+          lower_detection_unconditional = if (is.finite(se_detection_uncond)) {
+            pmax(0, power_detection_uncond - 1.96 * se_detection_uncond)
+          } else {
+            NA_real_
+          },
+          upper_detection_unconditional = if (is.finite(se_detection_uncond)) {
+            pmin(1, power_detection_uncond + 1.96 * se_detection_uncond)
+          } else {
+            NA_real_
+          },
+          power = power_sesoi_uncond,
+          lower = if (is.finite(se_sesoi_uncond)) pmax(0, power_sesoi_uncond - 1.96 * se_sesoi_uncond) else NA_real_,
+          upper = if (is.finite(se_sesoi_uncond)) pmin(1, power_sesoi_uncond + 1.96 * se_sesoi_uncond) else NA_real_,
           nsim = total_nsim,
           valid_fits = total_valid_fits,
           fit_success_rate = if (total_nsim > 0) total_valid_fits / total_nsim else NA_real_,
@@ -308,6 +389,7 @@ run_sesoi_power_axis <- function(
           pilot_n_subjects = partition$pilot_n_subjects,
           model_scope = config$model_scope,
           lmer_formula_pilot = partition$lmer_formula,
+          manifest_source = config$manifest_source,
           stringsAsFactors = FALSE
         )
       })
@@ -316,7 +398,7 @@ run_sesoi_power_axis <- function(
 
     power_df <- do.call(rbind, scenario_rows)
     power_df$scenario_label <- factor(power_df$scenario_label, levels = scenario_order, ordered = TRUE)
-    power_df$meets_target_90 <- power_df$power >= strict_power_target
+    power_df$meets_target_90 <- power_df$power_sesoi_unconditional >= strict_power_target
     utils::write.csv(power_df, curve_csv_path, row.names = FALSE)
   } else {
     if (!file.exists(curve_csv_path)) {
@@ -324,24 +406,41 @@ run_sesoi_power_axis <- function(
     }
     power_df <- utils::read.csv(curve_csv_path, stringsAsFactors = FALSE)
     if (!"meets_target_90" %in% names(power_df)) {
-      power_df$meets_target_90 <- power_df$power >= strict_power_target
+      primary <- if ("power_sesoi_unconditional" %in% names(power_df)) {
+        power_df$power_sesoi_unconditional
+      } else {
+        power_df$power
+      }
+      power_df$meets_target_90 <- primary >= strict_power_target
     }
   }
 
   summary_rows <- do.call(rbind, lapply(split(power_df, power_df$scenario_label), function(df) {
     df <- df[order(df$n_subjects), , drop = FALSE]
     hit <- df[df$meets_target_90, "n_subjects", drop = TRUE]
+    primary_col <- if ("power_sesoi_unconditional" %in% names(df)) {
+      "power_sesoi_unconditional"
+    } else {
+      "power"
+    }
+    detect_col <- if ("power_detection_unconditional" %in% names(df)) {
+      "power_detection_unconditional"
+    } else {
+      primary_col
+    }
     data.frame(
       scenario_label = as.character(df$scenario_label[1]),
       sensitivity_axis = sensitivity_axis,
       varied_component = as.character(df$varied_component[1]),
-      N_min_for_90 = if (length(hit) > 0) min(hit) else NA_integer_,
-      power_at_max_N = df$power[which.max(df$n_subjects)],
+      N_min_for_90_sesoi = if (length(hit) > 0) min(hit) else NA_integer_,
+      sesoi_uncond_at_max_N = df[[primary_col]][which.max(df$n_subjects)],
+      detection_uncond_at_max_N = df[[detect_col]][which.max(df$n_subjects)],
+      fit_success_rate_at_max_N = df$fit_success_rate[which.max(df$n_subjects)],
       type_s_at_max_N = df$type_s[which.max(df$n_subjects)],
       type_m_at_max_N = df$type_m[which.max(df$n_subjects)],
       singular_rate_at_max_N = df$singular_rate[which.max(df$n_subjects)],
       convergence_warn_rate_at_max_N = df$convergence_warn_rate[which.max(df$n_subjects)],
-      monotonic_non_decreasing = all(diff(df$power) >= -0.02),
+      monotonic_non_decreasing = all(diff(df[[primary_col]]) >= -0.02),
       stringsAsFactors = FALSE
     )
   }))
