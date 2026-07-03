@@ -1,13 +1,24 @@
-## Shared helpers for GCP SESOI power simulations (subject-level DGP).
+## Shared helpers for GCP simulation-based power analysis.
 ## Each simulated/fitted dataset has exactly one row per subject per contrast condition.
 
 SUBJECT_CONDITIONS_PER_SUBJECT <- 4L
 
 resolve_gcp_root <- function() {
-  if (.Platform$OS.type == "windows") {
-    return("W:/Students/Arne/GCP")
+  candidates <- if (.Platform$OS.type == "windows") {
+    c("W:/Students/Arne/GCP", getwd())
+  } else {
+    c(
+      "/Volumes/g_psyplafor_methlab$/Students/Arne/GCP",
+      file.path(getwd()),
+      file.path(dirname(getwd()))
+    )
   }
-  "/Volumes/g_psyplafor_methlab$/Students/Arne/GCP"
+  probe <- file.path(candidates, "data", "pilot_stats", "pilot_subject_level_variance_partition_summary.csv")
+  hit <- candidates[file.exists(probe)]
+  if (length(hit) > 0) {
+    return(hit[1])
+  }
+  candidates[1]
 }
 
 load_residual_sd_scenarios <- function(gcp_root, pilot_outcome, fallback_levels, model_scope = NULL) {
@@ -344,52 +355,119 @@ pick_quantile <- function(qvec, level = c("low", "median", "high")) {
   as.numeric(qvec[idx])
 }
 
-load_manifest_effects <- function(
+load_manifest_beta <- function(
     gcp_root,
     pilot_outcome,
     target_term,
-    true_beta_multiplier = 1.5,
-    fallback_sesoi_beta = NA_real_,
-    fallback_true_beta = NA_real_) {
+    scenario_roles = c("sesoi", "pilot_secondary", "base")) {
   manifest_path <- file.path(gcp_root, "data", "pilot_stats", "power_parameter_manifest.csv")
   if (!file.exists(manifest_path)) {
-    if (!is.finite(fallback_sesoi_beta) || !is.finite(fallback_true_beta)) {
-      stop("Manifest not found and no fallback SESOI: ", manifest_path)
-    }
-    return(list(
-      sesoi_beta = fallback_sesoi_beta,
-      true_beta = fallback_true_beta,
-      base_beta = fallback_true_beta / true_beta_multiplier,
-      source = "fallback_config"
-    ))
+    return(numeric(0))
   }
   manifest <- utils::read.csv(manifest_path, stringsAsFactors = FALSE)
-  hit <- manifest$outcome == pilot_outcome &
-    manifest$target_term == target_term &
-    manifest$scenario_role == "sesoi"
-  if (sum(hit) != 1L) {
-    stop("Expected one SESOI row in manifest for ", pilot_outcome, " / ", target_term)
+  vals <- numeric(0)
+  for (role in scenario_roles) {
+    hit <- manifest$outcome == pilot_outcome &
+      manifest$target_term == target_term &
+      manifest$scenario_role == role
+    if (sum(hit) == 1L && is.finite(manifest$beta_raw[hit][1])) {
+      vals <- c(vals, as.numeric(manifest$beta_raw[hit][1]))
+    }
   }
-  sesoi_beta <- as.numeric(manifest$beta_raw[hit][1])
-  base_hit <- manifest$outcome == pilot_outcome &
-    manifest$target_term == target_term &
-    manifest$scenario_role == "base"
-  base_beta <- if (sum(base_hit) == 1L) {
-    as.numeric(manifest$beta_raw[base_hit][1])
-  } else {
-    sesoi_beta * true_beta_multiplier
+  vals
+}
+
+conservative_simulation_beta <- function(
+    pilot_beta,
+    manifest_betas,
+    direction = c("positive", "negative")) {
+  direction <- match.arg(direction)
+  candidates <- c(pilot_beta, manifest_betas)
+  candidates <- candidates[is.finite(candidates)]
+  if (length(candidates) == 0L) {
+    stop("No finite candidate betas for conservative simulation effect.")
   }
-  list(
-    sesoi_beta = sesoi_beta,
-    true_beta = sesoi_beta * true_beta_multiplier,
-    base_beta = base_beta,
-    source = manifest_path
+  if (direction == "positive") {
+    pos <- candidates[candidates > 0]
+    if (length(pos) > 0L) {
+      return(min(pos))
+    }
+  }
+  if (direction == "negative") {
+    neg <- candidates[candidates < 0]
+    if (length(neg) > 0L) {
+      return(max(neg))
+    }
+  }
+  candidates[which.min(abs(candidates))]
+}
+
+load_conservative_simulation_beta <- function(
+    gcp_root,
+    pilot_outcome,
+    target_term,
+    direction = c("positive", "negative"),
+    pilot_fallback = NA_real_) {
+  pilot_beta <- load_pilot_fixed_effect(gcp_root, pilot_outcome, target_term, pilot_fallback)
+  manifest_betas <- load_manifest_beta(gcp_root, pilot_outcome, target_term)
+  conservative_simulation_beta(pilot_beta, manifest_betas, direction)
+}
+
+cohen_d_to_contrast_beta <- function(cohen_d, outcome_sd) {
+  as.numeric(cohen_d) * as.numeric(outcome_sd)
+}
+
+load_outcome_sd <- function(gcp_root, pilot_outcome) {
+  manifest_path <- file.path(gcp_root, "data", "pilot_stats", "power_parameter_manifest.csv")
+  if (file.exists(manifest_path)) {
+    manifest <- utils::read.csv(manifest_path, stringsAsFactors = FALSE)
+    hit <- manifest$outcome == pilot_outcome & manifest$scenario_role == "base"
+    if (sum(hit) >= 1L && is.finite(manifest$outcome_sd[hit][1])) {
+      return(as.numeric(manifest$outcome_sd[hit][1]))
+    }
+  }
+  slm_path <- file.path(gcp_root, "data", "pilot_stats", "pilot_subject_level_means_gamma_freq_power.csv")
+  if (file.exists(slm_path)) {
+    slm <- utils::read.csv(slm_path, stringsAsFactors = FALSE)
+    col <- if (pilot_outcome == "PeakFrequency") "PeakFrequency" else "PeakAmplitude"
+    if (col %in% names(slm)) {
+      return(stats::sd(slm[[col]], na.rm = TRUE))
+    }
+  }
+  if (pilot_outcome == "PeakFrequency") 6.656 else 1.925
+}
+
+load_pilot_fixed_effect <- function(gcp_root, pilot_outcome, term, fallback = NA_real_) {
+  fe_path <- file.path(gcp_root, "data", "pilot_stats", "pilot_mixed_model_fixed_effects_gamma_freq_power.csv")
+  if (!file.exists(fe_path)) {
+    return(fallback)
+  }
+  fe <- utils::read.csv(fe_path, stringsAsFactors = FALSE)
+  scope <- if (term == "contrast_num_c") "linear" else "quadratic"
+  hit <- fe$outcome == pilot_outcome & fe$model_scope == scope & fe$term == term
+  if (sum(hit) == 1L && is.finite(fe$estimate[hit][1])) {
+    return(as.numeric(fe$estimate[hit][1]))
+  }
+  fallback
+}
+
+build_pessimistic_scenario <- function(partition) {
+  q <- partition$component_quantiles
+  use_rs <- partition$includes_random_slope
+  use_rqs <- partition$includes_random_quadratic_slope
+  data.frame(
+    scenario_label = "pessimistic",
+    scenario_display = "Pessimistic",
+    varied_component = "joint_high_variance",
+    random_intercept_sd = pick_quantile(q$random_intercept_sd, "high"),
+    random_slope_sd = if (use_rs) pick_quantile(q$random_slope_sd, "high") else 0,
+    random_quadratic_slope_sd = if (use_rqs) pick_quantile(q$random_quadratic_slope_sd, "high") else 0,
+    residual_sd = pick_quantile(q$residual_sd, "high"),
+    stringsAsFactors = FALSE
   )
 }
 
-build_power_scenarios <- function(
-    partition,
-    sensitivity_axis = c("residual", "random_effects", "fixed_multiplier")) {
+build_power_scenarios <- function(partition, sensitivity_axis = c("residual")) {
   sensitivity_axis <- match.arg(sensitivity_axis)
   q <- partition$component_quantiles
   use_rs <- partition$includes_random_slope
@@ -420,61 +498,7 @@ build_power_scenarios <- function(
     return(scenario_df)
   }
 
-  if (sensitivity_axis == "fixed_multiplier") {
-    multipliers <- c(0.8, 1.0, 1.2)
-    scenario_df <- data.frame(
-      scenario_label = paste0("mult_", sprintf("%.1f", multipliers)),
-      scenario_display = sprintf("Variance x%.1f", multipliers),
-      varied_component = "fixed_multiplier_joint",
-      random_intercept_sd = ri_med * multipliers,
-      random_slope_sd = rs_med * multipliers,
-      random_quadratic_slope_sd = rqs_med * multipliers,
-      residual_sd = res_med * multipliers,
-      stringsAsFactors = FALSE
-    )
-    return(scenario_df)
-  }
-
-  # random_effects axis: joint low / median / high on all identified RE components
-  ri_vals <- c(
-    pick_quantile(q$random_intercept_sd, "low"),
-    pick_quantile(q$random_intercept_sd, "median"),
-    pick_quantile(q$random_intercept_sd, "high")
-  )
-  rs_vals <- if (use_rs) {
-    c(
-      pick_quantile(q$random_slope_sd, "low"),
-      pick_quantile(q$random_slope_sd, "median"),
-      pick_quantile(q$random_slope_sd, "high")
-    )
-  } else {
-    c(0, 0, 0)
-  }
-  rqs_vals <- if (use_rqs) {
-    c(
-      pick_quantile(q$random_quadratic_slope_sd, "low"),
-      pick_quantile(q$random_quadratic_slope_sd, "median"),
-      pick_quantile(q$random_quadratic_slope_sd, "high")
-    )
-  } else {
-    c(0, 0, 0)
-  }
-
-  scenario_df <- data.frame(
-    scenario_label = c("re_low", "re_median", "re_high"),
-    scenario_display = c(
-      format_re_scenario_display(ri_vals[1], rs_vals[1], rqs_vals[1], use_rs, use_rqs),
-      format_re_scenario_display(ri_vals[2], rs_vals[2], rqs_vals[2], use_rs, use_rqs),
-      format_re_scenario_display(ri_vals[3], rs_vals[3], rqs_vals[3], use_rs, use_rqs)
-    ),
-    varied_component = "random_effects_joint",
-    random_intercept_sd = ri_vals,
-    random_slope_sd = rs_vals,
-    random_quadratic_slope_sd = rqs_vals,
-    residual_sd = res_med,
-    stringsAsFactors = FALSE
-  )
-  scenario_df
+  stop("Only residual sensitivity axis is supported.")
 }
 
 format_re_scenario_display <- function(ri, rs, rqs, use_rs, use_rqs) {
@@ -616,59 +640,41 @@ coef_table_from_fit <- function(fit) {
   tryCatch(summary(fit)$coefficients, error = function(e) NULL)
 }
 
-inference_from_fit <- function(
-    fit,
-    term,
-    beta_raw,
-    sesoi_decision_alpha,
-    true_beta,
-    detection_alpha = 0.05) {
+detection_from_fit <- function(fit, term, detection_alpha = 0.05) {
   coef_tbl <- coef_table_from_fit(fit)
   if (is.null(coef_tbl) || !term %in% rownames(coef_tbl)) {
-    return(list(
-      sesoi_success = FALSE,
-      detection_success = FALSE,
-      est = NA_real_,
-      valid = FALSE,
-      sign_error = NA
-    ))
+    return(list(detection_success = FALSE, est = NA_real_, valid = FALSE))
   }
   est <- as.numeric(coef_tbl[term, "Estimate"])
   est_se <- as.numeric(coef_tbl[term, "Std. Error"])
-  df_col <- intersect(c("df", "DF"), colnames(coef_tbl))
-  df_val <- if (length(df_col) > 0) {
-    as.numeric(coef_tbl[term, df_col[1]])
-  } else {
-    Inf
-  }
-  crit_one_sided <- if (is.finite(df_val) && df_val > 0) {
-    stats::qt(1 - sesoi_decision_alpha, df_val)
-  } else {
-    stats::qnorm(1 - sesoi_decision_alpha)
-  }
-  ci_low_one_sided <- est - crit_one_sided * est_se
-  ci_high_one_sided <- est + crit_one_sided * est_se
-  sesoi_success <- if (beta_raw >= 0) {
-    ci_low_one_sided > beta_raw
-  } else {
-    ci_high_one_sided < beta_raw
-  }
-
   p_col <- grep("^Pr\\(>\\|", colnames(coef_tbl), value = TRUE)
   p_val <- if (length(p_col) > 0) {
     as.numeric(coef_tbl[term, p_col[1]])
   } else {
     stats::pnorm(-abs(est / est_se)) * 2
   }
-  detection_success <- is.finite(p_val) && p_val < detection_alpha
-
   list(
-    sesoi_success = isTRUE(sesoi_success),
-    detection_success = isTRUE(detection_success),
+    detection_success = is.finite(p_val) && p_val < detection_alpha,
     est = est,
-    valid = TRUE,
-    sign_error = sign(est) != sign(true_beta)
+    valid = TRUE
   )
+}
+
+power_binomial_se <- function(successes, n) {
+  if (n <= 0) {
+    return(NA_real_)
+  }
+  p <- successes / n
+  sqrt(p * (1 - p) / n)
+}
+
+n_for_target_power <- function(power_df, target = 0.90) {
+  df <- power_df[order(power_df$n_subjects), , drop = FALSE]
+  hit <- df[df$power >= target, "n_subjects", drop = TRUE]
+  if (length(hit) > 0) {
+    return(as.integer(min(hit)))
+  }
+  NA_integer_
 }
 
 save_power_figures <- function(
@@ -679,158 +685,114 @@ save_power_figures <- function(
     figure_output_dir,
     output_prefix,
     plot_title,
-    sensitivity_axis = c("residual", "random_effects", "fixed_multiplier"),
-    power_metrics = c("power_sesoi_unconditional", "power_detection_unconditional")) {
-  sensitivity_axis <- match.arg(sensitivity_axis)
+    y_legend_title = "Residuals SD") {
   heat_low_color <- "#8E0F1F"
   heat_high_color <- "#0B6E3A"
-  y_lab <- switch(
-    sensitivity_axis,
-    residual = "Residuals SD",
-    random_effects = "Random effects scenario",
-    fixed_multiplier = "Variance multiplier scenario"
+  plot_df <- power_df
+  plot_df$scenario_display <- factor(plot_df$scenario_display, levels = scenario_levels)
+  n_unique_n <- length(unique(plot_df$n_subjects))
+
+  curve_plot <- ggplot2::ggplot(
+    plot_df,
+    ggplot2::aes(
+      x = .data$n_subjects,
+      y = .data$power,
+      color = .data$scenario_display,
+      group = .data$scenario_display
+    )
   )
-
-  for (metric in power_metrics) {
-    if (!metric %in% names(power_df)) {
-      next
-    }
-    lower_col <- sub("^power_", "lower_", metric)
-    upper_col <- sub("^power_", "upper_", metric)
-    if (!lower_col %in% names(power_df)) {
-      power_df[[lower_col]] <- NA_real_
-      power_df[[upper_col]] <- NA_real_
-    }
-
-    metric_label <- switch(
-      metric,
-      power_sesoi_unconditional = "SESOI power (unconditional)",
-      power_sesoi_conditional = "SESOI power (conditional on fit)",
-      power_detection_unconditional = "Detection power (unconditional)",
-      power_detection_conditional = "Detection power (conditional on fit)",
-      metric
-    )
-    metric_suffix <- gsub("^power_", "", metric)
-    plot_df <- power_df
-    plot_df$scenario_display <- factor(plot_df$scenario_display, levels = scenario_levels)
-    plot_df$power_plot <- plot_df[[metric]]
-    plot_df$lower_plot <- plot_df[[lower_col]]
-    plot_df$upper_plot <- plot_df[[upper_col]]
-    n_unique_n <- length(unique(plot_df$n_subjects))
-
-    curve_plot <- ggplot2::ggplot(
-      plot_df,
-      ggplot2::aes(
-        x = .data$n_subjects,
-        y = .data$power_plot,
-        color = .data$scenario_display,
-        group = .data$scenario_display
-      )
-    )
-    if (n_unique_n > 1L) {
-      curve_plot <- curve_plot +
-        ggplot2::geom_line(linewidth = 0.9, linetype = "dotted")
-    }
-    curve_plot <- curve_plot +
-      ggplot2::geom_errorbar(
-        ggplot2::aes(ymin = .data$lower_plot, ymax = .data$upper_plot),
-        linewidth = 0.6,
-        width = if (n_unique_n > 1L) 1.6 else 0,
-        alpha = 0.70
-      ) +
-      ggplot2::geom_point(size = 2.8) +
-      ggplot2::geom_hline(
-        yintercept = strict_power_target,
-        linetype = "dashed", color = "grey45", linewidth = 0.7
-      ) +
-      ggplot2::scale_color_manual(
-        values = stats::setNames(c("#1B9E77", "#D95F02", "#7570B3"), scenario_levels),
-        breaks = scenario_levels,
-        labels = scenario_levels
-      ) +
-      ggplot2::scale_x_continuous(breaks = sort(unique(subject_breaks))) +
-      ggplot2::scale_y_continuous(
-        labels = scales::percent_format(accuracy = 1),
-        limits = c(0, 1),
-        breaks = c(0, 0.25, 0.50, 0.75, 0.90, 1)
-      ) +
-      ggplot2::labs(
-        x = "Subjects", y = metric_label, color = y_lab,
-        title = paste0(plot_title, " | ", metric_label)
-      ) +
-      ggplot2::theme_classic(base_size = 18, base_family = "Arial") +
-      ggplot2::theme(
-        panel.background = ggplot2::element_rect(fill = "white", color = NA),
-        plot.background = ggplot2::element_rect(fill = "white", color = NA),
-        panel.grid = ggplot2::element_blank(),
-        axis.line = ggplot2::element_line(color = "black", linewidth = 1.2),
-        axis.ticks = ggplot2::element_line(color = "black", linewidth = 1.0),
-        axis.ticks.length = grid::unit(0.25, "cm"),
-        axis.title = ggplot2::element_text(size = 20),
-        axis.text = ggplot2::element_text(size = 16, color = "black"),
-        legend.position = "right",
-        legend.title = ggplot2::element_text(size = 15),
-        legend.text = ggplot2::element_text(size = 11),
-        plot.title = ggplot2::element_text(size = 20, face = "plain", hjust = 0.5)
-      )
-
-    grDevices::png(
-      file = file.path(figure_output_dir, paste0(output_prefix, "_", metric_suffix, ".png")),
-      width = 2200, height = 1400, res = 300
-    )
-    print(curve_plot)
-    grDevices::dev.off()
-
-    heatmap_plot <- ggplot2::ggplot(
-      plot_df,
-      ggplot2::aes(
-        x = factor(.data$n_subjects),
-        y = .data$scenario_display,
-        fill = .data$power_plot
-      )
-    ) +
-      ggplot2::geom_tile(color = "white", linewidth = 1.1) +
-      ggplot2::geom_text(
-        ggplot2::aes(
-          label = sprintf(
-            "%.2f\n(%.0f%% fit)",
-            .data$power_plot,
-            100 * .data$fit_success_rate
-          )
-        ),
-        color = "white", size = 2.6, fontface = "bold", family = "Arial", lineheight = 0.9
-      ) +
-      ggplot2::scale_fill_gradientn(
-        colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
-        values = c(0.00, 0.60, 0.79, 0.80, 1.00),
-        limits = c(0, 1),
-        breaks = seq(0, 1, by = 0.2),
-        labels = sprintf("%.2f", seq(0, 1, by = 0.2))
-      ) +
-      ggplot2::coord_fixed() +
-      ggplot2::labs(
-        x = "Number of subjects", y = y_lab, fill = metric_label,
-        title = paste0(plot_title, " | ", metric_label)
-      ) +
-      ggplot2::theme_minimal(base_size = 16, base_family = "Arial") +
-      ggplot2::theme(
-        panel.grid = ggplot2::element_blank(),
-        panel.background = ggplot2::element_rect(fill = "white", color = NA),
-        plot.background = ggplot2::element_rect(fill = "white", color = NA),
-        axis.title = ggplot2::element_text(size = 13),
-        axis.text = ggplot2::element_text(size = 10),
-        legend.position = "right",
-        legend.title = ggplot2::element_text(size = 11),
-        legend.text = ggplot2::element_text(size = 10),
-        plot.title = ggplot2::element_text(size = 18, face = "plain", hjust = 0.5),
-        panel.spacing = grid::unit(0.9, "lines")
-      )
-
-    grDevices::png(
-      file = file.path(figure_output_dir, paste0(output_prefix, "_", metric_suffix, "_heatmap.png")),
-      width = 2500, height = 1400, res = 300
-    )
-    print(heatmap_plot)
-    grDevices::dev.off()
+  if (n_unique_n > 1L) {
+    curve_plot <- curve_plot + ggplot2::geom_line(linewidth = 0.9, linetype = "dotted")
   }
+  curve_plot <- curve_plot +
+    ggplot2::geom_errorbar(
+      ggplot2::aes(ymin = .data$lower, ymax = .data$upper),
+      linewidth = 0.6,
+      width = if (n_unique_n > 1L) 1.6 else 0,
+      alpha = 0.70
+    ) +
+    ggplot2::geom_point(size = 2.8) +
+    ggplot2::geom_hline(
+      yintercept = strict_power_target,
+      linetype = "dashed", color = "grey45", linewidth = 0.7
+    ) +
+    ggplot2::scale_color_manual(
+      values = stats::setNames(c("#1B9E77", "#D95F02", "#7570B3"), scenario_levels),
+      breaks = scenario_levels,
+      labels = scenario_levels
+    ) +
+    ggplot2::scale_x_continuous(breaks = sort(unique(subject_breaks))) +
+    ggplot2::scale_y_continuous(
+      labels = scales::percent_format(accuracy = 1),
+      limits = c(0, 1),
+      breaks = c(0, 0.25, 0.50, 0.75, 0.90, 1)
+    ) +
+    ggplot2::labs(x = "Subjects", y = "Power", color = y_legend_title, title = plot_title) +
+    ggplot2::theme_classic(base_size = 18, base_family = "Arial") +
+    ggplot2::theme(
+      panel.background = ggplot2::element_rect(fill = "white", color = NA),
+      plot.background = ggplot2::element_rect(fill = "white", color = NA),
+      panel.grid = ggplot2::element_blank(),
+      axis.line = ggplot2::element_line(color = "black", linewidth = 1.2),
+      axis.ticks = ggplot2::element_line(color = "black", linewidth = 1.0),
+      axis.ticks.length = grid::unit(0.25, "cm"),
+      axis.title = ggplot2::element_text(size = 20),
+      axis.text = ggplot2::element_text(size = 16, color = "black"),
+      legend.position = "right",
+      legend.title = ggplot2::element_text(size = 15),
+      legend.text = ggplot2::element_text(size = 11),
+      plot.title = ggplot2::element_text(size = 22, face = "plain", hjust = 0.5)
+    )
+
+  grDevices::png(
+    file = file.path(figure_output_dir, paste0(output_prefix, ".png")),
+    width = 2200, height = 1400, res = 300
+  )
+  print(curve_plot)
+  grDevices::dev.off()
+
+  heatmap_plot <- ggplot2::ggplot(
+    plot_df,
+    ggplot2::aes(
+      x = factor(.data$n_subjects),
+      y = .data$scenario_display,
+      fill = .data$power
+    )
+  ) +
+    ggplot2::geom_tile(color = "white", linewidth = 1.1) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = sprintf("%.2f", .data$power)),
+      color = "white", size = 3.2, fontface = "bold", family = "Arial"
+    ) +
+    ggplot2::scale_fill_gradientn(
+      colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
+      values = c(0.00, 0.60, 0.79, 0.80, 1.00),
+      limits = c(0, 1),
+      breaks = seq(0, 1, by = 0.2),
+      labels = sprintf("%.2f", seq(0, 1, by = 0.2))
+    ) +
+    ggplot2::coord_fixed() +
+    ggplot2::labs(
+      x = "Number of subjects", y = y_legend_title, fill = "Power", title = plot_title
+    ) +
+    ggplot2::theme_minimal(base_size = 16, base_family = "Arial") +
+    ggplot2::theme(
+      panel.grid = ggplot2::element_blank(),
+      panel.background = ggplot2::element_rect(fill = "white", color = NA),
+      plot.background = ggplot2::element_rect(fill = "white", color = NA),
+      axis.title = ggplot2::element_text(size = 13),
+      axis.text = ggplot2::element_text(size = 10),
+      legend.position = "right",
+      legend.title = ggplot2::element_text(size = 11),
+      legend.text = ggplot2::element_text(size = 10),
+      plot.title = ggplot2::element_text(size = 20, face = "plain", hjust = 0.5),
+      panel.spacing = grid::unit(0.9, "lines")
+    )
+
+  grDevices::png(
+    file = file.path(figure_output_dir, paste0(output_prefix, "_heatmap.png")),
+    width = 2500, height = 1400, res = 300
+  )
+  print(heatmap_plot)
+  grDevices::dev.off()
 }

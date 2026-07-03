@@ -64,7 +64,7 @@ All visualization scripts read from `data/features/` and write figures to `figur
 
 `GCP_hypotheses_trials.m` tests registered hypotheses on trial-level data with raincloud-style plots:
 
-- **Oculomotor (gaze):** H1 microsaccade rate decreases with contrast; H2 eye velocity increases post-stimulus and is suppressed by contrast; H3 pupil constriction amplitude increases with contrast; H4 BCEA increases with contrast.
+- **Oculomotor (gaze):** H1 microsaccade rate decreases with contrast; H2 eye velocity increases with contrast; H3 pupil constriction amplitude increases with contrast; H4 BCEA increases with contrast.
 - **Gamma (GED):** H5 gamma peak frequency increases with contrast; H6 gamma peak amplitude peaks at 75% contrast (inverted U).
 - **Cross-modal:** H7 gamma frequency relates to oculomotor dynamics (subject-level means, since gaze and EEG trials are not matched trial-by-trial).
 
