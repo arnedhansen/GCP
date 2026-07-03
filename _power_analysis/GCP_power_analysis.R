@@ -58,6 +58,7 @@ run_power_analysis <- function(
   message(sprintf("Simulation betas (conservative, not Table 1): H5 beta=%.4f | H6 beta=%.4f", beta_freq, beta_quad))
 
   message("=== H5: Linear gamma peak frequency (contrast_num_c) ===")
+  message("H5 | residual sensitivity (3 residual-SD scenarios)")
   res_freq <- run_subject_level_power(
     config = list(
       label = "Gamma peak frequency (linear contrast)",
@@ -70,6 +71,7 @@ run_power_analysis <- function(
       effect_source = "pilot_and_manifest_conservative",
       linear_nuisance_beta = 0,
       default_outcome_mean = 58.1,
+      subject_dropout_rate = 0,
       output_prefix = "GCP_power_analysis_frequency",
       plot_title = "Power Analysis: Gamma Peak Frequency (subject-level condition means)"
     ),
@@ -80,6 +82,7 @@ run_power_analysis <- function(
     parallel_workers = parallel_workers,
     plot_only = plot_only
   )
+  message("H5 | pessimistic scenario")
   pes_freq <- run_subject_level_power(
     config = list(
       label = "Gamma peak frequency (linear contrast)",
@@ -105,6 +108,7 @@ run_power_analysis <- function(
   )
 
   message("=== H6: Quadratic gamma peak power (contrast_num_c2) ===")
+  message("H6 | residual sensitivity (3 residual-SD scenarios)")
   res_power <- run_subject_level_power(
     config = list(
       label = "Gamma peak power (quadratic contrast)",
@@ -117,6 +121,7 @@ run_power_analysis <- function(
       effect_source = "pilot_and_manifest_conservative",
       linear_nuisance_beta = beta_linear_nuisance,
       default_outcome_mean = 3.29,
+      subject_dropout_rate = 0,
       output_prefix = "GCP_power_analysis_power",
       plot_title = "Power Analysis: Gamma Peak Power (subject-level condition means)"
     ),
@@ -127,6 +132,7 @@ run_power_analysis <- function(
     parallel_workers = parallel_workers,
     plot_only = plot_only
   )
+  message("H6 | pessimistic scenario")
   pes_power <- run_subject_level_power(
     config = list(
       label = "Gamma peak power (quadratic contrast)",
@@ -198,10 +204,17 @@ run_power_analysis <- function(
     max(pessimistic_ns, na.rm = TRUE)
   }
 
+  pilot_ged_exclusion_rate <- 0.30
   recommendation <- data.frame(
-    recommended_N = recommended_N,
+    recommended_N_analyzable = recommended_N,
     power_target = power_target,
     rule = "max N_min_for_90 across H5, H6, H7 under pessimistic variance scenarios",
+    recruitment_rule = "recruit until recommended_N_analyzable with valid GED (no simulated dropout)",
+    subject_dropout_in_simulation = 0,
+    pilot_ged_exclusion_rate = pilot_ged_exclusion_rate,
+    pilot_ged_exclusion_n = 3L,
+    pilot_ged_screened_n = 10L,
+    enrollment_if_30pct_exclusion = as.integer(ceiling(recommended_N / (1 - pilot_ged_exclusion_rate))),
     beta_frequency = beta_freq,
     beta_quadratic_power = beta_quad,
     beta_interaction = interaction_res$beta_interaction,
@@ -215,6 +228,7 @@ run_power_analysis <- function(
   utils::write.csv(recommendation, file.path(data_dir, "GCP_power_analysis_recommended_N.csv"), row.names = FALSE)
   utils::write.csv(pes_freq$power_df, file.path(data_dir, "GCP_power_analysis_frequency_pessimistic_curve.csv"), row.names = FALSE)
   utils::write.csv(pes_power$power_df, file.path(data_dir, "GCP_power_analysis_power_pessimistic_curve.csv"), row.names = FALSE)
+  message("Wrote summary CSVs to: ", data_dir)
 
   message(sprintf("\n=== Recommended sample size: N = %d (target power = %.0f%%) ===", recommended_N, 100 * power_target))
   print(recommendation)
@@ -316,21 +330,23 @@ run_interaction_power <- function(
   }
 
   run_simr_scenarios <- function(residual_levels, labels, output_prefix, plot_title) {
+    message(sprintf("  Interaction block: %s (%d scenario(s), nsim=%d)", output_prefix, length(labels), nsim))
     set.seed(seed)
     template_dat <- make_template(max(subject_breaks))
     template_dat$microsaccade_c <- simulate_microsaccade(template_dat)
     template_dat$gamma_power <- simulate_response(template_dat, baseline_residual_levels[2])
 
+    message("  Fitting template mixed model for simr...")
     base_model <- lmer(
       gamma_power ~ contrast_num_c * microsaccade_c + (1 | Subject),
       data = template_dat,
       REML = FALSE,
       control = lmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
     )
-    stats::fixef(base_model)["(Intercept)"] <- outcome_mean
-    stats::fixef(base_model)["contrast_num_c"] <- true_beta_contrast
-    stats::fixef(base_model)["microsaccade_c"] <- true_beta_microsaccade
-    stats::fixef(base_model)["contrast_num_c:microsaccade_c"] <- true_beta_interaction
+    lme4::fixef(base_model)["(Intercept)"] <- outcome_mean
+    lme4::fixef(base_model)["contrast_num_c"] <- true_beta_contrast
+    lme4::fixef(base_model)["microsaccade_c"] <- true_beta_microsaccade
+    lme4::fixef(base_model)["contrast_num_c:microsaccade_c"] <- true_beta_interaction
     lme4::VarCorr(base_model) <- lme4::VarCorr(
       lmer(gamma_power ~ contrast_num_c * microsaccade_c + (1 | Subject), data = template_dat, REML = FALSE)
     )
@@ -344,7 +360,7 @@ run_interaction_power <- function(
 
     power_rows <- lapply(seq_len(nrow(scenario_df)), function(i) {
       sc <- scenario_df[i, , drop = FALSE]
-      message(sprintf("Interaction scenario %s | residual SD = %.3f", sc$scenario_label, sc$residual_sd))
+      message(sprintf("  Scenario %s | %s | residual SD = %.3f", sc$scenario_label, sc$scenario_display, sc$residual_sd))
       model_sc <- base_model
       stats::sigma(model_sc) <- sc$residual_sd
       pc <- suppressWarnings(powerCurve(
@@ -353,9 +369,15 @@ run_interaction_power <- function(
         along = "Subject",
         breaks = subject_breaks,
         nsim = nsim,
-        progress = FALSE
+        progress = TRUE
       ))
       out <- extract_powercurve_df(pc, subject_breaks)
+      for (j in seq_len(nrow(out))) {
+        message(sprintf(
+          "    N=%3d | power=%.3f | nsim=%d",
+          out$n_subjects[j], out$power[j], out$nsim[j]
+        ))
+      }
       out$scenario_label <- sc$scenario_label
       out$scenario_display <- sc$scenario_display
       out$residual_sd <- sc$residual_sd
@@ -366,9 +388,12 @@ run_interaction_power <- function(
     figure_dir <- file.path(gcp_root, "figures", "power_analysis")
     data_dir <- file.path(gcp_root, "data", "power_analysis")
     dir.create(figure_dir, recursive = TRUE, showWarnings = FALSE)
-    utils::write.csv(power_df, file.path(data_dir, paste0(output_prefix, "_curve.csv")), row.names = FALSE)
+    curve_path <- file.path(data_dir, paste0(output_prefix, "_curve.csv"))
+    utils::write.csv(power_df, curve_path, row.names = FALSE)
+    message(sprintf("  Wrote interaction curve: %s", curve_path))
 
     if (nrow(scenario_df) > 1L) {
+      message(sprintf("  Saving interaction figures: %s", output_prefix))
       save_power_figures(
         power_df = power_df,
         scenario_levels = scenario_df$scenario_display,
@@ -385,12 +410,14 @@ run_interaction_power <- function(
   }
 
   if (!plot_only) {
+    message("H7 | residual sensitivity (3 residual-SD scenarios)")
     sens_labels <- c("res_low", "res_median", "res_high")
     sens <- run_simr_scenarios(
       baseline_residual_levels, sens_labels,
       "GCP_power_analysis_interaction",
       "Power Analysis: Gamma Power x Microsaccade Interaction (trial-level)"
     )
+    message("H7 | pessimistic scenario")
     pes <- run_simr_scenarios(
       c(pessimistic_residual), c("pessimistic"),
       "GCP_power_analysis_interaction_pessimistic",

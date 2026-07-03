@@ -46,7 +46,7 @@ run_subject_level_power <- function(
   detection_alpha <- 0.05
   strict_power_target <- 0.90
   contrast_levels <- c("25", "50", "75", "100")
-  subject_dropout_rate <- config$subject_dropout_rate %||% 0.10
+  subject_dropout_rate <- config$subject_dropout_rate %||% 0
   parallel_round_chunk_nsim <- 10L
 
   figure_output_dir <- file.path(gcp_root, "figures", "power_analysis")
@@ -59,6 +59,14 @@ run_subject_level_power <- function(
     "%s | true beta=%.4f | outcome mean=%.3f",
     config$label, config$true_beta, outcome_mean
   ))
+  if (plot_only) {
+    message(sprintf("  [plot_only] reading cached curve: %s", curve_csv_path))
+  } else {
+    message(sprintf(
+      "  Starting: %s | %d scenario(s) x %d sample sizes | nsim=%d | workers=%d",
+      config$output_prefix, nrow(scenario_df), length(subject_breaks), nsim, parallel_workers
+    ))
+  }
 
   estimate_power_chunk <- function(
       chunk_nsim, n_subjects, formula_list, detection_alpha,
@@ -139,6 +147,10 @@ run_subject_level_power <- function(
     scenario_order <- scenario_df$scenario_label
     scenario_rows <- lapply(seq_len(nrow(scenario_df)), function(idx) {
       scenario <- scenario_df[idx, , drop = FALSE]
+      message(sprintf(
+        "  Scenario %s | %s | residual SD=%.3f",
+        scenario$scenario_label, scenario$scenario_display, scenario$residual_sd
+      ))
       n_rows <- lapply(subject_breaks, function(n_subjects) {
         total_nsim <- 0L
         total_valid_fits <- 0L
@@ -183,6 +195,11 @@ run_subject_level_power <- function(
         }
         power <- if (total_nsim > 0) total_detection_successes / total_nsim else NA_real_
         se <- power_binomial_se(total_detection_successes, total_nsim)
+        fit_rate <- if (total_nsim > 0) total_valid_fits / total_nsim else NA_real_
+        message(sprintf(
+          "    N=%3d | power=%.3f | nsim=%d | valid fits=%.1f%%",
+          n_subjects, power, total_nsim, 100 * fit_rate
+        ))
         data.frame(
           scenario_label = scenario$scenario_label,
           scenario_display = scenario$scenario_display,
@@ -212,6 +229,7 @@ run_subject_level_power <- function(
     power_df <- do.call(rbind, scenario_rows)
     power_df$scenario_label <- factor(power_df$scenario_label, levels = scenario_order, ordered = TRUE)
     utils::write.csv(power_df, curve_csv_path, row.names = FALSE)
+    message(sprintf("  Wrote power curve: %s", curve_csv_path))
   } else {
     if (!file.exists(curve_csv_path)) {
       stop("plot_only=TRUE but CSV not found: ", curve_csv_path)
@@ -240,6 +258,7 @@ run_subject_level_power <- function(
   }
 
   if (save_figures && nrow(scenario_df) > 1L) {
+    message(sprintf("  Saving figures: %s", config$output_prefix))
     save_power_figures(
       power_df = power_df,
       scenario_levels = unique(scenario_df$scenario_display),
