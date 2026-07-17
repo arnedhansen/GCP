@@ -97,9 +97,6 @@ for c = 3%%%%%1:numel(channels)
     xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
     yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
     xlim(t_win);
-    if c == 3
-        ylim([-200 1250])
-    end
     xlabel('Time [s]', 'FontSize', fontSize*0.8);
     ylabel(velocityYLabels{c}, 'FontSize', fontSize*0.8);
     leg_p = gobjects(numel(ets), 1);

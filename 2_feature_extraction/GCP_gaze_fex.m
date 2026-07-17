@@ -415,11 +415,17 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         velTS_noBL = ft_timelockanalysis(cfg, velFT);
 
-        % dB baseline: 10*log10(stim/baseline)
-        cfg = [];
-        cfg.baseline     = baseline_period;
-        cfg.baselinetype = 'db';
-        velFT_bl_db = ft_timelockbaseline(cfg, velFT);
+        % dB baseline: scalar trial baseline (10*log10(x(t)/mean_base)),
+        % not FieldTrip sample-wise baselinetype 'db' (that blew up TC scale)
+        velFT_bl_db = velFT;
+        for trl = 1:nTrials
+            if isempty(velFT.trial{trl})
+                continue
+            end
+            velFT_bl_db.trial{trl}(1,:) = compute_db_baseline(velFT.trial{trl}(1,:), baselineVelH(trl));
+            velFT_bl_db.trial{trl}(2,:) = compute_db_baseline(velFT.trial{trl}(2,:), baselineVelV(trl));
+            velFT_bl_db.trial{trl}(3,:) = compute_db_baseline(velFT.trial{trl}(3,:), baselineVel2D(trl));
+        end
 
         cfg = [];
         cfg.latency    = analysis_periodTS;
@@ -449,24 +455,28 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         msTS_noBL = ft_timelockanalysis(cfg, msFT);
 
-        % dB baseline
-        cfg = [];
-        cfg.baseline     = baseline_period;
-        cfg.baselinetype = 'db';
-        msFT_bl_db = ft_timelockbaseline(cfg, msFT);
+        % Percentage-change baseline: 100*(x(t)/mean_base - 1)
+        % Variable names retain *_bl_db / dBMSRate for downstream compatibility.
+        msFT_bl_db = msFT;
+        for trl = 1:nTrials
+            if isempty(msFT.trial{trl})
+                continue
+            end
+            msFT_bl_db.trial{trl} = compute_pct_baseline(msFT.trial{trl}, baselineMSRate(trl));
+        end
 
         cfg = [];
         cfg.latency    = analysis_periodTS;
         cfg.keeptrials = 'no';
         msTS_BL_db = ft_timelockanalysis(cfg, msFT_bl_db);
 
-        % Trial-level dB baselines for scalar gaze metrics
+        % Trial-level baselines for scalar gaze metrics
         dBGazeDeviation = compute_db_baseline(gazeDev, baselineGazeDev);
         dBGazeStdX      = compute_db_baseline(gazeSDx, baselineGazeSDx);
         dBGazeStdY      = compute_db_baseline(gazeSDy, baselineGazeSDy);
         dBBCEA          = compute_db_baseline(bcea, baselineBcea);
         dBPupilSize     = compute_db_baseline(pupilSize, baselinePupilSize);
-        dBMSRate        = compute_db_baseline(microsaccadeRate, baselineMSRate);
+        dBMSRate        = compute_pct_baseline(microsaccadeRate, baselineMSRate);
         dBVelH          = compute_db_baseline(velHorz, baselineVelH);
         dBVelV          = compute_db_baseline(velVert, baselineVelV);
         dBVel2D         = compute_db_baseline(vel2D, baselineVel2D);
@@ -845,4 +855,10 @@ function db = compute_db_baseline(stim, baseline)
 ratio = stim ./ baseline;
 db = 10 * log10(ratio);
 db(~isfinite(stim) | ~isfinite(baseline) | ~isfinite(ratio) | ratio <= 0) = NaN;
+end
+
+function pct = compute_pct_baseline(stim, baseline)
+% Percentage change: 100*(stim-baseline)/baseline. Non-positive baselines -> NaN.
+pct = 100 * (stim - baseline) ./ baseline;
+pct(~isfinite(stim) | ~isfinite(baseline) | ~isfinite(pct) | baseline <= 0) = NaN;
 end

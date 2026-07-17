@@ -42,7 +42,7 @@ COMPARISONS = [
 VARIABLES = [
     ("GammaFrequency", "Peak Gamma Frequency [Hz]", "gamma_freq"),
     ("GammaPower", "Peak Gamma Power [dB]", "gamma_power"),
-    ("dBMSRate", "Microsaccade Rate [dB]", "ms"),
+    ("dBMSRate", "Microsaccade Rate [%]", "ms"),
     ("dBPupilSize", "Pupil Size [dB]", "pupil"),
     ("dBVelV", "Gaze Velocity Y [dB]", "vely"),
     ("ReactionTime", "Reaction Time [s]", "rt"),

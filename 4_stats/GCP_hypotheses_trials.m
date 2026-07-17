@@ -233,13 +233,13 @@ sgtitle('[H1] Microsaccade Rate Decreases with Contrast — Trial-Level', ...
 
 subplot(1, 2, 1);
 plot_raincloud_trial(gaze_dBMSRate, gaze_Condition, colors, condLabels, ...
-    'MS Rate [dB]');
+    'MS Rate [%]');
 
 subplot(1, 2, 2);
 plot_raincloud_trial(gaze_MSRate, gaze_Condition, colors, condLabels, ...
     'MS Rate [Hz]');
 
-report_trend_trial('H1 MS Rate (dB)', gaze_dBMSRate, gaze_Condition, ...
+report_trend_trial('H1 MS Rate (%)', gaze_dBMSRate, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
 set(fig1, 'PaperPositionMode', 'auto');
@@ -377,7 +377,7 @@ sgtitle('[H7] Gamma Frequency vs Oculomotor Dynamics (subject means from trials)
 
 subplot(2, 3, 1); hold on;
 plot_scatter_by_cond(subj_gedFreq, subj_dBMSRate, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('MS Rate [dB]');
+xlabel('GED Peak Frequency [Hz]'); ylabel('MS Rate [%]');
 title('\gamma Freq vs MS Rate'); set(gca, 'FontSize', fontSize - 3);
 
 subplot(2, 3, 2); hold on;
@@ -410,7 +410,7 @@ set(gca, 'YColor', 'b');
 yyaxis right
 errorbar(contrast_vals, mu_ms, sem_ms, 'r-s', 'LineWidth', 2.5, ...
     'MarkerSize', 8, 'MarkerFaceColor', 'r', 'CapSize', 8);
-ylabel('MS Rate [dB]');
+ylabel('MS Rate [%]');
 set(gca, 'YColor', 'r');
 
 xlabel('Contrast [%]');

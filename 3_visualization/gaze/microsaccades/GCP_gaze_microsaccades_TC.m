@@ -1,11 +1,11 @@
 %% GCP Gaze Microsaccade Suppression Contrast Conditions
-% Loads already processed microsaccade dB-baselined time courses from
+% Loads already processed microsaccade percentage-change time courses from
 % 2_feature_extraction/GCP_gaze_fex.m (msTS_cXX_bl_db) and plots
 % per-condition grand-average traces with SEM shading.
 %
 % Important:
 %   - Baseline correction has already been applied during feature extraction
-%     (FieldTrip baselinetype = 'db', i.e. 10*log10(stim/baseline)).
+%     as percentage change: 100*(stim/baseline - 1). Variable names retain *_bl_db.
 %   - A light additional display smoothing is applied here.
 
 %% Setup
@@ -149,7 +149,7 @@ yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVis
 xlim(t_win);
 ylim([-1.75 1.25])
 xlabel('Time [s]', 'FontSize', fontSize*0.8);
-ylabel('Microsaccade Rate [dB]', 'FontSize', fontSize*0.8);
+ylabel('Microsaccade Rate [%]', 'FontSize', fontSize*0.8);
 leg_p_db = gobjects(nConds, 1);
 for c = 1:nConds
     leg_p_db(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.25, ...

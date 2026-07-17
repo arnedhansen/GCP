@@ -176,7 +176,7 @@ for iVar = 1:numel(numericVars)
     ylabStr = prettyName;
     titleStr = prettyName;
     if strcmp(varName, 'dBMSRate')
-        ylabStr = 'Microsaccade Rate [dB]';
+        ylabStr = 'Microsaccade Rate [%]';
         titleStr = 'Microsaccade Rate';
     elseif strcmp(varName, 'dBPupilSize')
         ylabStr = 'Pupil Size [dB]';
