@@ -40,11 +40,11 @@ madThreshold = 5; % robust z-threshold based on MAD
 
 % Plot aesthetics
 fontSize        = 50;
-xTickFontSize   = fontSize - 20;
-yTickFontSize   = fontSize - 15;
-ylabelFontSize  = fontSize - 10;
+xTickFontSize   = fontSize *0.9;
+yTickFontSize   = fontSize *0.9;
+ylabelFontSize  = fontSize *0.9;
 titleFontSize   = fontSize;
-legendFontSize  = fontSize - 30;
+legendFontSize  = fontSize *0.65;
 dotSize         = 400;
 dotAlpha        = 0.85;
 jitter          = 0.4;
