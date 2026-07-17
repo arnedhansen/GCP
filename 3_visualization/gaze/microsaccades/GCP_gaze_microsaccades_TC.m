@@ -5,7 +5,8 @@
 %
 % Important:
 %   - Baseline correction has already been applied during feature extraction
-%     as percentage change: 100*(stim/baseline - 1). Variable names retain *_bl_db.
+%     as scalar-trial % change: 100*(x(t)/mean_base - 1).
+%   - Subject boxplot scalars are the mean of this TC over [0, 2] s.
 %   - A light additional display smoothing is applied here.
 
 %% Setup
@@ -147,7 +148,7 @@ end
 xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
 yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
 xlim(t_win);
-ylim([-1.75 1.25])
+%ylim([-1.75 1.25])
 xlabel('Time [s]', 'FontSize', fontSize*0.8);
 ylabel('Microsaccade Rate [%]', 'FontSize', fontSize*0.8);
 leg_p_db = gobjects(nConds, 1);

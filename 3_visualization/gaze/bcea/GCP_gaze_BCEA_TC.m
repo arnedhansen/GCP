@@ -1,7 +1,8 @@
 %% GCP Gaze BCEA Time Course
 % Computes time resolved 95% BCEA from gaze samples across trials within
 % a centered moving window. One time course is estimated per participant
-% and condition, baseline normalized in dB, and plotted as mean plus SEM.
+% and condition, baseline normalized as percentage change, and plotted
+% as mean plus SEM.
 
 %% Setup
 startup
@@ -70,7 +71,7 @@ for subj = 1:nSubj
 
         baselineIdx = tVec >= baselineWindow(1) & tVec <= baselineWindow(2);
         thisBaseline = mean(thisBCEA(baselineIdx), 'omitnan');
-        thisDB = 10 * log10(thisBCEA ./ thisBaseline);
+        thisDB = 100 * (thisBCEA - thisBaseline) ./ thisBaseline;
         thisDB(~isfinite(thisDB) | thisBCEA <= 0 | thisBaseline <= 0) = NaN;
 
         bceaRaw(subj, c, :) = thisBCEA;
@@ -118,7 +119,7 @@ yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, ...
     'LineStyle', '--', 'HandleVisibility', 'off');
 xlim(displayWindow);
 xlabel('Time [s]', 'FontSize', fontSize * 0.8);
-ylabel('BCEA [dB]', 'FontSize', fontSize * 0.8);
+ylabel('BCEA [%]', 'FontSize', fontSize * 0.8);
 
 legendHandles = gobjects(nCond, 1);
 for c = 1:nCond

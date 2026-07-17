@@ -1,5 +1,5 @@
 %% GCP Pupil Size Time Course
-% Loads dB-baselined pupil time courses from
+% Loads percentage-change pupil time courses from
 % 2_feature_extraction/GCP_gaze_fex.m (pupTS_cXX_bl_db).
 
 %% Setup
@@ -11,7 +11,7 @@ addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 % Plot labels
 channels      = {'Pupil'};
 channeltitles = {'Pupil Size'};
-ylabs_db      = {'Pupil Size [dB]'};
+ylabs_db      = {'Pupil Size [%]'};
 labels        = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
 fontSize = 50;
 t_comp   = [-2 3];

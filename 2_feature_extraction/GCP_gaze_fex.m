@@ -4,12 +4,15 @@
 %   Gaze deviation (Euclidean distances)
 %   Gaze standard deviation
 %   BCEA (Bivariate Contour Ellipse Area, k=2.291, 95%)
-%   Pupil size (Time Series Raw, Baselined, Baselined dB)
-%   Microsaccades
-%   Eye Velocity (Time Series Raw, Baselined, Baselined dB)
+%   Pupil size (Time Series Raw, Baselined % change)
+%   Microsaccades (TC ground truth: boxplot scalar = mean of % TC over [0, 2] s)
+%   Saccade cleaned fixational eye velocity (Raw, Baselined % change)
 %
 % Gaze metrics labelled by eye-tracker (saccades, blinks and
 % fixations) are extracted already in GCP_preprocessing.m
+%
+% Note: fields named dB* store percentage change for pupil, MS, velocity,
+% and BCEA (downstream name compatibility).
 
 %% Setup
 startup
@@ -83,12 +86,13 @@ for subj = 1:numel(subjects)
         velocityData     = dataET;    % copy meta-info
         velocityData.label = {'VelH','VelV','Vel2D'};
 
-        % trial-level dB baseline (scalar baseline per trial)
+        % trial-level % baseline (scalar baseline per trial; field names keep *_db)
         velocityData_db = dataET;
         velocityData_db.label = {'dBVelH','dBVelV','dBVel2D'};
 
         fsample          = dataET.fsample;
-        vel_win_size     = round(0.1 * fsample);   % 100 ms window
+        vel_kernel       = [1 1 0 -1 -1] * (fsample / 6); % Engbert velocity kernel
+        vel_kernel_pad   = ceil(numel(vel_kernel) / 2);
         nTrials          = numel(dataET.trial);
 
         % For linking baseline and trial-wise means
@@ -106,6 +110,9 @@ for subj = 1:numel(subjects)
         velFT.trial     = cell(1, nTrials);
         velFT.time      = cell(1, nTrials);
         velFT.trialinfo = dataET.trialinfo;
+
+        % Continuous rectified velocity for OCC: saccadic samples are zeroed
+        velOCCFT = velFT;
 
         % FieldTrip-ready pupil container (full baseline + analysis window)
         pupFT = [];
@@ -142,32 +149,63 @@ for subj = 1:numel(subjects)
             raw    = dataET.trial{trl};
             tVec   = dataET.time{trl};
 
-            % FieldTrip velocity: full window [-1.5, 2]
+            % Saccade cleaned fixational velocity on the original regular time axis.
+            % No temporal smoothing is applied before differentiation because a
+            % 50 to 100 ms moving average would suppress activity in the gamma range.
             full_idx = tVec >= baseline_period(1) & tVec <= analysis_period(2);
-            x_full   = raw(1, full_idx);
-            y_full   = raw(2, full_idx);
+            t_full   = tVec(full_idx);
+            full_dat = raw(1:3, full_idx);
 
             % flip y axis to screen coordinates
-            y_full   = 600 - y_full;
+            full_dat(2,:) = 600 - full_dat(2,:);
 
-            if numel(x_full) > 1
-                x_full_sm   = movmean(x_full, vel_win_size);
-                y_full_sm   = movmean(y_full, vel_win_size);
-                vx_full     = diff(x_full_sm) * fsample;              % px/s
-                vy_full     = diff(y_full_sm) * fsample;              % px/s
-                speed_full  = sqrt(vx_full.^2 + vy_full.^2);          % 2D speed
+            % Mark invalid samples and blink contaminated intervals as missing.
+            valid_full_position = full_dat(1,:) >= 0 & full_dat(1,:) <= 800 & ...
+                                  full_dat(2,:) >= 0 & full_dat(2,:) <= 600;
+            full_dat(:, ~valid_full_position) = NaN;
+            full_dat = remove_blinks(full_dat, win_size);
+            valid_full_position = isfinite(full_dat(1,:)) & isfinite(full_dat(2,:));
 
-                t_full      = tVec(full_idx);
-                t_full_vel  = t_full(1:numel(speed_full));
+            if numel(t_full) > 1 && any(valid_full_position)
+                xy_padded = ft_preproc_padding(full_dat(1:2,:), 'localmean', vel_kernel_pad);
+                vel_signed = convn(xy_padded, vel_kernel, 'same');
+                vel_signed = ft_preproc_padding(vel_signed, 'remove', vel_kernel_pad);
 
-                velFT.trial{trl} = zeros(3, numel(speed_full));
-                velFT.trial{trl}(1,:) = abs(vx_full);
-                velFT.trial{trl}(2,:) = abs(vy_full);
-                velFT.trial{trl}(3,:) = speed_full;
-                velFT.time{trl}       = t_full_vel;
+                % Detect rapid saccadic events on the same position trace.
+                [~, saccade_details_vel] = detect_microsaccades( ...
+                    fsample, full_dat(1:2,:), numel(t_full));
+                saccade_mask = false(1, numel(t_full));
+                for sac = 1:numel(saccade_details_vel.Onset)
+                    sac_start = max(1, saccade_details_vel.Onset(sac));
+                    sac_end   = min(numel(t_full), saccade_details_vel.Offset(sac));
+                    saccade_mask(sac_start:sac_end) = true;
+                end
+
+                vel_signed(:, ~valid_full_position) = NaN;
+
+                % Exclude saccadic samples from mean fixational velocity so the
+                % estimate is not mechanically lowered when more saccades occur.
+                vel_fixational = vel_signed;
+                vel_fixational(:, saccade_mask) = NaN;
+                vx_full    = abs(vel_fixational(1,:));
+                vy_full    = abs(vel_fixational(2,:));
+                speed_full = sqrt(sum(vel_fixational.^2, 1));
+
+                velFT.trial{trl} = [vx_full; vy_full; speed_full];
+                velFT.time{trl}  = t_full;
+
+                % OCC requires a continuous rectified signal. Following the
+                % proposal, detected saccadic samples are therefore set to zero.
+                vel_occ = vel_signed;
+                vel_occ(:, saccade_mask) = 0;
+                velOCCFT.trial{trl} = [abs(vel_occ(1,:)); ...
+                    abs(vel_occ(2,:)); sqrt(sum(vel_occ.^2, 1))];
+                velOCCFT.time{trl} = t_full;
             else
                 velFT.trial{trl} = nan(3,0);
                 velFT.time{trl}  = [];
+                velOCCFT.trial{trl} = nan(3,0);
+                velOCCFT.time{trl}  = [];
             end
 
             % BASELINE WINDOW (position-based metrics)
@@ -193,18 +231,13 @@ for subj = 1:numel(subjects)
             baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
             [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
 
-            % Baseline eye velocity (full baseline window; scalar for % change)
-            if numel(bl_x) > 1
-                bl_x_sm = movmean(bl_x, vel_win_size);
-                bl_y_sm = movmean(bl_y, vel_win_size);
-
-                vx_bl    = diff(bl_x_sm) * fsample;        % px/s
-                vy_bl    = diff(bl_y_sm) * fsample;        % px/s
-                speed_bl = sqrt(vx_bl.^2 + vy_bl.^2);
-
-                baselineVelH(trl)  = mean(abs(vx_bl), 'omitnan');
-                baselineVelV(trl)  = mean(abs(vy_bl), 'omitnan');
-                baselineVel2D(trl) = mean(speed_bl,   'omitnan');
+            % Baseline fixational velocity after removal of saccadic samples
+            if ~isempty(velFT.time{trl})
+                vel_bl_idx = velFT.time{trl} >= baseline_period(1) & ...
+                             velFT.time{trl} <= baseline_period(2);
+                baselineVelH(trl)  = mean(velFT.trial{trl}(1,vel_bl_idx), 'omitnan');
+                baselineVelV(trl)  = mean(velFT.trial{trl}(2,vel_bl_idx), 'omitnan');
+                baselineVel2D(trl) = mean(velFT.trial{trl}(3,vel_bl_idx), 'omitnan');
             else
                 baselineVelH(trl)  = NaN;
                 baselineVelV(trl)  = NaN;
@@ -255,41 +288,31 @@ for subj = 1:numel(subjects)
             pupil       = mean(an_dat(3,:),'omitnan')/1000;
             [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
 
-            % Velocity time series in analysis window [0.3, 2.0] s (cleaned)
-            if numel(x) > 1
-                x_sm = movmean(x, vel_win_size);
-                y_sm = movmean(y, vel_win_size);
-
-                vx = diff(x_sm) * fsample;      % px/s
-                vy = diff(y_sm) * fsample;      % px/s
-                speed = sqrt(vx.^2 + vy.^2);    % 2D speed
-
-                % Time axis for velocity (one sample shorter than position)
-                t_an   = tVec(an_idx);          % analysis window times
-                t_vel  = t_an(1:numel(speed));  % trim to match diff()
-
-                % Store raw velocity time series (cleaned, analysis-only)
-                velocityData.trial{trl} = zeros(3, numel(speed));
-                velocityData.trial{trl}(1,:) = abs(vx);
-                velocityData.trial{trl}(2,:) = abs(vy);
-                velocityData.trial{trl}(3,:) = speed;
-                velocityData.time{trl}       = t_vel;
+            % Analysis window fixational velocity from the full regular trace
+            if ~isempty(velFT.time{trl})
+                vel_an_idx = velFT.time{trl} >= analysis_period(1) & ...
+                             velFT.time{trl} <= analysis_period(2);
+                velocityData.trial{trl} = velFT.trial{trl}(:, vel_an_idx);
+                velocityData.time{trl}  = velFT.time{trl}(vel_an_idx);
 
                 % Trial-wise mean velocities (for scalar features)
-                velHorz(trl)   = mean(abs(vx), 'omitnan');
-                velVert(trl)   = mean(abs(vy), 'omitnan');
-                vel2D(trl)     = mean(speed,   'omitnan');
+                velHorz(trl) = mean(velocityData.trial{trl}(1,:), 'omitnan');
+                velVert(trl) = mean(velocityData.trial{trl}(2,:), 'omitnan');
+                vel2D(trl)   = mean(velocityData.trial{trl}(3,:), 'omitnan');
 
-                % Baseline-normalised velocity time series (dB, scalar baseline)
-                db_vx    = compute_db_baseline(abs(vx), baselineVelH(trl));
-                db_vy    = compute_db_baseline(abs(vy), baselineVelV(trl));
-                db_speed = compute_db_baseline(speed, baselineVel2D(trl));
+                % Baseline-normalised velocity time series (% change, scalar baseline)
+                db_vx = compute_pct_baseline( ...
+                    velocityData.trial{trl}(1,:), baselineVelH(trl));
+                db_vy = compute_pct_baseline( ...
+                    velocityData.trial{trl}(2,:), baselineVelV(trl));
+                db_speed = compute_pct_baseline( ...
+                    velocityData.trial{trl}(3,:), baselineVel2D(trl));
 
-                velocityData_db.trial{trl} = zeros(3, numel(speed));
+                velocityData_db.trial{trl} = zeros(3, numel(db_speed));
                 velocityData_db.trial{trl}(1,:) = db_vx;
                 velocityData_db.trial{trl}(2,:) = db_vy;
                 velocityData_db.trial{trl}(3,:) = db_speed;
-                velocityData_db.time{trl}       = t_vel;
+                velocityData_db.time{trl}       = velocityData.time{trl};
 
             else
                 % Too few points → fill with NaNs
@@ -386,6 +409,12 @@ for subj = 1:numel(subjects)
                     % Store in FieldTrip struct with the original regular time axis
                     msFT.trial{trl} = ms_rate_full;
                     msFT.time{trl}  = t_full_ms;
+
+                    % Raw rates from the same TC used for plotting / boxplots
+                    bl_ms_idx = t_full_ms >= baseline_period(1) & t_full_ms <= baseline_period(2);
+                    an_ms_idx = t_full_ms >= analysis_period(1) & t_full_ms <= analysis_period(2);
+                    baseline_msrate = mean(ms_rate_full(bl_ms_idx), 'omitnan');
+                    msrate = mean(ms_rate_full(an_ms_idx), 'omitnan');
                 end
             end
 
@@ -415,16 +444,15 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         velTS_noBL = ft_timelockanalysis(cfg, velFT);
 
-        % dB baseline: scalar trial baseline (10*log10(x(t)/mean_base)),
-        % not FieldTrip sample-wise baselinetype 'db' (that blew up TC scale)
+        % % change: scalar trial baseline 100*(x(t)/mean_base - 1)
         velFT_bl_db = velFT;
         for trl = 1:nTrials
             if isempty(velFT.trial{trl})
                 continue
             end
-            velFT_bl_db.trial{trl}(1,:) = compute_db_baseline(velFT.trial{trl}(1,:), baselineVelH(trl));
-            velFT_bl_db.trial{trl}(2,:) = compute_db_baseline(velFT.trial{trl}(2,:), baselineVelV(trl));
-            velFT_bl_db.trial{trl}(3,:) = compute_db_baseline(velFT.trial{trl}(3,:), baselineVel2D(trl));
+            velFT_bl_db.trial{trl}(1,:) = compute_pct_baseline(velFT.trial{trl}(1,:), baselineVelH(trl));
+            velFT_bl_db.trial{trl}(2,:) = compute_pct_baseline(velFT.trial{trl}(2,:), baselineVelV(trl));
+            velFT_bl_db.trial{trl}(3,:) = compute_pct_baseline(velFT.trial{trl}(3,:), baselineVel2D(trl));
         end
 
         cfg = [];
@@ -438,11 +466,14 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         pupTS_noBL = ft_timelockanalysis(cfg, pupFT);
 
-        % dB baseline
-        cfg = [];
-        cfg.baseline     = baseline_period;
-        cfg.baselinetype = 'db';
-        pupFT_bl_db = ft_timelockbaseline(cfg, pupFT);
+        % % change: scalar trial baseline on pupil traces
+        pupFT_bl_db = pupFT;
+        for trl = 1:nTrials
+            if isempty(pupFT.trial{trl})
+                continue
+            end
+            pupFT_bl_db.trial{trl} = compute_pct_baseline(pupFT.trial{trl}, baselinePupilSize(trl));
+        end
 
         cfg = [];
         cfg.latency    = pupil_store_window;
@@ -455,14 +486,17 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         msTS_noBL = ft_timelockanalysis(cfg, msFT);
 
-        % Percentage-change baseline: 100*(x(t)/mean_base - 1)
-        % Variable names retain *_bl_db / dBMSRate for downstream compatibility.
+        % % change on MS TC; trial scalar = mean of that TC over [0, 2] s
         msFT_bl_db = msFT;
+        dBMSRate = nan(1, nTrials);
         for trl = 1:nTrials
             if isempty(msFT.trial{trl})
                 continue
             end
             msFT_bl_db.trial{trl} = compute_pct_baseline(msFT.trial{trl}, baselineMSRate(trl));
+            t_ms = msFT_bl_db.time{trl};
+            an_ms = t_ms >= analysis_period(1) & t_ms <= analysis_period(2);
+            dBMSRate(trl) = mean(msFT_bl_db.trial{trl}(an_ms), 'omitnan');
         end
 
         cfg = [];
@@ -470,16 +504,19 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         msTS_BL_db = ft_timelockanalysis(cfg, msFT_bl_db);
 
+        % Subject MS boxplot value: mean of the saved/ploted TC over [0, 2] s
+        ms_an_idx = msTS_BL_db.time >= analysis_period(1) & msTS_BL_db.time <= analysis_period(2);
+        ms_tc_summary = mean(msTS_BL_db.avg(:, ms_an_idx), 'omitnan');
+
         % Trial-level baselines for scalar gaze metrics
         dBGazeDeviation = compute_db_baseline(gazeDev, baselineGazeDev);
         dBGazeStdX      = compute_db_baseline(gazeSDx, baselineGazeSDx);
         dBGazeStdY      = compute_db_baseline(gazeSDy, baselineGazeSDy);
-        dBBCEA          = compute_db_baseline(bcea, baselineBcea);
-        dBPupilSize     = compute_db_baseline(pupilSize, baselinePupilSize);
-        dBMSRate        = compute_pct_baseline(microsaccadeRate, baselineMSRate);
-        dBVelH          = compute_db_baseline(velHorz, baselineVelH);
-        dBVelV          = compute_db_baseline(velVert, baselineVelV);
-        dBVel2D         = compute_db_baseline(vel2D, baselineVel2D);
+        dBBCEA          = compute_pct_baseline(bcea, baselineBcea);
+        dBPupilSize     = compute_pct_baseline(pupilSize, baselinePupilSize);
+        dBVelH          = compute_pct_baseline(velHorz, baselineVelH);
+        dBVelV          = compute_pct_baseline(velVert, baselineVelV);
+        dBVel2D         = compute_pct_baseline(vel2D, baselineVel2D);
 
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
@@ -511,7 +548,7 @@ for subj = 1:numel(subjects)
                 c25_db_gSDy    = mean(dBGazeStdY, 'omitnan');
                 c25_db_bcea    = mean(dBBCEA, 'omitnan');
                 c25_db_pups    = mean(dBPupilSize, 'omitnan');
-                c25_db_msrate  = mean(dBMSRate, 'omitnan');
+                c25_db_msrate  = ms_tc_summary;
                 c25_db_velHorz = mean(dBVelH, 'omitnan');
                 c25_db_velVert = mean(dBVelV, 'omitnan');
                 c25_db_vel2D   = mean(dBVel2D, 'omitnan');
@@ -535,6 +572,7 @@ for subj = 1:numel(subjects)
                 % Store trial-level velocity structs under explicit names
                 velTS_trials_c25      = velocityData;
                 velTS_db_trials_c25  = velocityData_db;
+                velOCC_trials_c25     = velOCCFT;
 
                 % Store pupil size
                 pupTS_c25        = pupTS_noBL;
@@ -572,7 +610,7 @@ for subj = 1:numel(subjects)
                 c50_db_gSDy    = mean(dBGazeStdY, 'omitnan');
                 c50_db_bcea    = mean(dBBCEA, 'omitnan');
                 c50_db_pups    = mean(dBPupilSize, 'omitnan');
-                c50_db_msrate  = mean(dBMSRate, 'omitnan');
+                c50_db_msrate  = ms_tc_summary;
                 c50_db_velHorz = mean(dBVelH, 'omitnan');
                 c50_db_velVert = mean(dBVelV, 'omitnan');
                 c50_db_vel2D   = mean(dBVel2D, 'omitnan');
@@ -594,6 +632,7 @@ for subj = 1:numel(subjects)
 
                 velTS_trials_c50      = velocityData;
                 velTS_db_trials_c50  = velocityData_db;
+                velOCC_trials_c50     = velOCCFT;
 
                 pupTS_c50        = pupTS_noBL;
                 pupTS_c50_bl_db = pupTS_BL_db;
@@ -629,7 +668,7 @@ for subj = 1:numel(subjects)
                 c75_db_gSDy    = mean(dBGazeStdY, 'omitnan');
                 c75_db_bcea    = mean(dBBCEA, 'omitnan');
                 c75_db_pups    = mean(dBPupilSize, 'omitnan');
-                c75_db_msrate  = mean(dBMSRate, 'omitnan');
+                c75_db_msrate  = ms_tc_summary;
                 c75_db_velHorz = mean(dBVelH, 'omitnan');
                 c75_db_velVert = mean(dBVelV, 'omitnan');
                 c75_db_vel2D   = mean(dBVel2D, 'omitnan');
@@ -651,6 +690,7 @@ for subj = 1:numel(subjects)
 
                 velTS_trials_c75      = velocityData;
                 velTS_db_trials_c75  = velocityData_db;
+                velOCC_trials_c75     = velOCCFT;
 
                 pupTS_c75        = pupTS_noBL;
                 pupTS_c75_bl_db = pupTS_BL_db;
@@ -686,7 +726,7 @@ for subj = 1:numel(subjects)
                 c100_db_gSDy    = mean(dBGazeStdY, 'omitnan');
                 c100_db_bcea    = mean(dBBCEA, 'omitnan');
                 c100_db_pups    = mean(dBPupilSize, 'omitnan');
-                c100_db_msrate  = mean(dBMSRate, 'omitnan');
+                c100_db_msrate  = ms_tc_summary;
                 c100_db_velHorz = mean(dBVelH, 'omitnan');
                 c100_db_velVert = mean(dBVelV, 'omitnan');
                 c100_db_vel2D   = mean(dBVel2D, 'omitnan');
@@ -708,6 +748,7 @@ for subj = 1:numel(subjects)
 
                 velTS_trials_c100      = velocityData;
                 velTS_db_trials_c100  = velocityData_db;
+                velOCC_trials_c100     = velOCCFT;
 
                 pupTS_c100        = pupTS_noBL;
                 pupTS_c100_bl_db = pupTS_BL_db;
@@ -828,7 +869,8 @@ for subj = 1:numel(subjects)
         'velTS_c25','velTS_c50','velTS_c75','velTS_c100', ...
         'velTS_c25_bl_db','velTS_c50_bl_db','velTS_c75_bl_db','velTS_c100_bl_db', ...
         'velTS_trials_c25','velTS_trials_c50','velTS_trials_c75','velTS_trials_c100', ...
-        'velTS_db_trials_c25','velTS_db_trials_c50','velTS_db_trials_c75','velTS_db_trials_c100');
+        'velTS_db_trials_c25','velTS_db_trials_c50','velTS_db_trials_c75','velTS_db_trials_c100', ...
+        'velOCC_trials_c25','velOCC_trials_c50','velOCC_trials_c75','velOCC_trials_c100');
 
     % pupil size time series
     save(fullfile(savepath, 'gaze_pupil_timeseries'), ...

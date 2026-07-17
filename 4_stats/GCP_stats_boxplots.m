@@ -179,7 +179,7 @@ for iVar = 1:numel(numericVars)
         ylabStr = 'Microsaccade Rate [%]';
         titleStr = 'Microsaccade Rate';
     elseif strcmp(varName, 'dBPupilSize')
-        ylabStr = 'Pupil Size [dB]';
+        ylabStr = 'Pupil Size [%]';
         titleStr = 'Pupil Size';
     elseif strcmp(varName, 'Power')
         ylabStr = 'Power [dB]';
@@ -189,8 +189,11 @@ for iVar = 1:numel(numericVars)
         ylabStr = 'Gaze Deviation [dB]';
         titleStr = 'Gaze Deviation';
     elseif strcmp(varName, 'dBVel2D')
-        ylabStr = 'Eye Velocity [dB]';
+        ylabStr = 'Eye Velocity [%]';
         titleStr = 'Combined Eye Velocity';
+    elseif strcmp(varName, 'dBBCEA')
+        ylabStr = 'BCEA [%]';
+        titleStr = 'BCEA';
     elseif strcmp(varName, 'dBFixations')
         ylabStr = 'Fixations [dB]';
         titleStr = 'Fixations';

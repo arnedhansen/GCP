@@ -253,13 +253,13 @@ sgtitle('[H2] Eye Velocity: Contrast-Dependent Suppression — Trial-Level', ...
 
 subplot(1, 2, 1);
 plot_raincloud_trial(gaze_dBVel2D, gaze_Condition, colors, condLabels, ...
-    'Eye Velocity [dB]');
+    'Eye Velocity [%]');
 
 subplot(1, 2, 2);
 plot_raincloud_trial(gaze_Vel2D, gaze_Condition, colors, condLabels, ...
     'Eye Velocity [px/s]');
 
-report_trend_trial('H2 Velocity (dB)', gaze_dBVel2D, gaze_Condition, ...
+report_trend_trial('H2 Velocity (%)', gaze_dBVel2D, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
 set(fig2, 'PaperPositionMode', 'auto');
@@ -273,13 +273,13 @@ sgtitle('[H3] Pupil Constriction Scales with Contrast — Trial-Level', ...
 
 subplot(1, 2, 1);
 plot_raincloud_trial(gaze_dBPupil, gaze_Condition, colors, condLabels, ...
-    'Pupil Size [dB]');
+    'Pupil Size [%]');
 
 subplot(1, 2, 2);
 plot_raincloud_trial(gaze_PupilSize, gaze_Condition, colors, condLabels, ...
     'Pupil Size [a.u.]');
 
-report_trend_trial('H3 Pupil (dB)', gaze_dBPupil, gaze_Condition, ...
+report_trend_trial('H3 Pupil (%)', gaze_dBPupil, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
 set(fig3, 'PaperPositionMode', 'auto');
@@ -293,13 +293,13 @@ sgtitle('[H4] BCEA Increases with Stimulus Contrast — Trial-Level', ...
 
 subplot(1, 2, 1);
 plot_raincloud_trial(gaze_dBBCEA, gaze_Condition, colors, condLabels, ...
-    'BCEA [dB]');
+    'BCEA [%]');
 
 subplot(1, 2, 2);
 plot_raincloud_trial(gaze_BCEA, gaze_Condition, colors, condLabels, ...
     'BCEA [px^2]');
 
-report_trend_trial('H4 BCEA (dB)', gaze_dBBCEA, gaze_Condition, ...
+report_trend_trial('H4 BCEA (%)', gaze_dBBCEA, gaze_Condition, ...
     gaze_Subject, contrast_vals);
 
 set(fig4, 'PaperPositionMode', 'auto');
@@ -382,12 +382,12 @@ title('\gamma Freq vs MS Rate'); set(gca, 'FontSize', fontSize - 3);
 
 subplot(2, 3, 2); hold on;
 plot_scatter_by_cond(subj_gedFreq, subj_dBVel2D, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('Eye Velocity [dB]');
+xlabel('GED Peak Frequency [Hz]'); ylabel('Eye Velocity [%]');
 title('\gamma Freq vs Velocity'); set(gca, 'FontSize', fontSize - 3);
 
 subplot(2, 3, 3); hold on;
 plot_scatter_by_cond(subj_gedFreq, subj_dBBCEA, colors, condLabels, nSubj);
-xlabel('GED Peak Frequency [Hz]'); ylabel('BCEA [dB]');
+xlabel('GED Peak Frequency [Hz]'); ylabel('BCEA [%]');
 title('\gamma Freq vs BCEA'); set(gca, 'FontSize', fontSize - 3);
 
 % Dual CRF overlay (from trial-level data, consistent with rainclouds)
