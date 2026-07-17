@@ -1,4 +1,8 @@
-%% GCP GED Gamma Topoplots
+%% GCP GED pattern scaled by condition spectrum
+%
+% This legacy visualization multiplies each subject's fixed full-window GED
+% activation pattern by the condition-specific GED power spectrum. Spatial
+% differences between conditions therefore reflect amplitude scaling only.
 
 %% Setup
 clear
@@ -60,7 +64,7 @@ end
 close all
 figure('Position', [0 0 1512 982], 'Color', 'w');
 set(gca, 'FontSize', 25);
-sgtitle('Grand Average Topographical Maps', ...
+sgtitle('GED Pattern Scaled by Condition Spectrum', ...
     'FontSize', 30, 'FontWeight', 'bold');
 
 cfg = [];
@@ -97,29 +101,29 @@ ft_topoplotER(cfg, gapow25);
 title('25% Contrast', 'FontSize', 25);
 cb = colorbar;
 cb.FontSize = 20;
-ylabel(cb, 'Power [dB]', 'FontSize', 25);
+ylabel(cb, 'Pattern-scaled power [a.u.]', 'FontSize', 25);
 
 subplot(2, 2, 2);
 ft_topoplotER(cfg, gapow50);
 title('50% Contrast', 'FontSize', 25);
 cb = colorbar;
 cb.FontSize = 20;
-ylabel(cb, 'Power [dB]', 'FontSize', 25);
+ylabel(cb, 'Pattern-scaled power [a.u.]', 'FontSize', 25);
 
 subplot(2, 2, 3);
 ft_topoplotER(cfg, gapow75);
 title('75% Contrast', 'FontSize', 25);
 cb = colorbar;
 cb.FontSize = 20;
-ylabel(cb, 'Power [dB]', 'FontSize', 25);
+ylabel(cb, 'Pattern-scaled power [a.u.]', 'FontSize', 25);
 
 subplot(2, 2, 4);
 ft_topoplotER(cfg, gapow100);
 title('100% Contrast', 'FontSize', 25);
 cb = colorbar;
 cb.FontSize = 20;
-ylabel(cb, 'Power [dB]', 'FontSize', 25);
+ylabel(cb, 'Pattern-scaled power [a.u.]', 'FontSize', 25);
 
 set(gcf, 'PaperPositionMode', 'auto');
 print(gcf, fullfile(paths.figures, 'eeg', 'topos', ...
-    'GCP_eeg_topos_ga.png'), '-dpng', '-r600');
+    'GCP_eeg_topos_GED_pattern_scaled_spectrum.png'), '-dpng', '-r600');
