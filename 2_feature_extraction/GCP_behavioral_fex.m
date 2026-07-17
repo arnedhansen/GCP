@@ -5,14 +5,9 @@
 %   Reaction Times
 
 %% Setup
-clear
-clc
-close all
-[subjects, paths] = setup('GCP', 0);
+startup
+[subjects, paths] = setup('GCP');
 rawPath = paths.raw_occ;
-dirs = dir(rawPath);
-folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
-subjects = {folders.name};
 behav_data = struct('ID', {}, 'Condition', {}, 'Accuracy', {}, 'ReactionTime', {});
 
 %% Read data
@@ -29,19 +24,17 @@ for subj = 1:length(subjects)
 
     %% Read blocks
     trial_counter = 1;
-    try
-        for block = 1:4
-            load(sprintf('%s_GCP_block%d.mat', subjects{subj}, block))
-            num_trials = length(saves.data.correct);
+    for block = 1:4
+        load(sprintf('%s_GCP_block%d.mat', subjects{subj}, block))
+        num_trials = length(saves.data.correct);
 
-            % Append data for this block
-            subject_id = [subject_id; repmat({saves.subjectID}, num_trials, 1)];
-            trial_num = [trial_num; (trial_counter:(trial_counter + num_trials - 1))'];
-            condition = [condition; saves.data.grating'];
-            accuracy = [accuracy; saves.data.correct'];
-            reaction_time = [reaction_time; saves.data.reactionTime'];
-            trial_counter = trial_counter + num_trials;
-        end
+        % Append data for this block
+        subject_id = [subject_id; repmat({saves.subjectID}, num_trials, 1)];
+        trial_num = [trial_num; (trial_counter:(trial_counter + num_trials - 1))'];
+        condition = [condition; saves.data.grating'];
+        accuracy = [accuracy; saves.data.correct'];
+        reaction_time = [reaction_time; saves.data.reactionTime'];
+        trial_counter = trial_counter + num_trials;
     end
 
     %% Create a trial-by-trial structure array for this subject
