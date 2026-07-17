@@ -152,7 +152,8 @@ xlabel('Time [s]', 'FontSize', fontSize*0.8);
 ylabel('Microsaccade Rate [dB]', 'FontSize', fontSize*0.8);
 leg_p_db = gobjects(nConds, 1);
 for c = 1:nConds
-    leg_p_db(c) = patch(nan, nan, colors(c, :), 'EdgeColor', 'none');
+    leg_p_db(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.25, ...
+        'EdgeColor', colors(c, :), 'LineWidth', 1.5);
 end
 set(gca, 'FontSize', fontSize*0.8);
 legend(leg_p_db, condLabels, 'Location', 'northeast', 'FontSize', fontSize*0.65, 'Box', 'off');

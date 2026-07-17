@@ -53,7 +53,8 @@ for cond = 1:nCond
     set(eb.patch, 'FaceColor', colors(cond, :), 'FaceAlpha', 0.125);
     set(eb.edge(1), 'Color', 'none');
     set(eb.edge(2), 'Color', 'none');
-    leg_p(end + 1) = patch(nan, nan, colors(cond, :), 'EdgeColor', 'none');
+    leg_p(end + 1) = patch(nan, nan, colors(cond, :), 'FaceAlpha', 0.25, ...
+        'EdgeColor', colors(cond, :), 'LineWidth', 1.5);
     leg_lbl{end + 1} = condLabels{cond};
 end
 xlim(analysis_freq_range);
@@ -123,7 +124,8 @@ for i = 1:nSubj
         if i == 8
             leg_h = gobjects(nCond, 1);
             for cond = 1:nCond
-                leg_h(cond) = patch(NaN, NaN, colors(cond, :), 'EdgeColor', 'none');
+                leg_h(cond) = patch(NaN, NaN, colors(cond, :), 'FaceAlpha', 0.25, ...
+                    'EdgeColor', colors(cond, :), 'LineWidth', 1.5);
             end
             legend(leg_h, condLabels, 'Location', 'best', 'Box', 'off', 'FontSize', 10);
         end

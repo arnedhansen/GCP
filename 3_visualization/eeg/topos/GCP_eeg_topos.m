@@ -1,90 +1,97 @@
-%% GCP Gamma Topoplots
+%% GCP GED Gamma Topoplots
 
 %% Setup
 clear
+startup
 [subjects, paths] = setup('GCP');
+subjects = gcp_subject_inclusion(subjects, paths);
 
-%% Load power spectra data
-for subj = 1:length(subjects)
-    load(fullfile(paths.features, subjects{subj}, 'eeg', 'power_spectra'))
-    pow25{subj}  = pow_c25_fooof_bl_smooth;
-    pow50{subj}  = pow_c50_fooof_bl_smooth;
-    pow75{subj}  = pow_c75_fooof_bl_smooth;
-    pow100{subj} = pow_c100_fooof_bl_smooth;
-    fprintf('Subject %3s loaded... \n', subjects{subj})
+ged = load(fullfile(paths.features, 'GCP_eeg_GED.mat'), ...
+    'subjects', 'all_topos', 'all_topo_labels', ...
+    'all_condition_powspctrm_full', 'scan_freqs');
+[~, subjectIndex] = ismember(subjects, ged.subjects);
+
+%% Reconstruct channel by frequency GED data
+pow25 = cell(1, numel(subjects));
+pow50 = cell(1, numel(subjects));
+pow75 = cell(1, numel(subjects));
+pow100 = cell(1, numel(subjects));
+conditionPower = {pow25, pow50, pow75, pow100};
+
+for subj = 1:numel(subjects)
+    sourceIndex = subjectIndex(subj);
+    topo = double(ged.all_topos{sourceIndex}(:));
+    topo = topo ./ sqrt(mean(topo .^ 2));
+
+    for cond = 1:4
+        freqData = [];
+        freqData.label = ged.all_topo_labels{sourceIndex}(:);
+        freqData.freq = ged.scan_freqs(:)';
+        freqData.powspctrm = topo * ...
+            double(ged.all_condition_powspctrm_full{cond, sourceIndex}(:)');
+        freqData.dimord = 'chan_freq';
+        conditionPower{cond}{subj} = freqData;
+    end
 end
 
-% Compute grand averages
-gapow25  = ft_freqgrandaverage([], pow25{:});
-gapow50  = ft_freqgrandaverage([], pow50{:});
-gapow75  = ft_freqgrandaverage([], pow75{:});
+pow25 = conditionPower{1};
+pow50 = conditionPower{2};
+pow75 = conditionPower{3};
+pow100 = conditionPower{4};
+
+%% Compute grand averages
+gapow25 = ft_freqgrandaverage([], pow25{:});
+gapow50 = ft_freqgrandaverage([], pow50{:});
+gapow75 = ft_freqgrandaverage([], pow75{:});
 gapow100 = ft_freqgrandaverage([], pow100{:});
 
 %% Define channels
-subj = 1;
-datapath = fullfile(paths.features, subjects{subj}, 'eeg');
-cd(datapath);
-% Occipital channels
-occ_channels = {};
-pow_label = pow25{1, 1};
-for i = 1:length(pow_label.label)
-    label = pow_label.label{i};
-    if contains(label, {'O'}) || contains(label, {'P'}) && ~contains(label, {'T'}) ...
-        && ~contains(label, {'C'}) || contains(label, {'I'})
-        occ_channels{end+1} = label;
+occChannels = {};
+for iChannel = 1:numel(gapow25.label)
+    label = gapow25.label{iChannel};
+    if contains(label, 'O') || ...
+            (contains(label, 'P') && ~contains(label, 'T') && ...
+            ~contains(label, 'C')) || contains(label, 'I')
+        occChannels{end + 1} = label; %#ok<SAGROW>
     end
 end
-channels = occ_channels;
-%channels = [{'Pz'}, {'P1'}, {'P2'}, {'P3'}, {'P4'}, {'P5'}, {'P6'}, {'P7'}, {'P8'}, {'PPO1'}, {'PPO2'}, {'PPO5h'}, {'PPO6h'} {'PO3'}, {'PO4'}, {'PO7'}, {'PO8'}, {'POz'}, {'POO3h'}, {'POO4h'}]
 
-%% Plot GRAND AVERAGE topoplots
+%% Plot grand average topoplots
 close all
+figure('Position', [0 0 1512 982], 'Color', 'w');
+set(gca, 'FontSize', 25);
+sgtitle('Grand Average Topographical Maps', ...
+    'FontSize', 30, 'FontWeight', 'bold');
 
-% Create figure
-figure;
-set(gcf, 'Position', [0, 0, 1200, 1000], 'Color', 'w');
-set(gca, 'Fontsize', 25);
-%sgtitle('Topographical Maps 300 ms - 2000 ms after Stimulus Presentation (30 - 90 Hz)', 'FontSize', 30, 'FontWeight', 'bold');
-sgtitle('Grand Average Topographical Maps', 'FontSize', 30, 'FontWeight', 'bold')
-
-% Common configuration
 cfg = [];
+load(fullfile(paths.base_students, 'toolboxes', ...
+    'headmodel', 'layANThead.mat'), 'layANThead')
 cfg.figure = 'gcf';
-load(fullfile(paths.base_students, 'toolboxes', 'headmodel', 'layANThead.mat'))
 cfg.layout = layANThead;
-allchannels = cfg.layout.label;
-cfg.channel = allchannels(1:end-2);
+allChannels = cfg.layout.label;
+cfg.channel = allChannels(1:end-2);
 cfg.channel = cfg.channel(~strcmp(cfg.channel, 'M2'));
 cfg.channel = cfg.channel(~strcmp(cfg.channel, 'M1'));
 cfg.highlight = 'on';
-cfg.highlightchannel = channels;
+cfg.highlightchannel = occChannels;
 cfg.highlightsymbol = '.';
-cfg.highlightsize = 5;
+cfg.highlightsize = 7.5;
 cfg.marker = 'off';
 cfg.comment = 'no';
-cmap = flipud(cbrewer('div', 'RdBu', 64));
-cfg.colormap = cmap;
+cfg.colormap = flipud(cbrewer('div', 'RdBu', 64));
 cfg.gridscale = 300;
 cfg.ylim = [30 90];
-cb = colorbar;
-set(cb, 'FontSize', 20);
-ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
-% Find max power value for frequency band
-[~, channel_idx] = ismember(channels, gapow25.label);
-freq_idx = find(gapow25.freq >= 30 & gapow25.freq <= 90);
-avgscptrm25  = mean(gapow25.powspctrm(channel_idx, freq_idx), 1);
-avgscptrm50  = mean(gapow50.powspctrm(channel_idx, freq_idx), 1);
-avgscptrm75  = mean(gapow75.powspctrm(channel_idx, freq_idx), 1);
-avgscptrm100 = mean(gapow100.powspctrm(channel_idx, freq_idx), 1);
-max_spctrm = max([
-    max(abs(avgscptrm25), [], 'all'), ...
-    max(abs(avgscptrm50), [], 'all'), ...
-    max(abs(avgscptrm75), [], 'all'), ...
-    max(abs(avgscptrm100), [], 'all')]);
-cfg.zlim = double([-max_spctrm * 0.9, max_spctrm * 0.9]);
+[~, channelIndex] = ismember(occChannels, gapow25.label);
+frequencyIndex = gapow25.freq >= 30 & gapow25.freq <= 90;
+avgSpectrum25 = mean(gapow25.powspctrm(channelIndex, frequencyIndex), 1);
+avgSpectrum50 = mean(gapow50.powspctrm(channelIndex, frequencyIndex), 1);
+avgSpectrum75 = mean(gapow75.powspctrm(channelIndex, frequencyIndex), 1);
+avgSpectrum100 = mean(gapow100.powspctrm(channelIndex, frequencyIndex), 1);
+maxSpectrum = max(abs([avgSpectrum25, avgSpectrum50, ...
+    avgSpectrum75, avgSpectrum100]), [], 'all');
+cfg.zlim = double([-maxSpectrum * 0.9, maxSpectrum * 0.9]);
 
-% POW25
 subplot(2, 2, 1);
 ft_topoplotER(cfg, gapow25);
 title('25% Contrast', 'FontSize', 25);
@@ -92,7 +99,6 @@ cb = colorbar;
 cb.FontSize = 20;
 ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
-% POW50
 subplot(2, 2, 2);
 ft_topoplotER(cfg, gapow50);
 title('50% Contrast', 'FontSize', 25);
@@ -100,7 +106,6 @@ cb = colorbar;
 cb.FontSize = 20;
 ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
-% POW75
 subplot(2, 2, 3);
 ft_topoplotER(cfg, gapow75);
 title('75% Contrast', 'FontSize', 25);
@@ -108,7 +113,6 @@ cb = colorbar;
 cb.FontSize = 20;
 ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
-% POW100
 subplot(2, 2, 4);
 ft_topoplotER(cfg, gapow100);
 title('100% Contrast', 'FontSize', 25);
@@ -116,94 +120,6 @@ cb = colorbar;
 cb.FontSize = 20;
 ylabel(cb, 'Power [dB]', 'FontSize', 25);
 
-% Save figure
 set(gcf, 'PaperPositionMode', 'auto');
-print(gcf, fullfile(paths.figures, 'eeg', 'topos', 'GCP_eeg_topos_ga.png'), '-dpng', '-r600');
-
-%% Topoplots for Individual Subjects
-close all;
-% Common configuration
-cfg = [];
-load(fullfile(paths.base_students, 'toolboxes', 'headmodel', 'layANThead.mat'))
-cfg.layout = layANThead;
-allchannels = cfg.layout.label;
-cfg.channel = allchannels(1:end-2);
-cfg.channel = cfg.channel(~strcmp(cfg.channel, 'M2'));
-cfg.channel = cfg.channel(~strcmp(cfg.channel, 'M1'));
-cfg.highlight = 'on';
-cfg.highlightchannel = channels;
-cfg.highlightsymbol = '.';
-cfg.highlightsize = 5;
-cfg.marker = 'off';
-cfg.comment = 'no';
-cmap = flipud(cbrewer('div', 'RdBu', 64));
-cfg.colormap = cmap;
-cfg.gridscale = 300;
-cfg.ylim = [30 90];
-
-for subj = 1:length(subjects)
-    close all
-    
-    % Prepare data for subj
-    pow25_subj  = pow25{subj};
-    pow50_subj  = pow50{subj};
-    pow75_subj  = pow75{subj};
-    pow100_subj = pow100{subj};
-
-    % Create figure
-    figure;
-    set(gcf, 'Position', [0, 0, 2000, 800], 'Color', 'w');
-    set(gca, 'Fontsize', 25);
-    sgtitle(sprintf('Topographical Maps for Subject %s', subjects{subj}), 'FontSize', 30, 'FontWeight', 'bold');
-    cfg.figure = 'gcf';
-
-    % Find max power value for frequency band
-    [~, channel_idx] = ismember(channels, pow25_subj.label);
-    freq_idx = find(pow25_subj.freq >= 30 & pow25_subj.freq <= 90);
-    avgscptrm25  = mean(pow25_subj.powspctrm(channel_idx, freq_idx), 1);
-    avgscptrm50  = mean(pow50_subj.powspctrm(channel_idx, freq_idx), 1);
-    avgscptrm75  = mean(pow75_subj.powspctrm(channel_idx, freq_idx), 1);
-    avgscptrm100 = mean(pow100_subj.powspctrm(channel_idx, freq_idx), 1);
-    max_spctrm = max([
-        max(abs(avgscptrm25), [], 'all'), ...
-        max(abs(avgscptrm50), [], 'all'), ...
-        max(abs(avgscptrm75), [], 'all'), ...
-        max(abs(avgscptrm100), [], 'all')]);
-    cfg.zlim = double([-max_spctrm, max_spctrm]);
-
-    % POW25
-    subplot(2, 2, 1);
-    ft_topoplotER(cfg, pow25_subj);
-    title('25% Contrast', 'FontSize', 25);
-    cb = colorbar;
-    cb.FontSize = 20;
-    ylabel(cb, 'Power [dB]', 'FontSize', 25);
-
-    % POW50
-    subplot(2, 2, 2);
-    ft_topoplotER(cfg, pow50_subj);
-    title('50% Contrast', 'FontSize', 25);
-    cb = colorbar;
-    cb.FontSize = 20;
-    ylabel(cb, 'Power [dB]', 'FontSize', 25);
-
-    % POW75
-    subplot(2, 2, 3);
-    ft_topoplotER(cfg, pow75_subj);
-    title('75% Contrast', 'FontSize', 25);
-    cb = colorbar;
-    cb.FontSize = 20;
-    ylabel(cb, 'Power [dB]', 'FontSize', 25);
-
-    % POW100
-    subplot(2, 2, 4);
-    ft_topoplotER(cfg, pow100_subj);
-    title('100% Contrast', 'FontSize', 25);
-    cb = colorbar;
-    cb.FontSize = 20;
-    ylabel(cb, 'Power [dB]', 'FontSize', 25);
-
-    % Save individual figure
-    set(gcf, 'PaperPositionMode', 'auto');
-    print(gcf, fullfile(paths.figures, 'eeg', 'topos', sprintf('GCP_eeg_topos_subj%s.png', subjects{subj})), '-dpng', '-r600');
-end
+print(gcf, fullfile(paths.figures, 'eeg', 'topos', ...
+    'GCP_eeg_topos_ga.png'), '-dpng', '-r600');

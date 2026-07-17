@@ -104,7 +104,8 @@ for c = 3%%%%%1:numel(channels)
     ylabel(velocityYLabels{c}, 'FontSize', fontSize*0.8);
     leg_p = gobjects(numel(ets), 1);
     for k = 1:numel(ets)
-        leg_p(k) = patch(nan, nan, conditionColors(k, :), 'EdgeColor', 'none');
+        leg_p(k) = patch(nan, nan, conditionColors(k, :), 'FaceAlpha', 0.25, ...
+            'EdgeColor', conditionColors(k, :), 'LineWidth', 1.5);
     end
     set(gca, 'FontSize', fontSize*0.8);
     legend(leg_p, conditionLabels, 'Location', 'best', 'FontSize', fontSize*0.65, 'Box', 'off');

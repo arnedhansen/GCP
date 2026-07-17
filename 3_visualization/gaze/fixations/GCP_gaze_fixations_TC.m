@@ -55,7 +55,7 @@ fontSize = 20;
 
 % Condition definitions
 condCodes   = {'61', '62', '63', '64'};
-condLabels  = {' 25% contrast', ' 50% contrast', ' 75% contrast', ' 100% contrast'};
+condLabels  = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
 nConds      = length(condCodes);
 
 %% Process all conditions
@@ -224,7 +224,8 @@ xlabel('Time [s]');
 ylabel('Fixations [dB]');
 leg_p_db = gobjects(nConds, 1);
 for c = 1:nConds
-    leg_p_db(c) = patch(nan, nan, colors(c, :), 'EdgeColor', 'none');
+    leg_p_db(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.25, ...
+        'EdgeColor', colors(c, :), 'LineWidth', 1.5);
 end
 legend(leg_p_db, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');
 set(gca, 'FontSize', fontSize);

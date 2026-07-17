@@ -52,6 +52,13 @@ for k = 1:size(P,1)
     plot(f, P(k,:), 'LineWidth', lineW, 'Color', colors(k,:))
 end
 
+condLabels = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
+leg_p = gobjects(size(P, 1), 1);
+for k = 1:size(P, 1)
+    leg_p(k) = patch(ax, nan, nan, colors(k, :), 'FaceAlpha', 0.25, ...
+        'EdgeColor', colors(k, :), 'LineWidth', 1.5);
+end
+
 % Axis labels and formatting
 xlabel('Frequency [Hz]')
 ylabel('Power [dB]')
@@ -63,7 +70,7 @@ set(ax, 'Box','off', ...
         'LineWidth',1.5, ...
         'FontName','Helvetica', ...
         'FontSize', 30)
-legend({'  25% Contrast', '  50% Contrast', '  75% Contrast', '100% Contrast'}, "Box", "off", "FontSize", 30)
+legend(leg_p, condLabels, "Box", "off", "FontSize", 30)
 
 % Hide axis ticks
 xticks([]);

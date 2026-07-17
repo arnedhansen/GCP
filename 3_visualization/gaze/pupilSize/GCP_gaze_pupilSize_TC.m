@@ -106,7 +106,8 @@ xlabel('Time [s]', 'FontSize', fontSize*0.8);
 ylabel(ylabs{1}, 'FontSize', fontSize*0.8);
 leg_p = gobjects(numel(ets), 1);
 for k = 1:numel(ets)
-    leg_p(k) = patch(nan, nan, colors(k, :), 'EdgeColor', 'none');
+    leg_p(k) = patch(nan, nan, colors(k, :), 'FaceAlpha', 0.25, ...
+        'EdgeColor', colors(k, :), 'LineWidth', 1.5);
 end
 set(gca, 'FontSize', fontSize*0.8);
 legend(leg_p, labels, 'Location', 'best', 'FontSize', fontSize*0.65, 'Box', 'off');
