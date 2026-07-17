@@ -202,10 +202,10 @@ for subj = 1:numel(subjects)
                     abs(vel_occ(2,:)); sqrt(sum(vel_occ.^2, 1))];
                 velOCCFT.time{trl} = t_full;
             else
-                velFT.trial{trl} = nan(3,0);
-                velFT.time{trl}  = [];
-                velOCCFT.trial{trl} = nan(3,0);
-                velOCCFT.time{trl}  = [];
+                velFT.trial{trl} = nan(3, numel(t_full));
+                velFT.time{trl}  = t_full;
+                velOCCFT.trial{trl} = nan(3, numel(t_full));
+                velOCCFT.time{trl}  = t_full;
             end
 
             % BASELINE WINDOW (position-based metrics)
@@ -437,6 +437,10 @@ for subj = 1:numel(subjects)
         end
 
         % FieldTrip timelock and baseline on velFT
+        % Force identical time axes: empty/unequal trials break ft_selectdata.
+        t_vel_common = baseline_period(1):(1 / fsample):analysis_period(2);
+        velFT = force_common_timeaxis(velFT, t_vel_common);
+        velOCCFT = force_common_timeaxis(velOCCFT, t_vel_common);
 
         % Timelocked average without baseline
         cfg = [];
@@ -447,13 +451,14 @@ for subj = 1:numel(subjects)
         % % change: scalar trial baseline 100*(x(t)/mean_base - 1)
         velFT_bl_db = velFT;
         for trl = 1:nTrials
-            if isempty(velFT.trial{trl})
+            if all(~isfinite(velFT.trial{trl}(:)))
                 continue
             end
             velFT_bl_db.trial{trl}(1,:) = compute_pct_baseline(velFT.trial{trl}(1,:), baselineVelH(trl));
             velFT_bl_db.trial{trl}(2,:) = compute_pct_baseline(velFT.trial{trl}(2,:), baselineVelV(trl));
             velFT_bl_db.trial{trl}(3,:) = compute_pct_baseline(velFT.trial{trl}(3,:), baselineVel2D(trl));
         end
+        velFT_bl_db = force_common_timeaxis(velFT_bl_db, t_vel_common);
 
         cfg = [];
         cfg.latency    = analysis_periodTS;
@@ -461,6 +466,9 @@ for subj = 1:numel(subjects)
         velTS_BL_db = ft_timelockanalysis(cfg, velFT_bl_db);
 
         % Timelocked average without baseline
+        t_pup_common = pupil_store_window(1):(1 / fsample):pupil_store_window(2);
+        pupFT = force_common_timeaxis(pupFT, t_pup_common);
+
         cfg = [];
         cfg.latency    = pupil_store_window;   % edge-safe pupil window
         cfg.keeptrials = 'no';
@@ -469,11 +477,12 @@ for subj = 1:numel(subjects)
         % % change: scalar trial baseline on pupil traces
         pupFT_bl_db = pupFT;
         for trl = 1:nTrials
-            if isempty(pupFT.trial{trl})
+            if all(~isfinite(pupFT.trial{trl}(:)))
                 continue
             end
             pupFT_bl_db.trial{trl} = compute_pct_baseline(pupFT.trial{trl}, baselinePupilSize(trl));
         end
+        pupFT_bl_db = force_common_timeaxis(pupFT_bl_db, t_pup_common);
 
         cfg = [];
         cfg.latency    = pupil_store_window;
@@ -481,6 +490,8 @@ for subj = 1:numel(subjects)
         pupTS_BL_db = ft_timelockanalysis(cfg, pupFT_bl_db);
 
         % Timelocked average without baseline
+        msFT = force_common_timeaxis(msFT, t_vel_common);
+
         cfg = [];
         cfg.latency    = analysis_periodTS;
         cfg.keeptrials = 'no';
@@ -490,7 +501,7 @@ for subj = 1:numel(subjects)
         msFT_bl_db = msFT;
         dBMSRate = nan(1, nTrials);
         for trl = 1:nTrials
-            if isempty(msFT.trial{trl})
+            if all(~isfinite(msFT.trial{trl}(:)))
                 continue
             end
             msFT_bl_db.trial{trl} = compute_pct_baseline(msFT.trial{trl}, baselineMSRate(trl));
@@ -498,6 +509,7 @@ for subj = 1:numel(subjects)
             an_ms = t_ms >= analysis_period(1) & t_ms <= analysis_period(2);
             dBMSRate(trl) = mean(msFT_bl_db.trial{trl}(an_ms), 'omitnan');
         end
+        msFT_bl_db = force_common_timeaxis(msFT_bl_db, t_vel_common);
 
         cfg = [];
         cfg.latency    = analysis_periodTS;
@@ -903,4 +915,38 @@ function pct = compute_pct_baseline(stim, baseline)
 % Percentage change: 100*(stim-baseline)/baseline. Non-positive baselines -> NaN.
 pct = 100 * (stim - baseline) ./ baseline;
 pct(~isfinite(stim) | ~isfinite(baseline) | ~isfinite(pct) | baseline <= 0) = NaN;
+end
+
+function data = force_common_timeaxis(data, t_common)
+% Put every trial on the same regular time axis so ft_timelockanalysis
+% does not fail in ft_selectdata when trials are empty or unequal.
+t_common = t_common(:)';
+nTrials = numel(data.trial);
+nChan = numel(data.label);
+for trl = 1:nTrials
+    t = data.time{trl};
+    x = data.trial{trl};
+    if isempty(t) || isempty(x) || size(x, 1) ~= nChan || size(x, 2) ~= numel(t)
+        data.trial{trl} = nan(nChan, numel(t_common));
+        data.time{trl} = t_common;
+        continue
+    end
+    t = t(:)';
+    if isequal(t, t_common)
+        data.time{trl} = t_common;
+        continue
+    end
+    newx = nan(nChan, numel(t_common));
+    for ch = 1:nChan
+        valid = isfinite(t) & isfinite(x(ch, :));
+        if nnz(valid) >= 2
+            newx(ch, :) = interp1(t(valid), x(ch, valid), t_common, 'linear', NaN);
+        elseif nnz(valid) == 1
+            [~, j] = min(abs(t_common - t(valid)));
+            newx(ch, j) = x(ch, valid);
+        end
+    end
+    data.trial{trl} = newx;
+    data.time{trl} = t_common;
+end
 end
