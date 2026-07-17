@@ -34,7 +34,7 @@ total_runtime_tic = tic;
 % Time windows
 baseline_window = [-1.5, -0.25];
 full_window = [0, 2.0];
-early_window = [0, 0.5];
+early_window = [0, 1.0];
 late_window = [1.0, 2.0];
 
 % Gamma analysis (frequency grid and FieldTrip mtmfft multitaper bandwidth)
@@ -132,6 +132,13 @@ all_selected_comp_weights = cell(1, nSubj);
 all_component_selection_stats_full  = cell(1, nSubj);
 all_component_selection_stats_early = cell(1, nSubj);
 all_component_selection_stats_late  = cell(1, nSubj);
+all_combined_filter_full  = cell(1, nSubj);
+all_combined_filter_early = cell(1, nSubj);
+all_combined_filter_late  = cell(1, nSubj);
+all_haufe_pattern_full = cell(4, nSubj);
+all_haufe_patterns_multicomp_full = cell(4, nSubj);
+all_reconstruction_patterns_full = cell(1, nSubj);
+freq_reconstructed_multicomp_full = cell(4, nSubj);
 subject_runtime_seconds = nan(nSubj, 1);
 
 trials_powratio_components_full  = cell(4, nSubj);
@@ -210,6 +217,7 @@ for subj = 1:nSubj
     covStim_early = zeros(nChans);
     covStim_late  = zeros(nChans);
     covBase_full  = zeros(nChans);
+    covStim_full_by_cond = cell(1, 4);
     nTrials_total = 0;
 
     dat_per_cond = cell(1, 4);
@@ -258,6 +266,7 @@ for subj = 1:nSubj
             covStim_full = covStim_full + double(tl_stim_full.cov) * nTrl;
             covStim_early = covStim_early + double(tl_stim_early.cov) * nTrl;
             covStim_late = covStim_late + double(tl_stim_late.cov) * nTrl;
+            covStim_full_by_cond{cond} = double(tl_stim_full.cov);
         end
         nTrials_total = nTrials_total + nTrl;
     end
@@ -894,6 +903,79 @@ for subj = 1:nSubj
     filters.late.W_combined = W_combined_late_norm;
     filters.late.selected_idx = selected_idx_late_norm;
     filters.late.w_combined = w_combined_late_norm;
+
+    % Persist the exact signed, noise-normalized channel-space filters used
+    % for trial projection. Downstream analyses must reuse these vectors
+    % rather than reconstructing the eigendecomposition.
+    all_combined_filter_full{subj} = build_combined_filter_vector( ...
+        filters.full.W_combined, filters.full.w_combined);
+    all_combined_filter_early{subj} = build_combined_filter_vector( ...
+        filters.early.W_combined, filters.early.w_combined);
+    all_combined_filter_late{subj} = build_combined_filter_vector( ...
+        filters.late.W_combined, filters.late.w_combined);
+
+    %% Condition-specific Haufe patterns and multicomponent reconstruction
+    if adequate_full && ~isempty(filters.full.W_combined)
+        W_selected_full = filters.full.W_combined;
+        component_cov_pool = W_selected_full' * covStim_full * W_selected_full;
+        reconstruction_patterns = covStim_full * W_selected_full * pinv(component_cov_pool);
+        all_reconstruction_patterns_full{subj} = reconstruction_patterns;
+
+        combined_filter_full = all_combined_filter_full{subj};
+        for cond = 1:4
+            cov_cond = covStim_full_by_cond{cond};
+            dat_cond = dat_per_cond{cond};
+            if isempty(cov_cond) || isempty(dat_cond)
+                continue;
+            end
+
+            component_cov_cond = W_selected_full' * cov_cond * W_selected_full;
+            all_haufe_patterns_multicomp_full{cond, subj} = ...
+                cov_cond * W_selected_full * pinv(component_cov_cond);
+
+            combined_variance_cond = combined_filter_full' * cov_cond * combined_filter_full;
+            if isfinite(combined_variance_cond) && combined_variance_cond > eps
+                all_haufe_pattern_full{cond, subj} = ...
+                    (cov_cond * combined_filter_full) / combined_variance_cond;
+            end
+
+            % Reconstruct the selected GED subspace at the sensors using one
+            % pooled activation matrix so condition maps remain comparable.
+            dat_reconstructed = dat_cond;
+            for trl = 1:numel(dat_cond.trial)
+                x = double(dat_cond.trial{trl});
+                component_data = W_selected_full' * x;
+                dat_reconstructed.trial{trl} = reconstruction_patterns * component_data;
+            end
+
+            cfg_select = [];
+            cfg_select.latency = baseline_window;
+            dat_reconstructed_base = ft_selectdata(cfg_select, dat_reconstructed);
+            cfg_select.latency = full_window;
+            dat_reconstructed_stim = ft_selectdata(cfg_select, dat_reconstructed);
+
+            cfg_freq = [];
+            cfg_freq.method = 'mtmfft';
+            cfg_freq.output = 'pow';
+            cfg_freq.taper = 'dpss';
+            cfg_freq.foi = scan_freqs;
+            cfg_freq.tapsmofrq = mtmfft_tapsmofrq_hz;
+            cfg_freq.pad = 'nextpow2';
+            cfg_freq.keeptrials = 'yes';
+            cfg_freq.feedback = 'none';
+            freq_base = ft_freqanalysis(cfg_freq, dat_reconstructed_base);
+            freq_stim = ft_freqanalysis(cfg_freq, dat_reconstructed_stim);
+
+            freq_ratio_trials = freq_stim;
+            freq_ratio_trials.powspctrm = 10 * log10( ...
+                max(double(freq_stim.powspctrm), eps) ./ ...
+                max(double(freq_base.powspctrm), eps));
+            cfg_desc = [];
+            cfg_desc.keeptrials = 'no';
+            freq_ratio = ft_freqdescriptives(cfg_desc, freq_ratio_trials);
+            freq_reconstructed_multicomp_full{cond, subj} = freq_ratio;
+        end
+    end
 
     subj_powratio_fullscan = cell(1, 4);
     subj_powratio_early = cell(1, 4);
@@ -1807,6 +1889,9 @@ save(save_path, ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
     'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
+    'all_combined_filter_full', 'all_combined_filter_early', 'all_combined_filter_late', ...
+    'all_haufe_pattern_full', 'all_haufe_patterns_multicomp_full', ...
+    'all_reconstruction_patterns_full', 'freq_reconstructed_multicomp_full', ...
     'trials_powratio_components_full', 'trials_powratio_components_early', 'trials_powratio_components_late', ...
     'all_condition_powspctrm_full', 'all_condition_powspctrm_early', 'all_condition_powspctrm_late', ...
     'all_condition_powspctrm_full_unsmoothed', 'all_condition_powspctrm_early_unsmoothed', 'all_condition_powspctrm_late_unsmoothed', ...
@@ -1815,7 +1900,8 @@ save(save_path, ...
     'trials_outlier_mask_freq_full', 'trials_outlier_mask_freq_early', 'trials_outlier_mask_freq_late', ...
     'trials_outlier_mask_power_full', 'trials_outlier_mask_power_early', 'trials_outlier_mask_power_late', ...
     'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
-    'scan_freqs', 'subjects', 'condLabels', 'condNames');
+    'scan_freqs', 'subjects', 'condLabels', 'condNames', ...
+    'baseline_window', 'full_window', 'early_window', 'late_window');
 
 clc
 powspctrm_save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_powspctrm_GED.mat');
@@ -2004,9 +2090,8 @@ end
 if isempty(p_stim_scan) || isempty(p_base_scan)
     return;
 end
-% IMPORTANT: derive stabilization floor from spectral baseline power per row.
-% Using a global time-domain floor can over-dominate spectral bins and
-% collapse ratios toward 0 dB.
+% Derive a baseline floor for instability detection only. Valid power ratios
+% use linear stimulus and baseline power directly before conversion to dB.
 floor_fallback = max(base_floor, eps);
 for ri = 1:nSig
     p_stim_row = p_stim_scan(ri, :);
@@ -2025,9 +2110,10 @@ for ri = 1:nSig
     end
     floor_row = max(0.25 * base_anchor, eps);
 
-    valid = isfinite(p_stim_row) & isfinite(p_base_row) & (p_base_row > 0);
+    valid = isfinite(p_stim_row) & isfinite(p_base_row) & ...
+        (p_stim_row > 0) & (p_base_row > 0);
     ratio_row = nan(1, numel(scan_freqs));
-    ratio_row(valid) = 10 * log10((p_stim_row(valid) + floor_row) ./ (p_base_row(valid) + floor_row));
+    ratio_row(valid) = 10 * log10(p_stim_row(valid) ./ p_base_row(valid));
     ratio_db(ri, :) = ratio_row;
     near_floor_row_mask(ri, valid) = p_base_row(valid) <= near_floor_mult * floor_row;
 end
@@ -2720,41 +2806,6 @@ for li = 1:n_lines
 end
 end
 
-function reason = build_rejection_reason_short(ci, emg_class, rejection_flags, extreme_component_outlier)
-reasons = {};
-
-if numel(emg_class) >= ci && ~isempty(emg_class{ci})
-    cls = lower(strtrim(emg_class{ci}));
-    if strcmp(cls, 'mixed') || strcmp(cls, 'emg')
-        reasons{end + 1} = cls; %#ok<AGROW>
-    end
-end
-
-if numel(extreme_component_outlier) >= ci && logical(extreme_component_outlier(ci))
-    reasons{end + 1} = 'extreme_outlier'; %#ok<AGROW>
-end
-if get_flag_value(rejection_flags, 'combined_leak', ci)
-    reasons{end + 1} = 'combined_leak'; %#ok<AGROW>
-end
-if get_flag_value(rejection_flags, 'emg_score', ci)
-    reasons{end + 1} = 'emg_score'; %#ok<AGROW>
-end
-if get_flag_value(rejection_flags, 'topo_nonposterior', ci)
-    reasons{end + 1} = 'topo_nonposterior'; %#ok<AGROW>
-end
-
-if isempty(reasons)
-    reason = 'criteria_not_met';
-    return;
-end
-
-n_show = min(2, numel(reasons));
-reason = strjoin(reasons(1:n_show), ',');
-if numel(reasons) > n_show
-    reason = sprintf('%s,+%d', reason, numel(reasons) - n_show);
-end
-end
-
 function val = get_flag_value(flags_struct, field_name, idx)
 val = false;
 if isfield(flags_struct, field_name)
@@ -3178,518 +3229,6 @@ for ci = 1:nComp
 end
 end
 
-function [powspctrm_form_score_vec, powspctrm_form_mode_vec, diag] = compute_powspctrm_form_template_score_from_spectra( ...
-    mean_pr_spectrum, scan_freqs, analysis_freq_range)
-multi_peak_sep_min_hz = 15;
-multi_peak_height_ratio_min = 0.80;
-multi_peak_penalty_mult = 0.62;
-multi_peak_penalty_mult = max(0, min(1, multi_peak_penalty_mult));
-shift_max_hz = 10;
-single_widths_hz = [5 7 9 12];
-double_separations_hz = [8 12 16 20];
-double_widths_hz = [3 4 5 6];
-min_trough_depth = 0.10;
-min_similarity = 0.40;
-smooth_n = 5;
-peak_width_min_hz = 2.0;
-peak_width_max_hz = 20.0;
-edge_ratio_soft = 1.25;
-edge_ratio_limit = 1.75;
-edge_run_soft = 0.025;
-edge_run_limit = 0.060;
-powspctrm_form_prom_abs_floor = 0.02;
-nComp = size(mean_pr_spectrum, 1);
-powspctrm_form_score_vec = zeros(nComp, 1);
-powspctrm_form_mode_vec = repmat({'none'}, nComp, 1);
-diag = struct( ...
-    'best_single_similarity', nan(nComp, 1), ...
-    'best_double_similarity', nan(nComp, 1), ...
-    'best_similarity_raw', nan(nComp, 1), ...
-    'pre_penalty_similarity', nan(nComp, 1), ...
-    'total_penalty_raw', nan(nComp, 1), ...
-    'total_penalty_used', nan(nComp, 1), ...
-    'edge_penalty', nan(nComp, 1), ...
-    'dominance_penalty', nan(nComp, 1), ...
-    'dominance_rival_count_major', nan(nComp, 1), ...
-    'dominance_rival_count_minor', nan(nComp, 1), ...
-    'dominance_rival_amp_ratio_sum', nan(nComp, 1), ...
-    'hf_rise_penalty', nan(nComp, 1), ...
-    'best_shift_hz', nan(nComp, 1), ...
-    'best_center_hz', nan(nComp, 1), ...
-    'best_width_hz', nan(nComp, 1), ...
-    'best_separation_hz', nan(nComp, 1), ...
-    'best_trough_depth', nan(nComp, 1), ...
-    'edge_ratio', nan(nComp, 1), ...
-    'edge_run_score', nan(nComp, 1), ...
-    'edge_artifact_flag', false(nComp, 1), ...
-    'roughness_ratio', nan(nComp, 1), ...
-    'roughness_penalty', nan(nComp, 1), ...
-    'multi_peak_penalty', nan(nComp, 1), ...
-    'multi_peak_flag', false(nComp, 1), ...
-    'dominant_penalty_tag', {repmat({'none'}, nComp, 1)});
-if isempty(mean_pr_spectrum) || isempty(scan_freqs)
-    return;
-end
-freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
-if ~any(freq_mask)
-    return;
-end
-smooth_n = max(1, round(smooth_n));
-for ci = 1:nComp
-    y = mean_pr_spectrum(ci, :);
-    if all(~isfinite(y))
-        continue;
-    end
-    x_band = scan_freqs(freq_mask);
-    y_proc = y(freq_mask);
-    y_proc = movmean(y_proc, smooth_n, 'omitnan');
-    y_band = y_proc;
-    valid = isfinite(x_band) & isfinite(y_band);
-    x_band = x_band(valid);
-    y_band = y_band(valid);
-    y_resid = y_band;
-    if numel(y_band) < 7
-        continue;
-    end
-    y_shape = max(y_band - median(y_band(isfinite(y_band))), 0);
-    if ~any(isfinite(y_shape))
-        y_shape = zeros(size(y_band));
-    end
-    [single_best, single_meta] = evaluate_single_template_bank(y_shape, x_band, single_widths_hz, shift_max_hz);
-    [double_best, double_meta] = evaluate_double_template_bank( ...
-        y_shape, y_band, x_band, double_widths_hz, double_separations_hz, shift_max_hz, min_trough_depth);
-    diag.best_single_similarity(ci) = single_best;
-    diag.best_double_similarity(ci) = double_best;
-
-    y_floor = prctile(y_band(isfinite(y_band)), 20);
-    if ~isfinite(y_floor)
-        y_floor = median(y_band(isfinite(y_band)));
-    end
-    if ~isfinite(y_floor)
-        y_floor = 0;
-    end
-    y_pos = max(y_band - y_floor, 0);
-    robust_scale = robust_mad(y_pos);
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = iqr(y_pos);
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = std(y_pos(isfinite(y_pos)));
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = 1;
-    end
-    rel_prom = 0.08 * max(y_pos);
-    min_prom = max([0, rel_prom, powspctrm_form_prom_abs_floor, 0.15 * robust_scale]);
-    [pks, locs, widths] = findpeaks(y_pos, x_band, 'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
-    if isempty(pks)
-        continue;
-    end
-    pks = pks(:);
-    locs = locs(:);
-    widths = widths(:);
-    [~, dom_idx] = max(pks);
-    dom_amp = pks(dom_idx);
-    dom_width = widths(dom_idx);
-    dom_loc = locs(dom_idx);
-
-    multi_peak_pen = 1;
-    multi_peak_hit = false;
-    if numel(pks) >= 2 && isfinite(dom_amp) && dom_amp > eps
-        sep_ok = abs(locs - dom_loc) >= multi_peak_sep_min_hz;
-        height_ok = pks >= multi_peak_height_ratio_min * dom_amp;
-        rival_mask = ((1:numel(pks))' ~= dom_idx) & sep_ok & height_ok;
-        if any(rival_mask)
-            multi_peak_hit = true;
-            n_rivals = sum(rival_mask);
-            rival_amp_ratio = pks(rival_mask) ./ max(dom_amp, eps);
-            amp_excess = max(0, mean(rival_amp_ratio) - multi_peak_height_ratio_min);
-            amp_scale = amp_excess / max(1 - multi_peak_height_ratio_min, eps);
-            extra_loss = 0.18 * max(0, n_rivals - 1) + 0.15 * min(1, amp_scale);
-            multi_peak_pen = max(0.15, multi_peak_penalty_mult - extra_loss);
-        end
-    end
-
-    dominance_pen = 1;
-    n_rival_major = 0;
-    n_rival_minor = 0;
-    rival_amp_ratio_sum = 0;
-    if numel(pks) >= 2 && isfinite(dom_amp) && dom_amp > eps
-        sep_from_dom = abs(locs - dom_loc);
-        is_rival = ((1:numel(pks))' ~= dom_idx);
-        rival_ratios = pks ./ max(dom_amp, eps);
-        rival_sep = sep_from_dom;
-
-        major_ratio_min = 0.55;
-        minor_ratio_min = 0.30;
-        major_sep_min_hz = 4.0;
-        minor_sep_min_hz = 2.5;
-
-        major_mask = is_rival & (rival_sep >= major_sep_min_hz) & (rival_ratios >= major_ratio_min);
-        minor_mask = is_rival & (rival_sep >= minor_sep_min_hz) & (rival_ratios >= minor_ratio_min);
-
-        n_rival_major = sum(major_mask);
-        n_rival_minor = sum(minor_mask);
-        if any(major_mask)
-            rival_amp_ratio_sum = sum(rival_ratios(major_mask));
-        end
-
-        clutter_load = 0;
-        clutter_load = clutter_load + 0.35 * max(0, n_rival_major - 1);
-        clutter_load = clutter_load + 0.12 * max(0, n_rival_minor - 2);
-        clutter_load = clutter_load + 0.45 * max(0, rival_amp_ratio_sum - 0.85);
-
-        max_loss = 0.55;
-        dominance_pen = max(0.45, 1 - min(max_loss, clutter_load));
-    end
-
-    width_low = peak_width_min_hz;
-    width_high = peak_width_max_hz;
-    width_score = 1;
-    if isfinite(dom_width)
-        if dom_width < width_low
-            width_score = max(0.15, dom_width / max(width_low, eps));
-        elseif dom_width > width_high
-            width_score = max(0.20, width_high / max(dom_width, eps));
-        end
-    end
-    snr_score = dom_amp / (dom_amp + robust_scale);
-    amp_score = dom_amp / (dom_amp + 0.70 * robust_scale);
-    shape_score = max(single_best, double_best);
-    peak_core_hz = 6;
-    peak_core_mask = abs(x_band - dom_loc) <= peak_core_hz;
-    conc_ratio = sum(y_pos(peak_core_mask)) / max(sum(y_pos), eps);
-    concentration_pen = 1;
-    if isfinite(conc_ratio) && conc_ratio < 0.32
-        concentration_pen = max(0.35, conc_ratio / 0.32);
-    end
-    dominant_quality = max(0, min(1, (0.40 * amp_score + 0.30 * snr_score + 0.30 * shape_score) * width_score * concentration_pen));
-
-    best_pre_penalty = dominant_quality;
-    dual_candidate = isfinite(double_best) && isfinite(single_best) && ...
-        (double_best > (single_best + 0.05)) && isfinite(double_meta.trough_depth) && ...
-        (double_meta.trough_depth >= max(0.05, 0.75 * min_trough_depth));
-    if dual_candidate
-        mode_raw = 'dual';
-        best_shift = double_meta.shift_hz;
-        best_width = double_meta.width_hz;
-        best_sep = double_meta.sep_hz;
-        best_trough = double_meta.trough_depth;
-        if ~isempty(double_meta.centers_hz)
-            best_centers = double_meta.centers_hz;
-        else
-            best_centers = dom_loc;
-        end
-    else
-        mode_raw = 'single';
-        best_shift = single_meta.shift_hz;
-        best_width = dom_width;
-        best_sep = double_meta.sep_hz;
-        best_trough = double_meta.trough_depth;
-        best_centers = dom_loc;
-    end
-
-    hf_pen = 1;
-    hf_mask = x_band >= max(70, analysis_freq_range(2) - 15);
-    if sum(hf_mask) >= 5
-        hf_idx = find(hf_mask);
-        hf_rho = corr((1:numel(hf_idx))', y_band(hf_idx)', 'rows', 'complete', 'type', 'Spearman');
-        if isfinite(hf_rho) && hf_rho > 0.70
-            hf_pen = max(0.65, 1 - 0.30 * (hf_rho - 0.70) / 0.30);
-        end
-    end
-
-    [edge_ratio, edge_run_score, edge_flag] = compute_edge_artifact_indicators( ...
-        y_resid, x_band, analysis_freq_range, edge_ratio_limit, edge_run_limit);
-    diag.edge_ratio(ci) = edge_ratio;
-    diag.edge_run_score(ci) = edge_run_score;
-    diag.edge_artifact_flag(ci) = edge_flag;
-    edge_pen = 1;
-    if isfinite(edge_ratio) && edge_ratio > edge_ratio_soft
-        edge_pen = edge_pen * max(0.80, 1 - 0.20 * min(1, (edge_ratio - edge_ratio_soft) / max(edge_ratio_limit - edge_ratio_soft, eps)));
-    end
-    if isfinite(edge_run_score) && edge_run_score > edge_run_soft
-        edge_pen = edge_pen * max(0.80, 1 - 0.20 * min(1, (edge_run_score - edge_run_soft) / max(edge_run_limit - edge_run_soft, eps)));
-    end
-    if edge_flag
-        edge_pen = edge_pen * 0.90;
-    end
-
-    roughness_ratio = NaN;
-    roughness_pen = 1;
-    y_finite = y_band(isfinite(y_band));
-    if numel(y_finite) >= 3
-        y_range = max(y_finite) - min(y_finite);
-        if y_range > eps
-            y_scaled = y_band / y_range;
-        else
-            y_scaled = y_band;
-        end
-        dy = diff(y_scaled);
-        amp_scale = prctile(y_scaled, 75) - prctile(y_scaled, 25);
-        if ~isfinite(amp_scale) || amp_scale <= eps
-            amp_scale = std(y_scaled(isfinite(y_scaled)));
-        end
-        if ~isfinite(amp_scale) || amp_scale <= eps
-            amp_scale = 1;
-        end
-        roughness_ratio = robust_mad(dy) / amp_scale;
-        rough_ref = 0.40;
-        rough_span = 0.70;
-        rough_pen_floor = 0.55;
-        rough_pen_max_loss = 0.45;
-        if isfinite(roughness_ratio) && roughness_ratio > rough_ref
-            loss_frac = min(1, (roughness_ratio - rough_ref) / rough_span);
-            roughness_pen = max(rough_pen_floor, 1 - rough_pen_max_loss * loss_frac);
-        end
-    end
-
-    penalty_raw = edge_pen * dominance_pen * hf_pen * roughness_pen * multi_peak_pen;
-    penalty_floor = 0.20;
-    penalty_used = max(penalty_floor, penalty_raw);
-    best_raw = best_pre_penalty * penalty_used;
-
-    penalty_names = {'edge', 'dominance', 'hf_rise', 'roughness', 'multi_peak'};
-    penalty_vals = [edge_pen, dominance_pen, hf_pen, roughness_pen, multi_peak_pen];
-    [worst_pen, worst_idx] = min(penalty_vals);
-    if isfinite(worst_pen) && (worst_pen < 0.999)
-        dominant_penalty_tag = penalty_names{worst_idx};
-    else
-        dominant_penalty_tag = 'none';
-    end
-
-    diag.best_similarity_raw(ci) = best_raw;
-    diag.pre_penalty_similarity(ci) = best_pre_penalty;
-    diag.total_penalty_raw(ci) = penalty_raw;
-    diag.total_penalty_used(ci) = penalty_used;
-    diag.edge_penalty(ci) = edge_pen;
-    diag.dominance_penalty(ci) = dominance_pen;
-    diag.dominance_rival_count_major(ci) = n_rival_major;
-    diag.dominance_rival_count_minor(ci) = n_rival_minor;
-    diag.dominance_rival_amp_ratio_sum(ci) = rival_amp_ratio_sum;
-    diag.hf_rise_penalty(ci) = hf_pen;
-    diag.best_shift_hz(ci) = best_shift;
-    if ~isempty(best_centers) && all(isfinite(best_centers))
-        diag.best_center_hz(ci) = mean(best_centers);
-    end
-    diag.best_width_hz(ci) = best_width;
-    diag.best_separation_hz(ci) = best_sep;
-    diag.best_trough_depth(ci) = best_trough;
-    diag.roughness_ratio(ci) = roughness_ratio;
-    diag.roughness_penalty(ci) = roughness_pen;
-    diag.multi_peak_penalty(ci) = multi_peak_pen;
-    diag.multi_peak_flag(ci) = multi_peak_hit;
-    diag.dominant_penalty_tag{ci} = dominant_penalty_tag;
-
-    if ~isfinite(best_raw)
-        powspctrm_form_score_vec(ci) = 0;
-        powspctrm_form_mode_vec{ci} = 'none';
-    else
-        score_mapped = best_raw;
-        if isfinite(min_similarity) && (min_similarity > 0) && (best_raw < min_similarity)
-            score_mapped = 0.75 * score_mapped;
-        end
-        powspctrm_form_score_vec(ci) = max(0, min(1, score_mapped));
-        powspctrm_form_mode_vec{ci} = mode_raw;
-    end
-end
-end
-
-function [best_sim, meta] = evaluate_single_template_bank(y_shape, x_band, widths_hz, shift_max_hz)
-best_sim = 0;
-meta = struct('shift_hz', NaN, 'width_hz', NaN, 'centers_hz', []);
-if isempty(widths_hz)
-    return;
-end
-x_mid = mean(x_band);
-x_min = min(x_band);
-x_max = max(x_band);
-for wi = 1:numel(widths_hz)
-    w = widths_hz(wi);
-    if ~isfinite(w) || w <= 0
-        continue;
-    end
-    shift_vals = candidate_shift_values_hz(x_band, shift_max_hz);
-    for si = 1:numel(shift_vals)
-        shift_hz = shift_vals(si);
-        center_hz = x_mid + shift_hz;
-        if ~isfinite(center_hz) || center_hz < x_min || center_hz > x_max
-            continue;
-        end
-        tpl = gaussian_template(x_band, center_hz, w);
-        sim = safe_template_similarity(y_shape, tpl);
-        if sim > best_sim
-            best_sim = sim;
-            meta.shift_hz = shift_hz;
-            meta.width_hz = w;
-            meta.centers_hz = center_hz;
-        end
-    end
-end
-end
-
-function [best_sim, meta] = evaluate_double_template_bank(y_shape, y_band, x_band, widths_hz, separations_hz, shift_max_hz, min_trough_depth)
-best_sim = 0;
-meta = struct('shift_hz', NaN, 'width_hz', NaN, 'sep_hz', NaN, 'trough_depth', NaN, 'centers_hz', []);
-if isempty(widths_hz) || isempty(separations_hz)
-    return;
-end
-x_mid = mean(x_band);
-x_min = min(x_band);
-x_max = max(x_band);
-shift_vals = candidate_shift_values_hz(x_band, shift_max_hz);
-for wi = 1:numel(widths_hz)
-    w = widths_hz(wi);
-    if ~isfinite(w) || w <= 0
-        continue;
-    end
-    for di = 1:numel(separations_hz)
-        sep = separations_hz(di);
-        if ~isfinite(sep) || sep <= 0
-            continue;
-        end
-        for si = 1:numel(shift_vals)
-            shift_hz = shift_vals(si);
-            c1 = x_mid + shift_hz - sep / 2;
-            c2 = x_mid + shift_hz + sep / 2;
-            if ~isfinite(c1) || ~isfinite(c2) || c1 < x_min || c2 > x_max
-                continue;
-            end
-            tpl = gaussian_template(x_band, c1, w) + gaussian_template(x_band, c2, w);
-            sim = safe_template_similarity(y_shape, tpl);
-            trough_depth = estimate_trough_depth(y_band, x_band, c1, c2);
-            trough_scale = min(1, max(0, trough_depth) / max(min_trough_depth, eps));
-            sim_adj = sim * trough_scale;
-            if sim_adj > best_sim
-                best_sim = sim_adj;
-                meta.shift_hz = shift_hz;
-                meta.width_hz = w;
-                meta.sep_hz = sep;
-                meta.trough_depth = trough_depth;
-                meta.centers_hz = [c1 c2];
-            end
-        end
-    end
-end
-end
-
-function shifts = candidate_shift_values_hz(x_band, shift_max_hz)
-if numel(x_band) >= 2
-    df = median(diff(x_band));
-else
-    df = 1;
-end
-if ~isfinite(df) || df <= 0
-    df = 1;
-end
-shift_max_hz = max(0, shift_max_hz);
-max_possible = max(abs(x_band - mean(x_band)));
-if ~isfinite(max_possible) || max_possible <= 0
-    max_possible = shift_max_hz;
-end
-shift_limit = min(shift_max_hz, max_possible);
-shifts = -shift_limit:df:shift_limit;
-if isempty(shifts)
-    shifts = 0;
-end
-if ~any(abs(shifts) < 1e-9)
-    shifts = unique(sort([shifts, 0]));
-end
-end
-
-function depth = estimate_trough_depth(y_band, x_band, c1, c2)
-depth = 0;
-if ~(isfinite(c1) && isfinite(c2))
-    return;
-end
-if c1 > c2
-    tmp = c1;
-    c1 = c2;
-    c2 = tmp;
-end
-[~, i1] = min(abs(x_band - c1));
-[~, i2] = min(abs(x_band - c2));
-if i1 == i2
-    return;
-end
-idx_lo = min(i1, i2);
-idx_hi = max(i1, i2);
-y_pos = max(y_band(:), 0);
-p1 = y_pos(i1);
-p2 = y_pos(i2);
-if idx_hi - idx_lo < 2 || ~isfinite(p1) || ~isfinite(p2)
-    return;
-end
-valley = min(y_pos(idx_lo:idx_hi));
-peak_ref = max(min(p1, p2), eps);
-depth = max(0, min(1, 1 - valley / peak_ref));
-end
-
-function sim = safe_template_similarity(y_shape, tpl)
-sim = 0;
-if isempty(y_shape) || isempty(tpl)
-    return;
-end
-ys = y_shape(:);
-ys(~isfinite(ys)) = 0;
-ys = max(ys, 0);
-tpl = tpl(:);
-tpl = max(tpl, 0);
-if numel(tpl) ~= numel(ys)
-    return;
-end
-mass = sum(ys);
-if ~isfinite(mass) || mass <= eps
-    return;
-end
-sim = sum(ys .* tpl) / mass;
-if ~isfinite(sim)
-    sim = 0;
-end
-sim = max(0, min(1, sim));
-end
-
-function g = gaussian_template(x, mu, sigma)
-if ~isfinite(mu) || ~isfinite(sigma) || sigma <= 0
-    g = zeros(size(x));
-    return;
-end
-g = exp(-0.5 * ((x - mu) ./ sigma).^2);
-end
-
-function [edge_ratio, edge_run_score, edge_artifact_flag] = compute_edge_artifact_indicators( ...
-    y_resid, x_band, analysis_freq_range, edge_ratio_limit, edge_run_limit)
-edge_ratio = NaN;
-edge_run_score = NaN;
-edge_artifact_flag = false;
-if isempty(y_resid) || isempty(x_band) || numel(y_resid) ~= numel(x_band)
-    return;
-end
-x_lo = analysis_freq_range(1);
-x_hi = analysis_freq_range(2);
-edge_mask = (x_band <= (x_lo + 5)) | (x_band >= (x_hi - 5));
-interior_mask = x_band >= (x_lo + 10) & x_band <= (x_hi - 10);
-if sum(edge_mask) < 3 || sum(interior_mask) < 3
-    return;
-end
-edge_amp = prctile(abs(y_resid(edge_mask)), 90);
-interior_amp = prctile(abs(y_resid(interior_mask)), 90);
-edge_ratio = edge_amp / max(interior_amp, eps);
-left_mask = x_band <= (x_lo + 6);
-right_mask = x_band >= (x_hi - 6);
-left_run = 0;
-right_run = 0;
-if sum(left_mask) >= 4
-    left_run = abs(mean(diff(y_resid(left_mask))));
-end
-if sum(right_mask) >= 4
-    right_run = abs(mean(diff(y_resid(right_mask))));
-end
-edge_run_score = max(left_run, right_run);
-edge_artifact_flag = isfinite(edge_ratio) && (edge_ratio > edge_ratio_limit) && ...
-    isfinite(edge_run_score) && (edge_run_score > edge_run_limit);
-end
-
 function [outlier_mask, stats] = detect_trial_metric_outliers_iqr(x, iqr_mult)
 x = x(:);
 outlier_mask = false(size(x));
@@ -3894,46 +3433,8 @@ tmp(zabs > mad_mult) = true;
 bad_mask(valid) = tmp;
 end
 
-function pr_scan = compute_simple_power_ratio_scan(x_stim, x_base, fs, scan_freqs, tapsmofrq_hz)
-pr_scan = nan(size(scan_freqs));
-if isempty(x_stim) || isempty(x_base) || fs <= 0
-    return;
-end
-x_stim = x_stim(:)';
-x_base = x_base(:)';
-[p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(x_stim, x_base, fs, scan_freqs, tapsmofrq_hz);
-if isempty(p_stim_scan) || isempty(p_base_scan)
-    return;
-end
-pr_scan = p_stim_scan(1, :);
-base_band_scan = p_base_scan(1, :);
-valid_base = isfinite(base_band_scan) & (base_band_scan > 0);
-if ~any(valid_base)
-    pr_scan(:) = NaN;
-    return;
-end
-base_anchor = prctile(base_band_scan(valid_base), 20);
-base_median = median(base_band_scan(valid_base), 'omitnan');
-if ~isfinite(base_anchor) || base_anchor <= 0
-    base_anchor = base_median;
-end
-if ~isfinite(base_median) || base_median <= 0
-    base_median = base_anchor;
-end
-base_floor = max(0.25 * base_anchor, eps);
-for fi = 1:numel(scan_freqs)
-    p_stim = pr_scan(fi);
-    p_base = base_band_scan(fi);
-    if ~isfinite(p_stim) || ~isfinite(p_base) || p_base <= 0
-        pr_scan(fi) = NaN;
-        continue;
-    end
-    % dB ratio with robust additive floor for numerical stability.
-    pr_scan(fi) = 10 * log10((p_stim + base_floor) / (p_base + base_floor));
-end
-end
-
 function pr_mat = compute_simple_power_ratio_scan_batch(sig_stim_cells, sig_base_cells, fs, scan_freqs, tapsmofrq_hz)
+% Component-selection proxy retained unchanged intentionally.
 nRows = numel(sig_stim_cells);
 pr_mat = nan(nRows, numel(scan_freqs));
 if nRows == 0 || numel(sig_base_cells) ~= nRows || fs <= 0
@@ -4311,46 +3812,6 @@ if ratio12 >= ratio_thr && mad_criterion
     eligible_mask_out(top_idx) = false;
     extreme_component_outlier_idx = top_idx;
 end
-end
-
-function p_adj = bh_fdr_adjust(p_raw)
-p = p_raw(:);
-n = numel(p);
-p_adj = nan(size(p));
-if n == 0
-    return;
-end
-
-[p_sorted, sort_idx] = sort(p);
-rank_idx = (1:n)';
-q_sorted = p_sorted .* n ./ rank_idx;
-q_sorted = min(q_sorted, 1);
-
-for k = n-1:-1:1
-    q_sorted(k) = min(q_sorted(k), q_sorted(k+1));
-end
-
-p_adj(sort_idx) = q_sorted;
-p_adj = reshape(p_adj, size(p_raw));
-end
-
-function y = smooth_reflective(x, win)
-y = x;
-if isempty(win) || win <= 1 || isempty(x)
-    return;
-end
-win = max(1, round(win));
-if mod(win,2) == 0
-    win = win + 1;
-end
-pad = floor(win/2);
-if numel(x) <= pad
-    y = movmean(x, min(win, numel(x)));
-    return;
-end
-x_pad = [fliplr(x(1:pad)), x, fliplr(x(end-pad+1:end))];
-y_pad = movmean(x_pad, win);
-y = y_pad(pad+1:end-pad);
 end
 
 function save_figure_png(fig_handle, out_path)
