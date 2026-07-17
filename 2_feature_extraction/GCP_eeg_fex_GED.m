@@ -80,10 +80,6 @@ trials_powratio     = cell(4, nSubj);
 trials_powratio_fullscan = cell(4, nSubj);
 trials_powratio_early = cell(4, nSubj);
 trials_powratio_late  = cell(4, nSubj);
-trials_powratio_plotstat = cell(4, nSubj);
-trials_powratio_fullscan_plotstat = cell(4, nSubj);
-trials_powratio_early_plotstat = cell(4, nSubj);
-trials_powratio_late_plotstat  = cell(4, nSubj);
 trials_peaks = cell(4, nSubj);
 trials_peaks_early = cell(4, nSubj);
 trials_peaks_late  = cell(4, nSubj);
@@ -111,9 +107,6 @@ trials_median_centroid = nan(4, nSubj);
 trials_gamma_power = nan(4, nSubj);
 trials_gamma_power_early = nan(4, nSubj);
 trials_gamma_power_late  = nan(4, nSubj);
-trials_gamma_power_plotstat = nan(4, nSubj);
-trials_gamma_power_early_plotstat = nan(4, nSubj);
-trials_gamma_power_late_plotstat  = nan(4, nSubj);
 
 all_topos       = cell(1, nSubj);
 all_topos_early = cell(1, nSubj);
@@ -429,7 +422,6 @@ for subj = 1:nSubj
         max_components_to_combine = 10;       % top-K cap for combined GED branch
         outlier_ratio_thr = 3.0;              % lambda1/lambda2 threshold for extreme-component outlier detection
         outlier_mad_mult = 4.0;               % MAD multiplier on log-eigenvalue distance
-        rank_stability_boot_reps = 200;       % bootstrap repetitions for rank-aggregation stability diagnostics
         topo_nonposterior_max = 0.28;         % posterior concentration below this is non-posterior
         occ_class_thr = 0.60;                 % occipital-evidence threshold for occipital class
         emg_class_thr = 0.50;                 % EMG-score threshold for EMG class
@@ -526,7 +518,7 @@ for subj = 1:nSubj
         no_threshold_match = ~any(eligible);
         selection_pool_mask = eligible;
         searchScores = compute_calibrated_rank_aggregation_score( ...
-            eval_raw_vec, powspctrm_form_score_vec, peak_bonus_vec, occipital_evidence, emg_artifact_score, rank_stability_boot_reps);
+            eval_raw_vec, powspctrm_form_score_vec, peak_bonus_vec, occipital_evidence, emg_artifact_score);
         searchScores(~finite_metrics) = -Inf;
         searchScores(~selection_pool_mask) = -Inf;
         [bestScore, bestIdx] = max(searchScores);
@@ -1237,10 +1229,6 @@ for subj = 1:nSubj
         powratio_trials_full = squeeze(powratio_methods_full_analysis(1, :, :));
         powratio_trials_early = squeeze(powratio_methods_early_analysis(1, :, :));
         powratio_trials_late = squeeze(powratio_methods_late_analysis(1, :, :));
-        powratio_trials_fullscan_plotstat = powratio_trials_fullscan;
-        powratio_trials_full_plotstat = powratio_trials_full;
-        powratio_trials_early_plotstat = powratio_trials_early;
-        powratio_trials_late_plotstat = powratio_trials_late;
         trials_powratio_fullscan{cond, subj} = powratio_trials_fullscan;
         trials_powratio{cond, subj} = powratio_trials_full;
         trials_powratio_early{cond, subj} = powratio_trials_early;
@@ -1248,10 +1236,6 @@ for subj = 1:nSubj
         subj_powratio_fullscan{cond} = powratio_trials_fullscan;
         subj_powratio_early{cond} = powratio_trials_early;
         subj_powratio_late{cond} = powratio_trials_late;
-        trials_powratio_fullscan_plotstat{cond, subj} = powratio_trials_fullscan_plotstat;
-        trials_powratio_plotstat{cond, subj} = powratio_trials_full_plotstat;
-        trials_powratio_early_plotstat{cond, subj} = powratio_trials_early_plotstat;
-        trials_powratio_late_plotstat{cond, subj} = powratio_trials_late_plotstat;
         %% Per-trial peak detection
         trial_metric_outlier_iqr_mult = 1.5; % outlier threshold in IQR units around Q1/Q3
         [trl_peaks, trial_peak_power_full, trl_centroid] = ...
@@ -1309,9 +1293,9 @@ for subj = 1:nSubj
         outlier_rows_full = outlier_mask_freq_full | outlier_mask_power_full;
         outlier_rows_early = outlier_mask_freq_early | outlier_mask_power_early;
         outlier_rows_late = outlier_mask_freq_late | outlier_mask_power_late;
-        powratio_trials_full_avg = powratio_trials_full_plotstat;
-        powratio_trials_early_avg = powratio_trials_early_plotstat;
-        powratio_trials_late_avg = powratio_trials_late_plotstat;
+        powratio_trials_full_avg = powratio_trials_full;
+        powratio_trials_early_avg = powratio_trials_early;
+        powratio_trials_late_avg = powratio_trials_late;
         if ~isempty(powratio_trials_full_avg)
             powratio_trials_full_avg(outlier_rows_full, :) = NaN;
         end
@@ -1375,9 +1359,6 @@ for subj = 1:nSubj
         trials_gamma_power(cond, subj) = robust_trial_mean(trial_peak_power_full);
         trials_gamma_power_early(cond, subj) = robust_trial_mean(trial_peak_power_early);
         trials_gamma_power_late(cond, subj) = robust_trial_mean(trial_peak_power_late);
-        trials_gamma_power_plotstat(cond, subj) = robust_trial_mean(trial_peak_power_full);
-        trials_gamma_power_early_plotstat(cond, subj) = robust_trial_mean(trial_peak_power_early);
-        trials_gamma_power_late_plotstat(cond, subj) = robust_trial_mean(trial_peak_power_late);
 
         % Time-split centroid summaries.
         valid_cent_early = isfinite(trl_centroid_early);
@@ -1870,11 +1851,8 @@ save_figure_png(fig_condition_shift_power, cond_shift_power_path);
 save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_GED.mat');
 save(save_path, ...
     'trials_powratio', ...
-    'trials_powratio_plotstat', ...
     'trials_powratio_fullscan', ...
-    'trials_powratio_fullscan_plotstat', ...
     'trials_powratio_early', 'trials_powratio_late', ...
-    'trials_powratio_early_plotstat', 'trials_powratio_late_plotstat', ...
     'trials_peaks', 'trials_centroid', ...
     'trials_peaks_early', 'trials_peaks_late', ...
     'trials_mean', 'trials_median', ...
@@ -1884,7 +1862,6 @@ save(save_path, ...
     'trials_trialcv_early', 'trials_trialcv_late', ...
     'trials_mean_centroid', 'trials_median_centroid', ...
     'trials_gamma_power', 'trials_gamma_power_early', 'trials_gamma_power_late', ...
-    'trials_gamma_power_plotstat', 'trials_gamma_power_early_plotstat', 'trials_gamma_power_late_plotstat', ...
     'all_topos', 'all_topos_early', 'all_topos_late', 'all_topo_labels', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
@@ -1914,7 +1891,7 @@ fprintf('[GED] Subject-level freq (full-window GED spectra) saved to: %s\n', pow
 
 %% Save GED analysis cohort (subjects with valid gamma power)
 SubjID = str2double(string(subjects(:)));
-Include = any(isfinite(trials_gamma_power_plotstat), 1)';
+Include = any(isfinite(trials_gamma_power), 1)';
 subject_inclusion = table(SubjID, Include, 'VariableNames', {'SubjID', 'Include'});
 save(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion', '-v7.3');
 
@@ -2304,24 +2281,10 @@ rank_vals(ord) = 1:numel(ord);
 rank_vec(idx_valid) = rank_vals;
 end
 
-function [score_vec, metrics, stability] = compute_calibrated_rank_aggregation_score( ...
-    eval_raw_vec, powspctrm_form_vec, peak_bonus_vec, occipital_evidence_vec, emg_artifact_vec, n_boot)
+function score_vec = compute_calibrated_rank_aggregation_score( ...
+    eval_raw_vec, powspctrm_form_vec, peak_bonus_vec, occipital_evidence_vec, emg_artifact_vec)
 nComp = numel(eval_raw_vec);
 score_vec = -Inf(nComp, 1);
-metrics = struct( ...
-    'score_raw', nan(nComp, 1), ...
-    'eig_score', nan(nComp, 1), ...
-    'powspctrm_form_score', nan(nComp, 1), ...
-    'peak_bonus_score', nan(nComp, 1), ...
-    'occipital_score', nan(nComp, 1), ...
-    'anti_emg_score', nan(nComp, 1));
-stability = struct( ...
-    'top1_freq', nan(nComp, 1), ...
-    'rank_mean', nan(nComp, 1), ...
-    'rank_std', nan(nComp, 1));
-if isempty(n_boot) || ~isfinite(n_boot) || n_boot < 1
-    n_boot = 0;
-end
 if nComp == 0
     return;
 end
@@ -2351,38 +2314,8 @@ for mi = 1:size(metric_mat, 2)
         point_mat(valid_rank, mi) = (n_valid - rank_m(valid_rank)) / (n_valid - 1);
     end
 end
-score_raw = mean(point_mat, 2, 'omitnan');
-score_vec = score_raw;
+score_vec = mean(point_mat, 2, 'omitnan');
 score_vec(~finite_rows) = -Inf;
-metrics.score_raw = score_raw;
-metrics.eig_score = point_mat(:, 1);
-metrics.powspctrm_form_score = point_mat(:, 2);
-metrics.peak_bonus_score = point_mat(:, 3);
-metrics.occipital_score = point_mat(:, 4);
-metrics.anti_emg_score = point_mat(:, 5);
-
-if n_boot <= 0
-    return;
-end
-n_metrics = size(point_mat, 2);
-boot_rank = nan(nComp, n_boot);
-top1_count = zeros(nComp, 1);
-for bi = 1:n_boot
-    metric_idx = randi(n_metrics, [1, n_metrics]);
-    boot_score = mean(point_mat(:, metric_idx), 2, 'omitnan');
-    if ~any(isfinite(boot_score))
-        continue;
-    end
-    rank_b = compute_descending_rank(boot_score);
-    boot_rank(:, bi) = rank_b;
-    [~, top_idx] = max(boot_score);
-    if ~isempty(top_idx) && isfinite(boot_score(top_idx))
-        top1_count(top_idx) = top1_count(top_idx) + 1;
-    end
-end
-stability.top1_freq = top1_count / n_boot;
-stability.rank_mean = mean(boot_rank, 2, 'omitnan');
-stability.rank_std = std(boot_rank, 0, 2, 'omitnan');
 end
 
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
