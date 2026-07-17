@@ -37,8 +37,10 @@ if ispc
     % Behavioral
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\behavioral\GCP_behav.m');
 
-    % EEG (GED): power spectra, TFRs, trial-level boxplots
+    % EEG (GED): power spectra, ERSD, topographies, TFRs, trial-level boxplots
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\eeg\powspctr\GCP_eeg_powspctrm_GED.m');
+    run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\eeg\ersd\GCP_eeg_ersd.m');
+    run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\eeg\topos\GCP_eeg_topos.m');
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\eeg\tfr\GCP_TFR_GED.m');
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\eeg\GCP_eeg_GED_trial_boxplots.m');
 
@@ -47,6 +49,8 @@ if ispc
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\pupilSize\GCP_gaze_pupilSize_TC.m');
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\velocity\GCP_gaze_velocity_TC.m');
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\fixations\GCP_gaze_fixations_TC.m');
+    run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\bcea\GCP_gaze_BCEA.m');
+    run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\bcea\GCP_gaze_BCEA_TC.m');
 
     % Hypotheses schematic
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\hypotheses\GCP_hypotheses_plot.m');
@@ -60,6 +64,9 @@ if ispc
     run('C:\Users\Administrator\Documents\GitHub\GCP\4_stats\GCP_hypotheses_trials.m');
 
     % Rainclouds: run the Python script GCP_stats_rainclouds.py separately.
+
+    %% Assemble manuscript figures
+    run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\GCP_assemble_manuscript_figures.m');
 
 else
     %% 1_preprocessing/4_preprocessing FieldTrip
@@ -84,29 +91,33 @@ else
     % Behavioral
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/behavioral/GCP_behav.m');
 
-    % EEG (GED): power spectra, TFRs, trial-level boxplots
+    % EEG (GED): power spectra, ERSD, topographies, and TFRs
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/eeg/powspctr/GCP_eeg_powspctrm_GED.m');
+    run('/Users/Arne/Documents/GitHub/GCP/3_visualization/eeg/ersd/GCP_eeg_ersd.m');
+    run('/Users/Arne/Documents/GitHub/GCP/3_visualization/eeg/topos/GCP_eeg_topos.m');
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/eeg/tfr/GCP_TFR_GED.m');
-    run('/Users/Arne/Documents/GitHub/GCP/3_visualization/eeg/GCP_eeg_GED_trial_boxplots.m');
+    % run('/Users/Arne/Documents/GitHub/GCP/3_visualization/eeg/GCP_eeg_GED_trial_boxplots.m');
 
     % Gaze time courses
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/microsaccades/GCP_gaze_microsaccades_TC.m');
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/pupilSize/GCP_gaze_pupilSize_TC.m');
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/velocity/GCP_gaze_velocity_TC.m');
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/fixations/GCP_gaze_fixations_TC.m');
+    run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/bcea/GCP_gaze_BCEA.m');
+    run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/bcea/GCP_gaze_BCEA_TC.m');
 
     % Hypotheses schematic
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/hypotheses/GCP_hypotheses_plot.m');
 
     %% 4 Stats
-    % Subject-level overview and boxplots (MATLAB)
+    % Subject-level overview and boxplots
     run('/Users/Arne/Documents/GitHub/GCP/4_stats/GCP_stats_overview.m');
     run('/Users/Arne/Documents/GitHub/GCP/4_stats/GCP_stats_boxplots.m');
 
-    % Hypothesis testing on trial-level data (MATLAB)
-    run('/Users/Arne/Documents/GitHub/GCP/4_stats/GCP_hypotheses_trials.m');
-
     % Rainclouds: run the Python script GCP_stats_rainclouds.py separately.
+
+    %% Assemble manuscript figures
+    run('/Users/Arne/Documents/GitHub/GCP/3_visualization/GCP_assemble_manuscript_figures.m');
 end
 
 %%
