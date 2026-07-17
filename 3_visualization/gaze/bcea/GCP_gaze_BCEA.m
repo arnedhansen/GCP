@@ -19,7 +19,7 @@ nCond = numel(condVars);
 nSubj = numel(subjects);
 
 stimWindow = [0 2];
-baselineWindow = [-1.5 -0.25];
+baselineWindow = [-1.5 -0.5];
 screenW = 800;
 screenH = 600;
 blinkWin = 25;

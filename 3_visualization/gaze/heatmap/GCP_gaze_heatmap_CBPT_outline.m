@@ -1,6 +1,6 @@
 %% GCP Gaze Heatmap: baselined conditions, linear contrast, and CBPT
 % Builds duration-normalized gaze density heatmaps for stimulus [0 2] and
-% baseline [-1.5 -0.25] (GCP EEG baseline). Per-bin percentage change is
+% baseline [-1.5 -0.5] (GCP EEG baseline). Per-bin percentage change is
 % unstable for sparse fixation maps, so baselining uses a global denominator:
 %   bl = 100 * (stim_rate - base_rate) / mean(base_rate > 0)
 % i.e. density change as % of mean baseline density. Plots all contrasts,
@@ -20,7 +20,7 @@ figDir = fullfile(paths.figures, 'gaze', 'heatmap');
 if ~isfolder(figDir), mkdir(figDir); end
 
 stimWindow = [0 2];
-baselineWindow = [-1.5 -0.25];
+baselineWindow = [-1.5 -0.5];
 stimDur = stimWindow(2) - stimWindow(1);
 baseDur = baselineWindow(2) - baselineWindow(1);
 

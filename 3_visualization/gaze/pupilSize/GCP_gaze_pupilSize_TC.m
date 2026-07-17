@@ -101,7 +101,7 @@ end
 xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
 yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
 xlim(t_win);
-ylim([-1.25 0.4])
+% ylim([-1.25 0.4])
 xlabel('Time [s]', 'FontSize', fontSize*0.8);
 ylabel(ylabs{1}, 'FontSize', fontSize*0.8);
 leg_p = gobjects(numel(ets), 1);

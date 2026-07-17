@@ -20,7 +20,8 @@ nCond = numel(condVars);
 nSubj = numel(subjects);
 
 computeWindow = [-1.5 2];
-baselineWindow = [-1.5 -0.25];
+baselineWindow = [-1.5 -0.5];
+analysisWindow = [0 2];
 displayWindow = [-0.5 2];
 movingWindowSec = 0.100;
 screenW = 800;
@@ -44,6 +45,7 @@ tVec = [];
 bceaRaw = [];
 bceaDB = [];
 baselineBCEA = nan(nSubj, nCond);
+dBBCEA_summary = nan(nSubj, nCond);
 
 for subj = 1:nSubj
     gazePath = fullfile(paths.features, subjects{subj}, 'gaze');
@@ -77,6 +79,9 @@ for subj = 1:nSubj
         bceaRaw(subj, c, :) = thisBCEA;
         bceaDB(subj, c, :) = thisDB;
         baselineBCEA(subj, c) = thisBaseline;
+
+        analysisIdx = tVec >= analysisWindow(1) & tVec <= analysisWindow(2);
+        dBBCEA_summary(subj, c) = mean(thisDB(analysisIdx), 'omitnan');
     end
 end
 
@@ -84,10 +89,13 @@ if isempty(tVec)
     error('No valid BCEA time course data were found.');
 end
 
-%% Save participant time courses
+%% Save participant time courses and TC-derived summaries for boxplots
 outData = fullfile(paths.features, 'GCP_gaze_BCEA_timeseries.mat');
-save(outData, 'bceaRaw', 'bceaDB', 'baselineBCEA', 'tVec', ...
-    'subjects', 'condValues', 'movingWindowSec', 'baselineWindow');
+save(outData, 'bceaRaw', 'bceaDB', 'baselineBCEA', 'dBBCEA_summary', 'tVec', ...
+    'subjects', 'condValues', 'movingWindowSec', 'baselineWindow', 'analysisWindow');
+
+outSum = fullfile(paths.features, 'GCP_gaze_BCEA_trace_summaries.mat');
+save(outSum, 'dBBCEA_summary', 'subjects', 'condValues', 'analysisWindow');
 
 %% Grand average and SEM
 grandMeanDB = squeeze(mean(bceaDB, 1, 'omitnan'));
@@ -137,6 +145,9 @@ exportgraphics(gcf, outFigure, 'Resolution', 600, 'BackgroundColor', 'white');
 
 fprintf('\nSaved figure: %s\n', outFigure);
 fprintf('Saved participant time courses: %s\n', outData);
+fprintf('Saved TC summaries for boxplots: %s\n', outSum);
+fprintf('Median dBBCEA summary by condition: %s\n', ...
+    mat2str(median(dBBCEA_summary, 1, 'omitnan'), 4));
 fprintf('Valid participants at time zero by condition: %s\n', ...
     mat2str(squeeze(nValid(:, nearestTimeIndex(tVec, 0)))'));
 fprintf('Baseline BCEA medians [px^2]: %s\n', ...

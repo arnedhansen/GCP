@@ -61,6 +61,7 @@ else
 end
 
 tbl_merge = sortrows(tbl_merge, {'ID','Condition'});
+tbl_merge = overwrite_bcea_from_timecourse(tbl_merge, features_root);
 inc = load(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion');
 inc = inc.subject_inclusion;
 [~, loc] = ismember(tbl_merge.ID, inc.SubjID);
@@ -90,6 +91,44 @@ fprintf('  %s\n', fullfile(features_root, 'GCP_merged_data.mat'));
 fprintf('  %s\n', fullfile(features_root, 'GCP_merged_data.csv'));
 
 %% Local helper functions
+function tbl = overwrite_bcea_from_timecourse(tbl, features_root)
+% Replace within-trial dBBCEA with mean of the BCEA % time course over [0, 2].
+sumPath = fullfile(features_root, 'GCP_gaze_BCEA_trace_summaries.mat');
+if ~isfile(sumPath)
+    warning('GCP_master_matrix:NoBceaSummary', ...
+        ['Missing %s. Keep gaze_fex within-trial dBBCEA. ', ...
+         'Run GCP_gaze_BCEA_TC.m before master matrix for TC-matched boxplots.'], sumPath);
+    return
+end
+S = load(sumPath, 'dBBCEA_summary', 'subjects', 'condValues');
+if ~ismember('dBBCEA', tbl.Properties.VariableNames)
+    return
+end
+
+subjList = string(S.subjects(:));
+for i = 1:height(tbl)
+    sid = tbl.ID(i);
+    if iscell(sid), sid = sid{1}; end
+    sIdx = find(subjList == string(sid), 1);
+    if isempty(sIdx)
+        sIdx = find(str2double(subjList) == double(sid), 1);
+    end
+
+    cond = double(tbl.Condition(i));
+    cIdx = find(S.condValues == cond, 1);
+    if isempty(cIdx) && cond <= 4 && max(S.condValues) > 4
+        cIdx = find(S.condValues == cond * 25, 1);
+    elseif isempty(cIdx) && cond > 4 && max(S.condValues) <= 4
+        cIdx = find(S.condValues == cond / 25, 1);
+    end
+
+    if ~isempty(sIdx) && ~isempty(cIdx)
+        tbl.dBBCEA(i) = S.dBBCEA_summary(sIdx, cIdx);
+    end
+end
+fprintf('Overwrote dBBCEA from BCEA time-course summaries (%s).\n', sumPath);
+end
+
 function tbl = standardize_id_condition(tbl)
 if ~ismember('ID', tbl.Properties.VariableNames)
     if ismember('Subject', tbl.Properties.VariableNames)
@@ -159,7 +198,7 @@ tbl_ged = table();
 
 % Subject-level GED gamma metrics come from the current GED pipeline output
 % (GCP_eeg_fex_GED.m -> GCP_eeg_GED.mat). Power is the subject-condition
-% robust mean of per-trial peak gamma power [dB] (trials_gamma_power_plotstat);
+% robust mean of per-trial peak gamma power [dB] (trials_gamma_power);
 % Frequency is the median per-trial peak gamma frequency [Hz] (trials_median).
 % This is the same per-trial peak definition the trial-level rainclouds use,
 % so the subject-level boxplots and the single-subject GED spectra share one
@@ -171,10 +210,10 @@ if ~isfile(ged_path)
     return
 end
 
-dat = load(ged_path, 'trials_gamma_power_plotstat', 'trials_gamma_power', ...
+dat = load(ged_path, 'trials_gamma_power', 'trials_gamma_power_plotstat', ...
     'trials_median', 'trials_mean', 'subjects');
 
-pow_mat = pick_first_numeric_matrix(dat, {'trials_gamma_power_plotstat', 'trials_gamma_power'});
+pow_mat = pick_first_numeric_matrix(dat, {'trials_gamma_power', 'trials_gamma_power_plotstat'});
 freq_mat = pick_first_numeric_matrix(dat, {'trials_median', 'trials_mean'});
 
 if isfield(dat, 'subjects') && ~isempty(dat.subjects)

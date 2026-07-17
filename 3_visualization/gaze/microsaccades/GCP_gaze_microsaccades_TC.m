@@ -4,8 +4,8 @@
 % per-condition grand-average traces with SEM shading.
 %
 % Important:
-%   - Baseline correction has already been applied during feature extraction
-%     as scalar-trial % change: 100*(x(t)/mean_base - 1).
+%   - Feature extraction averages rate (Hz) across trials first, then applies
+%     % change with a baseline floor (>= 1 event in the baseline window).
 %   - Subject boxplot scalars are the mean of this TC over [0, 2] s.
 %   - A light additional display smoothing is applied here.
 

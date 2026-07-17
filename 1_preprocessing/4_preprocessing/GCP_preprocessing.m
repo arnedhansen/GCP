@@ -28,7 +28,7 @@ for subj = 1:length(subjects)
         %% Segment data into epochs -2s before and 3.5s after stim onset and
         %  convert to Fieldtrip data structure AND extract gaze metrics from raw EEG data
         epoch_window = [-2 3.5];
-        baseline_window = [-1.5 -0.25];
+        baseline_window = [-1.5 -0.5];
         analysis_window = [0.3 2]; % Analysis window for eye metric extraction
         analysis_duration = diff(analysis_window);
         baseline_duration = diff(baseline_window);

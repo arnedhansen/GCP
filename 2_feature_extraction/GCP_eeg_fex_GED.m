@@ -32,7 +32,7 @@ total_runtime_tic = tic;
 %% Parameters
 
 % Time windows
-baseline_window = [-1.5, -0.25];
+baseline_window = [-1.5, -0.5];
 full_window = [0, 2.0];
 early_window = [0, 1.0];
 late_window = [1.0, 2.0];

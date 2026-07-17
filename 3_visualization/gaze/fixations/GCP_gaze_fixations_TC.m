@@ -47,7 +47,7 @@ n_disp   = sum(disp_idx);
 t_vec    = t_store_vec(disp_idx);
 
 % Baseline period for dB normalisation
-bl_win = [-1 -0.25];                                     % seconds
+bl_win = [-1.5 -0.5];                                     % seconds
 bl_idx = t_store_vec >= bl_win(1) & t_store_vec <= bl_win(2);
 
 % Plotting

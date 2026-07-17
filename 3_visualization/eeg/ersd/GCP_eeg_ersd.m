@@ -1,7 +1,8 @@
 %% GCP EEG GED ERS/ERD time course
-% Loads subject-condition GED TFR averages from GCP_eeg_GED_TFR.mat
-% (already ERS/ERD dB-baselined [-1.5 -0.25]), averages over gamma
-% (30-90 Hz), and plots mean +/- SEM time courses across subjects.
+% Loads subject-condition GED TFR averages from GCP_eeg_GED_TFR.mat.
+% Power is already normalized in dB to the arithmetic mean linear baseline
+% power using TFR window centers from -1.25 to -0.5 s. Gamma power
+% (30-90 Hz) is averaged and plotted as mean +/- SEM across subjects.
 %
 % GED data are a single virtual channel, so scalp topoplots are omitted.
 

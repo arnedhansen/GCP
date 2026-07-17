@@ -34,10 +34,13 @@ gaze_data = struct('ID',{},'Condition',{},'GazeDeviation',{},...
     'dBBlinks',{},'dBFixations',{},'dBSaccades',{});
 
 % time‐windows
-baseline_period   = [-1.5, -0.25];
+baseline_period   = [-1.5, -0.5];
 analysis_period   = [0 2];
 analysis_periodTS = [-1 2];
 pupil_store_window = [-1.5, 2.5];
+vel_store_window   = [-1.5, 2.5];  % extend past 2 s so t=2 is not a kernel edge
+vel_smooth_s       = 0.050;        % light smoothing of fixational speed TC
+ms_baseline_floor_hz = 1 / (baseline_period(2) - baseline_period(1)); % >= 1 event in baseline
 win_size          = 25;    % blink‐removal window (samples)
 fsample           = 500;   % eye‐tracker sampling rate
 
@@ -150,9 +153,8 @@ for subj = 1:numel(subjects)
             tVec   = dataET.time{trl};
 
             % Saccade cleaned fixational velocity on the original regular time axis.
-            % No temporal smoothing is applied before differentiation because a
-            % 50 to 100 ms moving average would suppress activity in the gamma range.
-            full_idx = tVec >= baseline_period(1) & tVec <= analysis_period(2);
+            % Store past analysis end so samples near t=2 are not convolution edges.
+            full_idx = tVec >= vel_store_window(1) & tVec <= vel_store_window(2);
             t_full   = tVec(full_idx);
             full_dat = raw(1:3, full_idx);
 
@@ -190,6 +192,14 @@ for subj = 1:numel(subjects)
                 vx_full    = abs(vel_fixational(1,:));
                 vy_full    = abs(vel_fixational(2,:));
                 speed_full = sqrt(sum(vel_fixational.^2, 1));
+
+                % Light temporal smoothing after differentiation (not before).
+                vel_smooth_samp = max(1, round(vel_smooth_s * fsample));
+                if vel_smooth_samp > 1
+                    vx_full = movmean(vx_full, vel_smooth_samp, 'omitnan');
+                    vy_full = movmean(vy_full, vel_smooth_samp, 'omitnan');
+                    speed_full = movmean(speed_full, vel_smooth_samp, 'omitnan');
+                end
 
                 velFT.trial{trl} = [vx_full; vy_full; speed_full];
                 velFT.time{trl}  = t_full;
@@ -438,7 +448,7 @@ for subj = 1:numel(subjects)
 
         % FieldTrip timelock and baseline on velFT
         % Force identical time axes: empty/unequal trials break ft_selectdata.
-        t_vel_common = baseline_period(1):(1 / fsample):analysis_period(2);
+        t_vel_common = vel_store_window(1):(1 / fsample):vel_store_window(2);
         velFT = force_common_timeaxis(velFT, t_vel_common);
         velOCCFT = force_common_timeaxis(velOCCFT, t_vel_common);
 
@@ -448,7 +458,16 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         velTS_noBL = ft_timelockanalysis(cfg, velFT);
 
-        % % change: scalar trial baseline 100*(x(t)/mean_base - 1)
+        % Average Hz first, then % change (avoids noisy trial-wise ratios)
+        vel_bl_idx = velTS_noBL.time >= baseline_period(1) & ...
+                     velTS_noBL.time <= baseline_period(2);
+        velTS_BL_db = velTS_noBL;
+        for ch = 1:size(velTS_noBL.avg, 1)
+            bl_mu = mean(velTS_noBL.avg(ch, vel_bl_idx), 'omitnan');
+            velTS_BL_db.avg(ch, :) = compute_pct_baseline(velTS_noBL.avg(ch, :), bl_mu);
+        end
+
+        % Also keep trial-level % traces for OCC / diagnostics
         velFT_bl_db = velFT;
         for trl = 1:nTrials
             if all(~isfinite(velFT.trial{trl}(:)))
@@ -459,11 +478,6 @@ for subj = 1:numel(subjects)
             velFT_bl_db.trial{trl}(3,:) = compute_pct_baseline(velFT.trial{trl}(3,:), baselineVel2D(trl));
         end
         velFT_bl_db = force_common_timeaxis(velFT_bl_db, t_vel_common);
-
-        cfg = [];
-        cfg.latency    = analysis_periodTS;
-        cfg.keeptrials = 'no';
-        velTS_BL_db = ft_timelockanalysis(cfg, velFT_bl_db);
 
         % Timelocked average without baseline
         t_pup_common = pupil_store_window(1):(1 / fsample):pupil_store_window(2);
@@ -490,33 +504,37 @@ for subj = 1:numel(subjects)
         pupTS_BL_db = ft_timelockanalysis(cfg, pupFT_bl_db);
 
         % Timelocked average without baseline
-        msFT = force_common_timeaxis(msFT, t_vel_common);
+        t_ms_common = baseline_period(1):(1 / fsample):analysis_period(2);
+        msFT = force_common_timeaxis(msFT, t_ms_common);
 
         cfg = [];
         cfg.latency    = analysis_periodTS;
         cfg.keeptrials = 'no';
         msTS_noBL = ft_timelockanalysis(cfg, msFT);
 
-        % % change on MS TC; trial scalar = mean of that TC over [0, 2] s
-        msFT_bl_db = msFT;
+        % Average rate (Hz) across trials first, then % change with a floor.
+        % Per-trial near-zero baselines otherwise explode to 1e5 % values.
+        ms_bl_idx = msTS_noBL.time >= baseline_period(1) & ...
+                    msTS_noBL.time <= baseline_period(2);
+        ms_bl_sc = mean(msTS_noBL.avg(ms_bl_idx), 'omitnan');
+        ms_bl_sc = max(ms_bl_sc, ms_baseline_floor_hz);
+        msTS_BL_db = msTS_noBL;
+        msTS_BL_db.avg = compute_pct_baseline(msTS_noBL.avg, ms_bl_sc);
+
+        % Trial-level % uses the same floor (still TC-derived rates)
         dBMSRate = nan(1, nTrials);
         for trl = 1:nTrials
             if all(~isfinite(msFT.trial{trl}(:)))
                 continue
             end
-            msFT_bl_db.trial{trl} = compute_pct_baseline(msFT.trial{trl}, baselineMSRate(trl));
-            t_ms = msFT_bl_db.time{trl};
+            bl_use = max(baselineMSRate(trl), ms_baseline_floor_hz);
+            ms_pct_trl = compute_pct_baseline(msFT.trial{trl}, bl_use);
+            t_ms = msFT.time{trl};
             an_ms = t_ms >= analysis_period(1) & t_ms <= analysis_period(2);
-            dBMSRate(trl) = mean(msFT_bl_db.trial{trl}(an_ms), 'omitnan');
+            dBMSRate(trl) = mean(ms_pct_trl(an_ms), 'omitnan');
         end
-        msFT_bl_db = force_common_timeaxis(msFT_bl_db, t_vel_common);
 
-        cfg = [];
-        cfg.latency    = analysis_periodTS;
-        cfg.keeptrials = 'no';
-        msTS_BL_db = ft_timelockanalysis(cfg, msFT_bl_db);
-
-        % Subject MS boxplot value: mean of the saved/ploted TC over [0, 2] s
+        % Subject MS boxplot value: mean of the saved/plotted TC over [0, 2] s
         ms_an_idx = msTS_BL_db.time >= analysis_period(1) & msTS_BL_db.time <= analysis_period(2);
         ms_tc_summary = mean(msTS_BL_db.avg(:, ms_an_idx), 'omitnan');
 
@@ -529,6 +547,13 @@ for subj = 1:numel(subjects)
         dBVelH          = compute_pct_baseline(velHorz, baselineVelH);
         dBVelV          = compute_pct_baseline(velVert, baselineVelV);
         dBVel2D         = compute_pct_baseline(vel2D, baselineVel2D);
+
+        % Subject velocity boxplots from the same % TC used for plotting
+        vel_an_idx = velTS_BL_db.time >= analysis_period(1) & ...
+                     velTS_BL_db.time <= analysis_period(2);
+        vel_tc_summary_H  = mean(velTS_BL_db.avg(1, vel_an_idx), 'omitnan');
+        vel_tc_summary_V  = mean(velTS_BL_db.avg(2, vel_an_idx), 'omitnan');
+        vel_tc_summary_2D = mean(velTS_BL_db.avg(3, vel_an_idx), 'omitnan');
 
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
@@ -561,9 +586,9 @@ for subj = 1:numel(subjects)
                 c25_db_bcea    = mean(dBBCEA, 'omitnan');
                 c25_db_pups    = mean(dBPupilSize, 'omitnan');
                 c25_db_msrate  = ms_tc_summary;
-                c25_db_velHorz = mean(dBVelH, 'omitnan');
-                c25_db_velVert = mean(dBVelV, 'omitnan');
-                c25_db_vel2D   = mean(dBVel2D, 'omitnan');
+                c25_db_velHorz = vel_tc_summary_H;
+                c25_db_velVert = vel_tc_summary_V;
+                c25_db_vel2D   = vel_tc_summary_2D;
 
                 subj_data_gaze_trial_c25 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
@@ -623,9 +648,9 @@ for subj = 1:numel(subjects)
                 c50_db_bcea    = mean(dBBCEA, 'omitnan');
                 c50_db_pups    = mean(dBPupilSize, 'omitnan');
                 c50_db_msrate  = ms_tc_summary;
-                c50_db_velHorz = mean(dBVelH, 'omitnan');
-                c50_db_velVert = mean(dBVelV, 'omitnan');
-                c50_db_vel2D   = mean(dBVel2D, 'omitnan');
+                c50_db_velHorz = vel_tc_summary_H;
+                c50_db_velVert = vel_tc_summary_V;
+                c50_db_vel2D   = vel_tc_summary_2D;
 
                 subj_data_gaze_trial_c50 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
@@ -681,9 +706,9 @@ for subj = 1:numel(subjects)
                 c75_db_bcea    = mean(dBBCEA, 'omitnan');
                 c75_db_pups    = mean(dBPupilSize, 'omitnan');
                 c75_db_msrate  = ms_tc_summary;
-                c75_db_velHorz = mean(dBVelH, 'omitnan');
-                c75_db_velVert = mean(dBVelV, 'omitnan');
-                c75_db_vel2D   = mean(dBVel2D, 'omitnan');
+                c75_db_velHorz = vel_tc_summary_H;
+                c75_db_velVert = vel_tc_summary_V;
+                c75_db_vel2D   = vel_tc_summary_2D;
 
                 subj_data_gaze_trial_c75 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
@@ -739,9 +764,9 @@ for subj = 1:numel(subjects)
                 c100_db_bcea    = mean(dBBCEA, 'omitnan');
                 c100_db_pups    = mean(dBPupilSize, 'omitnan');
                 c100_db_msrate  = ms_tc_summary;
-                c100_db_velHorz = mean(dBVelH, 'omitnan');
-                c100_db_velVert = mean(dBVelV, 'omitnan');
-                c100_db_vel2D   = mean(dBVel2D, 'omitnan');
+                c100_db_velHorz = vel_tc_summary_H;
+                c100_db_velVert = vel_tc_summary_V;
+                c100_db_vel2D   = vel_tc_summary_2D;
 
                 subj_data_gaze_trial_c100 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...

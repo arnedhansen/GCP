@@ -17,7 +17,7 @@ startup
 [subjects, paths, ~] = setup('GCP');
 
 %% Parameters
-baseline_window = [-1.5, -0.25];
+baseline_window = [-1.5, -0.5];
 stim_window = [0, 2.0];
 
 % TFR settings
