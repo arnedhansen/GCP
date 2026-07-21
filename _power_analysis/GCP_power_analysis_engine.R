@@ -46,7 +46,6 @@ run_subject_level_power <- function(
   detection_alpha <- 0.05
   strict_power_target <- 0.90
   contrast_levels <- c("25", "50", "75", "100")
-  subject_dropout_rate <- config$subject_dropout_rate %||% 0
   parallel_round_chunk_nsim <- 10L
 
   figure_output_dir <- file.path(gcp_root, "figures", "power_analysis")
@@ -72,7 +71,7 @@ run_subject_level_power <- function(
       chunk_nsim, n_subjects, formula_list, detection_alpha,
       true_beta, outcome_mean, random_intercept_sd, random_slope_sd,
       random_quadratic_slope_sd, residual_sd, linear_nuisance_beta,
-      use_random_slope, use_random_quadratic_slope, subject_dropout_rate,
+      use_random_slope, use_random_quadratic_slope,
       sim_col, target_term, model_scope) {
     valid_fits <- 0L
     detection_successes <- 0L
@@ -98,7 +97,6 @@ run_subject_level_power <- function(
         mu <- mu + random_slopes[dat$Subject] * x + true_beta * x
       }
       dat[[sim_col]] <- mu + stats::rnorm(nrow(dat), mean = 0, sd = residual_sd)
-      dat <- apply_subject_dropout(dat, subject_dropout_rate)
       if (!subject_level_fit_eligible(dat)) {
         next
       }
@@ -138,7 +136,7 @@ run_subject_level_power <- function(
       cl,
       varlist = c(
         "estimate_power_chunk", "contrast_levels", "make_subject_level_design",
-        "apply_subject_dropout", "fit_lmer_with_fallbacks", "detection_from_fit",
+        "fit_lmer_with_fallbacks", "detection_from_fit",
         "subject_level_fit_eligible", "SUBJECT_CONDITIONS_PER_SUBJECT"
       ),
       envir = environment()
@@ -183,7 +181,6 @@ run_subject_level_power <- function(
             linear_nuisance_beta = linear_nuisance_beta,
             use_random_slope = partition$includes_random_slope,
             use_random_quadratic_slope = partition$includes_random_quadratic_slope,
-            subject_dropout_rate = subject_dropout_rate,
             sim_col = config$sim_col,
             target_term = config$target_term,
             model_scope = config$model_scope

@@ -595,19 +595,6 @@ subject_level_fit_eligible <- function(dat, min_subjects = 3L) {
   }, error = function(e) FALSE)
 }
 
-apply_subject_dropout <- function(dat, subject_dropout_rate) {
-  if (subject_dropout_rate <= 0) {
-    return(droplevels(dat))
-  }
-  subject_levels <- levels(dat$Subject)
-  n_drop_subjects <- floor(length(subject_levels) * subject_dropout_rate)
-  if (n_drop_subjects > 0) {
-    dropped_subjects <- sample(subject_levels, size = n_drop_subjects, replace = FALSE)
-    dat <- dat[!(dat$Subject %in% dropped_subjects), , drop = FALSE]
-  }
-  droplevels(dat)
-}
-
 build_subject_level_formula_list <- function(outcome_col, model_scope = c("linear", "quadratic")) {
   model_scope <- match.arg(model_scope)
   if (model_scope == "linear") {
@@ -727,7 +714,7 @@ save_power_figures <- function(
       limits = c(0, 1),
       breaks = c(0, 0.25, 0.50, 0.75, 0.90, 1)
     ) +
-    ggplot2::labs(x = "Subjects", y = "Power", color = y_legend_title, title = plot_title) +
+    ggplot2::labs(x = "Subjects", y = "Power", color = y_legend_title) +
     ggplot2::theme_classic(base_size = 18, base_family = "Arial") +
     ggplot2::theme(
       panel.background = ggplot2::element_rect(fill = "white", color = NA),
@@ -740,8 +727,7 @@ save_power_figures <- function(
       axis.text = ggplot2::element_text(size = 16, color = "black"),
       legend.position = "right",
       legend.title = ggplot2::element_text(size = 15),
-      legend.text = ggplot2::element_text(size = 11),
-      plot.title = ggplot2::element_text(size = 22, face = "plain", hjust = 0.5)
+      legend.text = ggplot2::element_text(size = 11)
     )
 
   grDevices::png(
@@ -762,7 +748,7 @@ save_power_figures <- function(
     ggplot2::geom_tile(color = "white", linewidth = 1.1) +
     ggplot2::geom_text(
       ggplot2::aes(label = sprintf("%.2f", .data$power)),
-      color = "white", size = 3.2, fontface = "bold", family = "Arial"
+      color = "white", size = 3.52, fontface = "bold", family = "Arial"
     ) +
     ggplot2::scale_fill_gradientn(
       colours = c(heat_low_color, "#F46D43", "#FEE08B", "#66BD63", heat_high_color),
@@ -773,7 +759,7 @@ save_power_figures <- function(
     ) +
     ggplot2::coord_fixed() +
     ggplot2::labs(
-      x = "Number of subjects", y = y_legend_title, fill = "Power", title = plot_title
+      x = "Subjects", y = y_legend_title, fill = "Power"
     ) +
     ggplot2::theme_minimal(base_size = 16, base_family = "Arial") +
     ggplot2::theme(
@@ -785,7 +771,6 @@ save_power_figures <- function(
       legend.position = "right",
       legend.title = ggplot2::element_text(size = 11),
       legend.text = ggplot2::element_text(size = 10),
-      plot.title = ggplot2::element_text(size = 20, face = "plain", hjust = 0.5),
       panel.spacing = grid::unit(0.9, "lines")
     )
 
