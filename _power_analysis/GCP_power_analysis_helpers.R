@@ -542,16 +542,10 @@ fit_lmer_with_fallbacks <- function(formula_list, data) {
 make_subject_level_design <- function(n_subjects, contrast_levels) {
   # One row per subject per contrast condition (no repeated trials).
   Subject <- factor(rep(seq_len(n_subjects), each = length(contrast_levels)))
-  contrast <- factor(
-    rep(contrast_levels, times = n_subjects),
-    levels = contrast_levels,
-    ordered = TRUE
-  )
-  contrast_num <- as.numeric(as.character(contrast))
+  contrast_num <- as.numeric(rep(contrast_levels, times = n_subjects))
   contrast_num_c <- as.numeric(scale(contrast_num, center = TRUE, scale = TRUE))
   out <- data.frame(
     Subject = Subject,
-    Contrast = contrast,
     contrast_num = contrast_num,
     contrast_num_c = contrast_num_c
   )

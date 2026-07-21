@@ -1,5 +1,6 @@
 ## SIMR sensitivity analyses and custom power visualizations.
-## The literature effect is fixed while pilot residual SD is varied.
+## The literature effect and residual SD are fixed while the by-subject
+## random-slope SD is varied across low, median, and high scenarios.
 
 script_dir <- {
   cmd <- commandArgs(trailingOnly = FALSE)
@@ -19,7 +20,7 @@ suppressPackageStartupMessages({
   library(scales)
 })
 
-run_residual_sensitivity <- function(
+run_slope_sensitivity <- function(
     label,
     outcome,
     dz,
@@ -35,10 +36,11 @@ run_residual_sensitivity <- function(
   dir.create(data_dir, recursive = TRUE, showWarnings = FALSE)
 
   parameters <- load_variance_parameters(gcp_root, outcome, model_scope = "linear")
-  scenario_labels <- c("Low", "Median", "High")
-  scenario_sigma <- unname(parameters$residual_sd[c("low", "median", "high")])
   reference_sigma <- unname(parameters$residual_sd["median"])
   beta <- dz_to_linear_beta(dz, reference_sigma)
+  scenario_labels <- c("Low", "Median", "High")
+  scenario_multiplier <- unname(RANDOM_SLOPE_SD_MULTIPLIERS[c("low", "median", "high")])
+  scenario_slope_sd <- slope_sd_from_beta(beta, scenario_multiplier)
   csv_path <- file.path(data_dir, paste0(output_prefix, "_curve.csv"))
 
   if (plot_only) {
@@ -49,35 +51,38 @@ run_residual_sensitivity <- function(
   } else {
     rows <- lapply(seq_along(scenario_labels), function(i) {
       message(sprintf(
-        "%s | %s residual SD = %.4f | d_z = %.3f | fixed beta = %.4f",
-        label, scenario_labels[i], scenario_sigma[i], dz, beta
+        "%s | %s random-slope SD = %.4f (%.2fx beta) | residual SD = %.4f | d_z = %.3f | beta = %.4f",
+        label, scenario_labels[i], scenario_slope_sd[i], scenario_multiplier[i],
+        reference_sigma, dz, beta
       ))
       model <- make_simr_model(
         n_subjects = max(subject_breaks),
         outcome_mean = parameters$outcome_mean,
         beta = beta,
         random_intercept_sd = unname(parameters$random_intercept_sd["median"]),
-        residual_sd = scenario_sigma[i]
+        random_slope_sd = scenario_slope_sd[i],
+        residual_sd = reference_sigma
       )
       set.seed(seed + i - 1L)
-      curve <- simr::powerCurve(
+      curve <- suppressWarnings(simr::powerCurve(
         model,
         test = simr::fixed("contrast_num_c", method = "t"),
         along = "Subject",
         breaks = subject_breaks,
         nsim = nsim,
         progress = TRUE
-      )
+      ))
       out <- extract_power_curve(curve, subject_breaks)
       out$scenario <- scenario_labels[i]
-      out$residual_sd <- scenario_sigma[i]
+      out$random_slope_sd <- scenario_slope_sd[i]
+      out$slope_sd_multiplier <- scenario_multiplier[i]
       out
     })
     power_df <- do.call(rbind, rows)
     power_df$outcome <- label
     power_df$cohens_dz <- dz
     power_df$linear_beta <- beta
-    power_df$reference_residual_sd <- reference_sigma
+    power_df$residual_sd <- reference_sigma
     utils::write.csv(power_df, csv_path, row.names = FALSE)
   }
 
@@ -88,9 +93,9 @@ run_residual_sensitivity <- function(
   )
   legend_labels <- stats::setNames(
     sprintf(
-      "%s residual SD: %.3f",
+      "%s random-slope SD: %.3f",
       scenario_labels,
-      scenario_sigma
+      scenario_slope_sd
     ),
     scenario_labels
   )
@@ -133,7 +138,7 @@ run_residual_sensitivity <- function(
     ggplot2::labs(
       x = "Subjects",
       y = "Power",
-      color = "Pilot uncertainty"
+      color = "Between-subject\nslope variability"
     ) +
     ggplot2::theme_classic(base_size = 18, base_family = "Arial") +
     ggplot2::theme(
@@ -207,7 +212,7 @@ run_residual_sensitivity <- function(
 }
 
 run_power_visualizations <- function(nsim = 1000L, plot_only = FALSE) {
-  frequency <- run_residual_sensitivity(
+  frequency <- run_slope_sensitivity(
     label = "Gamma peak frequency",
     outcome = "PeakFrequency",
     dz = 0.45,
@@ -216,7 +221,7 @@ run_power_visualizations <- function(nsim = 1000L, plot_only = FALSE) {
     seed = 223L,
     plot_only = plot_only
   )
-  power <- run_residual_sensitivity(
+  power <- run_slope_sensitivity(
     label = "Gamma peak power",
     outcome = "PeakAmplitude",
     dz = 0.52,

@@ -89,11 +89,6 @@ prepare_gamma_data <- function(raw) {
     na.rm = TRUE
   )
   dat$Subject <- factor(dat$Subject)
-  dat$Contrast <- factor(
-    dat$contrast_num,
-    levels = c(25, 50, 75, 100),
-    ordered = TRUE
-  )
   population_sd <- sqrt(mean((c(25, 50, 75, 100) - 62.5)^2))
   dat$contrast_num_c <- (dat$contrast_num - 62.5) / population_sd
   assert_one_row_per_subject_condition(dat)

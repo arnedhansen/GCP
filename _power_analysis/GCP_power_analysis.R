@@ -1,5 +1,11 @@
 ## Literature effect size power analysis for gamma outcomes.
-## Both outcomes use linear contrast models and SIMR power curves.
+## Both outcomes use linear contrast models with a by-subject random slope,
+## simulated with SIMR. The sensitivity axis is the random-slope SD.
+
+## Random-slope SD scenarios, expressed as multiples of the fixed linear slope.
+## The between-subject SD of the contrast effect is the dominant term governing
+## how power grows with N, so it is varied here instead of the residual SD.
+RANDOM_SLOPE_SD_MULTIPLIERS <- c(low = 0.5, median = 1.0, high = 1.5)
 
 ensure_packages <- function(pkgs) {
   missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
@@ -119,9 +125,9 @@ load_variance_parameters <- function(gcp_root, outcome, model_scope = "linear") 
 }
 
 contrast_code <- function(contrast) {
-  levels <- c(25, 50, 75, 100)
-  population_sd <- sqrt(mean((levels - mean(levels))^2))
-  (as.numeric(contrast) - mean(levels)) / population_sd
+  contrast_values <- c(25, 50, 75, 100)
+  population_sd <- sqrt(mean((contrast_values - mean(contrast_values))^2))
+  (as.numeric(contrast) - mean(contrast_values)) / population_sd
 }
 
 make_simr_design <- function(n_subjects) {
@@ -139,23 +145,33 @@ dz_to_linear_beta <- function(dz, reference_residual_sd) {
   paired_mean_difference / delta_x
 }
 
+## Random-slope SD as a multiple of the fixed slope magnitude. Keeping most
+## subjects on the same side of zero requires the multiplier to stay near or
+## below 1; larger values imply many subjects with null or reversed effects.
+slope_sd_from_beta <- function(beta, multiplier) {
+  abs(as.numeric(beta)) * as.numeric(multiplier)
+}
+
 make_simr_model <- function(
     n_subjects,
     outcome_mean,
     beta,
     random_intercept_sd,
+    random_slope_sd,
     residual_sd) {
   dat <- make_simr_design(n_subjects)
+  subject_vcov <- matrix(
+    c(random_intercept_sd^2, 0, 0, random_slope_sd^2),
+    nrow = 2L,
+    dimnames = list(
+      c("(Intercept)", "contrast_num_c"),
+      c("(Intercept)", "contrast_num_c")
+    )
+  )
   simr::makeLmer(
-    outcome ~ contrast_num_c + (1 | Subject),
+    outcome ~ contrast_num_c + (1 + contrast_num_c | Subject),
     fixef = c(outcome_mean, beta),
-    VarCorr = list(
-      Subject = matrix(
-        random_intercept_sd^2,
-        nrow = 1L,
-        dimnames = list("(Intercept)", "(Intercept)")
-      )
-    ),
+    VarCorr = list(Subject = subject_vcov),
     sigma = residual_sd,
     data = dat
   )
@@ -200,13 +216,14 @@ run_literature_simr_curve <- function(
   parameters <- load_variance_parameters(gcp_root, outcome, model_scope = "linear")
   reference_sigma <- unname(parameters$residual_sd["median"])
   beta <- dz_to_linear_beta(dz, reference_sigma)
+  reference_slope_sd <- slope_sd_from_beta(beta, RANDOM_SLOPE_SD_MULTIPLIERS[["median"]])
   curve_rds <- file.path(data_dir, paste0(output_prefix, "_curve.rds"))
   curve_csv <- file.path(data_dir, paste0(output_prefix, "_curve.csv"))
   figure_path <- file.path(figure_dir, paste0(output_prefix, ".png"))
 
   message(sprintf(
-    "%s | d_z = %.3f | reference residual SD = %.4f | linear beta = %.4f",
-    label, dz, reference_sigma, beta
+    "%s | d_z = %.3f | residual SD = %.4f | linear beta = %.4f | random-slope SD = %.4f",
+    label, dz, reference_sigma, beta, reference_slope_sd
   ))
 
   if (plot_only) {
@@ -220,23 +237,25 @@ run_literature_simr_curve <- function(
       outcome_mean = parameters$outcome_mean,
       beta = beta,
       random_intercept_sd = unname(parameters$random_intercept_sd["median"]),
+      random_slope_sd = reference_slope_sd,
       residual_sd = reference_sigma
     )
     set.seed(seed)
-    power_curve <- simr::powerCurve(
+    power_curve <- suppressWarnings(simr::powerCurve(
       model,
       test = simr::fixed("contrast_num_c", method = "t"),
       along = "Subject",
       breaks = subject_breaks,
       nsim = nsim,
       progress = TRUE
-    )
+    ))
     saveRDS(power_curve, curve_rds)
     curve_df <- extract_power_curve(power_curve, subject_breaks)
     curve_df$outcome <- label
     curve_df$cohens_dz <- dz
     curve_df$linear_beta <- beta
     curve_df$reference_residual_sd <- reference_sigma
+    curve_df$random_slope_sd <- reference_slope_sd
     utils::write.csv(curve_df, curve_csv, row.names = FALSE)
   }
 
