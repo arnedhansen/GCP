@@ -5,6 +5,20 @@
 ## Random-slope SD scenarios, expressed as multiples of the fixed linear slope.
 ## The between-subject SD of the contrast effect is the dominant term governing
 ## how power grows with N, so it is varied here instead of the residual SD.
+
+#USEAGE
+#setwd("~/GitHub/GCP/_power_analysis")
+#setwd("..")
+#
+#source("_power_analysis/GCP_power_analysis_pilot_stats.R")
+#run_pilot_stats()
+#
+#source("_power_analysis/GCP_power_analysis.R")
+#run_literature_power_analysis()
+#
+#source("_power_analysis/GCP_power_analysis_visualizations.R")
+#run_power_visualizations()
+
 RANDOM_SLOPE_SD_MULTIPLIERS <- c(low = 0.5, median = 1.0, high = 1.5)
 
 ensure_packages <- function(pkgs) {
