@@ -26,7 +26,8 @@ run_slope_sensitivity <- function(
     dz,
     output_prefix,
     nsim = 1000L,
-    subject_breaks = seq(10, 100, by = 10),
+    subject_breaks = seq(5, 75, by = 5),
+    heatmap_breaks = seq(10, 70, by = 10),
     seed = 123L,
     plot_only = FALSE) {
   gcp_root <- resolve_gcp_root()
@@ -86,20 +87,25 @@ run_slope_sensitivity <- function(
     utils::write.csv(power_df, csv_path, row.names = FALSE)
   }
 
+  power_df <- power_df[power_df$n_subjects %in% subject_breaks, , drop = FALSE]
   power_df$scenario <- factor(
     power_df$scenario,
     levels = scenario_labels,
     ordered = TRUE
   )
-  legend_labels <- stats::setNames(
-    sprintf(
-      "%s random-slope SD: %.3f",
-      scenario_labels,
-      scenario_slope_sd
-    ),
-    scenario_labels
-  )
+  heatmap_df <- power_df[
+    power_df$n_subjects %in% heatmap_breaks,
+    ,
+    drop = FALSE
+  ]
+  axis_labels <- c(Low = "Low RS SD", Median = "Mid RS SD", High = "High RS SD")
   colors <- c(Low = "#1B9E77", Median = "#D95F02", High = "#7570B3")
+  ## Original morning color scale (green from 0.80 -> 1.00).
+  base_cols <- c("#8E0F1F", "#F46D43", "#FEE08B", "#66BD63", "#0B6E3A")
+  base_vals <- c(0.00, 0.60, 0.80, 0.81, 1.00)
+  heat_pal <- scales::gradient_n_pal(base_cols, values = base_vals)
+  heat_breaks <- seq(0, 1, by = 0.005)
+  heat_colours <- heat_pal(heat_breaks)
 
   curve_plot <- ggplot2::ggplot(
     power_df,
@@ -114,7 +120,7 @@ run_slope_sensitivity <- function(
     ggplot2::geom_errorbar(
       ggplot2::aes(ymin = .data$lower, ymax = .data$upper),
       linewidth = 0.6,
-      width = 1.6,
+      width = 1.2,
       alpha = 0.70
     ) +
     ggplot2::geom_point(size = 2.8) +
@@ -127,9 +133,12 @@ run_slope_sensitivity <- function(
     ggplot2::scale_color_manual(
       values = colors,
       breaks = scenario_labels,
-      labels = legend_labels
+      labels = axis_labels
     ) +
-    ggplot2::scale_x_continuous(breaks = subject_breaks) +
+    ggplot2::scale_x_continuous(
+      breaks = seq(5, 75, by = 10),
+      limits = range(subject_breaks)
+    ) +
     ggplot2::scale_y_continuous(
       labels = scales::percent_format(accuracy = 1),
       limits = c(0, 1),
@@ -138,25 +147,28 @@ run_slope_sensitivity <- function(
     ggplot2::labs(
       x = "Subjects",
       y = "Power",
-      color = "Between-subject\nslope variability"
+      color = NULL
     ) +
-    ggplot2::theme_classic(base_size = 18, base_family = "Arial") +
+    ggplot2::theme_classic(base_size = 23.4, base_family = "Arial") +
     ggplot2::theme(
       panel.grid = ggplot2::element_blank(),
       axis.line = ggplot2::element_line(color = "black", linewidth = 1.2),
       axis.ticks = ggplot2::element_line(color = "black", linewidth = 1.0),
       axis.ticks.length = grid::unit(0.25, "cm"),
-      axis.title = ggplot2::element_text(size = 20),
-      axis.text = ggplot2::element_text(size = 16, color = "black"),
-      legend.position = "right",
-      legend.title = ggplot2::element_text(size = 15),
-      legend.text = ggplot2::element_text(size = 11)
+      axis.title = ggplot2::element_text(size = 23.4),
+      axis.text = ggplot2::element_text(size = 18.2, color = "black"),
+      legend.position = "inside",
+      legend.position.inside = c(0.97, 0.03),
+      legend.justification = c(1, 0),
+      legend.background = ggplot2::element_rect(fill = "white", color = NA),
+      legend.title = ggplot2::element_blank(),
+      legend.text = ggplot2::element_text(size = 15.6)
     )
 
   heatmap_plot <- ggplot2::ggplot(
-    power_df,
+    heatmap_df,
     ggplot2::aes(
-      x = factor(.data$n_subjects),
+      x = factor(.data$n_subjects, levels = as.character(heatmap_breaks)),
       y = .data$scenario,
       fill = .data$power
     )
@@ -165,28 +177,40 @@ run_slope_sensitivity <- function(
     ggplot2::geom_text(
       ggplot2::aes(label = sprintf("%.2f", .data$power)),
       color = "white",
-      size = 3.52,
+      size = 4.576,
       fontface = "bold",
       family = "Arial"
     ) +
     ggplot2::scale_fill_gradientn(
-      colours = c("#8E0F1F", "#F46D43", "#FEE08B", "#66BD63", "#0B6E3A"),
-      values = c(0.00, 0.60, 0.79, 0.80, 1.00),
+      colours = heat_colours,
+      values = heat_breaks,
       limits = c(0, 1),
       breaks = seq(0, 1, by = 0.2),
-      labels = sprintf("%.2f", seq(0, 1, by = 0.2))
+      labels = sprintf("%.2f", seq(0, 1, by = 0.2)),
+      guide = ggplot2::guide_colorbar(
+        nbin = 200,
+        display = "gradient",
+        frame.colour = "black",
+        ticks.colour = "black"
+      )
     ) +
-    ggplot2::scale_y_discrete(labels = legend_labels) +
+    ggplot2::scale_y_discrete(labels = axis_labels) +
     ggplot2::coord_fixed() +
     ggplot2::labs(x = "Subjects", y = NULL, fill = "Power") +
-    ggplot2::theme_minimal(base_size = 16, base_family = "Arial") +
+    ggplot2::theme_minimal(base_size = 23.4, base_family = "Arial") +
     ggplot2::theme(
       panel.grid = ggplot2::element_blank(),
-      axis.title = ggplot2::element_text(size = 13),
-      axis.text = ggplot2::element_text(size = 10),
+      axis.title = ggplot2::element_text(size = 23.4),
+      axis.text.x = ggplot2::element_text(size = 18.2, color = "black"),
+      axis.text.y = ggplot2::element_text(
+        size = 18.2,
+        color = "black",
+        hjust = 0,
+        margin = ggplot2::margin(r = 10)
+      ),
       legend.position = "right",
-      legend.title = ggplot2::element_text(size = 11),
-      legend.text = ggplot2::element_text(size = 10)
+      legend.title = ggplot2::element_text(size = 18.2),
+      legend.text = ggplot2::element_text(size = 15.6)
     )
 
   grDevices::png(
@@ -200,7 +224,7 @@ run_slope_sensitivity <- function(
 
   grDevices::png(
     file.path(figure_dir, paste0(output_prefix, "_heatmap.png")),
-    width = 2500,
+    width = 3600,
     height = 1400,
     res = 300
   )
