@@ -130,20 +130,17 @@ for iPanel = 1:numel(figGazeComp.panels)
 end
 
 %% Figure 7: Gamma power and frequency
-fig7 = figureSpec('Figure7', 2, 2, [0 0 1512 982]);
+fig7 = figureSpec('Figure7', 1, 3, [0 0 1512 982]);
 fig7.panels = {
     panelSpec(fullfile(eegDir, 'ersd', 'GCP_eeg_ersd_GED_timecourse.png'), ...
         'A', 'Gamma ERSD Time Course', 1, [1 1]);
-    panelSpec(fullfile(eegDir, 'topos', 'GCP_eeg_topos_ga.png'), ...
-        'B', 'Gamma Power Topographies', 2, [1 1]);
     panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Power.png'), ...
-        'C', 'Gamma Power', 3, [1 1]);
+        'B', 'Gamma Power', 2, [1 1]);
     panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Frequency.png'), ...
-        'D', 'Gamma Peak Frequency', 4, [1 1])
+        'C', 'Gamma Peak Frequency', 3, [1 1])
     };
-fig7.panels{2}.imageScale = 0.92;
+fig7.panels{2}.imageScale = 0.88;
 fig7.panels{3}.imageScale = 0.88;
-fig7.panels{4}.imageScale = 0.88;
 for iPanel = 1:numel(fig7.panels)
     fig7.panels{iPanel}.trimWhite = true;
 end
@@ -167,7 +164,7 @@ figS1.panels = {
 %% Assemble all figures
 figSpecs = {fig1, fig2, fig3, fig4, fig5, fig6, ...
     figGazeComp, fig7, fig8, figS1};
-for iFig = 2%%%%%1:numel(figSpecs)
+for iFig = 1:numel(figSpecs)
     spec = figSpecs{iFig};
     outPng = fullfile(outDir, ['GCP_manuscript_' spec.name '.png']);
     assembleManuscriptFigure(spec, outPng, exportDpi);

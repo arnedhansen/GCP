@@ -88,10 +88,17 @@ if ~isempty(tbl_ged)
     tbl_ged = standardize_id_condition_trial(tbl_ged);
 end
 
+%% Load MS-free GED trial metrics (optional; from GCP_eeg_fex_GED_MSfree.m)
+tbl_ged_msfree = build_ged_msfree_trial_table(features_root, subjects);
+if ~isempty(tbl_ged_msfree)
+    tbl_ged_msfree = standardize_id_condition_trial(tbl_ged_msfree);
+end
+
 %% Prefix non-key variables for unambiguous merged names
 tbl_behav = prefix_nonkeys(tbl_behav, {'ID','Condition','Trial'}, 'Behavior_');
 tbl_gaze  = prefix_nonkeys(tbl_gaze,  {'ID','Condition','Trial'}, 'Gaze_');
 tbl_ged   = prefix_nonkeys(tbl_ged,   {'ID','Condition','Trial'}, 'GED_');
+tbl_ged_msfree = prefix_nonkeys(tbl_ged_msfree, {'ID','Condition','Trial'}, 'GED_');
 
 %% Merge (outer over behavior and gaze; GED joined afterwards)
 keys = {'ID','Condition','Trial'};
@@ -112,6 +119,10 @@ else
     tbl_merge = outerjoin(tbl_bg, tbl_ged, 'Keys', keys, 'MergeKeys', true, 'Type', 'full');
 end
 
+if ~isempty(tbl_ged_msfree)
+    tbl_merge = outerjoin(tbl_merge, tbl_ged_msfree, 'Keys', keys, 'MergeKeys', true, 'Type', 'full');
+end
+
 tbl_merge = sortrows(tbl_merge, {'ID','Condition','Trial'});
 inc = load(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion');
 inc = inc.subject_inclusion;
@@ -122,9 +133,11 @@ tbl_merge.Include = inc.Include(loc);
 n_behav = height(tbl_behav);
 n_gaze = height(tbl_gaze);
 n_ged = height(tbl_ged);
+n_ged_msfree = height(tbl_ged_msfree);
 n_merge = height(tbl_merge);
 
-fprintf('Rows loaded: behavior=%d, gaze=%d, ged=%d\n', n_behav, n_gaze, n_ged);
+fprintf('Rows loaded: behavior=%d, gaze=%d, ged=%d, ged_msfree=%d\n', ...
+    n_behav, n_gaze, n_ged, n_ged_msfree);
 fprintf('Rows merged: %d\n', n_merge);
 
 %% Save outputs with GCP_ prefix
@@ -288,6 +301,74 @@ if isempty(ID)
 end
 
 tbl_ged = table(ID, Condition, Trial, GammaFrequency, GammaPower);
+end
+
+function tbl = build_ged_msfree_trial_table(features_root, subjects)
+tbl = table();
+msfree_path = fullfile(features_root, 'GCP_eeg_GED_MSfree.mat');
+if ~isfile(msfree_path)
+    fprintf('MS-free GED file not found (optional): %s\n', msfree_path);
+    return
+end
+
+dat = load(msfree_path, 'trials_peaks_MSfree', 'trials_gamma_power_MSfree', ...
+    'trials_pct_kept_MSfree', 'subjects');
+if ~isfield(dat, 'trials_peaks_MSfree')
+    return
+end
+
+if isfield(dat, 'subjects') && ~isempty(dat.subjects)
+    ged_subjects = dat.subjects;
+else
+    ged_subjects = subjects;
+end
+
+nCond = size(dat.trials_peaks_MSfree, 1);
+nSubj = size(dat.trials_peaks_MSfree, 2);
+
+ID = [];
+Condition = [];
+Trial = [];
+GammaFrequency_MSfree = [];
+GammaPower_MSfree = [];
+MSfree_pctKept = [];
+
+for c = 1:nCond
+    for s = 1:nSubj
+        pf = dat.trials_peaks_MSfree{c, s};
+        if isempty(pf)
+            continue
+        end
+        pf = pf(:);
+        nTrl = numel(pf);
+        pp = nan(nTrl, 1);
+        pk = nan(nTrl, 1);
+        if isfield(dat, 'trials_gamma_power_MSfree') && ...
+                ~isempty(dat.trials_gamma_power_MSfree{c, s})
+            pp = dat.trials_gamma_power_MSfree{c, s}(:);
+        end
+        if isfield(dat, 'trials_pct_kept_MSfree') && ...
+                ~isempty(dat.trials_pct_kept_MSfree{c, s})
+            pk = dat.trials_pct_kept_MSfree{c, s}(:);
+        end
+        if numel(pp) ~= nTrl, pp = nan(nTrl, 1); end
+        if numel(pk) ~= nTrl, pk = nan(nTrl, 1); end
+
+        sid = str2double(ged_subjects{s});
+        ID = [ID; repmat(sid, nTrl, 1)]; %#ok<AGROW>
+        Condition = [Condition; repmat(c, nTrl, 1)]; %#ok<AGROW>
+        Trial = [Trial; (1:nTrl)']; %#ok<AGROW>
+        GammaFrequency_MSfree = [GammaFrequency_MSfree; pf]; %#ok<AGROW>
+        GammaPower_MSfree = [GammaPower_MSfree; pp]; %#ok<AGROW>
+        MSfree_pctKept = [MSfree_pctKept; pk]; %#ok<AGROW>
+    end
+end
+
+if isempty(ID)
+    return
+end
+
+tbl = table(ID, Condition, Trial, GammaFrequency_MSfree, GammaPower_MSfree, MSfree_pctKept);
 end
 
 function pp = reconstruct_trial_peak_power(pf, pr, scan_freqs, halfwidth_hz)

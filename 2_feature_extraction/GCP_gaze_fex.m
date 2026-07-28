@@ -141,6 +141,10 @@ for subj = 1:numel(subjects)
         qc_min_valid_samples   = round(0.50 * fsample); % at least 500 ms valid data
         qc_max_ms_rate_hz      = 8;                     % reject implausibly high trial-level MS rates
 
+        % Engbert MS event times (seconds on trial time axis) for neural-vs-artifact tests
+        ms_onsets_per_trial  = cell(1, nTrials);
+        ms_offsets_per_trial = cell(1, nTrials);
+
         %% Trial loop
         for trl = 1:numel(dataET.trialinfo)
             raw    = dataET.trial{trl};
@@ -367,12 +371,32 @@ for subj = 1:numel(subjects)
                blink_loss_frac > qc_max_blink_loss_frac
                 msFT.trial{trl} = nan(1, n_total_full);
                 msFT.time{trl}  = t_full_ms;
+                ms_onsets_per_trial{trl} = [];
+                ms_offsets_per_trial{trl} = [];
             else
                 x_clean = x_val(valid_clean);
                 y_clean = y_val(valid_clean);
 
                 % Detect microsaccades in cleaned valid samples only
                 [~, ms_det] = detect_microsaccades(fsample, [x_clean; y_clean], numel(x_clean));
+
+                % Map Engbert sample indices (in x_clean) back to trial time (s)
+                idx_full_valid = find(valid_full);
+                idx_clean_in_full = idx_full_valid(valid_clean);
+                if ~isempty(ms_det.Onset) && ~isempty(ms_det.Offset)
+                    nEv = min(numel(ms_det.Onset), numel(ms_det.Offset));
+                    on_idx = ms_det.Onset(1:nEv);
+                    off_idx = ms_det.Offset(1:nEv);
+                    keep_ev = on_idx >= 1 & on_idx <= numel(idx_clean_in_full) & ...
+                              off_idx >= 1 & off_idx <= numel(idx_clean_in_full);
+                    on_idx = on_idx(keep_ev);
+                    off_idx = off_idx(keep_ev);
+                    ms_onsets_per_trial{trl} = t_full_ms(idx_clean_in_full(on_idx))';
+                    ms_offsets_per_trial{trl} = t_full_ms(idx_clean_in_full(off_idx))';
+                else
+                    ms_onsets_per_trial{trl} = [];
+                    ms_offsets_per_trial{trl} = [];
+                end
 
                 % Impulse train on valid samples
                 ms_imp = zeros(1, numel(x_clean));
@@ -387,6 +411,7 @@ for subj = 1:numel(subjects)
                 if ~isfinite(ms_rate_trial) || ms_rate_trial > qc_max_ms_rate_hz
                     msFT.trial{trl} = nan(1, n_total_full);
                     msFT.time{trl}  = t_full_ms;
+                    % Keep detected event times even if TC rate QC fails
                 else
                     % Smooth impulses -> event density per sample.
                     % Edge-effect correction: renormalise by local kernel mass so
@@ -620,6 +645,9 @@ for subj = 1:numel(subjects)
                 % Store MS
                 msTS_c25        = msTS_noBL;
                 msTS_c25_bl_db = msTS_BL_db;
+                ms_events_c25 = struct();
+                ms_events_c25.Onset = ms_onsets_per_trial;
+                ms_events_c25.Offset = ms_offsets_per_trial;
 
             case 'c50'
                 c50_gSDx      = mean(gazeSDx,'omitnan');
@@ -688,6 +716,9 @@ for subj = 1:numel(subjects)
 
                 msTS_c50        = msTS_noBL;
                 msTS_c50_bl_db = msTS_BL_db;
+                ms_events_c50 = struct();
+                ms_events_c50.Onset = ms_onsets_per_trial;
+                ms_events_c50.Offset = ms_offsets_per_trial;
 
             case 'c75'
                 c75_gSDx      = mean(gazeSDx,'omitnan');
@@ -756,6 +787,9 @@ for subj = 1:numel(subjects)
 
                 msTS_c75        = msTS_noBL;
                 msTS_c75_bl_db = msTS_BL_db;
+                ms_events_c75 = struct();
+                ms_events_c75.Onset = ms_onsets_per_trial;
+                ms_events_c75.Offset = ms_offsets_per_trial;
 
             case 'c100'
                 c100_gSDx      = mean(gazeSDx,'omitnan');
@@ -824,6 +858,9 @@ for subj = 1:numel(subjects)
 
                 msTS_c100        = msTS_noBL;
                 msTS_c100_bl_db = msTS_BL_db;
+                ms_events_c100 = struct();
+                ms_events_c100.Onset = ms_onsets_per_trial;
+                ms_events_c100.Offset = ms_offsets_per_trial;
         end
     end
 
@@ -1029,6 +1066,10 @@ for subj = 1:numel(subjects)
     save(fullfile(savepath, 'gaze_microsaccade_timeseries'), ...
         'msTS_c25','msTS_c50','msTS_c75','msTS_c100', ...
         'msTS_c25_bl_db','msTS_c50_bl_db','msTS_c75_bl_db','msTS_c100_bl_db');
+
+    % Engbert microsaccade onset/offset times (s) per trial for MS-free EEG
+    save(fullfile(savepath, 'gaze_microsaccade_events'), ...
+        'ms_events_c25', 'ms_events_c50', 'ms_events_c75', 'ms_events_c100');
 
     % Append to across-subjects raw struct
     if isempty(gaze_data)
