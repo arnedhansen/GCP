@@ -212,7 +212,7 @@ for c = 1:nConds
 
     eb = shadedErrorBar(t_vec, mu, sem, 'lineProps', {'-'}, 'transparent', true);
     set(eb.mainLine, 'Color', colors(c, :), 'LineWidth', 2.5);
-    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.20);
+    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.2);
     set(eb.edge(1), 'Color', 'none');
     set(eb.edge(2), 'Color', 'none');
 end
@@ -224,7 +224,7 @@ xlabel('Time [s]');
 ylabel('Fixations [dB]');
 leg_p_db = gobjects(nConds, 1);
 for c = 1:nConds
-    leg_p_db(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.25, ...
+    leg_p_db(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.33, ...
         'EdgeColor', colors(c, :), 'LineWidth', 1.5);
 end
 legend(leg_p_db, condLabels, 'Location', 'northeast', 'FontSize', fontSize - 4, 'Box', 'off');

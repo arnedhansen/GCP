@@ -19,7 +19,6 @@ dat$ID <- as.integer(dat$ID)                       # ID as integer
 dat$Condition <- as.factor(dat$Condition)          # Condition as factor
 dat$Accuracy <- as.numeric(dat$Accuracy)           # Accuracy as numeric
 dat$ReactionTime <- as.numeric(dat$ReactionTime)   # ReactionTime as numeric
-dat$GazeDeviation <- as.numeric(dat$GazeDeviation) # GazeDeviation as numeric
 dat$MSRate <- as.numeric(dat$MSRate)               # MSRate as numeric
 dat$GammaPower <- as.numeric(dat$GammaPower)       # Probe as character
 dat$GammaFreq <- as.numeric(dat$GammaFreq)         # Match as integer

@@ -42,9 +42,9 @@ COMPARISONS = [
 VARIABLES = [
     ("GammaFrequency", "Peak Gamma Frequency [Hz]", "gamma_freq"),
     ("GammaPower", "Peak Gamma Power [dB]", "gamma_power"),
-    ("dBMSRate", "Microsaccade Rate [%]", "ms"),
-    ("dBPupilSize", "Pupil Size [%]", "pupil"),
-    ("dBVelV", "Gaze Velocity Y [%]", "vely"),
+    ("MSRate_bl", "Microsaccade Rate [%]", "ms"),
+    ("PupilSize_bl", "Pupil Size [%]", "pupil"),
+    ("VelV_bl", "Gaze Velocity Y [%]", "vely"),
     ("ReactionTime", "Reaction Time [s]", "rt"),
 ]
 
@@ -158,9 +158,9 @@ def load_merged_trial_metrics(csv_path: str) -> pd.DataFrame:
     dat["Condition"] = dat["Condition"].map(COND_NUM_TO_LABEL)
     dat = dat.rename(
         columns={
-            "Gaze_dBMSRate": "dBMSRate",
-            "Gaze_dBPupilSize": "dBPupilSize",
-            "Gaze_dBVelV": "dBVelV",
+            "Gaze_MSRate_bl": "MSRate_bl",
+            "Gaze_PupilSize_bl": "PupilSize_bl",
+            "Gaze_VelV_bl": "VelV_bl",
             "Behavior_ReactionTime": "ReactionTime",
         }
     )
@@ -394,9 +394,9 @@ def main() -> None:
     data_by_var = {
         "GammaFrequency": ged,
         "GammaPower": ged,
-        "dBMSRate": merged,
-        "dBPupilSize": merged,
-        "dBVelV": merged,
+        "MSRate_bl": merged,
+        "PupilSize_bl": merged,
+        "VelV_bl": merged,
         "ReactionTime": merged,
     }
 

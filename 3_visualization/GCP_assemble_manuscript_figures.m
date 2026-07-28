@@ -28,11 +28,11 @@ fig1.panels = {
     };
 
 %% Figure 2: Power analyses
-% Frequency is shown in the first row and power in the second row.
-% Heatmaps are placed on the left and power curves on the right.
 fig2 = figureSpec('Figure2', 2, 2, [0 0 1512 982]);
-fig2.colWidths = [2 1];
+fig2.colGap = 0.035;
+fig2.rowGap = 0.02;
 fig2.forceFill = false;
+fig2.equalPanelHeight = true;
 fig2.titleFontSize = 16;
 fig2.panels = {
     panelSpec(fullfile(powerDir, 'GCP_power_analysis_frequency_heatmap.png'), ...
@@ -53,7 +53,7 @@ fig3 = figureSpec('Figure3', 1, 2, [0 0 1512 982]);
 fig3.panels = {
     panelSpec(fullfile(gazeDir, 'pupil', 'GCP_gaze_pupil_size_TC_db.png'), ...
         'A', 'Pupil Size Time Course', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_dBPupilSize.png'), ...
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_PupilSize_bl.png'), ...
         'B', 'Pupil Size', 2, [1 1])
     };
 fig3.panels{2}.imageScale = 0.90;
@@ -66,7 +66,7 @@ fig4 = figureSpec('Figure4', 1, 2, [0 0 1512 982]);
 fig4.panels = {
     panelSpec(fullfile(gazeDir, 'microsaccades', 'GCP_gaze_microsaccades_rate_db.png'), ...
         'A', 'Microsaccade Rate Time Course', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_dBMSRate.png'), ...
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_MSRate_bl.png'), ...
         'B', 'Microsaccade Rate', 2, [1 1])
     };
 fig4.panels{2}.imageScale = 0.90;
@@ -79,7 +79,7 @@ fig5 = figureSpec('Figure5', 1, 2, [0 0 1512 982]);
 fig5.panels = {
     panelSpec(fullfile(gazeDir, 'velocity', 'GCP_gaze_velocity_Vel2D_TC_db.png'), ...
         'A', 'Combined Eye Velocity Time Course', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_dBVel2D.png'), ...
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl.png'), ...
         'B', 'Combined Eye Velocity', 2, [1 1])
     };
 fig5.panels{2}.imageScale = 0.90;
@@ -92,7 +92,7 @@ fig6 = figureSpec('Figure6', 1, 2, [0 0 1512 982]);
 fig6.panels = {
     panelSpec(fullfile(gazeDir, 'bcea', 'GCP_gaze_BCEA_TC_db.png'), ...
         'A', 'Gaze Dispersion Time Course', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_dBBCEA.png'), ...
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_BCEA_bl.png'), ...
         'B', 'Gaze Dispersion', 2, [1 1])
     };
 fig6.panels{2}.imageScale = 0.90;
@@ -107,19 +107,19 @@ figGazeComp.titleFontSize = 16;
 figGazeComp.panels = {
     panelSpec(fullfile(gazeDir, 'pupil', 'GCP_gaze_pupil_size_TC_db.png'), ...
         'A', 'Pupil Size Time Course', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_dBPupilSize.png'), ...
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_PupilSize_bl.png'), ...
         'B', 'Pupil Size', 2, [1 1]);
     panelSpec(fullfile(gazeDir, 'microsaccades', 'GCP_gaze_microsaccades_rate_db.png'), ...
         'C', 'Microsaccade Rate Time Course', 3, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_dBMSRate.png'), ...
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_MSRate_bl.png'), ...
         'D', 'Microsaccade Rate', 4, [1 1]);
     panelSpec(fullfile(gazeDir, 'velocity', 'GCP_gaze_velocity_Vel2D_TC_db.png'), ...
         'E', 'Combined Eye Velocity Time Course', 5, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_dBVel2D.png'), ...
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl.png'), ...
         'F', 'Combined Eye Velocity', 6, [1 1]);
     panelSpec(fullfile(gazeDir, 'bcea', 'GCP_gaze_BCEA_TC_db.png'), ...
         'G', 'Gaze Dispersion Time Course', 7, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_dBBCEA.png'), ...
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_BCEA_bl.png'), ...
         'H', 'Gaze Dispersion', 8, [1 1])
     };
 for iPanel = 2:2:numel(figGazeComp.panels)
@@ -167,7 +167,7 @@ figS1.panels = {
 %% Assemble all figures
 figSpecs = {fig1, fig2, fig3, fig4, fig5, fig6, ...
     figGazeComp, fig7, fig8, figS1};
-for iFig = 1:numel(figSpecs)
+for iFig = 2%%%%%1:numel(figSpecs)
     spec = figSpecs{iFig};
     outPng = fullfile(outDir, ['GCP_manuscript_' spec.name '.png']);
     assembleManuscriptFigure(spec, outPng, exportDpi);
@@ -229,7 +229,13 @@ if isfield(spec, 'colWidths') || spec.ncol == 2
     top = 0.035;
     bottom = 0.025;
     colGap = 0.010;
+    if isfield(spec, 'colGap')
+        colGap = spec.colGap;
+    end
     rowGap = 0.065;
+    if isfield(spec, 'rowGap')
+        rowGap = spec.rowGap;
+    end
     usableWidth = 1 - left - right - (spec.ncol - 1) * colGap;
     usableHeight = 1 - top - bottom - (spec.nrow - 1) * rowGap;
     if isfield(spec, 'colWidths')
@@ -243,16 +249,72 @@ if isfield(spec, 'colWidths') || spec.ncol == 2
     if isfield(spec, 'forceFill')
         forceFill = spec.forceFill;
     end
+    equalPanelHeight = false;
+    if isfield(spec, 'equalPanelHeight')
+        equalPanelHeight = spec.equalPanelHeight;
+    end
+
+    panelImages = cell(size(spec.panels));
+    panelAspects = zeros(1, numel(spec.panels));
+    for iPanel = 1:numel(spec.panels)
+        panelImages{iPanel} = loadPanelImage(spec.panels{iPanel});
+        panelAspects(iPanel) = size(panelImages{iPanel}, 2) / ...
+            size(panelImages{iPanel}, 1);
+    end
+    if equalPanelHeight && ~isfield(spec, 'colWidths')
+        columnWeights = zeros(1, spec.ncol);
+        colCounts = zeros(1, spec.ncol);
+        for iPanel = 1:numel(spec.panels)
+            col = mod(spec.panels{iPanel}.tile - 1, spec.ncol) + 1;
+            columnWeights(col) = columnWeights(col) + panelAspects(iPanel);
+            colCounts(col) = colCounts(col) + 1;
+        end
+        columnWeights = columnWeights ./ max(1, colCounts);
+        colWidths = usableWidth .* columnWeights ./ sum(columnWeights);
+    end
+
+    figWidth = spec.figSize(3);
+    figHeight = spec.figSize(4);
+    rowTargetHeight = zeros(1, spec.nrow);
+    if equalPanelHeight
+        for iRow = 1:spec.nrow
+            maxHeights = rowHeight;
+            for iPanel = 1:numel(spec.panels)
+                p = spec.panels{iPanel};
+                row = ceil(p.tile / spec.ncol);
+                if row ~= iRow
+                    continue
+                end
+                col = mod(p.tile - 1, spec.ncol) + 1;
+                maxHeights = min(maxHeights, ...
+                    (colWidths(col) * figWidth) / ...
+                    (panelAspects(iPanel) * figHeight));
+            end
+            rowTargetHeight(iRow) = maxHeights;
+        end
+    end
 
     for iPanel = 1:numel(spec.panels)
         p = spec.panels{iPanel};
         row = ceil(p.tile / spec.ncol);
         col = mod(p.tile - 1, spec.ncol) + 1;
-        xPosition = left + sum(colWidths(1:col - 1)) + (col - 1) * colGap;
-        yPosition = 1 - top - row * rowHeight - (row - 1) * rowGap;
-        ax = axes(fig, 'Position', ...
-            [xPosition yPosition colWidths(col) rowHeight]);
-        renderPanel(ax, p, titleFontSize, forceFill);
+        xTile = left + sum(colWidths(1:col - 1)) + (col - 1) * colGap;
+        yTile = 1 - top - row * rowHeight - (row - 1) * rowGap;
+        if equalPanelHeight
+            panelHeight = rowTargetHeight(row);
+            panelWidth = panelHeight * panelAspects(iPanel) * ...
+                figHeight / figWidth;
+            xPosition = xTile + (colWidths(col) - panelWidth) / 2;
+            yPosition = yTile + rowHeight - panelHeight;
+            ax = axes(fig, 'Position', ...
+                [xPosition yPosition panelWidth panelHeight]);
+            renderPanel(ax, p, titleFontSize, true, panelImages{iPanel});
+        else
+            ax = axes(fig, 'Position', ...
+                [xTile yTile colWidths(col) rowHeight]);
+            renderPanel(ax, p, titleFontSize, forceFill, ...
+                panelImages{iPanel});
+        end
     end
 else
     tl = tiledlayout(fig, spec.nrow, spec.ncol, ...
@@ -270,13 +332,19 @@ exportgraphics(fig, outPng, 'Resolution', exportDpi, ...
 close(fig);
 end
 
-function renderPanel(ax, p, titleFontSize, forceFill)
+function img = loadPanelImage(p)
 img = imread(p.file);
 if p.trimWhite
     img = trimWhiteBorders(img);
 end
 if p.imageScale ~= 1
     img = scaleImageOnCanvas(img, p.imageScale);
+end
+end
+
+function renderPanel(ax, p, titleFontSize, forceFill, img)
+if nargin < 5 || isempty(img)
+    img = loadPanelImage(p);
 end
 
 image(ax, img);

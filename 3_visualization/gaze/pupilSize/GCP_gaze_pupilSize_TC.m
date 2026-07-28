@@ -93,7 +93,7 @@ for k = 1:numel(ets)
 
     eb = shadedErrorBar(x, mu, sem, 'lineProps', {'-'}, 'transparent', true);
     set(eb.mainLine, 'Color', colors(k, :), 'LineWidth', lineW);
-    set(eb.patch, 'FaceColor', colors(k, :), 'FaceAlpha', 0.125);
+    set(eb.patch, 'FaceColor', colors(k, :), 'FaceAlpha', 0.2);
     set(eb.edge(1), 'Color', 'none');
     set(eb.edge(2), 'Color', 'none');
 end
@@ -106,7 +106,7 @@ xlabel('Time [s]', 'FontSize', fontSize*0.8);
 ylabel(ylabs{1}, 'FontSize', fontSize*0.8);
 leg_p = gobjects(numel(ets), 1);
 for k = 1:numel(ets)
-    leg_p(k) = patch(nan, nan, colors(k, :), 'FaceAlpha', 0.25, ...
+    leg_p(k) = patch(nan, nan, colors(k, :), 'FaceAlpha', 0.33, ...
         'EdgeColor', colors(k, :), 'LineWidth', 1.5);
 end
 set(gca, 'FontSize', fontSize*0.8);

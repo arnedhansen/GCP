@@ -4,9 +4,9 @@
 % per-condition grand-average traces with SEM shading.
 %
 % Important:
-%   - Feature extraction averages rate (Hz) across trials first, then applies
-%     % change with a baseline floor (>= 1 event in the baseline window).
-%   - Subject boxplot scalars are the mean of this TC over [0, 2] s.
+%   - Trials with MS rate < 0.1 Hz in the baseline or stimulus window are excluded.
+%   - Remaining trials use per-trial % change, then are averaged for the TC.
+%   - Subject boxplot scalars are the mean of trial-level % values per condition.
 %   - A light additional display smoothing is applied here.
 
 %% Setup
@@ -140,7 +140,7 @@ for c = 1:nConds
 
     eb = shadedErrorBar(t_vec, mu, sem, 'lineProps', {'-'}, 'transparent', true);
     set(eb.mainLine, 'Color', colors(c, :), 'LineWidth', lineW);
-    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.125);
+    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.2);
     set(eb.edge(1), 'Color', 'none');
     set(eb.edge(2), 'Color', 'none');
 end
@@ -153,7 +153,7 @@ xlabel('Time [s]', 'FontSize', fontSize*0.8);
 ylabel('Microsaccade Rate [%]', 'FontSize', fontSize*0.8);
 leg_p_db = gobjects(nConds, 1);
 for c = 1:nConds
-    leg_p_db(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.25, ...
+    leg_p_db(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.33, ...
         'EdgeColor', colors(c, :), 'LineWidth', 1.5);
 end
 set(gca, 'FontSize', fontSize*0.8);

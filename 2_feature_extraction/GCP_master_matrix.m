@@ -61,7 +61,6 @@ else
 end
 
 tbl_merge = sortrows(tbl_merge, {'ID','Condition'});
-tbl_merge = overwrite_bcea_from_timecourse(tbl_merge, features_root);
 inc = load(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion');
 inc = inc.subject_inclusion;
 [~, loc] = ismember(tbl_merge.ID, inc.SubjID);
@@ -91,44 +90,6 @@ fprintf('  %s\n', fullfile(features_root, 'GCP_merged_data.mat'));
 fprintf('  %s\n', fullfile(features_root, 'GCP_merged_data.csv'));
 
 %% Local helper functions
-function tbl = overwrite_bcea_from_timecourse(tbl, features_root)
-% Replace within-trial dBBCEA with mean of the BCEA % time course over [0, 2].
-sumPath = fullfile(features_root, 'GCP_gaze_BCEA_trace_summaries.mat');
-if ~isfile(sumPath)
-    warning('GCP_master_matrix:NoBceaSummary', ...
-        ['Missing %s. Keep gaze_fex within-trial dBBCEA. ', ...
-         'Run GCP_gaze_BCEA_TC.m before master matrix for TC-matched boxplots.'], sumPath);
-    return
-end
-S = load(sumPath, 'dBBCEA_summary', 'subjects', 'condValues');
-if ~ismember('dBBCEA', tbl.Properties.VariableNames)
-    return
-end
-
-subjList = string(S.subjects(:));
-for i = 1:height(tbl)
-    sid = tbl.ID(i);
-    if iscell(sid), sid = sid{1}; end
-    sIdx = find(subjList == string(sid), 1);
-    if isempty(sIdx)
-        sIdx = find(str2double(subjList) == double(sid), 1);
-    end
-
-    cond = double(tbl.Condition(i));
-    cIdx = find(S.condValues == cond, 1);
-    if isempty(cIdx) && cond <= 4 && max(S.condValues) > 4
-        cIdx = find(S.condValues == cond * 25, 1);
-    elseif isempty(cIdx) && cond > 4 && max(S.condValues) <= 4
-        cIdx = find(S.condValues == cond / 25, 1);
-    end
-
-    if ~isempty(sIdx) && ~isempty(cIdx)
-        tbl.dBBCEA(i) = S.dBBCEA_summary(sIdx, cIdx);
-    end
-end
-fprintf('Overwrote dBBCEA from BCEA time-course summaries (%s).\n', sumPath);
-end
-
 function tbl = standardize_id_condition(tbl)
 if ~ismember('ID', tbl.Properties.VariableNames)
     if ismember('Subject', tbl.Properties.VariableNames)
@@ -180,12 +141,19 @@ for s = 1:numel(subjects)
     G = standardize_id_condition(G);
 
     keep = {'ID','Condition', ...
-            'GazeDeviation','GazeStdX','GazeStdY','BCEA','PupilSize','MSRate', ...
+            'GazeStdX','GazeStdY','BCEA','PupilSize','MSRate', ...
             'VelH','VelV','Vel2D', ...
             'Blinks','Fixations','Saccades', ...
-            'dBGazeDeviation','dBGazeStdX','dBGazeStdY','dBBCEA', ...
-            'dBPupilSize','dBMSRate','dBVelH','dBVelV','dBVel2D', ...
-            'dBBlinks','dBFixations','dBSaccades'};
+            'GazeStdX_bl','GazeStdY_bl', ...
+            'BCEA_bl','BCEA_bl_early','BCEA_bl_late', ...
+            'PupilSize_bl','PupilSize_bl_early','PupilSize_bl_late', ...
+            'MSRate_bl','MSRate_bl_early','MSRate_bl_late', ...
+            'VelH_bl','VelH_bl_early','VelH_bl_late', ...
+            'VelV_bl','VelV_bl_early','VelV_bl_late', ...
+            'Vel2D_bl','Vel2D_bl_early','Vel2D_bl_late', ...
+            'Blinks_bl','Blinks_bl_early','Blinks_bl_late', ...
+            'Fixations_bl','Fixations_bl_early','Fixations_bl_late', ...
+            'Saccades_bl','Saccades_bl_early','Saccades_bl_late'};
     keep = keep(ismember(keep, G.Properties.VariableNames));
     G = G(:, keep);
 

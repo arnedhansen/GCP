@@ -1,252 +1,252 @@
-%% GCP Stats Overview
-% One figure per variable: boxplots + subject lines + jittered dots
+%% GCP Stats Boxplots (Full / Early / Late)
+%
+% Subject-level boxplots across contrast for gamma and gaze metrics.
+% Windows: full (0-2 s), early (0-1 s), late (1-2 s).
+%
+% Metrics (all windows):
+%   Frequency, Power
+%   MSRate_bl, BCEA_bl, Vel2D_bl, PupilSize_bl
+%   Blinks_bl, Fixations_bl, Saccades_bl
+%
+% Data (precomputed; no window recomputation here):
+%   GCP_eeg_GED.mat
+%   GCP_gaze_window_summaries.mat  (from GCP_gaze_fex.m)
+%
+% Output: figures/stats/boxplots/
+%   Full window: GCP_stats_boxplot_<Metric>.png (assembly-compatible)
+%   Early/late:  GCP_stats_boxplot_<Metric>_<early|late>.png
+
+clear; close all; clc
+
+%% Setup
 startup
-[~, paths, colors, ~] = setup('GCP', 0);
+[subjects, paths, colors, ~] = setup('GCP', 0);
+subjects = gcp_subject_inclusion(subjects, paths);
+nSubj = numel(subjects);
+fprintf('Included GED cohort: N = %d (%s)\n', nSubj, strjoin(subjects, ', '));
 
-% Load merged data
-dat = load(fullfile(paths.features, 'GCP_merged_data.mat'));
-tbl = struct2table(dat.GCP_merged_data);
+nCond = 4;
+xtickLabs = {'25%', '50%', '75%', '100%'};
+winNames = {'full', 'early', 'late'};
 
-if ismember('Include', tbl.Properties.VariableNames)
-    nRowsBefore = height(tbl);
-    tbl = tbl(tbl.Include, :);
-    fprintf('GED cohort filter: %d rows kept (%d excluded).\n', ...
-        height(tbl), nRowsBefore - height(tbl));
+out_dir = fullfile(paths.figures, 'stats', 'boxplots');
+if ~isfolder(out_dir)
+    mkdir(out_dir);
 end
 
-% Identify numeric variables only (excluding ID and Condition)
-varNames    = tbl.Properties.VariableNames;
-numericVars = {};
-for i = 1:numel(varNames)
-    v = tbl.(varNames{i});
-    if isnumeric(v) && ~strcmp(varNames{i}, 'ID') && ~strcmp(varNames{i}, 'Condition') ...
-            && ~strcmp(varNames{i}, 'Include')
-        numericVars{end+1} = varNames{i};
+%% Aesthetics
+fontSize       = 50;
+axisLabelSize  = fontSize * 0.9;
+yTickFontSize  = axisLabelSize;
+xLabelFontSize = axisLabelSize;
+xTickFontSize  = axisLabelSize * (1 - 0.33);
+dotSize        = 400;
+dotAlpha       = 0.85;
+jitter         = 0.4;
+boxWidth       = 0.55;
+
+%% Gamma (cond x subject)
+ged = load(fullfile(paths.features, 'GCP_eeg_GED.mat'), ...
+    'trials_median', 'trials_median_early', 'trials_median_late', ...
+    'trials_gamma_power', 'trials_gamma_power_early', 'trials_gamma_power_late', ...
+    'subjects');
+ged_idx = match_subjects(ged.subjects, subjects);
+
+gamma = struct();
+gamma.Frequency.full  = pick_matrix(ged.trials_median, ged_idx);
+gamma.Frequency.early = pick_matrix(ged.trials_median_early, ged_idx);
+gamma.Frequency.late  = pick_matrix(ged.trials_median_late, ged_idx);
+gamma.Power.full      = pick_matrix(ged.trials_gamma_power, ged_idx);
+gamma.Power.early     = pick_matrix(ged.trials_gamma_power_early, ged_idx);
+gamma.Power.late      = pick_matrix(ged.trials_gamma_power_late, ged_idx);
+
+%% Gaze (precomputed window summaries from gaze fex)
+gazePath = fullfile(paths.features, 'GCP_gaze_window_summaries.mat');
+if ~isfile(gazePath)
+    error('GCP_stats_boxplots:MissingGazeSummaries', ...
+        ['Missing %s. Run GCP_gaze_fex.m first so full/early/late ', ...
+         'subject x condition scalars exist.'], gazePath);
+end
+gazeSum = load(gazePath);
+gaze_idx = match_subjects(gazeSum.subjects, subjects);
+
+gazeMetrics = {'MSRate_bl','BCEA_bl','Vel2D_bl','PupilSize_bl', ...
+    'Blinks_bl','Fixations_bl','Saccades_bl'};
+gaze = struct();
+for mi = 1:numel(gazeMetrics)
+    name = gazeMetrics{mi};
+    if ~isfield(gazeSum, name)
+        error('GCP_stats_boxplots:MissingMetric', ...
+            'Metric %s missing in %s', name, gazePath);
+    end
+    for wi = 1:numel(winNames)
+        wn = winNames{wi};
+        if ~isfield(gazeSum.(name), wn)
+            error('GCP_stats_boxplots:MissingWindow', ...
+                'Metric %s window %s missing in %s', name, wn, gazePath);
+        end
+        gaze.(name).(wn) = pick_matrix(gazeSum.(name).(wn), gaze_idx);
     end
 end
 
-% Condition coding
-condRaw = tbl.Condition;
-[condLevels, ~, condIdx] = unique(condRaw, 'stable');  % 1..K
-nCond   = numel(condLevels);
-xtickLabs = strcat(num2str(condLevels*25), "% Contrast");
+%% Plot specs: {varName, windowsStruct, yLabel, drawZero}
+plotSpecs = {
+    'Frequency',   gamma.Frequency,    'Frequency [Hz]',        false
+    'Power',       gamma.Power,        'Power [dB]',            true
+    'MSRate_bl',    gaze.MSRate_bl,      'Microsaccade Rate [%]', true
+    'BCEA_bl',      gaze.BCEA_bl,        'BCEA [%]',              true
+    'Vel2D_bl',     gaze.Vel2D_bl,       'Eye Velocity [%]',      true
+    'PupilSize_bl', gaze.PupilSize_bl,   'Pupil Size [%]',        true
+    'Blinks_bl',    gaze.Blinks_bl,      'Blinks [%]',            true
+    'Fixations_bl', gaze.Fixations_bl,   'Fixations [%]',         true
+    'Saccades_bl',  gaze.Saccades_bl,    'Saccades [%]',          true
+    };
 
-% Subject IDs
-subjIDs = unique(tbl.ID);
+subjIDs = str2double(string(subjects(:)));
 
-% Outlier exclusion settings (applied per variable and per condition)
-useOutlierExclusion = false;
-madThreshold = 5; % robust z-threshold based on MAD
+%% Loop
+for iMetric = 1:size(plotSpecs, 1)
+    varName = plotSpecs{iMetric, 1};
+    winMats = plotSpecs{iMetric, 2};
+    ylabStr = plotSpecs{iMetric, 3};
+    drawZero = plotSpecs{iMetric, 4};
 
-% Plot aesthetics
-fontSize        = 50;
-xTickFontSize   = fontSize *0.9;
-yTickFontSize   = fontSize *0.9;
-ylabelFontSize  = fontSize *0.9;
-titleFontSize   = fontSize;
-legendFontSize  = fontSize *0.65;
-dotSize         = 400;
-dotAlpha        = 0.85;
-jitter          = 0.4;
-boxWidth        = 0.55;
-showXTickLabels = true;
-showLegend      = false;
-showTitle       = false;
+    for iWin = 1:numel(winNames)
+        winName = winNames{iWin};
+        if ~isfield(winMats, winName) || isempty(winMats.(winName))
+            continue
+        end
+        M = winMats.(winName);
+        if ~any(isfinite(M(:)))
+            continue
+        end
 
-%% Loop through variables
-for iVar = 1:numel(numericVars)
-    close all
+        y = nan(nCond * nSubj, 1);
+        condIdx = nan(nCond * nSubj, 1);
+        idVec = nan(nCond * nSubj, 1);
+        row = 0;
+        for s = 1:nSubj
+            for c = 1:nCond
+                row = row + 1;
+                idVec(row) = subjIDs(s);
+                condIdx(row) = c;
+                if c <= size(M, 1) && s <= size(M, 2)
+                    y(row) = M(c, s);
+                end
+            end
+        end
 
-    varName = numericVars{iVar};
-    yRaw    = tbl.(varName);
-    y       = yRaw;
+        fprintf('%s %s: %d finite of %d cells\n', ...
+            varName, winName, nnz(isfinite(y)), numel(y));
 
-    if useOutlierExclusion
-        isOutlier = false(size(yRaw));
+        close all
+        figure('Position', [0 0 1512 982], 'Color', 'w');
+        hold on
+
+        xJit = nan(size(y));
+        for s = 1:nSubj
+            idxSubj = idVec == subjIDs(s);
+            for c = 1:nCond
+                idxPt = idxSubj & condIdx == c & isfinite(y);
+                if any(idxPt)
+                    xJit(idxPt) = c + jitter * (rand - 0.5);
+                end
+            end
+        end
+
         for c = 1:nCond
-            idxC = condIdx == c;
-            yC = yRaw(idxC);
-
-            medC = median(yC, 'omitnan');
-            madC = median(abs(yC - medC), 'omitnan');
-
-            % If MAD is undefined/zero, robust z-scores cannot be computed.
-            if isnan(madC) || madC == 0
+            idxC = condIdx == c & isfinite(y);
+            yC = y(idxC);
+            if isempty(yC)
                 continue
             end
+            boxplot(yC, ones(numel(yC), 1), 'Positions', c, 'Symbol', '', ...
+                'Widths', boxWidth, 'Colors', 'k');
+        end
+        styleCurrentBoxplot(colors(1:nCond, :));
 
-            robustZ = abs(yC - medC) ./ (1.4826 * madC);
-            outC = robustZ > madThreshold;
-            outC(isnan(robustZ)) = false;
-
-            idxAll = find(idxC);
-            isOutlier(idxAll(outC)) = true;
+        if drawZero
+            yline(0, '--', 'Color', [0.6 0.6 0.6], 'LineWidth', 1);
         end
 
-        y(isOutlier) = NaN;
-    end
-
-    % New figure for this variable
-    figure('Position', [0 0 1512 982], 'Color', 'w');
-    hold on
-
-    % One jittered x position per subject per condition (shared by lines and dots)
-    xJit = nan(size(y));
-    for s = 1:numel(subjIDs)
-        thisID  = subjIDs(s);
-        idxSubj = tbl.ID == thisID;
-        for c = 1:nCond
-            idxPt = idxSubj & condIdx == c & ~isnan(y);
-            if any(idxPt)
-                xJit(idxPt) = c + jitter * (rand - 0.5);
+        for s = 1:nSubj
+            idxSubj = idVec == subjIDs(s);
+            xSubj = xJit(idxSubj);
+            ySubj = y(idxSubj);
+            condSubjIdx = condIdx(idxSubj);
+            valid = isfinite(ySubj) & isfinite(xSubj);
+            xSubj = xSubj(valid);
+            ySubj = ySubj(valid);
+            condSubjIdx = condSubjIdx(valid);
+            if numel(ySubj) < 2
+                continue
             end
-        end
-    end
-
-    % Boxplot per condition (separate calls avoid grouped-box misalignment)
-    for c = 1:nCond
-        idxC = condIdx == c & ~isnan(y);
-        yC   = y(idxC);
-        if isempty(yC)
-            continue
-        end
-        boxplot(yC, ones(numel(yC), 1), 'Positions', c, 'Symbol', '', ...
-            'Widths', boxWidth, 'Colors', 'k');
-    end
-    styleCurrentBoxplot(colors(1:nCond, :));
-
-    % Zero line
-    yline(0, '--', 'Color', [0.6 0.6 0.6], 'LineWidth', 1);
-
-    % Subject-wise lines across conditions (connect jittered dot positions)
-    for s = 1:numel(subjIDs)
-        thisID  = subjIDs(s);
-        idxSubj = tbl.ID == thisID;
-
-        xSubj = xJit(idxSubj);
-        ySubj = y(idxSubj);
-        condSubjIdx = condIdx(idxSubj);
-
-        valid = ~isnan(ySubj) & ~isnan(xSubj);
-        xSubj = xSubj(valid);
-        ySubj = ySubj(valid);
-        condSubjIdx = condSubjIdx(valid);
-
-        if numel(ySubj) < 2
-            continue
+            [~, sortIdx] = sort(condSubjIdx);
+            plot(xSubj(sortIdx), ySubj(sortIdx), '-', ...
+                'Color', [0.8 0.8 0.8], 'LineWidth', 1);
         end
 
-        [condSubjIdx, sortIdx] = sort(condSubjIdx);
-        xSubj = xSubj(sortIdx);
-        ySubj = ySubj(sortIdx);
-
-        plot(xSubj, ySubj, '-', 'Color', [0.8 0.8 0.8], 'LineWidth', 1);
-    end
-
-    % Jittered dots on top (foreground)
-    for c = 1:nCond
-        idxC = condIdx == c & ~isnan(y);
-        scatter(xJit(idxC), y(idxC), dotSize, colors(c, :), 'filled', ...
-            'MarkerFaceAlpha', dotAlpha);
-    end
-
-    % Axes formatting
-    xlabel('');
-    yMin = min(y, [], 'omitnan');
-    yMax = max(y, [], 'omitnan');
-    yPadFrac = 0.1;
-    if isempty(yMin) || isnan(yMin) || isempty(yMax) || isnan(yMax)
-        ylim([0 1]);
-    else
-        yRange = yMax - yMin;
-        if yRange == 0
-            yRange = max(abs(yMax), abs(yMin), 1) * 0.1;
-        end
-        yPad = yRange * yPadFrac;
-        ylim([yMin - yPad, yMax + yPad]);
-    end
-    xlim([0.5 nCond + 0.5]);
-    xticks(1:nCond);
-    if showXTickLabels
-        xticklabels(xtickLabs);
-    else
-        xticklabels({});
-    end
-    prettyName = strrep(varName, '_', ' ');
-    ylabStr = prettyName;
-    titleStr = prettyName;
-    if strcmp(varName, 'dBMSRate')
-        ylabStr = 'Microsaccade Rate [%]';
-        titleStr = 'Microsaccade Rate';
-    elseif strcmp(varName, 'dBPupilSize')
-        ylabStr = 'Pupil Size [%]';
-        titleStr = 'Pupil Size';
-    elseif strcmp(varName, 'Power')
-        ylabStr = 'Power [dB]';
-        titleStr = 'Gamma Power';
-        ylim([1 4.5])
-    elseif strcmp(varName, 'dBGazeDeviation')
-        ylabStr = 'Gaze Deviation [dB]';
-        titleStr = 'Gaze Deviation';
-    elseif strcmp(varName, 'dBVel2D')
-        ylabStr = 'Eye Velocity [%]';
-        titleStr = 'Combined Eye Velocity';
-    elseif strcmp(varName, 'dBBCEA')
-        ylabStr = 'BCEA [%]';
-        titleStr = 'BCEA';
-    elseif strcmp(varName, 'dBFixations')
-        ylabStr = 'Fixations [dB]';
-        titleStr = 'Fixations';
-    elseif strcmp(varName, 'dBBlinks')
-        ylabStr = 'Blinks [dB]';
-        titleStr = 'Blinks';
-    elseif strcmp(varName, 'dBSaccades')
-        ylabStr = 'Saccades [dB]';
-        titleStr = 'Saccades';
-    elseif strcmp(varName, 'Frequency')
-        ylabStr = 'Frequency [Hz]';
-        titleStr = 'Gamma Frequency';
-    end
-
-    hYlab = ylabel(ylabStr, 'Interpreter', 'none', 'FontSize', ylabelFontSize);
-    if showTitle
-        hTitle = title(titleStr, 'FontSize', titleFontSize, 'FontWeight', 'bold');
-    else
-        hTitle = title('');
-    end
-
-    if showLegend
-        hLeg = gobjects(nCond, 1);
         for c = 1:nCond
-            hLeg(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.25, ...
-                'EdgeColor', colors(c, :), 'LineWidth', 1.5);
+            idxC = condIdx == c & isfinite(y);
+            scatter(xJit(idxC), y(idxC), dotSize, colors(c, :), 'filled', ...
+                'MarkerFaceAlpha', dotAlpha);
         end
-        legend(hLeg, xtickLabs, 'FontSize', legendFontSize, 'Location', 'northeast', 'Box', 'off');
-    end
 
-    ax = gca;
-    ax.XAxis.FontSize = xTickFontSize;
-    ax.YAxis.FontSize = yTickFontSize;
-    hYlab.FontSize = ylabelFontSize;
-    if showTitle
-        hTitle.FontSize = titleFontSize;
-    end
-    set(ax, 'Box', 'off');
-    box off;
-    hold off;
+        xlim([0.5 nCond + 0.5]);
+        xticks(1:nCond);
+        xticklabels(xtickLabs);
 
-    % Save
-    drawnow;
-    set(gcf, 'PaperPositionMode', 'auto');
-    print(gcf, fullfile(paths.figures, 'stats', 'boxplots', ['GCP_stats_boxplot_' varName '.png']), '-dpng', '-r600');
+        hXlab = xlabel('Contrast', 'FontSize', xLabelFontSize);
+        hYlab = ylabel(ylabStr, 'Interpreter', 'none', 'FontSize', axisLabelSize);
+
+        ax = gca;
+        ax.XAxis.FontSize = xTickFontSize;
+        ax.YAxis.FontSize = yTickFontSize;
+        hXlab.FontSize = xLabelFontSize;
+        hYlab.FontSize = axisLabelSize;
+        set(ax, 'Box', 'off');
+        box off;
+        hold off;
+
+        if strcmp(winName, 'full')
+            outName = sprintf('GCP_stats_boxplot_%s.png', varName);
+        else
+            outName = sprintf('GCP_stats_boxplot_%s_%s.png', varName, winName);
+        end
+        outPath = fullfile(out_dir, outName);
+        drawnow;
+        set(gcf, 'PaperPositionMode', 'auto');
+        print(gcf, outPath, '-dpng', '-r600');
+        fprintf('Saved %s\n', outPath);
+    end
 end
 
-%%
+fprintf('\nDone. Boxplots in:\n  %s\n', out_dir);
+
+%% Local functions
+function idx = match_subjects(allSubjects, keepSubjects)
+idx = arrayfun(@(s) find(strcmp(allSubjects, keepSubjects{s}), 1), ...
+    1:numel(keepSubjects));
+if any(cellfun(@isempty, num2cell(idx)))
+    error('GCP_stats_boxplots:SubjectMismatch', ...
+        'One or more included subjects are missing from a data source.');
+end
+end
+
+function M = pick_matrix(src, subj_idx)
+M = nan(size(src, 1), numel(subj_idx));
+for s = 1:numel(subj_idx)
+    si = subj_idx(s);
+    if si <= size(src, 2)
+        M(:, s) = src(:, si);
+    end
+end
+end
+
 function styleCurrentBoxplot(boxColors)
-% Color box faces and edges to match condition scatter colors
 hBoxes = findobj(gca, 'Tag', 'Box');
 if isempty(hBoxes)
-    return;
+    return
 end
 nB = numel(hBoxes);
 mx = zeros(nB, 1);
@@ -258,6 +258,7 @@ end
 hBoxes = hBoxes(ord);
 for bi = 1:min(numel(hBoxes), size(boxColors, 1))
     patch(get(hBoxes(bi), 'XData'), get(hBoxes(bi), 'YData'), ...
-        boxColors(bi, :), 'FaceAlpha', 0.25, 'EdgeColor', boxColors(bi, :), 'LineWidth', 1.5);
+        boxColors(bi, :), 'FaceAlpha', 0.25, ...
+        'EdgeColor', boxColors(bi, :), 'LineWidth', 1.5);
 end
 end

@@ -1,46 +1,39 @@
 %% GCP Gaze Feature Extraction
 %
 % Extracted features:
-%   Gaze deviation (Euclidean distances)
 %   Gaze standard deviation
 %   BCEA (Bivariate Contour Ellipse Area, k=2.291, 95%)
 %   Pupil size (Time Series Raw, Baselined % change)
-%   Microsaccades (TC ground truth: boxplot scalar = mean of % TC over [0, 2] s)
+%   Microsaccades (TC ground truth: boxplot scalar = mean of % TC)
 %   Saccade cleaned fixational eye velocity (Raw, Baselined % change)
+%   EyeLink blinks, fixations, saccades (rates, baselined % change)
 %
-% Gaze metrics labelled by eye-tracker (saccades, blinks and
-% fixations) are extracted already in GCP_preprocessing.m
+% Subject x condition scalars are saved for full [0 2], early [0 1], and
+% late [1 2] windows (fields: dB*, dB*_early, dB*_late). Group file:
+%   features/GCP_gaze_window_summaries.mat
 %
-% Note: fields named dB* store percentage change for pupil, MS, velocity,
-% and BCEA (downstream name compatibility).
+% Baselined (% change) subject scalars use suffix _bl
+% (MSRate_bl, BCEA_bl, Vel2D_bl, ...; plus _bl_early / _bl_late).
+% Microsaccade boxplot scalars use direct Engbert count rates in each
+% window, not means of the smoothed rate time course (TC is for plots).
 
 %% Setup
 startup
 [subjects, paths, colors, headmodel] = setup('GCP');
 
-% preallocate across‐all‐subjects matrix of raw data
-gaze_data = struct('ID',{},'Condition',{},'GazeDeviation',{},...
-    'GazeStdX',{},'GazeStdY',{},'BCEA',{},'PupilSize',{},...
-    'MSRate',{}, ...
-    'VelH',{},'VelV',{},'Vel2D',{}, ...
-    'Blinks',{},'Fixations',{},'Saccades',{}, ...
-    'BaselineGazeDeviation',{},'BaselineGazeStdX',{},'BaselineGazeStdY',{},...
-    'BaselineBCEA',{},'BaselinePupilSize',{},'BaselineMSRate',{},...
-    'BaselineVelH',{},'BaselineVelV',{},'BaselineVel2D',{}, ...
-    'BaselineBlinks',{},'BaselineFixations',{},'BaselineSaccades',{}, ...
-    'dBGazeDeviation',{},'dBGazeStdX',{},'dBGazeStdY',{},...
-    'dBBCEA',{},'dBPupilSize',{},'dBMSRate',{},...
-    'dBVelH',{},'dBVelV',{},'dBVel2D',{}, ...
-    'dBBlinks',{},'dBFixations',{},'dBSaccades',{});
+% across-subjects raw struct (fields filled from subj_data_gaze)
+gaze_data = struct([]);
 
 % time‐windows
 baseline_period   = [-1.5, -0.5];
-analysis_period   = [0 2];
+analysis_period   = [0 2];          % full
+analysis_early    = [0 1];
+analysis_late     = [1 2];
 analysis_periodTS = [-1 2];
 pupil_store_window = [-1.5, 2.5];
 vel_store_window   = [-1.5, 2.5];  % extend past 2 s so t=2 is not a kernel edge
 vel_smooth_s       = 0.050;        % light smoothing of fixational speed TC
-ms_baseline_floor_hz = 1 / (baseline_period(2) - baseline_period(1)); % >= 1 event in baseline
+ms_min_rate_hz     = 0.1;          % exclude trials below this in baseline or stimulus
 win_size          = 25;    % blink‐removal window (samples)
 fsample           = 500;   % eye‐tracker sampling rate
 
@@ -78,12 +71,13 @@ for subj = 1:numel(subjects)
         trial_num          = [];
         condition          = [];
 
-        gazeDev            = [];  baselineGazeDev   = [];
         gazeSDx            = [];  baselineGazeSDx   = [];
         gazeSDy            = [];  baselineGazeSDy   = [];
         bcea               = [];  baselineBcea      = [];
+        bcea_early         = [];  bcea_late         = [];
         pupilSize          = [];  baselinePupilSize = [];
         microsaccadeRate   = [];  baselineMSRate    = [];
+        microsaccadeRate_early = [];  microsaccadeRate_late = [];
 
         % Prepare velocity time series container for this condition
         velocityData     = dataET;    % copy meta-info
@@ -91,7 +85,7 @@ for subj = 1:numel(subjects)
 
         % trial-level % baseline (scalar baseline per trial; field names keep *_db)
         velocityData_db = dataET;
-        velocityData_db.label = {'dBVelH','dBVelV','dBVel2D'};
+        velocityData_db.label = {'VelH_bl','VelV_bl','Vel2D_bl'};
 
         fsample          = dataET.fsample;
         vel_kernel       = [1 1 0 -1 -1] * (fsample / 6); % Engbert velocity kernel
@@ -227,9 +221,6 @@ for subj = 1:numel(subjects)
             bl_dat = remove_blinks(bl_dat, win_size);
 
             bl_x = bl_dat(1,:);  bl_y = bl_dat(2,:);
-            dx_bl = bl_x - 400 - nanmean(bl_x-400);
-            dy_bl = bl_y - 300 - nanmean(bl_y-300);
-            baseline_eucdev   = nanmean( sqrt(dx_bl.^2 + dy_bl.^2) );
             baseline_std_x    = nanstd(bl_x);
             baseline_std_y    = nanstd(bl_y);
             if numel(bl_x) > 2
@@ -282,11 +273,7 @@ for subj = 1:numel(subjects)
                     gaze_y_c100{subj,trl} = y;
             end
 
-            % Compute GazeDev & Microsaccades
-            dx = x - 400 - nanmean(x-400);
-            dy = y - 300 - nanmean(y-300);
-
-            mean_eucdev = nanmean( sqrt(dx.^2 + dy.^2) );
+            % Gaze SD, BCEA, microsaccades
             std_x       = nanstd(x);
             std_y       = nanstd(y);
             if numel(x) > 2
@@ -295,8 +282,12 @@ for subj = 1:numel(subjects)
                 rho_an = 0;
             end
             bcea_val    = 2 * 2.291 * pi * std_x * std_y * sqrt(1 - rho_an^2);
+            bcea_early_val = bcea_in_window(raw, tVec, analysis_early, win_size);
+            bcea_late_val  = bcea_in_window(raw, tVec, analysis_late, win_size);
             pupil       = mean(an_dat(3,:),'omitnan')/1000;
             [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
+            msrate_early = ms_rate_in_window(raw, tVec, analysis_early, win_size, fsample);
+            msrate_late  = ms_rate_in_window(raw, tVec, analysis_late, win_size, fsample);
 
             % Analysis window fixational velocity from the full regular trace
             if ~isempty(velFT.time{trl})
@@ -376,8 +367,6 @@ for subj = 1:numel(subjects)
                blink_loss_frac > qc_max_blink_loss_frac
                 msFT.trial{trl} = nan(1, n_total_full);
                 msFT.time{trl}  = t_full_ms;
-                msrate = NaN;
-                baseline_msrate = NaN;
             else
                 x_clean = x_val(valid_clean);
                 y_clean = y_val(valid_clean);
@@ -398,8 +387,6 @@ for subj = 1:numel(subjects)
                 if ~isfinite(ms_rate_trial) || ms_rate_trial > qc_max_ms_rate_hz
                     msFT.trial{trl} = nan(1, n_total_full);
                     msFT.time{trl}  = t_full_ms;
-                    msrate = NaN;
-                    baseline_msrate = NaN;
                 else
                     % Smooth impulses -> event density per sample.
                     % Edge-effect correction: renormalise by local kernel mass so
@@ -417,14 +404,20 @@ for subj = 1:numel(subjects)
                     ms_rate_full(valid_full) = ms_rate_val;
 
                     % Store in FieldTrip struct with the original regular time axis
+                    % (TC is for plotting only; boxplot scalars use direct counts)
                     msFT.trial{trl} = ms_rate_full;
                     msFT.time{trl}  = t_full_ms;
 
-                    % Raw rates from the same TC used for plotting / boxplots
+                    % Drop sparse trials from the TC average only
                     bl_ms_idx = t_full_ms >= baseline_period(1) & t_full_ms <= baseline_period(2);
                     an_ms_idx = t_full_ms >= analysis_period(1) & t_full_ms <= analysis_period(2);
-                    baseline_msrate = mean(ms_rate_full(bl_ms_idx), 'omitnan');
-                    msrate = mean(ms_rate_full(an_ms_idx), 'omitnan');
+                    bl_tc = mean(ms_rate_full(bl_ms_idx), 'omitnan');
+                    an_tc = mean(ms_rate_full(an_ms_idx), 'omitnan');
+                    if ~isfinite(bl_tc) || ~isfinite(an_tc) || ...
+                            bl_tc < ms_min_rate_hz || an_tc < ms_min_rate_hz
+                        msFT.trial{trl} = nan(1, n_total_full);
+                        msFT.time{trl}  = t_full_ms;
+                    end
                 end
             end
 
@@ -432,17 +425,19 @@ for subj = 1:numel(subjects)
             subject_id(end+1)       = str2double(subjects{subj});
             trial_num(end+1)        = trl;
             condition(end+1)        = dataET.trialinfo(trl) - 60;
-            gazeDev(end+1)          = mean_eucdev;
-            baselineGazeDev(end+1)  = baseline_eucdev;
             gazeSDx(end+1)          = std_x;
             baselineGazeSDx(end+1)  = baseline_std_x;
             gazeSDy(end+1)          = std_y;
             baselineGazeSDy(end+1)  = baseline_std_y;
             bcea(end+1)             = bcea_val;
+            bcea_early(end+1)       = bcea_early_val;
+            bcea_late(end+1)        = bcea_late_val;
             baselineBcea(end+1)     = baseline_bcea_val;
             pupilSize(end+1)        = pupil;
             baselinePupilSize(end+1)= baseline_pupil;
             microsaccadeRate(end+1) = msrate;
+            microsaccadeRate_early(end+1) = msrate_early;
+            microsaccadeRate_late(end+1)  = msrate_late;
             baselineMSRate(end+1)   = baseline_msrate;
         end
 
@@ -512,54 +507,49 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         msTS_noBL = ft_timelockanalysis(cfg, msFT);
 
-        % Average rate (Hz) across trials first, then % change with a floor.
-        % Per-trial near-zero baselines otherwise explode to 1e5 % values.
-        ms_bl_idx = msTS_noBL.time >= baseline_period(1) & ...
-                    msTS_noBL.time <= baseline_period(2);
-        ms_bl_sc = mean(msTS_noBL.avg(ms_bl_idx), 'omitnan');
-        ms_bl_sc = max(ms_bl_sc, ms_baseline_floor_hz);
-        msTS_BL_db = msTS_noBL;
-        msTS_BL_db.avg = compute_pct_baseline(msTS_noBL.avg, ms_bl_sc);
-
-        % Trial-level % uses the same floor (still TC-derived rates)
-        dBMSRate = nan(1, nTrials);
+        % Per-trial % TC for plotting (sparse trials already NaN in msFT)
+        msFT_bl_db = msFT;
         for trl = 1:nTrials
-            if all(~isfinite(msFT.trial{trl}(:)))
+            if all(~isfinite(msFT.trial{trl}(:))) || ...
+                    ~isfinite(baselineMSRate(trl)) || baselineMSRate(trl) <= 0
                 continue
             end
-            bl_use = max(baselineMSRate(trl), ms_baseline_floor_hz);
-            ms_pct_trl = compute_pct_baseline(msFT.trial{trl}, bl_use);
-            t_ms = msFT.time{trl};
-            an_ms = t_ms >= analysis_period(1) & t_ms <= analysis_period(2);
-            dBMSRate(trl) = mean(ms_pct_trl(an_ms), 'omitnan');
+            msFT_bl_db.trial{trl} = compute_pct_baseline(msFT.trial{trl}, baselineMSRate(trl));
         end
+        msFT_bl_db = force_common_timeaxis(msFT_bl_db, t_ms_common);
 
-        % Subject MS boxplot value: mean of the saved/plotted TC over [0, 2] s
-        ms_an_idx = msTS_BL_db.time >= analysis_period(1) & msTS_BL_db.time <= analysis_period(2);
-        ms_tc_summary = mean(msTS_BL_db.avg(:, ms_an_idx), 'omitnan');
+        cfg = [];
+        cfg.latency    = analysis_periodTS;
+        cfg.keeptrials = 'no';
+        msTS_BL_db = ft_timelockanalysis(cfg, msFT_bl_db);
 
-        % Trial-level baselines for scalar gaze metrics
-        dBGazeDeviation = compute_db_baseline(gazeDev, baselineGazeDev);
-        dBGazeStdX      = compute_db_baseline(gazeSDx, baselineGazeSDx);
-        dBGazeStdY      = compute_db_baseline(gazeSDy, baselineGazeSDy);
-        dBBCEA          = compute_pct_baseline(bcea, baselineBcea);
-        dBPupilSize     = compute_pct_baseline(pupilSize, baselinePupilSize);
-        dBVelH          = compute_pct_baseline(velHorz, baselineVelH);
-        dBVelV          = compute_pct_baseline(velVert, baselineVelV);
-        dBVel2D         = compute_pct_baseline(vel2D, baselineVel2D);
+        % Trial-level baselined scalars (% change). MS uses direct count rates.
+        GazeStdX_bl      = compute_pct_baseline(gazeSDx, baselineGazeSDx);
+        GazeStdY_bl      = compute_pct_baseline(gazeSDy, baselineGazeSDy);
+        BCEA_bl          = compute_pct_baseline(bcea, baselineBcea);
+        BCEA_bl_early    = compute_pct_baseline(bcea_early, baselineBcea);
+        BCEA_bl_late     = compute_pct_baseline(bcea_late, baselineBcea);
+        PupilSize_bl     = compute_pct_baseline(pupilSize, baselinePupilSize);
+        VelH_bl          = compute_pct_baseline(velHorz, baselineVelH);
+        VelV_bl          = compute_pct_baseline(velVert, baselineVelV);
+        Vel2D_bl         = compute_pct_baseline(vel2D, baselineVel2D);
+        MSRate_bl        = compute_pct_baseline(microsaccadeRate, baselineMSRate);
+        MSRate_bl_early  = compute_pct_baseline(microsaccadeRate_early, baselineMSRate);
+        MSRate_bl_late   = compute_pct_baseline(microsaccadeRate_late, baselineMSRate);
 
-        % Subject velocity boxplots from the same % TC used for plotting
-        vel_an_idx = velTS_BL_db.time >= analysis_period(1) & ...
-                     velTS_BL_db.time <= analysis_period(2);
-        vel_tc_summary_H  = mean(velTS_BL_db.avg(1, vel_an_idx), 'omitnan');
-        vel_tc_summary_V  = mean(velTS_BL_db.avg(2, vel_an_idx), 'omitnan');
-        vel_tc_summary_2D = mean(velTS_BL_db.avg(3, vel_an_idx), 'omitnan');
+        % Subject boxplot scalars: TC window means for vel/pupil; trial means for MS/BCEA
+        [vel_tc_full_H, vel_tc_early_H, vel_tc_late_H] = tc_window_means( ...
+            velTS_BL_db.avg(1, :), velTS_BL_db.time, analysis_period, analysis_early, analysis_late);
+        [vel_tc_full_V, vel_tc_early_V, vel_tc_late_V] = tc_window_means( ...
+            velTS_BL_db.avg(2, :), velTS_BL_db.time, analysis_period, analysis_early, analysis_late);
+        [vel_tc_full_2D, vel_tc_early_2D, vel_tc_late_2D] = tc_window_means( ...
+            velTS_BL_db.avg(3, :), velTS_BL_db.time, analysis_period, analysis_early, analysis_late);
+        [pup_tc_full, pup_tc_early, pup_tc_late] = tc_window_means( ...
+            pupTS_BL_db.avg(1, :), pupTS_BL_db.time, analysis_period, analysis_early, analysis_late);
 
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
             case 'c25'
-                c25_gdev      = mean(gazeDev,'omitnan');
-                c25_bl_gdev   = mean(baselineGazeDev,'omitnan');
                 c25_gSDx      = mean(gazeSDx,'omitnan');
                 c25_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
                 c25_gSDy      = mean(gazeSDy,'omitnan');
@@ -579,28 +569,40 @@ for subj = 1:numel(subjects)
                 c25_vel2D        = mean(vel2D,'omitnan');
                 c25_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Condition mean of trial-level dB metrics
-                c25_db_gdev    = mean(dBGazeDeviation, 'omitnan');
-                c25_db_gSDx    = mean(dBGazeStdX, 'omitnan');
-                c25_db_gSDy    = mean(dBGazeStdY, 'omitnan');
-                c25_db_bcea    = mean(dBBCEA, 'omitnan');
-                c25_db_pups    = mean(dBPupilSize, 'omitnan');
-                c25_db_msrate  = ms_tc_summary;
-                c25_db_velHorz = vel_tc_summary_H;
-                c25_db_velVert = vel_tc_summary_V;
-                c25_db_vel2D   = vel_tc_summary_2D;
+                % Condition scalars: trial means for MS/BCEA/GazeStd; TC means for vel/pupil
+                c25_gSDx_bl         = mean(GazeStdX_bl, 'omitnan');
+                c25_gSDy_bl         = mean(GazeStdY_bl, 'omitnan');
+                c25_bcea_bl         = mean(BCEA_bl, 'omitnan');
+                c25_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
+                c25_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
+                c25_pups_bl         = pup_tc_full;
+                c25_pups_bl_early   = pup_tc_early;
+                c25_pups_bl_late    = pup_tc_late;
+                c25_msrate_bl       = mean(MSRate_bl, 'omitnan');
+                c25_msrate_bl_early = mean(MSRate_bl_early, 'omitnan');
+                c25_msrate_bl_late  = mean(MSRate_bl_late, 'omitnan');
+                c25_velHorz_bl       = vel_tc_full_H;
+                c25_velHorz_bl_early = vel_tc_early_H;
+                c25_velHorz_bl_late  = vel_tc_late_H;
+                c25_velVert_bl       = vel_tc_full_V;
+                c25_velVert_bl_early = vel_tc_early_V;
+                c25_velVert_bl_late  = vel_tc_late_V;
+                c25_vel2D_bl         = vel_tc_full_2D;
+                c25_vel2D_bl_early   = vel_tc_early_2D;
+                c25_vel2D_bl_late    = vel_tc_late_2D;
 
                 subj_data_gaze_trial_c25 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'dBGazeDeviation',dBGazeDeviation, ...
-                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'dBGazeStdX',      dBGazeStdX, ...
-                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'dBGazeStdY',      dBGazeStdY, ...
-                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'dBBCEA',          dBBCEA, ...
-                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'dBPupilSize',     dBPupilSize, ...
-                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'dBMSRate',        dBMSRate, ...
-                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'dBVelH',          dBVelH, ...
-                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'dBVelV',          dBVelV, ...
-                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'dBVel2D',         dBVel2D );
+                    'GazeStdX',gazeSDx, 'BaselineGazeStdX',baselineGazeSDx, 'GazeStdX_bl', GazeStdX_bl, ...
+                    'GazeStdY',gazeSDy, 'BaselineGazeStdY',baselineGazeSDy, 'GazeStdY_bl', GazeStdY_bl, ...
+                    'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
+                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
+                    'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
+                    'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
+                    'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, 'MSRate_bl_early', MSRate_bl_early, 'MSRate_bl_late', MSRate_bl_late, ...
+                    'VelH',velHorz, 'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, ...
+                    'VelV',velVert, 'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, ...
+                    'Vel2D',vel2D, 'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl );
 
                 % Store FieldTrip velocity for this condition
                 velTS_c25        = velTS_noBL;
@@ -620,8 +622,6 @@ for subj = 1:numel(subjects)
                 msTS_c25_bl_db = msTS_BL_db;
 
             case 'c50'
-                c50_gdev      = mean(gazeDev,'omitnan');
-                c50_bl_gdev   = mean(baselineGazeDev,'omitnan');
                 c50_gSDx      = mean(gazeSDx,'omitnan');
                 c50_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
                 c50_gSDy      = mean(gazeSDy,'omitnan');
@@ -641,28 +641,40 @@ for subj = 1:numel(subjects)
                 c50_vel2D        = mean(vel2D,'omitnan');
                 c50_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Condition mean of trial-level dB metrics
-                c50_db_gdev    = mean(dBGazeDeviation, 'omitnan');
-                c50_db_gSDx    = mean(dBGazeStdX, 'omitnan');
-                c50_db_gSDy    = mean(dBGazeStdY, 'omitnan');
-                c50_db_bcea    = mean(dBBCEA, 'omitnan');
-                c50_db_pups    = mean(dBPupilSize, 'omitnan');
-                c50_db_msrate  = ms_tc_summary;
-                c50_db_velHorz = vel_tc_summary_H;
-                c50_db_velVert = vel_tc_summary_V;
-                c50_db_vel2D   = vel_tc_summary_2D;
+                % Condition scalars: trial means for MS/BCEA/GazeStd; TC means for vel/pupil
+                c50_gSDx_bl         = mean(GazeStdX_bl, 'omitnan');
+                c50_gSDy_bl         = mean(GazeStdY_bl, 'omitnan');
+                c50_bcea_bl         = mean(BCEA_bl, 'omitnan');
+                c50_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
+                c50_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
+                c50_pups_bl         = pup_tc_full;
+                c50_pups_bl_early   = pup_tc_early;
+                c50_pups_bl_late    = pup_tc_late;
+                c50_msrate_bl       = mean(MSRate_bl, 'omitnan');
+                c50_msrate_bl_early = mean(MSRate_bl_early, 'omitnan');
+                c50_msrate_bl_late  = mean(MSRate_bl_late, 'omitnan');
+                c50_velHorz_bl       = vel_tc_full_H;
+                c50_velHorz_bl_early = vel_tc_early_H;
+                c50_velHorz_bl_late  = vel_tc_late_H;
+                c50_velVert_bl       = vel_tc_full_V;
+                c50_velVert_bl_early = vel_tc_early_V;
+                c50_velVert_bl_late  = vel_tc_late_V;
+                c50_vel2D_bl         = vel_tc_full_2D;
+                c50_vel2D_bl_early   = vel_tc_early_2D;
+                c50_vel2D_bl_late    = vel_tc_late_2D;
 
                 subj_data_gaze_trial_c50 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'dBGazeDeviation',dBGazeDeviation, ...
-                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'dBGazeStdX',      dBGazeStdX, ...
-                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'dBGazeStdY',      dBGazeStdY, ...
-                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'dBBCEA',          dBBCEA, ...
-                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'dBPupilSize',     dBPupilSize, ...
-                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'dBMSRate',        dBMSRate, ...
-                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'dBVelH',          dBVelH, ...
-                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'dBVelV',          dBVelV, ...
-                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'dBVel2D',         dBVel2D );
+                    'GazeStdX',gazeSDx, 'BaselineGazeStdX',baselineGazeSDx, 'GazeStdX_bl', GazeStdX_bl, ...
+                    'GazeStdY',gazeSDy, 'BaselineGazeStdY',baselineGazeSDy, 'GazeStdY_bl', GazeStdY_bl, ...
+                    'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
+                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
+                    'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
+                    'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
+                    'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, 'MSRate_bl_early', MSRate_bl_early, 'MSRate_bl_late', MSRate_bl_late, ...
+                    'VelH',velHorz, 'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, ...
+                    'VelV',velVert, 'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, ...
+                    'Vel2D',vel2D, 'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl );
 
                 velTS_c50        = velTS_noBL;
                 velTS_c50_bl_db = velTS_BL_db;
@@ -678,8 +690,6 @@ for subj = 1:numel(subjects)
                 msTS_c50_bl_db = msTS_BL_db;
 
             case 'c75'
-                c75_gdev      = mean(gazeDev,'omitnan');
-                c75_bl_gdev   = mean(baselineGazeDev,'omitnan');
                 c75_gSDx      = mean(gazeSDx,'omitnan');
                 c75_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
                 c75_gSDy      = mean(gazeSDy,'omitnan');
@@ -699,28 +709,40 @@ for subj = 1:numel(subjects)
                 c75_vel2D        = mean(vel2D,'omitnan');
                 c75_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Condition mean of trial-level dB metrics
-                c75_db_gdev    = mean(dBGazeDeviation, 'omitnan');
-                c75_db_gSDx    = mean(dBGazeStdX, 'omitnan');
-                c75_db_gSDy    = mean(dBGazeStdY, 'omitnan');
-                c75_db_bcea    = mean(dBBCEA, 'omitnan');
-                c75_db_pups    = mean(dBPupilSize, 'omitnan');
-                c75_db_msrate  = ms_tc_summary;
-                c75_db_velHorz = vel_tc_summary_H;
-                c75_db_velVert = vel_tc_summary_V;
-                c75_db_vel2D   = vel_tc_summary_2D;
+                % Condition scalars: trial means for MS/BCEA/GazeStd; TC means for vel/pupil
+                c75_gSDx_bl         = mean(GazeStdX_bl, 'omitnan');
+                c75_gSDy_bl         = mean(GazeStdY_bl, 'omitnan');
+                c75_bcea_bl         = mean(BCEA_bl, 'omitnan');
+                c75_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
+                c75_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
+                c75_pups_bl         = pup_tc_full;
+                c75_pups_bl_early   = pup_tc_early;
+                c75_pups_bl_late    = pup_tc_late;
+                c75_msrate_bl       = mean(MSRate_bl, 'omitnan');
+                c75_msrate_bl_early = mean(MSRate_bl_early, 'omitnan');
+                c75_msrate_bl_late  = mean(MSRate_bl_late, 'omitnan');
+                c75_velHorz_bl       = vel_tc_full_H;
+                c75_velHorz_bl_early = vel_tc_early_H;
+                c75_velHorz_bl_late  = vel_tc_late_H;
+                c75_velVert_bl       = vel_tc_full_V;
+                c75_velVert_bl_early = vel_tc_early_V;
+                c75_velVert_bl_late  = vel_tc_late_V;
+                c75_vel2D_bl         = vel_tc_full_2D;
+                c75_vel2D_bl_early   = vel_tc_early_2D;
+                c75_vel2D_bl_late    = vel_tc_late_2D;
 
                 subj_data_gaze_trial_c75 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'dBGazeDeviation',dBGazeDeviation, ...
-                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'dBGazeStdX',      dBGazeStdX, ...
-                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'dBGazeStdY',      dBGazeStdY, ...
-                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'dBBCEA',          dBBCEA, ...
-                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'dBPupilSize',     dBPupilSize, ...
-                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'dBMSRate',        dBMSRate, ...
-                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'dBVelH',          dBVelH, ...
-                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'dBVelV',          dBVelV, ...
-                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'dBVel2D',         dBVel2D );
+                    'GazeStdX',gazeSDx, 'BaselineGazeStdX',baselineGazeSDx, 'GazeStdX_bl', GazeStdX_bl, ...
+                    'GazeStdY',gazeSDy, 'BaselineGazeStdY',baselineGazeSDy, 'GazeStdY_bl', GazeStdY_bl, ...
+                    'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
+                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
+                    'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
+                    'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
+                    'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, 'MSRate_bl_early', MSRate_bl_early, 'MSRate_bl_late', MSRate_bl_late, ...
+                    'VelH',velHorz, 'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, ...
+                    'VelV',velVert, 'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, ...
+                    'Vel2D',vel2D, 'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl );
 
                 velTS_c75        = velTS_noBL;
                 velTS_c75_bl_db = velTS_BL_db;
@@ -736,8 +758,6 @@ for subj = 1:numel(subjects)
                 msTS_c75_bl_db = msTS_BL_db;
 
             case 'c100'
-                c100_gdev      = mean(gazeDev,'omitnan');
-                c100_bl_gdev   = mean(baselineGazeDev,'omitnan');
                 c100_gSDx      = mean(gazeSDx,'omitnan');
                 c100_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
                 c100_gSDy      = mean(gazeSDy,'omitnan');
@@ -757,28 +777,40 @@ for subj = 1:numel(subjects)
                 c100_vel2D        = mean(vel2D,'omitnan');
                 c100_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Condition mean of trial-level dB metrics
-                c100_db_gdev    = mean(dBGazeDeviation, 'omitnan');
-                c100_db_gSDx    = mean(dBGazeStdX, 'omitnan');
-                c100_db_gSDy    = mean(dBGazeStdY, 'omitnan');
-                c100_db_bcea    = mean(dBBCEA, 'omitnan');
-                c100_db_pups    = mean(dBPupilSize, 'omitnan');
-                c100_db_msrate  = ms_tc_summary;
-                c100_db_velHorz = vel_tc_summary_H;
-                c100_db_velVert = vel_tc_summary_V;
-                c100_db_vel2D   = vel_tc_summary_2D;
+                % Condition scalars: trial means for MS/BCEA/GazeStd; TC means for vel/pupil
+                c100_gSDx_bl         = mean(GazeStdX_bl, 'omitnan');
+                c100_gSDy_bl         = mean(GazeStdY_bl, 'omitnan');
+                c100_bcea_bl         = mean(BCEA_bl, 'omitnan');
+                c100_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
+                c100_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
+                c100_pups_bl         = pup_tc_full;
+                c100_pups_bl_early   = pup_tc_early;
+                c100_pups_bl_late    = pup_tc_late;
+                c100_msrate_bl       = mean(MSRate_bl, 'omitnan');
+                c100_msrate_bl_early = mean(MSRate_bl_early, 'omitnan');
+                c100_msrate_bl_late  = mean(MSRate_bl_late, 'omitnan');
+                c100_velHorz_bl       = vel_tc_full_H;
+                c100_velHorz_bl_early = vel_tc_early_H;
+                c100_velHorz_bl_late  = vel_tc_late_H;
+                c100_velVert_bl       = vel_tc_full_V;
+                c100_velVert_bl_early = vel_tc_early_V;
+                c100_velVert_bl_late  = vel_tc_late_V;
+                c100_vel2D_bl         = vel_tc_full_2D;
+                c100_vel2D_bl_early   = vel_tc_early_2D;
+                c100_vel2D_bl_late    = vel_tc_late_2D;
 
                 subj_data_gaze_trial_c100 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeDeviation',gazeDev,   'BaselineGazeDeviation',baselineGazeDev,   'dBGazeDeviation',dBGazeDeviation, ...
-                    'GazeStdX',gazeSDx,        'BaselineGazeStdX',baselineGazeSDx,        'dBGazeStdX',      dBGazeStdX, ...
-                    'GazeStdY',gazeSDy,        'BaselineGazeStdY',baselineGazeSDy,        'dBGazeStdY',      dBGazeStdY, ...
-                    'BCEA',bcea,               'BaselineBCEA',baselineBcea,               'dBBCEA',          dBBCEA, ...
-                    'PupilSize',pupilSize,     'BaselinePupilSize',baselinePupilSize,     'dBPupilSize',     dBPupilSize, ...
-                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate,           'dBMSRate',        dBMSRate, ...
-                    'VelH',velHorz,            'BaselineVelH',baselineVelH,               'dBVelH',          dBVelH, ...
-                    'VelV',velVert,            'BaselineVelV',baselineVelV,               'dBVelV',          dBVelV, ...
-                    'Vel2D',vel2D,             'BaselineVel2D',baselineVel2D,             'dBVel2D',         dBVel2D );
+                    'GazeStdX',gazeSDx, 'BaselineGazeStdX',baselineGazeSDx, 'GazeStdX_bl', GazeStdX_bl, ...
+                    'GazeStdY',gazeSDy, 'BaselineGazeStdY',baselineGazeSDy, 'GazeStdY_bl', GazeStdY_bl, ...
+                    'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
+                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
+                    'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
+                    'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
+                    'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, 'MSRate_bl_early', MSRate_bl_early, 'MSRate_bl_late', MSRate_bl_late, ...
+                    'VelH',velHorz, 'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, ...
+                    'VelV',velVert, 'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, ...
+                    'Vel2D',vel2D, 'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl );
 
                 velTS_c100        = velTS_noBL;
                 velTS_c100_bl_db = velTS_BL_db;
@@ -799,31 +831,78 @@ for subj = 1:numel(subjects)
     savepath = fullfile(paths.features, subjects{subj}, 'gaze');
     if ~exist(savepath,'dir'); mkdir(savepath); end
 
-    % load the pre‐extracted GCP_preprocessing metrics
-    load(fullfile(savepath,'gaze_metrics'),'c25_blinks','c50_blinks','c75_blinks','c100_blinks', ...
-        'c25_fixations','c50_fixations','c75_fixations','c100_fixations', ...
-        'c25_saccades','c50_saccades','c75_saccades','c100_saccades', ...
-        'c25_bl_blinks','c50_bl_blinks','c75_bl_blinks','c100_bl_blinks', ...
-        'c25_bl_fixations','c50_bl_fixations','c75_bl_fixations','c100_bl_fixations', ...
-        'c25_bl_saccades','c50_bl_saccades','c75_bl_saccades','c100_bl_saccades');
+    % EyeLink event rates: full / early / late + baseline, then % change
+    evWins = {analysis_period, analysis_early, analysis_late};
+    ev = eyelink_event_rates_subject(paths.merged, subjects{subj}, evWins, baseline_period);
+    c25_blinks = ev.blinks(1,1); c50_blinks = ev.blinks(2,1);
+    c75_blinks = ev.blinks(3,1); c100_blinks = ev.blinks(4,1);
+    c25_fixations = ev.fixations(1,1); c50_fixations = ev.fixations(2,1);
+    c75_fixations = ev.fixations(3,1); c100_fixations = ev.fixations(4,1);
+    c25_saccades = ev.saccades(1,1); c50_saccades = ev.saccades(2,1);
+    c75_saccades = ev.saccades(3,1); c100_saccades = ev.saccades(4,1);
+    c25_bl_blinks = ev.bl_blinks(1); c50_bl_blinks = ev.bl_blinks(2);
+    c75_bl_blinks = ev.bl_blinks(3); c100_bl_blinks = ev.bl_blinks(4);
+    c25_bl_fixations = ev.bl_fixations(1); c50_bl_fixations = ev.bl_fixations(2);
+    c75_bl_fixations = ev.bl_fixations(3); c100_bl_fixations = ev.bl_fixations(4);
+    c25_bl_saccades = ev.bl_saccades(1); c50_bl_saccades = ev.bl_saccades(2);
+    c75_bl_saccades = ev.bl_saccades(3); c100_bl_saccades = ev.bl_saccades(4);
 
-    c25_db_blinks     = compute_db_baseline(c25_blinks, c25_bl_blinks);
-    c50_db_blinks     = compute_db_baseline(c50_blinks, c50_bl_blinks);
-    c75_db_blinks     = compute_db_baseline(c75_blinks, c75_bl_blinks);
-    c100_db_blinks    = compute_db_baseline(c100_blinks, c100_bl_blinks);
-    c25_db_fixations  = compute_db_baseline(c25_fixations, c25_bl_fixations);
-    c50_db_fixations  = compute_db_baseline(c50_fixations, c50_bl_fixations);
-    c75_db_fixations  = compute_db_baseline(c75_fixations, c75_bl_fixations);
-    c100_db_fixations = compute_db_baseline(c100_fixations, c100_bl_fixations);
-    c25_db_saccades   = compute_db_baseline(c25_saccades, c25_bl_saccades);
-    c50_db_saccades   = compute_db_baseline(c50_saccades, c50_bl_saccades);
-    c75_db_saccades   = compute_db_baseline(c75_saccades, c75_bl_saccades);
-    c100_db_saccades  = compute_db_baseline(c100_saccades, c100_bl_saccades);
+    c25_blinks_early = ev.blinks(1,2); c50_blinks_early = ev.blinks(2,2);
+    c75_blinks_early = ev.blinks(3,2); c100_blinks_early = ev.blinks(4,2);
+    c25_fixations_early = ev.fixations(1,2); c50_fixations_early = ev.fixations(2,2);
+    c75_fixations_early = ev.fixations(3,2); c100_fixations_early = ev.fixations(4,2);
+    c25_saccades_early = ev.saccades(1,2); c50_saccades_early = ev.saccades(2,2);
+    c75_saccades_early = ev.saccades(3,2); c100_saccades_early = ev.saccades(4,2);
+
+    c25_blinks_late = ev.blinks(1,3); c50_blinks_late = ev.blinks(2,3);
+    c75_blinks_late = ev.blinks(3,3); c100_blinks_late = ev.blinks(4,3);
+    c25_fixations_late = ev.fixations(1,3); c50_fixations_late = ev.fixations(2,3);
+    c75_fixations_late = ev.fixations(3,3); c100_fixations_late = ev.fixations(4,3);
+    c25_saccades_late = ev.saccades(1,3); c50_saccades_late = ev.saccades(2,3);
+    c75_saccades_late = ev.saccades(3,3); c100_saccades_late = ev.saccades(4,3);
+
+    c25_blinks_bl = compute_pct_baseline(c25_blinks, c25_bl_blinks);
+    c50_blinks_bl = compute_pct_baseline(c50_blinks, c50_bl_blinks);
+    c75_blinks_bl = compute_pct_baseline(c75_blinks, c75_bl_blinks);
+    c100_blinks_bl = compute_pct_baseline(c100_blinks, c100_bl_blinks);
+    c25_blinks_bl_early = compute_pct_baseline(c25_blinks_early, c25_bl_blinks);
+    c50_blinks_bl_early = compute_pct_baseline(c50_blinks_early, c50_bl_blinks);
+    c75_blinks_bl_early = compute_pct_baseline(c75_blinks_early, c75_bl_blinks);
+    c100_blinks_bl_early = compute_pct_baseline(c100_blinks_early, c100_bl_blinks);
+    c25_blinks_bl_late = compute_pct_baseline(c25_blinks_late, c25_bl_blinks);
+    c50_blinks_bl_late = compute_pct_baseline(c50_blinks_late, c50_bl_blinks);
+    c75_blinks_bl_late = compute_pct_baseline(c75_blinks_late, c75_bl_blinks);
+    c100_blinks_bl_late = compute_pct_baseline(c100_blinks_late, c100_bl_blinks);
+
+    c25_fixations_bl = compute_pct_baseline(c25_fixations, c25_bl_fixations);
+    c50_fixations_bl = compute_pct_baseline(c50_fixations, c50_bl_fixations);
+    c75_fixations_bl = compute_pct_baseline(c75_fixations, c75_bl_fixations);
+    c100_fixations_bl = compute_pct_baseline(c100_fixations, c100_bl_fixations);
+    c25_fixations_bl_early = compute_pct_baseline(c25_fixations_early, c25_bl_fixations);
+    c50_fixations_bl_early = compute_pct_baseline(c50_fixations_early, c50_bl_fixations);
+    c75_fixations_bl_early = compute_pct_baseline(c75_fixations_early, c75_bl_fixations);
+    c100_fixations_bl_early = compute_pct_baseline(c100_fixations_early, c100_bl_fixations);
+    c25_fixations_bl_late = compute_pct_baseline(c25_fixations_late, c25_bl_fixations);
+    c50_fixations_bl_late = compute_pct_baseline(c50_fixations_late, c50_bl_fixations);
+    c75_fixations_bl_late = compute_pct_baseline(c75_fixations_late, c75_bl_fixations);
+    c100_fixations_bl_late = compute_pct_baseline(c100_fixations_late, c100_bl_fixations);
+
+    c25_saccades_bl = compute_pct_baseline(c25_saccades, c25_bl_saccades);
+    c50_saccades_bl = compute_pct_baseline(c50_saccades, c50_bl_saccades);
+    c75_saccades_bl = compute_pct_baseline(c75_saccades, c75_bl_saccades);
+    c100_saccades_bl = compute_pct_baseline(c100_saccades, c100_bl_saccades);
+    c25_saccades_bl_early = compute_pct_baseline(c25_saccades_early, c25_bl_saccades);
+    c50_saccades_bl_early = compute_pct_baseline(c50_saccades_early, c50_bl_saccades);
+    c75_saccades_bl_early = compute_pct_baseline(c75_saccades_early, c75_bl_saccades);
+    c100_saccades_bl_early = compute_pct_baseline(c100_saccades_early, c100_bl_saccades);
+    c25_saccades_bl_late = compute_pct_baseline(c25_saccades_late, c25_bl_saccades);
+    c50_saccades_bl_late = compute_pct_baseline(c50_saccades_late, c50_bl_saccades);
+    c75_saccades_bl_late = compute_pct_baseline(c75_saccades_late, c75_bl_saccades);
+    c100_saccades_bl_late = compute_pct_baseline(c100_saccades_late, c100_bl_saccades);
 
     subj_data_gaze = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
         'Condition', num2cell([1;2;3;4]), ...
-        'GazeDeviation', num2cell([c25_gdev;   c50_gdev;   c75_gdev;   c100_gdev]), ...
         'GazeStdX',      num2cell([c25_gSDx;   c50_gSDx;   c75_gSDx;   c100_gSDx]), ...
         'GazeStdY',      num2cell([c25_gSDy;   c50_gSDy;   c75_gSDy;   c100_gSDy]), ...
         'BCEA',          num2cell([c25_bcea;   c50_bcea;   c75_bcea;   c100_bcea]), ...
@@ -835,7 +914,6 @@ for subj = 1:numel(subjects)
         'Blinks',        num2cell([c25_blinks; c50_blinks; c75_blinks; c100_blinks]), ...
         'Fixations',     num2cell([c25_fixations;c50_fixations;c75_fixations;c100_fixations]), ...
         'Saccades',      num2cell([c25_saccades; c50_saccades; c75_saccades; c100_saccades]), ...
-        'BaselineGazeDeviation', num2cell([c25_bl_gdev;   c50_bl_gdev;   c75_bl_gdev;   c100_bl_gdev]), ...
         'BaselineGazeStdX',      num2cell([c25_bl_gSDx;   c50_bl_gSDx;   c75_bl_gSDx;   c100_bl_gSDx]), ...
         'BaselineGazeStdY',      num2cell([c25_bl_gSDy;   c50_bl_gSDy;   c75_bl_gSDy;   c100_bl_gSDy]), ...
         'BaselineBCEA',          num2cell([c25_bl_bcea;   c50_bl_bcea;   c75_bl_bcea;   c100_bl_bcea]), ...
@@ -847,23 +925,39 @@ for subj = 1:numel(subjects)
         'BaselineBlinks',        num2cell([c25_bl_blinks; c50_bl_blinks; c75_bl_blinks; c100_bl_blinks]), ...
         'BaselineFixations',     num2cell([c25_bl_fixations; c50_bl_fixations; c75_bl_fixations; c100_bl_fixations]), ...
         'BaselineSaccades',      num2cell([c25_bl_saccades; c50_bl_saccades; c75_bl_saccades; c100_bl_saccades]), ...
-        'dBGazeDeviation', num2cell([c25_db_gdev;   c50_db_gdev;   c75_db_gdev;   c100_db_gdev]), ...
-        'dBGazeStdX',      num2cell([c25_db_gSDx;   c50_db_gSDx;   c75_db_gSDx;   c100_db_gSDx]), ...
-        'dBGazeStdY',      num2cell([c25_db_gSDy;   c50_db_gSDy;   c75_db_gSDy;   c100_db_gSDy]), ...
-        'dBBCEA',          num2cell([c25_db_bcea;   c50_db_bcea;   c75_db_bcea;   c100_db_bcea]), ...
-        'dBPupilSize',     num2cell([c25_db_pups;   c50_db_pups;   c75_db_pups;   c100_db_pups]), ...
-        'dBMSRate',        num2cell([c25_db_msrate; c50_db_msrate; c75_db_msrate; c100_db_msrate]), ...
-        'dBVelH',          num2cell([c25_db_velHorz;   c50_db_velHorz;   c75_db_velHorz;   c100_db_velHorz]), ...
-        'dBVelV',          num2cell([c25_db_velVert;   c50_db_velVert;   c75_db_velVert;   c100_db_velVert]), ...
-        'dBVel2D',         num2cell([c25_db_vel2D;  c50_db_vel2D;  c75_db_vel2D;  c100_db_vel2D]), ...
-        'dBBlinks',        num2cell([c25_db_blinks; c50_db_blinks; c75_db_blinks; c100_db_blinks]), ...
-        'dBFixations',     num2cell([c25_db_fixations; c50_db_fixations; c75_db_fixations; c100_db_fixations]), ...
-        'dBSaccades',      num2cell([c25_db_saccades; c50_db_saccades; c75_db_saccades; c100_db_saccades]) );
+        'GazeStdX_bl',      num2cell([c25_gSDx_bl;   c50_gSDx_bl;   c75_gSDx_bl;   c100_gSDx_bl]), ...
+        'GazeStdY_bl',      num2cell([c25_gSDy_bl;   c50_gSDy_bl;   c75_gSDy_bl;   c100_gSDy_bl]), ...
+        'BCEA_bl',          num2cell([c25_bcea_bl;   c50_bcea_bl;   c75_bcea_bl;   c100_bcea_bl]), ...
+        'BCEA_bl_early',    num2cell([c25_bcea_bl_early; c50_bcea_bl_early; c75_bcea_bl_early; c100_bcea_bl_early]), ...
+        'BCEA_bl_late',     num2cell([c25_bcea_bl_late;  c50_bcea_bl_late;  c75_bcea_bl_late;  c100_bcea_bl_late]), ...
+        'PupilSize_bl',     num2cell([c25_pups_bl;   c50_pups_bl;   c75_pups_bl;   c100_pups_bl]), ...
+        'PupilSize_bl_early', num2cell([c25_pups_bl_early; c50_pups_bl_early; c75_pups_bl_early; c100_pups_bl_early]), ...
+        'PupilSize_bl_late',  num2cell([c25_pups_bl_late;  c50_pups_bl_late;  c75_pups_bl_late;  c100_pups_bl_late]), ...
+        'MSRate_bl',        num2cell([c25_msrate_bl; c50_msrate_bl; c75_msrate_bl; c100_msrate_bl]), ...
+        'MSRate_bl_early',  num2cell([c25_msrate_bl_early; c50_msrate_bl_early; c75_msrate_bl_early; c100_msrate_bl_early]), ...
+        'MSRate_bl_late',   num2cell([c25_msrate_bl_late;  c50_msrate_bl_late;  c75_msrate_bl_late;  c100_msrate_bl_late]), ...
+        'VelH_bl',          num2cell([c25_velHorz_bl;   c50_velHorz_bl;   c75_velHorz_bl;   c100_velHorz_bl]), ...
+        'VelH_bl_early',    num2cell([c25_velHorz_bl_early; c50_velHorz_bl_early; c75_velHorz_bl_early; c100_velHorz_bl_early]), ...
+        'VelH_bl_late',     num2cell([c25_velHorz_bl_late;  c50_velHorz_bl_late;  c75_velHorz_bl_late;  c100_velHorz_bl_late]), ...
+        'VelV_bl',          num2cell([c25_velVert_bl;   c50_velVert_bl;   c75_velVert_bl;   c100_velVert_bl]), ...
+        'VelV_bl_early',    num2cell([c25_velVert_bl_early; c50_velVert_bl_early; c75_velVert_bl_early; c100_velVert_bl_early]), ...
+        'VelV_bl_late',     num2cell([c25_velVert_bl_late;  c50_velVert_bl_late;  c75_velVert_bl_late;  c100_velVert_bl_late]), ...
+        'Vel2D_bl',         num2cell([c25_vel2D_bl;  c50_vel2D_bl;  c75_vel2D_bl;  c100_vel2D_bl]), ...
+        'Vel2D_bl_early',   num2cell([c25_vel2D_bl_early; c50_vel2D_bl_early; c75_vel2D_bl_early; c100_vel2D_bl_early]), ...
+        'Vel2D_bl_late',    num2cell([c25_vel2D_bl_late;  c50_vel2D_bl_late;  c75_vel2D_bl_late;  c100_vel2D_bl_late]), ...
+        'Blinks_bl',        num2cell([c25_blinks_bl; c50_blinks_bl; c75_blinks_bl; c100_blinks_bl]), ...
+        'Blinks_bl_early',  num2cell([c25_blinks_bl_early; c50_blinks_bl_early; c75_blinks_bl_early; c100_blinks_bl_early]), ...
+        'Blinks_bl_late',   num2cell([c25_blinks_bl_late;  c50_blinks_bl_late;  c75_blinks_bl_late;  c100_blinks_bl_late]), ...
+        'Fixations_bl',     num2cell([c25_fixations_bl; c50_fixations_bl; c75_fixations_bl; c100_fixations_bl]), ...
+        'Fixations_bl_early', num2cell([c25_fixations_bl_early; c50_fixations_bl_early; c75_fixations_bl_early; c100_fixations_bl_early]), ...
+        'Fixations_bl_late',  num2cell([c25_fixations_bl_late;  c50_fixations_bl_late;  c75_fixations_bl_late;  c100_fixations_bl_late]), ...
+        'Saccades_bl',      num2cell([c25_saccades_bl; c50_saccades_bl; c75_saccades_bl; c100_saccades_bl]), ...
+        'Saccades_bl_early', num2cell([c25_saccades_bl_early; c50_saccades_bl_early; c75_saccades_bl_early; c100_saccades_bl_early]), ...
+        'Saccades_bl_late',  num2cell([c25_saccades_bl_late;  c50_saccades_bl_late;  c75_saccades_bl_late;  c100_saccades_bl_late]) );
 
     subj_data_gaze_baseline = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
         'Condition', num2cell([1;2;3;4]), ...
-        'BaselineGazeDeviation', num2cell([c25_bl_gdev;   c50_bl_gdev;   c75_bl_gdev;   c100_bl_gdev]), ...
         'BaselineGazeStdX',      num2cell([c25_bl_gSDx;   c50_bl_gSDx;   c75_bl_gSDx;   c100_bl_gSDx]), ...
         'BaselineGazeStdY',      num2cell([c25_bl_gSDy;   c50_bl_gSDy;   c75_bl_gSDy;   c100_bl_gSDy]), ...
         'BaselineBCEA',          num2cell([c25_bl_bcea;   c50_bl_bcea;   c75_bl_bcea;   c100_bl_bcea]), ...
@@ -876,21 +970,38 @@ for subj = 1:numel(subjects)
         'BaselineFixations',     num2cell([c25_bl_fixations; c50_bl_fixations; c75_bl_fixations; c100_bl_fixations]), ...
         'BaselineSaccades',      num2cell([c25_bl_saccades; c50_bl_saccades; c75_bl_saccades; c100_bl_saccades]) );
 
-    subj_data_gaze_dbchange = struct( ...
+    subj_data_gaze_bl = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
         'Condition', num2cell([1;2;3;4]), ...
-        'dBGazeDeviation', num2cell([c25_db_gdev;   c50_db_gdev;   c75_db_gdev;   c100_db_gdev]), ...
-        'dBGazeStdX',      num2cell([c25_db_gSDx;   c50_db_gSDx;   c75_db_gSDx;   c100_db_gSDx]), ...
-        'dBGazeStdY',      num2cell([c25_db_gSDy;   c50_db_gSDy;   c75_db_gSDy;   c100_db_gSDy]), ...
-        'dBBCEA',          num2cell([c25_db_bcea;   c50_db_bcea;   c75_db_bcea;   c100_db_bcea]), ...
-        'dBPupilSize',     num2cell([c25_db_pups;   c50_db_pups;   c75_db_pups;   c100_db_pups]), ...
-        'dBMSRate',        num2cell([c25_db_msrate; c50_db_msrate; c75_db_msrate; c100_db_msrate]), ...
-        'dBVelH',          num2cell([c25_db_velHorz;   c50_db_velHorz;   c75_db_velHorz;   c100_db_velHorz]), ...
-        'dBVelV',          num2cell([c25_db_velVert;   c50_db_velVert;   c75_db_velVert;   c100_db_velVert]), ...
-        'dBVel2D',         num2cell([c25_db_vel2D;  c50_db_vel2D;  c75_db_vel2D;  c100_db_vel2D]), ...
-        'dBBlinks',        num2cell([c25_db_blinks; c50_db_blinks; c75_db_blinks; c100_db_blinks]), ...
-        'dBFixations',     num2cell([c25_db_fixations; c50_db_fixations; c75_db_fixations; c100_db_fixations]), ...
-        'dBSaccades',      num2cell([c25_db_saccades; c50_db_saccades; c75_db_saccades; c100_db_saccades]) );
+        'GazeStdX_bl',      num2cell([c25_gSDx_bl;   c50_gSDx_bl;   c75_gSDx_bl;   c100_gSDx_bl]), ...
+        'GazeStdY_bl',      num2cell([c25_gSDy_bl;   c50_gSDy_bl;   c75_gSDy_bl;   c100_gSDy_bl]), ...
+        'BCEA_bl',          num2cell([c25_bcea_bl;   c50_bcea_bl;   c75_bcea_bl;   c100_bcea_bl]), ...
+        'BCEA_bl_early',    num2cell([c25_bcea_bl_early; c50_bcea_bl_early; c75_bcea_bl_early; c100_bcea_bl_early]), ...
+        'BCEA_bl_late',     num2cell([c25_bcea_bl_late;  c50_bcea_bl_late;  c75_bcea_bl_late;  c100_bcea_bl_late]), ...
+        'PupilSize_bl',     num2cell([c25_pups_bl;   c50_pups_bl;   c75_pups_bl;   c100_pups_bl]), ...
+        'PupilSize_bl_early', num2cell([c25_pups_bl_early; c50_pups_bl_early; c75_pups_bl_early; c100_pups_bl_early]), ...
+        'PupilSize_bl_late',  num2cell([c25_pups_bl_late;  c50_pups_bl_late;  c75_pups_bl_late;  c100_pups_bl_late]), ...
+        'MSRate_bl',        num2cell([c25_msrate_bl; c50_msrate_bl; c75_msrate_bl; c100_msrate_bl]), ...
+        'MSRate_bl_early',  num2cell([c25_msrate_bl_early; c50_msrate_bl_early; c75_msrate_bl_early; c100_msrate_bl_early]), ...
+        'MSRate_bl_late',   num2cell([c25_msrate_bl_late;  c50_msrate_bl_late;  c75_msrate_bl_late;  c100_msrate_bl_late]), ...
+        'VelH_bl',          num2cell([c25_velHorz_bl;   c50_velHorz_bl;   c75_velHorz_bl;   c100_velHorz_bl]), ...
+        'VelH_bl_early',    num2cell([c25_velHorz_bl_early; c50_velHorz_bl_early; c75_velHorz_bl_early; c100_velHorz_bl_early]), ...
+        'VelH_bl_late',     num2cell([c25_velHorz_bl_late;  c50_velHorz_bl_late;  c75_velHorz_bl_late;  c100_velHorz_bl_late]), ...
+        'VelV_bl',          num2cell([c25_velVert_bl;   c50_velVert_bl;   c75_velVert_bl;   c100_velVert_bl]), ...
+        'VelV_bl_early',    num2cell([c25_velVert_bl_early; c50_velVert_bl_early; c75_velVert_bl_early; c100_velVert_bl_early]), ...
+        'VelV_bl_late',     num2cell([c25_velVert_bl_late;  c50_velVert_bl_late;  c75_velVert_bl_late;  c100_velVert_bl_late]), ...
+        'Vel2D_bl',         num2cell([c25_vel2D_bl;  c50_vel2D_bl;  c75_vel2D_bl;  c100_vel2D_bl]), ...
+        'Vel2D_bl_early',   num2cell([c25_vel2D_bl_early; c50_vel2D_bl_early; c75_vel2D_bl_early; c100_vel2D_bl_early]), ...
+        'Vel2D_bl_late',    num2cell([c25_vel2D_bl_late;  c50_vel2D_bl_late;  c75_vel2D_bl_late;  c100_vel2D_bl_late]), ...
+        'Blinks_bl',        num2cell([c25_blinks_bl; c50_blinks_bl; c75_blinks_bl; c100_blinks_bl]), ...
+        'Blinks_bl_early',  num2cell([c25_blinks_bl_early; c50_blinks_bl_early; c75_blinks_bl_early; c100_blinks_bl_early]), ...
+        'Blinks_bl_late',   num2cell([c25_blinks_bl_late;  c50_blinks_bl_late;  c75_blinks_bl_late;  c100_blinks_bl_late]), ...
+        'Fixations_bl',     num2cell([c25_fixations_bl; c50_fixations_bl; c75_fixations_bl; c100_fixations_bl]), ...
+        'Fixations_bl_early', num2cell([c25_fixations_bl_early; c50_fixations_bl_early; c75_fixations_bl_early; c100_fixations_bl_early]), ...
+        'Fixations_bl_late',  num2cell([c25_fixations_bl_late;  c50_fixations_bl_late;  c75_fixations_bl_late;  c100_fixations_bl_late]), ...
+        'Saccades_bl',      num2cell([c25_saccades_bl; c50_saccades_bl; c75_saccades_bl; c100_saccades_bl]), ...
+        'Saccades_bl_early', num2cell([c25_saccades_bl_early; c50_saccades_bl_early; c75_saccades_bl_early; c100_saccades_bl_early]), ...
+        'Saccades_bl_late',  num2cell([c25_saccades_bl_late;  c50_saccades_bl_late;  c75_saccades_bl_late;  c100_saccades_bl_late]) );
 
 
     %% Save
@@ -899,7 +1010,7 @@ for subj = 1:numel(subjects)
         'subj_data_gaze_trial_c75',  'subj_data_gaze_trial_c100');
     save(fullfile(savepath,'gaze_matrix_subj'),   'subj_data_gaze');
     save(fullfile(savepath,'gaze_matrix_baseline'),'subj_data_gaze_baseline');
-    save(fullfile(savepath,'gaze_matrix_dbchange'),'subj_data_gaze_dbchange');
+    save(fullfile(savepath,'gaze_matrix_bl'),'subj_data_gaze_bl');
 
     % velocity time series and FieldTrip timelocked data
     save(fullfile(savepath, 'gaze_velocity_timeseries'), ...
@@ -919,15 +1030,206 @@ for subj = 1:numel(subjects)
         'msTS_c25','msTS_c50','msTS_c75','msTS_c100', ...
         'msTS_c25_bl_db','msTS_c50_bl_db','msTS_c75_bl_db','msTS_c100_bl_db');
 
-    % Append to across‐subjects raw struct
-    gaze_data = [gaze_data; subj_data_gaze];
+    % Append to across-subjects raw struct
+    if isempty(gaze_data)
+        gaze_data = subj_data_gaze;
+    else
+        gaze_data = [gaze_data; subj_data_gaze]; %#ok<AGROW>
+    end
 end
 
 %% Save files
 save(fullfile(paths.features, 'GCP_gaze_raw.mat'), 'gaze_x_c25','gaze_y_c25','gaze_x_c50','gaze_y_c50','gaze_x_c75','gaze_y_c75','gaze_x_c100','gaze_y_c100');
 save(fullfile(paths.features, 'GCP_gaze_matrix.mat'), 'gaze_data');
+save_gaze_window_summaries(paths.features, subjects, gaze_data);
 clc;
 fprintf('[GCP] Gaze Fex done! %d/%d Subjects\n', subj, numel(subjects));
+
+
+function [fullV, earlyV, lateV] = tc_window_means(avg, t, winFull, winEarly, winLate)
+t = t(:)';
+avg = avg(:)';
+fullV  = mean(avg(t >= winFull(1)  & t <= winFull(2)),  'omitnan');
+earlyV = mean(avg(t >= winEarly(1) & t <= winEarly(2)), 'omitnan');
+lateV  = mean(avg(t >= winLate(1)  & t <= winLate(2)),  'omitnan');
+end
+
+
+function rate = ms_rate_in_window(raw, tVec, tw, win_size, fsample)
+idx = tVec >= tw(1) & tVec <= tw(2);
+dat = raw(1:3, idx);
+valid = dat(1,:) >= 0 & dat(1,:) <= 800 & dat(2,:) >= 0 & dat(2,:) <= 600;
+dat = dat(1:3, valid);
+if isempty(dat)
+    rate = NaN;
+    return
+end
+dat(2,:) = 600 - dat(2,:);
+dat = remove_blinks(dat, win_size);
+x = dat(1,:); y = dat(2,:);
+valid = isfinite(x) & isfinite(y);
+x = x(valid); y = y(valid);
+if numel(x) < 3
+    rate = NaN;
+    return
+end
+[rate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
+end
+
+function val = bcea_in_window(raw, tVec, tw, win_size)
+idx = tVec >= tw(1) & tVec <= tw(2);
+dat = raw(1:3, idx);
+valid = dat(1,:) >= 0 & dat(1,:) <= 800 & dat(2,:) >= 0 & dat(2,:) <= 600;
+dat = dat(1:3, valid);
+if isempty(dat)
+    val = NaN;
+    return
+end
+dat(2,:) = 600 - dat(2,:);
+dat = remove_blinks(dat, win_size);
+x = dat(1,:); y = dat(2,:);
+if numel(x) < 3
+    val = NaN;
+    return
+end
+sx = nanstd(x); sy = nanstd(y);
+rho = corr(x(:), y(:));
+val = 2 * 2.291 * pi * sx * sy * sqrt(1 - rho^2);
+end
+
+function ev = eyelink_event_rates_subject(mergedRoot, subj, winList, baselineWin)
+% Rates [Hz] per condition (rows 1..4) x analysis window (cols), plus baseline.
+nWin = numel(winList);
+nCond = 4;
+condCodes = {'61','62','63','64'};
+ev = struct();
+ev.blinks = nan(nCond, nWin);
+ev.fixations = nan(nCond, nWin);
+ev.saccades = nan(nCond, nWin);
+ev.bl_blinks = nan(nCond, 1);
+ev.bl_fixations = nan(nCond, 1);
+ev.bl_saccades = nan(nCond, 1);
+
+subjPath = fullfile(mergedRoot, subj);
+for c = 1:nCond
+    counts = zeros(nWin + 1, 3);
+    nTrials = zeros(nWin + 1, 1);
+    for block = 1:4
+        f = fullfile(subjPath, sprintf('%s_EEG_ET_GCP_block%d_merged.mat', subj, block));
+        if ~isfile(f), continue; end
+        B = load(f, 'EEG');
+        if ~isfield(B, 'EEG') || ~isfield(B.EEG, 'event') || isempty(B.EEG.event)
+            continue
+        end
+        EEG = B.EEG;
+        for wi = 1:(nWin + 1)
+            if wi <= nWin
+                tw = winList{wi};
+            else
+                tw = baselineWin;
+            end
+            try
+                EEG_ep = pop_epoch(EEG, condCodes(c), tw);
+            catch
+                continue
+            end
+            if EEG_ep.trials < 1, continue; end
+            nTrials(wi) = nTrials(wi) + EEG_ep.trials;
+            [nb, nf, ns] = count_eyelink_events(EEG_ep);
+            counts(wi, :) = counts(wi, :) + [nb, nf, ns];
+        end
+    end
+    for wi = 1:nWin
+        dur = diff(winList{wi});
+        if nTrials(wi) > 0 && dur > 0
+            rates = counts(wi, :) ./ (nTrials(wi) * dur);
+            ev.blinks(c, wi) = rates(1);
+            ev.fixations(c, wi) = rates(2);
+            ev.saccades(c, wi) = rates(3);
+        end
+    end
+    durBl = diff(baselineWin);
+    if nTrials(end) > 0 && durBl > 0
+        ratesBl = counts(end, :) ./ (nTrials(end) * durBl);
+        ev.bl_blinks(c) = ratesBl(1);
+        ev.bl_fixations(c) = ratesBl(2);
+        ev.bl_saccades(c) = ratesBl(3);
+    end
+end
+end
+
+function [nBlink, nFix, nSacc] = count_eyelink_events(EEG_ep)
+types = cell(1, numel(EEG_ep.event));
+for ev = 1:numel(EEG_ep.event)
+    t = EEG_ep.event(ev).type;
+    if ischar(t)
+        types{ev} = t;
+    elseif isstring(t)
+        types{ev} = char(t);
+    elseif iscell(t) && ~isempty(t)
+        types{ev} = char(string(t{1}));
+    else
+        types{ev} = '';
+    end
+end
+isBlink = strcmp(types, 'L_blink') | strcmp(types, 'R_blink');
+isFix = strcmp(types, 'L_fixation') | strcmp(types, 'R_fixation');
+isSacc = strcmp(types, 'L_saccade') | strcmp(types, 'R_saccade');
+nBlink = sum(isBlink);
+nFix = sum(isFix);
+blinkLat = [EEG_ep.event(isBlink).latency];
+nSacc = 0;
+saccIdx = find(isSacc);
+for k = 1:numel(saccIdx)
+    saccLat = EEG_ep.event(saccIdx(k)).latency;
+    if isempty(blinkLat) || ~any(abs(saccLat - blinkLat) <= 50)
+        nSacc = nSacc + 1;
+    end
+end
+end
+
+function save_gaze_window_summaries(featuresRoot, subjects, gaze_data)
+% Build cond x subject matrices for boxplots (no recomputation downstream).
+metricBases = {'MSRate_bl','Vel2D_bl','PupilSize_bl','BCEA_bl', ...
+    'Blinks_bl','Fixations_bl','Saccades_bl'};
+winSuffix = {'', '_early', '_late'};
+winName = {'full', 'early', 'late'};
+nSubj = numel(subjects);
+nCond = 4;
+out = struct();
+out.subjects = subjects;
+out.windows = winName;
+out.analysisWindows = struct('full', [0 2], 'early', [0 1], 'late', [1 2]);
+
+G = struct2table(gaze_data);
+for mi = 1:numel(metricBases)
+    base = metricBases{mi};
+    S = struct();
+    for wi = 1:numel(winSuffix)
+        field = [base winSuffix{wi}];
+        M = nan(nCond, nSubj);
+        if ~ismember(field, G.Properties.VariableNames)
+            S.(winName{wi}) = M;
+            continue
+        end
+        for s = 1:nSubj
+            sid = str2double(subjects{s});
+            for c = 1:nCond
+                idx = G.ID == sid & G.Condition == c;
+                if any(idx)
+                    M(c, s) = G.(field)(find(idx, 1));
+                end
+            end
+        end
+        S.(winName{wi}) = M;
+    end
+    out.(base) = S;
+end
+
+outPath = fullfile(featuresRoot, 'GCP_gaze_window_summaries.mat');
+save(outPath, '-struct', 'out');
+fprintf('Saved %s\n', outPath);
+end
 
 function db = compute_db_baseline(stim, baseline)
 % Power-style dB ratio: 10*log10(stim/baseline). Non-positive ratios -> NaN.

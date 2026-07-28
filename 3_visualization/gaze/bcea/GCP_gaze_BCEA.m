@@ -70,8 +70,8 @@ for subj = 1:nSubj
     end
 end
 
-dBBCEA = 10 * log10(bceaStim ./ bceaBase);
-dBBCEA(~isfinite(dBBCEA) | bceaStim <= 0 | bceaBase <= 0) = NaN;
+BCEA_bl = 10 * log10(bceaStim ./ bceaBase);
+BCEA_bl(~isfinite(BCEA_bl) | bceaStim <= 0 | bceaBase <= 0) = NaN;
 
 %% Save long format data for LMMs
 nRows = nSubj * nCond;
@@ -79,7 +79,7 @@ Subject = cell(nRows, 1);
 Condition = nan(nRows, 1);
 BCEA = nan(nRows, 1);
 BaselineBCEA = nan(nRows, 1);
-dBBCEA_long = nan(nRows, 1);
+BCEA_bl_long = nan(nRows, 1);
 CentroidX = nan(nRows, 1);
 CentroidY = nan(nRows, 1);
 SDX = nan(nRows, 1);
@@ -96,7 +96,7 @@ for subj = 1:nSubj
         Condition(row) = condValues(c);
         BCEA(row) = bceaStim(subj, c);
         BaselineBCEA(row) = bceaBase(subj, c);
-        dBBCEA_long(row) = dBBCEA(subj, c);
+        BCEA_bl_long(row) = BCEA_bl(subj, c);
         CentroidX(row) = centroidStim(subj, c, 1);
         CentroidY(row) = centroidStim(subj, c, 2);
         thisCov = covStim(:, :, subj, c);
@@ -108,16 +108,16 @@ for subj = 1:nSubj
     end
 end
 
-bceaTable = table(Subject, Condition, BCEA, BaselineBCEA, dBBCEA_long, ...
+bceaTable = table(Subject, Condition, BCEA, BaselineBCEA, BCEA_bl_long, ...
     CentroidX, CentroidY, SDX, SDY, RhoXY, ValidSamples, BaselineValidSamples, ...
-    'VariableNames', {'Subject', 'Condition', 'BCEA', 'BaselineBCEA', 'dBBCEA', ...
+    'VariableNames', {'Subject', 'Condition', 'BCEA', 'BaselineBCEA', 'BCEA_bl', ...
     'CentroidX', 'CentroidY', 'SDX', 'SDY', 'RhoXY', ...
     'ValidSamples', 'BaselineValidSamples'});
 
 csvPath = fullfile(paths.features, 'GCP_gaze_BCEA_subject_condition.csv');
 matPath = fullfile(paths.features, 'GCP_gaze_BCEA_subject_condition.mat');
 writetable(bceaTable, csvPath);
-save(matPath, 'bceaTable', 'bceaStim', 'bceaBase', 'dBBCEA', ...
+save(matPath, 'bceaTable', 'bceaStim', 'bceaBase', 'BCEA_bl', ...
     'centroidStim', 'covStim', 'subjects', 'condValues');
 
 %% Group mean within participant ellipses on screen coordinates
@@ -187,8 +187,8 @@ fprintf('Valid participant estimates by condition: %s\n', ...
     mat2str(sum(isfinite(bceaStim), 1)));
 fprintf('Median BCEA95 by condition [px^2]: %s\n', ...
     mat2str(median(bceaStim, 1, 'omitnan'), 5));
-fprintf('Median dBBCEA by condition [dB]: %s\n', ...
-    mat2str(median(dBBCEA, 1, 'omitnan'), 4));
+fprintf('Median BCEA_bl by condition [dB]: %s\n', ...
+    mat2str(median(BCEA_bl, 1, 'omitnan'), 4));
 fprintf('=== GCP BCEA done ===\n\n');
 
 %% Local functions

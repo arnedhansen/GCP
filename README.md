@@ -30,7 +30,7 @@ Automagic-preprocessed EEG is merged with the corresponding ET files using `GCP_
 
 `GCP_behavioral_fex.m` extracts accuracy and reaction time per trial and per subject-condition mean. Outputs: `behavioral_matrix_trial.mat`, `behavioral_matrix_subj.mat`, and group-level `GCP_behavioral_matrix.mat`.
 
-`GCP_gaze_fex.m` extracts gaze deviation, gaze SD, BCEA (k = 2.291, 95%), pupil size, microsaccade rate, and eye velocity (horizontal, vertical, 2D). Scalar metrics are computed for baseline [-1.5, -0.5] s and stimulus [0, 2] s, with dB baseline correction (`10*log10(stim/baseline)`). Time courses for pupil, velocity, and microsaccades are saved for visualization. Outputs: `gaze_matrix_trial.mat`, `gaze_matrix_subj.mat`, and group-level `GCP_gaze_matrix.mat`.
+`GCP_gaze_fex.m` extracts gaze SD, BCEA (k = 2.291, 95%), pupil size, microsaccade rate, eye velocity, and EyeLink event counts. Baselined (% change) scalars use suffix `_bl` (`MSRate_bl`, `BCEA_bl`, …) with `_bl_early` / `_bl_late` for [0, 1] and [1, 2] s. Microsaccade scalars are direct Engbert count rates (not means of the smoothed rate TC). Pupil/velocity subject scalars are means of baselined TCs. Group file: `GCP_gaze_window_summaries.mat`.
 
 `GCP_eeg_fex_GED.m` is the primary EEG analysis. Per subject, trials are pooled across conditions and gamma-band (30–90 Hz) covariances are computed for baseline [-1.5, -0.5] s and three stimulus windows (full [0, 2] s, early [0, 0.5] s, late [1, 2] s). Window-specific generalized eigendecomposition (GED) is solved with regularization; candidate components are ranked by eigenvalue and scored on occipital topography, spectral form, and artifact metrics. An eigenvalue-weighted combined component is built per subject. Each trial is projected to this component space and scanned on a 30–90 Hz grid (mtmfft, 3 Hz multitaper smoothing). Per-trial peak gamma frequency and peak power (mean power within peak ± 5 Hz) are extracted; unstable trials are flagged automatically. Outputs: `GCP_eeg_GED.mat` (trial-level and subject-level metrics, component diagnostics, outlier masks) and `GCP_eeg_powspctrm_GED.mat` (FieldTrip freq structs for grand-average spectra). Subject inclusion for downstream GED analyses is written to `controls/GCP_subject_inclusion.mat` (subjects with valid gamma power).
 
@@ -58,7 +58,7 @@ All visualization scripts read from `data/features/` and write figures to `figur
 
 ### Subject-level overview (MATLAB)
 
-`GCP_stats_overview.m` loads `GCP_merged_data.mat` and produces a multi-panel overview of all numeric variables by contrast condition. `GCP_stats_boxplots.m` produces one figure per variable with boxplots, subject lines, and jittered dots (GED cohort filter applied when `Include` is present).
+`GCP_stats_overview.m` loads `GCP_merged_data.mat` and produces a multi-panel overview of all numeric variables by contrast condition. `GCP_stats_boxplots.m` loads precomputed full/early/late subject×condition scalars from `GCP_eeg_GED.mat` and `GCP_gaze_window_summaries.mat` (no window recomputation). Output: `figures/stats/boxplots/`.
 
 ### Hypothesis testing (MATLAB)
 

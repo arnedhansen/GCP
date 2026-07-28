@@ -42,7 +42,7 @@ HYPOTHESIS_ALPHA = 0.30
 PANELS = [
     {
         "x": "GammaFrequency",
-        "y": "dBMSRate",
+        "y": "MSRate_bl",
         "xlab": r"$\Delta$ Peak $\gamma$ Frequency [Hz] (100% $-$ 25%)",
         "ylab": r"$\Delta$ Microsaccade Rate [%] (100% $-$ 25%)",
         "hypothesis": "x_pos_y_neg",
@@ -50,7 +50,7 @@ PANELS = [
     },
     {
         "x": "GammaFrequency",
-        "y": "dBVel2D",
+        "y": "Vel2D_bl",
         "xlab": r"$\Delta$ Peak $\gamma$ Frequency [Hz] (100% $-$ 25%)",
         "ylab": r"$\Delta$ Fixational Eye Velocity [%] (100% $-$ 25%)",
         "hypothesis": "x_pos_y_pos",
@@ -58,7 +58,7 @@ PANELS = [
     },
     {
         "x": "GammaPower",
-        "y": "dBMSRate",
+        "y": "MSRate_bl",
         "xlab": r"$\Delta$ Peak $\gamma$ Power [dB] (100% $-$ 25%)",
         "ylab": r"$\Delta$ Microsaccade Rate [%] (100% $-$ 25%)",
         "hypothesis": "x_pos_y_neg",
@@ -66,7 +66,7 @@ PANELS = [
     },
     {
         "x": "GammaPower",
-        "y": "dBVel2D",
+        "y": "Vel2D_bl",
         "xlab": r"$\Delta$ Peak $\gamma$ Power [dB] (100% $-$ 25%)",
         "ylab": r"$\Delta$ Fixational Eye Velocity [%] (100% $-$ 25%)",
         "hypothesis": "x_pos_y_pos",
@@ -95,9 +95,9 @@ mpl.rcParams.update({
 def _rename_gaze_columns(dat: pd.DataFrame) -> pd.DataFrame:
     out = dat.copy()
     rename_map = {
-        "Gaze_dBMSRate": "dBMSRate",
-        "Gaze_dBVel2D": "dBVel2D",
-        "Gaze_dBVelV": "dBVelV",
+        "Gaze_MSRate_bl": "MSRate_bl",
+        "Gaze_Vel2D_bl": "Vel2D_bl",
+        "Gaze_VelV_bl": "VelV_bl",
         "GED_GammaFrequency": "GammaFrequency",
         "GED_GammaPower": "GammaPower",
     }
@@ -295,7 +295,7 @@ def main() -> None:
     if not os.path.isfile(ged_mat):
         raise FileNotFoundError(f"GED MAT file not found: {ged_mat}")
 
-    variables = ["GammaFrequency", "GammaPower", "dBMSRate", "dBVel2D"]
+    variables = ["GammaFrequency", "GammaPower", "MSRate_bl", "Vel2D_bl"]
 
     merged = filter_gcp_analysis_cohort(
         _rename_gaze_columns(load_merged_trial_metrics(merged_csv)),
@@ -308,10 +308,10 @@ def main() -> None:
         features_dir=features_dir,
     )
 
-    if "dBMSRate" not in merged.columns:
-        raise KeyError("Merged trial table missing dBMSRate")
+    if "MSRate_bl" not in merged.columns:
+        raise KeyError("Merged trial table missing MSRate_bl")
 
-    gaze_vars = ["dBMSRate", "dBVel2D"]
+    gaze_vars = ["MSRate_bl", "Vel2D_bl"]
     ged_vars = ["GammaFrequency", "GammaPower"]
 
     gaze_trials = _trial_table_with_outliers(merged, gaze_vars)

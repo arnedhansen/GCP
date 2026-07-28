@@ -90,7 +90,7 @@ for c = 3%%%%%1:numel(channels)
 
         eb = shadedErrorBar(x, mu, sem, 'lineProps', {'-'}, 'transparent', true);
         set(eb.mainLine, 'Color', conditionColors(k, :), 'LineWidth', lineW);
-        set(eb.patch, 'FaceColor', conditionColors(k, :), 'FaceAlpha', 0.125);
+        set(eb.patch, 'FaceColor', conditionColors(k, :), 'FaceAlpha', 0.2);
         set(eb.edge(1), 'Color', 'none');
         set(eb.edge(2), 'Color', 'none');
     end
@@ -102,7 +102,7 @@ for c = 3%%%%%1:numel(channels)
     ylabel(velocityYLabels{c}, 'FontSize', fontSize*0.8);
     leg_p = gobjects(numel(ets), 1);
     for k = 1:numel(ets)
-        leg_p(k) = patch(nan, nan, conditionColors(k, :), 'FaceAlpha', 0.25, ...
+        leg_p(k) = patch(nan, nan, conditionColors(k, :), 'FaceAlpha', 0.33, ...
             'EdgeColor', conditionColors(k, :), 'LineWidth', 1.5);
     end
     set(gca, 'FontSize', fontSize*0.8);

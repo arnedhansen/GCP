@@ -45,7 +45,7 @@ tVec = [];
 bceaRaw = [];
 bceaDB = [];
 baselineBCEA = nan(nSubj, nCond);
-dBBCEA_summary = nan(nSubj, nCond);
+BCEA_bl_summary = nan(nSubj, nCond);
 
 for subj = 1:nSubj
     gazePath = fullfile(paths.features, subjects{subj}, 'gaze');
@@ -81,7 +81,7 @@ for subj = 1:nSubj
         baselineBCEA(subj, c) = thisBaseline;
 
         analysisIdx = tVec >= analysisWindow(1) & tVec <= analysisWindow(2);
-        dBBCEA_summary(subj, c) = mean(thisDB(analysisIdx), 'omitnan');
+        BCEA_bl_summary(subj, c) = mean(thisDB(analysisIdx), 'omitnan');
     end
 end
 
@@ -91,11 +91,11 @@ end
 
 %% Save participant time courses and TC-derived summaries for boxplots
 outData = fullfile(paths.features, 'GCP_gaze_BCEA_timeseries.mat');
-save(outData, 'bceaRaw', 'bceaDB', 'baselineBCEA', 'dBBCEA_summary', 'tVec', ...
+save(outData, 'bceaRaw', 'bceaDB', 'baselineBCEA', 'BCEA_bl_summary', 'tVec', ...
     'subjects', 'condValues', 'movingWindowSec', 'baselineWindow', 'analysisWindow');
 
 outSum = fullfile(paths.features, 'GCP_gaze_BCEA_trace_summaries.mat');
-save(outSum, 'dBBCEA_summary', 'subjects', 'condValues', 'analysisWindow');
+save(outSum, 'BCEA_bl_summary', 'subjects', 'condValues', 'analysisWindow');
 
 %% Grand average and SEM
 grandMeanDB = squeeze(mean(bceaDB, 1, 'omitnan'));
@@ -116,7 +116,7 @@ for c = 1:nCond
     sem = grandSemDB(c, displayIdx);
     eb = shadedErrorBar(x, mu, sem, 'lineProps', {'-'}, 'transparent', true);
     set(eb.mainLine, 'Color', colors(c, :), 'LineWidth', lineW);
-    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.125);
+    set(eb.patch, 'FaceColor', colors(c, :), 'FaceAlpha', 0.2);
     set(eb.edge(1), 'Color', 'none');
     set(eb.edge(2), 'Color', 'none');
 end
@@ -131,7 +131,7 @@ ylabel('BCEA [%]', 'FontSize', fontSize * 0.8);
 
 legendHandles = gobjects(nCond, 1);
 for c = 1:nCond
-    legendHandles(c) = patch(NaN, NaN, colors(c, :), 'FaceAlpha', 0.25, ...
+    legendHandles(c) = patch(NaN, NaN, colors(c, :), 'FaceAlpha', 0.33, ...
         'EdgeColor', colors(c, :), 'LineWidth', 1.5);
 end
 set(gca, 'FontSize', fontSize * 0.8);
@@ -146,8 +146,8 @@ exportgraphics(gcf, outFigure, 'Resolution', 600, 'BackgroundColor', 'white');
 fprintf('\nSaved figure: %s\n', outFigure);
 fprintf('Saved participant time courses: %s\n', outData);
 fprintf('Saved TC summaries for boxplots: %s\n', outSum);
-fprintf('Median dBBCEA summary by condition: %s\n', ...
-    mat2str(median(dBBCEA_summary, 1, 'omitnan'), 4));
+fprintf('Median BCEA_bl summary by condition: %s\n', ...
+    mat2str(median(BCEA_bl_summary, 1, 'omitnan'), 4));
 fprintf('Valid participants at time zero by condition: %s\n', ...
     mat2str(squeeze(nValid(:, nearestTimeIndex(tVec, 0)))'));
 fprintf('Baseline BCEA medians [px^2]: %s\n', ...
