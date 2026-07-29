@@ -16,8 +16,6 @@
 %   Full window: GCP_stats_boxplot_<Metric>.png (assembly-compatible)
 %   Early/late:  GCP_stats_boxplot_<Metric>_<early|late>.png
 
-clear; close all; clc
-
 %% Setup
 startup
 [subjects, paths, colors, ~] = setup('GCP', 0);
@@ -45,7 +43,7 @@ dotAlpha       = 0.85;
 jitter         = 0.4;
 boxWidth       = 0.55;
 
-%% Gamma (cond x subject)
+%% Load gamma data
 ged = load(fullfile(paths.features, 'GCP_eeg_GED.mat'), ...
     'trials_median', 'trials_median_early', 'trials_median_late', ...
     'trials_gamma_power', 'trials_gamma_power_early', 'trials_gamma_power_late', ...
@@ -60,7 +58,7 @@ gamma.Power.full      = pick_matrix(ged.trials_gamma_power, ged_idx);
 gamma.Power.early     = pick_matrix(ged.trials_gamma_power_early, ged_idx);
 gamma.Power.late      = pick_matrix(ged.trials_gamma_power_late, ged_idx);
 
-%% Gaze (precomputed window summaries from gaze fex)
+%% Gaze
 gazePath = fullfile(paths.features, 'GCP_gaze_window_summaries.mat');
 if ~isfile(gazePath)
     error('GCP_stats_boxplots:MissingGazeSummaries', ...
@@ -165,7 +163,8 @@ for iMetric = 1:size(plotSpecs, 1)
         end
         styleCurrentBoxplot(colors(1:nCond, :));
 
-        if drawZero
+        yl = ylim;
+        if drawZero && yl(1) <= 0 && yl(2) >= 0
             yline(0, '--', 'Color', [0.6 0.6 0.6], 'LineWidth', 1);
         end
 
@@ -193,6 +192,11 @@ for iMetric = 1:size(plotSpecs, 1)
         end
 
         xlim([0.5 nCond + 0.5]);
+        yValid = y(isfinite(y));
+        if ~isempty(yValid)
+            yPad = 0.05 * range(yValid);
+            ylim([min(yValid) - yPad, max(yValid) + yPad]);
+        end
         xticks(1:nCond);
         xticklabels(xtickLabs);
 

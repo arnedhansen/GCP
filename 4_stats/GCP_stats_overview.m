@@ -10,16 +10,44 @@ if ismember('Include', T.Properties.VariableNames)
     T = T(T.Include, :);
 end
 
-% Identify numeric variables only (excluding ID and Condition)
+% Keep all numeric variables, but exclude non baselined gaze measures
 var_names = T.Properties.VariableNames;
+gaze_roots = {'MSRate', 'BCEA', 'Vel2D', 'VelV', 'PupilSize', ...
+    'Blinks', 'Fixations', 'Saccades', 'GazeStdX', 'GazeStdY'};
 numeric_vars = {};
 
 for i = 1:numel(var_names)
-    v = T.(var_names{i});
-    if isnumeric(v) && ~strcmp(var_names{i}, 'ID') && ~strcmp(var_names{i}, 'Condition') ...
-            && ~strcmp(var_names{i}, 'Include')
-        numeric_vars{end+1} = var_names{i};
+    vn = var_names{i};
+    v = T.(vn);
+    if ~isnumeric(v)
+        continue
     end
+    if strcmp(vn, 'ID') || strcmp(vn, 'Condition') || strcmp(vn, 'Include')
+        continue
+    end
+
+    vn_core = regexprep(vn, '^Gaze_', '');
+    is_gaze_metric = false;
+    for gi = 1:numel(gaze_roots)
+        if startsWith(vn_core, gaze_roots{gi})
+            is_gaze_metric = true;
+            break
+        end
+    end
+
+    if is_gaze_metric
+        % Keep gaze only when baselined (full, early, or late windows)
+        if contains(vn, '_bl')
+            numeric_vars{end+1} = vn; %#ok<AGROW>
+        end
+    else
+        numeric_vars{end+1} = vn; %#ok<AGROW>
+    end
+end
+
+if isempty(numeric_vars)
+    error('GCP_stats_overview:NoVariablesSelected', ...
+        'No variables available after filtering.');
 end
 
 % Determine subplot grid
@@ -48,6 +76,6 @@ for i = 1:nVars
     grid on;
 end
 
-sgtitle('Merged Data Overview: Boxplots per Condition');
+sgtitle('All Variables with Baselined Gaze Measures: Boxplots per Condition');
 set(gcf, 'PaperPositionMode', 'auto');
 print(gcf, fullfile(paths.figures, 'stats', 'overview', 'GCP_stats_overview.png'), '-dpng', '-r600');

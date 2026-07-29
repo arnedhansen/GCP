@@ -55,9 +55,6 @@ if ispc
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\bcea\GCP_gaze_BCEA_TC.m');
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\heatmap\GCP_gaze_heatmap.m');
 
-    % Hypotheses schematic
-    run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\hypotheses\GCP_hypotheses_plot.m');
-
     %% 4 Stats
     % Subject-level overview and boxplots (MATLAB)
     run('C:\Users\Administrator\Documents\GitHub\GCP\4_stats\GCP_stats_overview.m');

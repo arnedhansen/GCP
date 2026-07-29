@@ -43,34 +43,50 @@ PANELS = [
     {
         "x": "GammaFrequency",
         "y": "MSRate_bl",
-        "xlab": r"$\Delta$ Peak $\gamma$ Frequency [Hz] (100% $-$ 25%)",
+        "xlab": r"$\Delta$ Peak Gamma Frequency [Hz] (100% $-$ 25%)",
         "ylab": r"$\Delta$ Microsaccade Rate [%] (100% $-$ 25%)",
         "hypothesis": "x_pos_y_neg",
-        "title": r"$\gamma$ Frequency vs. Microsaccades",
-    },
-    {
-        "x": "GammaFrequency",
-        "y": "Vel2D_bl",
-        "xlab": r"$\Delta$ Peak $\gamma$ Frequency [Hz] (100% $-$ 25%)",
-        "ylab": r"$\Delta$ Fixational Eye Velocity [%] (100% $-$ 25%)",
-        "hypothesis": "x_pos_y_pos",
-        "title": r"$\gamma$ Frequency vs. Fixational Velocity",
+        "title": "Gamma Frequency vs. Microsaccades",
     },
     {
         "x": "GammaPower",
         "y": "MSRate_bl",
-        "xlab": r"$\Delta$ Peak $\gamma$ Power [dB] (100% $-$ 25%)",
+        "xlab": r"$\Delta$ Peak Gamma Power [dB] (100% $-$ 25%)",
         "ylab": r"$\Delta$ Microsaccade Rate [%] (100% $-$ 25%)",
         "hypothesis": "x_pos_y_neg",
-        "title": r"$\gamma$ Power vs. Microsaccades",
+        "title": "Gamma Power vs. Microsaccades",
+    },
+    {
+        "x": "GammaFrequency",
+        "y": "BCEA_bl",
+        "xlab": r"$\Delta$ Peak Gamma Frequency [Hz] (100% $-$ 25%)",
+        "ylab": r"$\Delta$ BCEA [%] (100% $-$ 25%)",
+        "hypothesis": "x_pos_y_pos",
+        "title": "Gamma Frequency vs. BCEA",
+    },
+    {
+        "x": "GammaPower",
+        "y": "BCEA_bl",
+        "xlab": r"$\Delta$ Peak Gamma Power [dB] (100% $-$ 25%)",
+        "ylab": r"$\Delta$ BCEA [%] (100% $-$ 25%)",
+        "hypothesis": "x_pos_y_pos",
+        "title": "Gamma Power vs. BCEA",
+    },
+    {
+        "x": "GammaFrequency",
+        "y": "Vel2D_bl",
+        "xlab": r"$\Delta$ Peak Gamma Frequency [Hz] (100% $-$ 25%)",
+        "ylab": r"$\Delta$ Fixational Eye Velocity [%] (100% $-$ 25%)",
+        "hypothesis": "x_pos_y_neg",
+        "title": "Gamma Frequency vs. Fixational Velocity",
     },
     {
         "x": "GammaPower",
         "y": "Vel2D_bl",
-        "xlab": r"$\Delta$ Peak $\gamma$ Power [dB] (100% $-$ 25%)",
+        "xlab": r"$\Delta$ Peak Gamma Power [dB] (100% $-$ 25%)",
         "ylab": r"$\Delta$ Fixational Eye Velocity [%] (100% $-$ 25%)",
-        "hypothesis": "x_pos_y_pos",
-        "title": r"$\gamma$ Power vs. Fixational Velocity",
+        "hypothesis": "x_pos_y_neg",
+        "title": "Gamma Power vs. Fixational Velocity",
     },
 ]
 
@@ -96,6 +112,7 @@ def _rename_gaze_columns(dat: pd.DataFrame) -> pd.DataFrame:
     out = dat.copy()
     rename_map = {
         "Gaze_MSRate_bl": "MSRate_bl",
+        "Gaze_BCEA_bl": "BCEA_bl",
         "Gaze_Vel2D_bl": "Vel2D_bl",
         "Gaze_VelV_bl": "VelV_bl",
         "GED_GammaFrequency": "GammaFrequency",
@@ -225,7 +242,7 @@ def _hypothesis_count(x: np.ndarray, y: np.ndarray, hypothesis: str) -> int:
 
 
 def plot_gamma_gaze_scatter(delta: pd.DataFrame, output_dir: str) -> str:
-    fig, axes = plt.subplots(2, 2, figsize=(15.12, 9.82), facecolor="white")
+    fig, axes = plt.subplots(3, 2, figsize=(15.12, 12.5), facecolor="white")
     axes = axes.ravel()
 
     for ax, panel in zip(axes, PANELS):
@@ -246,23 +263,8 @@ def plot_gamma_gaze_scatter(delta: pd.DataFrame, output_dir: str) -> str:
         ax.set_ylabel(panel["ylab"])
         ax.set_title(panel["title"])
 
-        n_hyp = _hypothesis_count(x, y, panel["hypothesis"])
-        n_tot = int(np.count_nonzero(np.isfinite(x) & np.isfinite(y)))
-        txt = _correlation_text(x, y)
-        txt += f"\nHypothesis quadrant: {n_hyp}/{n_tot}"
-        ax.text(
-            0.03,
-            0.97,
-            txt,
-            transform=ax.transAxes,
-            ha="left",
-            va="top",
-            fontsize=10,
-            bbox={"boxstyle": "round,pad=0.3", "facecolor": "white", "edgecolor": "0.8", "alpha": 0.9},
-        )
-
     fig.suptitle(
-        r"Contrast-Related Change in $\gamma$ and Oculomotor Metrics (100% $-$ 25%)",
+        "Contrast Related Change in Gamma and Oculomotor Metrics (100% - 25%)",
         fontsize=16,
         y=0.98,
     )
@@ -295,23 +297,23 @@ def main() -> None:
     if not os.path.isfile(ged_mat):
         raise FileNotFoundError(f"GED MAT file not found: {ged_mat}")
 
-    variables = ["GammaFrequency", "GammaPower", "MSRate_bl", "Vel2D_bl"]
+    variables = ["GammaFrequency", "GammaPower", "MSRate_bl", "BCEA_bl", "Vel2D_bl"]
 
     merged = filter_gcp_analysis_cohort(
         _rename_gaze_columns(load_merged_trial_metrics(merged_csv)),
         controls_dir,
-        features_dir=features_dir,
     )
-    ged = filter_gcp_analysis_cohort(
-        label_condition(load_ged_trial_metrics(ged_mat)),
-        controls_dir,
-        features_dir=features_dir,
-    )
+    ged = label_condition(load_ged_trial_metrics(ged_mat))
+    # Keep GED trials to the same analysis cohort selected from merged metrics.
+    included_ids = set(merged["ID"].astype(str).unique())
+    ged = ged.loc[ged["ID"].astype(str).isin(included_ids)].copy()
 
-    if "MSRate_bl" not in merged.columns:
-        raise KeyError("Merged trial table missing MSRate_bl")
+    required_gaze_cols = ["MSRate_bl", "BCEA_bl", "Vel2D_bl"]
+    missing_gaze_cols = [col for col in required_gaze_cols if col not in merged.columns]
+    if missing_gaze_cols:
+        raise KeyError(f"Merged trial table missing required gaze columns: {missing_gaze_cols}")
 
-    gaze_vars = ["MSRate_bl", "Vel2D_bl"]
+    gaze_vars = ["MSRate_bl", "BCEA_bl", "Vel2D_bl"]
     ged_vars = ["GammaFrequency", "GammaPower"]
 
     gaze_trials = _trial_table_with_outliers(merged, gaze_vars)

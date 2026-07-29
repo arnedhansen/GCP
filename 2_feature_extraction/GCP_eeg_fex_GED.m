@@ -2403,13 +2403,8 @@ for k = 1:nCols
         plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
-        pf_deduct_ci = 0;
-        if ~isempty(powspctrm_form_multi_peak_deduction) && numel(powspctrm_form_multi_peak_deduction) >= ci && ...
-                isfinite(powspctrm_form_multi_peak_deduction(ci))
-            pf_deduct_ci = powspctrm_form_multi_peak_deduction(ci);
-        end
-        title(sprintf('\\lambda=%.2f, PF=%.2f (%.2f)', ...
-            eigval_vec(ci), powspctrm_form_score(ci), pf_deduct_ci), 'FontSize', 7);
+        title(sprintf('\\lambda=%.2f, PF=%.2f', ...
+            eigval_vec(ci), powspctrm_form_score(ci)), 'FontSize', 7);
         box on;
     else
         axis off;
@@ -2462,13 +2457,8 @@ for k = 1:nCols
         plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
-        pf_deduct_ci = 0;
-        if ~isempty(powspctrm_form_multi_peak_deduction) && numel(powspctrm_form_multi_peak_deduction) >= ci && ...
-                isfinite(powspctrm_form_multi_peak_deduction(ci))
-            pf_deduct_ci = powspctrm_form_multi_peak_deduction(ci);
-        end
-        title(sprintf('\\lambda=%.2f, PF=%.2f (%.2f)', ...
-            eigval_vec(ci), powspctrm_form_score(ci), pf_deduct_ci), 'FontSize', 7);
+        title(sprintf('\\lambda=%.2f, PF=%.2f', ...
+            eigval_vec(ci), powspctrm_form_score(ci)), 'FontSize', 7);
         box on;
     else
         axis off;
@@ -2614,7 +2604,7 @@ for wi = 1:nWins
         nTop = min(5, numel(eigvals_ged));
         top_ged(1:nTop) = eigvals_ged(1:nTop);
     end
-    qc_lines_by_win{wi} = sprintf(['QC:\n', ...
+    qc_lines_by_win{wi} = sprintf([...
         'sym(S): %.2e\n', ...
         'sym(R): %.2e\n', ...
         'minEig(R): %.3g\n', ...
@@ -2697,21 +2687,21 @@ for wi = 1:nWins
 
     nexttile;
     axis off;
-    title(sprintf('%s Values', win_names_cap{wi}), 'FontSize', 10, 'Interpreter', 'none');
+    title(sprintf('%s Window Values', win_names_cap{wi}), 'FontSize', 10, 'Interpreter', 'none');
     text(0.01, 0.99, qc_lines_by_win{wi}, 'Units', 'normalized', ...
         'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
         'FontSize', 8, 'Color', [0.05 0.05 0.05], 'Interpreter', 'none');
 end
 
-sgtitle(sprintf('GED Covariance Diagnostics: Subject %s | Shared color scale per column', subject_id), ...
+sgtitle(sprintf('GED Covariance Diagnostics: Subject %s', subject_id), ...
     'FontSize', 14, 'FontWeight', 'bold');
 save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_covariance_matrix.png', subject_id)));
 close(fig);
 end
 
 function plot_rejection_info_text_columns(info_lines, info_viol)
-y0 = 1.52;
-dy = 0.11;
+y0 = 1.42;
+dy = 0.08;
 criteria_font_size = 3.5;
 if isempty(info_lines)
     return;

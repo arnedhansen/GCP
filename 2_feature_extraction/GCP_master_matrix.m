@@ -63,8 +63,11 @@ end
 tbl_merge = sortrows(tbl_merge, {'ID','Condition'});
 inc = load(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion');
 inc = inc.subject_inclusion;
-[~, loc] = ismember(tbl_merge.ID, inc.SubjID);
-tbl_merge.Include = inc.Include(loc);
+inc_ids = to_numeric_col(inc.SubjID);
+merge_ids = to_numeric_col(tbl_merge.ID);
+[is_match, loc] = ismember(merge_ids, inc_ids);
+tbl_merge.Include = nan(height(tbl_merge), 1);
+tbl_merge.Include(is_match) = double(inc.Include(loc(is_match)));
 
 %% Diagnostics
 n_behav = height(tbl_behav);

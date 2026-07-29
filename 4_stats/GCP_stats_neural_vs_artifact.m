@@ -95,64 +95,46 @@ lme_freq_msfree = fit_contrast_ms_lme(T, id_var, freq_ms_var, ms_var, 'PeakFreq_
 lme_pow = fit_contrast_ms_lme(T, id_var, pow_var, ms_var, 'PeakPower');
 lme_pow_msfree = fit_contrast_ms_lme(T, id_var, pow_ms_var, ms_var, 'PeakPower_MSfree');
 
-%% Figure: H5/H6 standard vs MS-free
-fig = figure('Position', [0 0 1512 982]);
-set(fig, 'Color', 'w');
-tiledlayout(2, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
+%% Figures: standard vs MS-free CRFs with CI
+close all
+std_col = [0.08 0.33 0.72];
+msf_col = [0.83 0.24 0.31];
+font_big = 40;
+font_axis = font_big*0.75;
+font_tick = font_big*0.6;
+font_legend = font_big*0.75;
 
-ms_guard_ms = 100;
-msfree_meta = fullfile(paths.features, 'GCP_eeg_GED_MSfree.mat');
-if isfile(msfree_meta)
-    tmp = load(msfree_meta, 'ms_guard_s');
-    if isfield(tmp, 'ms_guard_s') && isfinite(tmp.ms_guard_s)
-        ms_guard_ms = 1000 * tmp.ms_guard_s;
-    end
-end
+% Frequency figure
+fig_freq = figure('Position', [0 0 1512 982]);
+set(fig_freq, 'Color', 'w');
+axf = axes(fig_freq);
+hold(axf, 'on');
+plot_crf_dual(axf, mean_freq, mean_freq_ms, contrast_pct, std_col, msf_col);
+xlabel(axf, 'Contrast [%]', 'FontSize', font_axis, 'FontWeight', 'bold');
+ylabel(axf, 'Frequency [Hz]', 'FontSize', font_axis, 'FontWeight', 'bold');
+title(axf, 'Gamma Peak Frequency', 'FontSize', font_big, 'FontWeight', 'bold');
+legend(axf, {'Standard data', 'MS-free data'}, ...
+    'Location', 'best', 'FontSize', font_legend, 'Box', 'off');
+set(axf, 'FontSize', font_tick, 'LineWidth', 1.8, 'Box', 'off');
+hold(axf, 'off');
+pause(0.05);
+exportgraphics(fig_freq, fullfile(fig_dir, 'GCP_stats_neuroVSartifact_freq.png'), 'Resolution', 300);
 
-nexttile; plot_crf(mean_freq, contrast_pct, colors, nSubj);
-ylabel('Peak frequency [Hz]'); title('H5 standard GED');
-
-nexttile; plot_crf(mean_freq_ms, contrast_pct, colors, nSubj);
-ylabel('Peak frequency [Hz]'); title(sprintf('H5 MS-free (+/-%.0f ms)', ms_guard_ms));
-
-nexttile; plot_crf(mean_pow, contrast_pct, colors, nSubj);
-ylabel('Peak power [dB]'); title('H6 standard GED');
-
-nexttile; plot_crf(mean_pow_ms, contrast_pct, colors, nSubj);
-ylabel('Peak power [dB]'); title('H6 MS-free');
-
-exportgraphics(fig, fullfile(fig_dir, 'GCP_H5H6_standard_vs_MSfree.png'), 'Resolution', 300);
-
-%% Figure: slope survival
-fig2 = figure('Position', [0 0 1512 982]);
-set(fig2, 'Color', 'w');
-tiledlayout(1, 2, 'Padding', 'compact', 'TileSpacing', 'compact');
-
-nexttile;
-hold on;
-scatter(slope_freq, slope_freq_ms, 40, [0.2 0.2 0.2], 'filled', 'MarkerFaceAlpha', 0.7);
-lims = [min([slope_freq; slope_freq_ms], [], 'omitnan'), max([slope_freq; slope_freq_ms], [], 'omitnan')];
-if all(isfinite(lims)) && lims(1) < lims(2)
-    plot(lims, lims, 'k:');
-end
-xlabel('Contrast slope (standard)');
-ylabel('Contrast slope (MS-free)');
-title('H5 frequency slope survival');
-hold off;
-
-nexttile;
-hold on;
-scatter(slope_pow, slope_pow_ms, 40, [0.2 0.2 0.2], 'filled', 'MarkerFaceAlpha', 0.7);
-lims = [min([slope_pow; slope_pow_ms], [], 'omitnan'), max([slope_pow; slope_pow_ms], [], 'omitnan')];
-if all(isfinite(lims)) && lims(1) < lims(2)
-    plot(lims, lims, 'k:');
-end
-xlabel('Contrast slope (standard)');
-ylabel('Contrast slope (MS-free)');
-title('H6 power slope survival');
-hold off;
-
-exportgraphics(fig2, fullfile(fig_dir, 'GCP_contrast_slope_survival_MSfree.png'), 'Resolution', 300);
+% Power figure
+fig_pow = figure('Position', [0 0 1512 982]);
+set(fig_pow, 'Color', 'w');
+axp = axes(fig_pow);
+hold(axp, 'on');
+plot_crf_dual(axp, mean_pow, mean_pow_ms, contrast_pct, std_col, msf_col);
+xlabel(axp, 'Contrast [%]', 'FontSize', font_axis, 'FontWeight', 'bold');
+ylabel(axp, 'Power [dB]', 'FontSize', font_axis, 'FontWeight', 'bold');
+title(axp, 'Gamma Peak Power', 'FontSize', font_big, 'FontWeight', 'bold');
+legend(axp, {'Standard data', 'MS-free data'}, ...
+    'Location', 'best', 'FontSize', font_legend, 'Box', 'off');
+set(axp, 'FontSize', font_tick, 'LineWidth', 1.8, 'Box', 'off');
+hold(axp, 'off');
+pause(0.05);
+exportgraphics(fig_pow, fullfile(fig_dir, 'GCP_stats_neuroVSartifact_power.png'), 'Resolution', 300);
 
 %% Console summary
 fprintf('\n=== Neural vs artifactual summary ===\n');
@@ -199,21 +181,21 @@ for si = 1:nSubj
 end
 end
 
-function plot_crf(mat, contrast_pct, colors, nSubj)
-hold on;
-mu = mean(mat, 2, 'omitnan');
-se = std(mat, 0, 2, 'omitnan') ./ sqrt(sum(isfinite(mat), 2));
-for c = 1:4
-    jitter = 0.04 * randn(1, nSubj);
-    scatter(contrast_pct(c) + 8 * jitter, mat(c, :), 18, colors(c, :), ...
-        'filled', 'MarkerFaceAlpha', 0.35, 'HandleVisibility', 'off');
-end
-errorbar(contrast_pct, mu, se, '-o', 'Color', [0.1 0.1 0.1], ...
-    'LineWidth', 1.5, 'MarkerFaceColor', [0.1 0.1 0.1]);
-xlim([15 110]);
-set(gca, 'XTick', contrast_pct, 'XTickLabel', {'25', '50', '75', '100'});
-xlabel('Contrast [%]');
-hold off;
+function plot_crf_dual(ax, mat_std, mat_msf, contrast_pct, std_col, msf_col)
+mu_std = mean(mat_std, 2, 'omitnan');
+se_std = std(mat_std, 0, 2, 'omitnan') ./ sqrt(sum(isfinite(mat_std), 2));
+mu_msf = mean(mat_msf, 2, 'omitnan');
+se_msf = std(mat_msf, 0, 2, 'omitnan') ./ sqrt(sum(isfinite(mat_msf), 2));
+
+errorbar(ax, contrast_pct, mu_std, se_std, '-o', ...
+    'Color', std_col, 'LineWidth', 3.0, 'MarkerSize', 10, ...
+    'MarkerFaceColor', std_col, 'CapSize', 10);
+errorbar(ax, contrast_pct, mu_msf, se_msf, '-o', ...
+    'Color', msf_col, 'LineWidth', 3.0, 'MarkerSize', 10, ...
+    'MarkerFaceColor', msf_col, 'CapSize', 10);
+
+xlim(ax, [15 110]);
+set(ax, 'XTick', contrast_pct, 'XTickLabel', {'25', '50', '75', '100'});
 end
 
 function S = fit_contrast_ms_lme(T, id_var, y_var, ms_var, label)
