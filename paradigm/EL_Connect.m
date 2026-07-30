@@ -18,7 +18,11 @@ try
     % Change Tracker Settings 
     % Setting what data to get from Tracker (Based on Manual v 1.0.6)
     fprintf('Setting up the Tracker \n' );
+    % Online link stream (used by Eyelink('NewestFloatSample') etc.)
     Eyelink('Command', 'link_sample_data = LEFT,RIGHT,GAZE,AREA');
+    % EDF file contents (what ends up in .asc / ET.mat). HTARGET stores
+    % Remote sticker X/Y and camera-to-target distance in mm.
+    Eyelink('Command', 'file_sample_data = LEFT,RIGHT,GAZE,AREA,HTARGET');
     % Possible Commands:
     %
     % LEFT,RIGHT - Sets the intended tracking eye (usually include both LEFT and RIGHT)
