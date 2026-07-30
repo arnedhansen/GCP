@@ -1,21 +1,14 @@
 %% GCP Gaze Feature Extraction
 %
 % Extracted features:
-%   Gaze standard deviation
 %   BCEA (Bivariate Contour Ellipse Area, k=2.291, 95%)
 %   Pupil size (Time Series Raw, Baselined % change)
 %   Microsaccades (TC ground truth: boxplot scalar = mean of % TC)
-%   Saccade cleaned fixational eye velocity (Raw, Baselined % change)
-%   EyeLink blinks, fixations, saccades (rates, baselined % change)
+%   Eye velocity (Raw, Baselined % change)
+%   EyeLink blinks, fixations, saccades (rates from preprocessing gaze_metrics; baselined % change)
 %
 % Subject x condition scalars are saved for full [0 2], early [0 1], and
-% late [1 2] windows (fields: dB*, dB*_early, dB*_late). Group file:
-%   features/GCP_gaze_window_summaries.mat
-%
-% Baselined (% change) subject scalars use suffix _bl
-% (MSRate_bl, BCEA_bl, Vel2D_bl, ...; plus _bl_early / _bl_late).
-% Microsaccade boxplot scalars use direct Engbert count rates in each
-% window, not means of the smoothed rate time course (TC is for plots).
+% late [1 2] windows: features/GCP_gaze_window_summaries.mat
 
 %% Setup
 startup
@@ -32,7 +25,7 @@ analysis_late     = [1 2];
 analysis_periodTS = [-1 2];
 pupil_store_window = [-1.5, 2.5];
 vel_store_window   = [-1.5, 2.5];  % extend past 2 s so t=2 is not a kernel edge
-vel_smooth_s       = 0.050;        % light smoothing of fixational speed TC
+vel_smooth_s       = 0.050;        % light smoothing of eye speed TC
 ms_min_rate_hz     = 0.1;          % exclude trials below this in baseline or stimulus
 win_size          = 25;    % blink‐removal window (samples)
 fsample           = 500;   % eye‐tracker sampling rate
@@ -71,8 +64,6 @@ for subj = 1:numel(subjects)
         trial_num          = [];
         condition          = [];
 
-        gazeSDx            = [];  baselineGazeSDx   = [];
-        gazeSDy            = [];  baselineGazeSDy   = [];
         bcea               = [];  baselineBcea      = [];
         bcea_early         = [];  bcea_late         = [];
         pupilSize          = [];  baselinePupilSize = [];
@@ -108,7 +99,7 @@ for subj = 1:numel(subjects)
         velFT.time      = cell(1, nTrials);
         velFT.trialinfo = dataET.trialinfo;
 
-        % Continuous rectified velocity for OCC: saccadic samples are zeroed
+        % Continuous rectified velocity for OCC (same as velFT; no MS zeroing)
         velOCCFT = velFT;
 
         % FieldTrip-ready pupil container (full baseline + analysis window)
@@ -141,7 +132,7 @@ for subj = 1:numel(subjects)
         qc_min_valid_samples   = round(0.50 * fsample); % at least 500 ms valid data
         qc_max_ms_rate_hz      = 8;                     % reject implausibly high trial-level MS rates
 
-        % Engbert MS event times (seconds on trial time axis) for neural-vs-artifact tests
+        % Engbert MS event times (seconds on trial time axis)
         ms_onsets_per_trial  = cell(1, nTrials);
         ms_offsets_per_trial = cell(1, nTrials);
 
@@ -150,7 +141,7 @@ for subj = 1:numel(subjects)
             raw    = dataET.trial{trl};
             tVec   = dataET.time{trl};
 
-            % Saccade cleaned fixational velocity on the original regular time axis.
+            % Eye velocity on the original regular time axis (no MS sample removal).
             % Store past analysis end so samples near t=2 are not convolution edges.
             full_idx = tVec >= vel_store_window(1) & tVec <= vel_store_window(2);
             t_full   = tVec(full_idx);
@@ -170,26 +161,11 @@ for subj = 1:numel(subjects)
                 xy_padded = ft_preproc_padding(full_dat(1:2,:), 'localmean', vel_kernel_pad);
                 vel_signed = convn(xy_padded, vel_kernel, 'same');
                 vel_signed = ft_preproc_padding(vel_signed, 'remove', vel_kernel_pad);
-
-                % Detect rapid saccadic events on the same position trace.
-                [~, saccade_details_vel] = detect_microsaccades( ...
-                    fsample, full_dat(1:2,:), numel(t_full));
-                saccade_mask = false(1, numel(t_full));
-                for sac = 1:numel(saccade_details_vel.Onset)
-                    sac_start = max(1, saccade_details_vel.Onset(sac));
-                    sac_end   = min(numel(t_full), saccade_details_vel.Offset(sac));
-                    saccade_mask(sac_start:sac_end) = true;
-                end
-
                 vel_signed(:, ~valid_full_position) = NaN;
 
-                % Exclude saccadic samples from mean fixational velocity so the
-                % estimate is not mechanically lowered when more saccades occur.
-                vel_fixational = vel_signed;
-                vel_fixational(:, saccade_mask) = NaN;
-                vx_full    = abs(vel_fixational(1,:));
-                vy_full    = abs(vel_fixational(2,:));
-                speed_full = sqrt(sum(vel_fixational.^2, 1));
+                vx_full    = abs(vel_signed(1,:));
+                vy_full    = abs(vel_signed(2,:));
+                speed_full = sqrt(sum(vel_signed.^2, 1));
 
                 % Light temporal smoothing after differentiation (not before).
                 vel_smooth_samp = max(1, round(vel_smooth_s * fsample));
@@ -202,12 +178,8 @@ for subj = 1:numel(subjects)
                 velFT.trial{trl} = [vx_full; vy_full; speed_full];
                 velFT.time{trl}  = t_full;
 
-                % OCC requires a continuous rectified signal. Following the
-                % proposal, detected saccadic samples are therefore set to zero.
-                vel_occ = vel_signed;
-                vel_occ(:, saccade_mask) = 0;
-                velOCCFT.trial{trl} = [abs(vel_occ(1,:)); ...
-                    abs(vel_occ(2,:)); sqrt(sum(vel_occ.^2, 1))];
+                % OCC uses the same continuous rectified velocity.
+                velOCCFT.trial{trl} = velFT.trial{trl};
                 velOCCFT.time{trl} = t_full;
             else
                 velFT.trial{trl} = nan(3, numel(t_full));
@@ -236,7 +208,7 @@ for subj = 1:numel(subjects)
             baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
             [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
 
-            % Baseline fixational velocity after removal of saccadic samples
+            % Baseline eye velocity
             if ~isempty(velFT.time{trl})
                 vel_bl_idx = velFT.time{trl} >= baseline_period(1) & ...
                              velFT.time{trl} <= baseline_period(2);
@@ -277,7 +249,7 @@ for subj = 1:numel(subjects)
                     gaze_y_c100{subj,trl} = y;
             end
 
-            % Gaze SD, BCEA, microsaccades
+            % BCEA, microsaccades
             std_x       = nanstd(x);
             std_y       = nanstd(y);
             if numel(x) > 2
@@ -293,7 +265,7 @@ for subj = 1:numel(subjects)
             msrate_early = ms_rate_in_window(raw, tVec, analysis_early, win_size, fsample);
             msrate_late  = ms_rate_in_window(raw, tVec, analysis_late, win_size, fsample);
 
-            % Analysis window fixational velocity from the full regular trace
+            % Analysis window eye velocity from the full regular trace
             if ~isempty(velFT.time{trl})
                 vel_an_idx = velFT.time{trl} >= analysis_period(1) & ...
                              velFT.time{trl} <= analysis_period(2);
@@ -450,10 +422,6 @@ for subj = 1:numel(subjects)
             subject_id(end+1)       = str2double(subjects{subj});
             trial_num(end+1)        = trl;
             condition(end+1)        = dataET.trialinfo(trl) - 60;
-            gazeSDx(end+1)          = std_x;
-            baselineGazeSDx(end+1)  = baseline_std_x;
-            gazeSDy(end+1)          = std_y;
-            baselineGazeSDy(end+1)  = baseline_std_y;
             bcea(end+1)             = bcea_val;
             bcea_early(end+1)       = bcea_early_val;
             bcea_late(end+1)        = bcea_late_val;
@@ -549,8 +517,6 @@ for subj = 1:numel(subjects)
         msTS_BL_db = ft_timelockanalysis(cfg, msFT_bl_db);
 
         % Trial-level baselined scalars (% change). MS uses direct count rates.
-        GazeStdX_bl      = compute_pct_baseline(gazeSDx, baselineGazeSDx);
-        GazeStdY_bl      = compute_pct_baseline(gazeSDy, baselineGazeSDy);
         BCEA_bl          = compute_pct_baseline(bcea, baselineBcea);
         BCEA_bl_early    = compute_pct_baseline(bcea_early, baselineBcea);
         BCEA_bl_late     = compute_pct_baseline(bcea_late, baselineBcea);
@@ -575,10 +541,6 @@ for subj = 1:numel(subjects)
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
             case 'c25'
-                c25_gSDx      = mean(gazeSDx,'omitnan');
-                c25_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
-                c25_gSDy      = mean(gazeSDy,'omitnan');
-                c25_bl_gSDy   = mean(baselineGazeSDy,'omitnan');
                 c25_bcea      = mean(bcea,'omitnan');
                 c25_bl_bcea   = mean(baselineBcea,'omitnan');
                 c25_pups      = mean(pupilSize,'omitnan');
@@ -594,9 +556,7 @@ for subj = 1:numel(subjects)
                 c25_vel2D        = mean(vel2D,'omitnan');
                 c25_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Condition scalars: trial means for MS/BCEA/GazeStd; TC means for vel/pupil
-                c25_gSDx_bl         = mean(GazeStdX_bl, 'omitnan');
-                c25_gSDy_bl         = mean(GazeStdY_bl, 'omitnan');
+                % Condition scalars: trial means for MS/BCEA; TC means for vel/pupil
                 c25_bcea_bl         = mean(BCEA_bl, 'omitnan');
                 c25_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
                 c25_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
@@ -618,8 +578,6 @@ for subj = 1:numel(subjects)
 
                 subj_data_gaze_trial_c25 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeStdX',gazeSDx, 'BaselineGazeStdX',baselineGazeSDx, 'GazeStdX_bl', GazeStdX_bl, ...
-                    'GazeStdY',gazeSDy, 'BaselineGazeStdY',baselineGazeSDy, 'GazeStdY_bl', GazeStdY_bl, ...
                     'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
                     'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
                     'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
@@ -650,10 +608,6 @@ for subj = 1:numel(subjects)
                 ms_events_c25.Offset = ms_offsets_per_trial;
 
             case 'c50'
-                c50_gSDx      = mean(gazeSDx,'omitnan');
-                c50_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
-                c50_gSDy      = mean(gazeSDy,'omitnan');
-                c50_bl_gSDy   = mean(baselineGazeSDy,'omitnan');
                 c50_bcea      = mean(bcea,'omitnan');
                 c50_bl_bcea   = mean(baselineBcea,'omitnan');
                 c50_pups      = mean(pupilSize,'omitnan');
@@ -669,9 +623,7 @@ for subj = 1:numel(subjects)
                 c50_vel2D        = mean(vel2D,'omitnan');
                 c50_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Condition scalars: trial means for MS/BCEA/GazeStd; TC means for vel/pupil
-                c50_gSDx_bl         = mean(GazeStdX_bl, 'omitnan');
-                c50_gSDy_bl         = mean(GazeStdY_bl, 'omitnan');
+                % Condition scalars: trial means for MS/BCEA; TC means for vel/pupil
                 c50_bcea_bl         = mean(BCEA_bl, 'omitnan');
                 c50_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
                 c50_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
@@ -693,8 +645,6 @@ for subj = 1:numel(subjects)
 
                 subj_data_gaze_trial_c50 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeStdX',gazeSDx, 'BaselineGazeStdX',baselineGazeSDx, 'GazeStdX_bl', GazeStdX_bl, ...
-                    'GazeStdY',gazeSDy, 'BaselineGazeStdY',baselineGazeSDy, 'GazeStdY_bl', GazeStdY_bl, ...
                     'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
                     'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
                     'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
@@ -721,10 +671,6 @@ for subj = 1:numel(subjects)
                 ms_events_c50.Offset = ms_offsets_per_trial;
 
             case 'c75'
-                c75_gSDx      = mean(gazeSDx,'omitnan');
-                c75_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
-                c75_gSDy      = mean(gazeSDy,'omitnan');
-                c75_bl_gSDy   = mean(baselineGazeSDy,'omitnan');
                 c75_bcea      = mean(bcea,'omitnan');
                 c75_bl_bcea   = mean(baselineBcea,'omitnan');
                 c75_pups      = mean(pupilSize,'omitnan');
@@ -740,9 +686,7 @@ for subj = 1:numel(subjects)
                 c75_vel2D        = mean(vel2D,'omitnan');
                 c75_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Condition scalars: trial means for MS/BCEA/GazeStd; TC means for vel/pupil
-                c75_gSDx_bl         = mean(GazeStdX_bl, 'omitnan');
-                c75_gSDy_bl         = mean(GazeStdY_bl, 'omitnan');
+                % Condition scalars: trial means for MS/BCEA; TC means for vel/pupil
                 c75_bcea_bl         = mean(BCEA_bl, 'omitnan');
                 c75_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
                 c75_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
@@ -764,8 +708,6 @@ for subj = 1:numel(subjects)
 
                 subj_data_gaze_trial_c75 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeStdX',gazeSDx, 'BaselineGazeStdX',baselineGazeSDx, 'GazeStdX_bl', GazeStdX_bl, ...
-                    'GazeStdY',gazeSDy, 'BaselineGazeStdY',baselineGazeSDy, 'GazeStdY_bl', GazeStdY_bl, ...
                     'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
                     'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
                     'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
@@ -792,10 +734,6 @@ for subj = 1:numel(subjects)
                 ms_events_c75.Offset = ms_offsets_per_trial;
 
             case 'c100'
-                c100_gSDx      = mean(gazeSDx,'omitnan');
-                c100_bl_gSDx   = mean(baselineGazeSDx,'omitnan');
-                c100_gSDy      = mean(gazeSDy,'omitnan');
-                c100_bl_gSDy   = mean(baselineGazeSDy,'omitnan');
                 c100_bcea      = mean(bcea,'omitnan');
                 c100_bl_bcea   = mean(baselineBcea,'omitnan');
                 c100_pups      = mean(pupilSize,'omitnan');
@@ -811,9 +749,7 @@ for subj = 1:numel(subjects)
                 c100_vel2D        = mean(vel2D,'omitnan');
                 c100_bl_vel2D     = mean(baselineVel2D,'omitnan');
 
-                % Condition scalars: trial means for MS/BCEA/GazeStd; TC means for vel/pupil
-                c100_gSDx_bl         = mean(GazeStdX_bl, 'omitnan');
-                c100_gSDy_bl         = mean(GazeStdY_bl, 'omitnan');
+                % Condition scalars: trial means for MS/BCEA; TC means for vel/pupil
                 c100_bcea_bl         = mean(BCEA_bl, 'omitnan');
                 c100_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
                 c100_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
@@ -835,8 +771,6 @@ for subj = 1:numel(subjects)
 
                 subj_data_gaze_trial_c100 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'GazeStdX',gazeSDx, 'BaselineGazeStdX',baselineGazeSDx, 'GazeStdX_bl', GazeStdX_bl, ...
-                    'GazeStdY',gazeSDy, 'BaselineGazeStdY',baselineGazeSDy, 'GazeStdY_bl', GazeStdY_bl, ...
                     'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
                     'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
                     'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
@@ -868,80 +802,32 @@ for subj = 1:numel(subjects)
     savepath = fullfile(paths.features, subjects{subj}, 'gaze');
     if ~exist(savepath,'dir'); mkdir(savepath); end
 
-    % EyeLink event rates: full / early / late + baseline, then % change
-    evWins = {analysis_period, analysis_early, analysis_late};
-    ev = eyelink_event_rates_subject(paths.merged, subjects{subj}, evWins, baseline_period);
-    c25_blinks = ev.blinks(1,1); c50_blinks = ev.blinks(2,1);
-    c75_blinks = ev.blinks(3,1); c100_blinks = ev.blinks(4,1);
-    c25_fixations = ev.fixations(1,1); c50_fixations = ev.fixations(2,1);
-    c75_fixations = ev.fixations(3,1); c100_fixations = ev.fixations(4,1);
-    c25_saccades = ev.saccades(1,1); c50_saccades = ev.saccades(2,1);
-    c75_saccades = ev.saccades(3,1); c100_saccades = ev.saccades(4,1);
-    c25_bl_blinks = ev.bl_blinks(1); c50_bl_blinks = ev.bl_blinks(2);
-    c75_bl_blinks = ev.bl_blinks(3); c100_bl_blinks = ev.bl_blinks(4);
-    c25_bl_fixations = ev.bl_fixations(1); c50_bl_fixations = ev.bl_fixations(2);
-    c75_bl_fixations = ev.bl_fixations(3); c100_bl_fixations = ev.bl_fixations(4);
-    c25_bl_saccades = ev.bl_saccades(1); c50_bl_saccades = ev.bl_saccades(2);
-    c75_bl_saccades = ev.bl_saccades(3); c100_bl_saccades = ev.bl_saccades(4);
+    % EyeLink event rates from preprocessing (full / early / late + baseline % change)
+    load(fullfile(savepath, 'gaze_metrics'));
+    c25_blinks_bl = c25_pct_blinks; c50_blinks_bl = c50_pct_blinks;
+    c75_blinks_bl = c75_pct_blinks; c100_blinks_bl = c100_pct_blinks;
+    c25_blinks_bl_early = c25_pct_blinks_early; c50_blinks_bl_early = c50_pct_blinks_early;
+    c75_blinks_bl_early = c75_pct_blinks_early; c100_blinks_bl_early = c100_pct_blinks_early;
+    c25_blinks_bl_late = c25_pct_blinks_late; c50_blinks_bl_late = c50_pct_blinks_late;
+    c75_blinks_bl_late = c75_pct_blinks_late; c100_blinks_bl_late = c100_pct_blinks_late;
 
-    c25_blinks_early = ev.blinks(1,2); c50_blinks_early = ev.blinks(2,2);
-    c75_blinks_early = ev.blinks(3,2); c100_blinks_early = ev.blinks(4,2);
-    c25_fixations_early = ev.fixations(1,2); c50_fixations_early = ev.fixations(2,2);
-    c75_fixations_early = ev.fixations(3,2); c100_fixations_early = ev.fixations(4,2);
-    c25_saccades_early = ev.saccades(1,2); c50_saccades_early = ev.saccades(2,2);
-    c75_saccades_early = ev.saccades(3,2); c100_saccades_early = ev.saccades(4,2);
+    c25_fixations_bl = c25_pct_fixations; c50_fixations_bl = c50_pct_fixations;
+    c75_fixations_bl = c75_pct_fixations; c100_fixations_bl = c100_pct_fixations;
+    c25_fixations_bl_early = c25_pct_fixations_early; c50_fixations_bl_early = c50_pct_fixations_early;
+    c75_fixations_bl_early = c75_pct_fixations_early; c100_fixations_bl_early = c100_pct_fixations_early;
+    c25_fixations_bl_late = c25_pct_fixations_late; c50_fixations_bl_late = c50_pct_fixations_late;
+    c75_fixations_bl_late = c75_pct_fixations_late; c100_fixations_bl_late = c100_pct_fixations_late;
 
-    c25_blinks_late = ev.blinks(1,3); c50_blinks_late = ev.blinks(2,3);
-    c75_blinks_late = ev.blinks(3,3); c100_blinks_late = ev.blinks(4,3);
-    c25_fixations_late = ev.fixations(1,3); c50_fixations_late = ev.fixations(2,3);
-    c75_fixations_late = ev.fixations(3,3); c100_fixations_late = ev.fixations(4,3);
-    c25_saccades_late = ev.saccades(1,3); c50_saccades_late = ev.saccades(2,3);
-    c75_saccades_late = ev.saccades(3,3); c100_saccades_late = ev.saccades(4,3);
-
-    c25_blinks_bl = compute_pct_baseline(c25_blinks, c25_bl_blinks);
-    c50_blinks_bl = compute_pct_baseline(c50_blinks, c50_bl_blinks);
-    c75_blinks_bl = compute_pct_baseline(c75_blinks, c75_bl_blinks);
-    c100_blinks_bl = compute_pct_baseline(c100_blinks, c100_bl_blinks);
-    c25_blinks_bl_early = compute_pct_baseline(c25_blinks_early, c25_bl_blinks);
-    c50_blinks_bl_early = compute_pct_baseline(c50_blinks_early, c50_bl_blinks);
-    c75_blinks_bl_early = compute_pct_baseline(c75_blinks_early, c75_bl_blinks);
-    c100_blinks_bl_early = compute_pct_baseline(c100_blinks_early, c100_bl_blinks);
-    c25_blinks_bl_late = compute_pct_baseline(c25_blinks_late, c25_bl_blinks);
-    c50_blinks_bl_late = compute_pct_baseline(c50_blinks_late, c50_bl_blinks);
-    c75_blinks_bl_late = compute_pct_baseline(c75_blinks_late, c75_bl_blinks);
-    c100_blinks_bl_late = compute_pct_baseline(c100_blinks_late, c100_bl_blinks);
-
-    c25_fixations_bl = compute_pct_baseline(c25_fixations, c25_bl_fixations);
-    c50_fixations_bl = compute_pct_baseline(c50_fixations, c50_bl_fixations);
-    c75_fixations_bl = compute_pct_baseline(c75_fixations, c75_bl_fixations);
-    c100_fixations_bl = compute_pct_baseline(c100_fixations, c100_bl_fixations);
-    c25_fixations_bl_early = compute_pct_baseline(c25_fixations_early, c25_bl_fixations);
-    c50_fixations_bl_early = compute_pct_baseline(c50_fixations_early, c50_bl_fixations);
-    c75_fixations_bl_early = compute_pct_baseline(c75_fixations_early, c75_bl_fixations);
-    c100_fixations_bl_early = compute_pct_baseline(c100_fixations_early, c100_bl_fixations);
-    c25_fixations_bl_late = compute_pct_baseline(c25_fixations_late, c25_bl_fixations);
-    c50_fixations_bl_late = compute_pct_baseline(c50_fixations_late, c50_bl_fixations);
-    c75_fixations_bl_late = compute_pct_baseline(c75_fixations_late, c75_bl_fixations);
-    c100_fixations_bl_late = compute_pct_baseline(c100_fixations_late, c100_bl_fixations);
-
-    c25_saccades_bl = compute_pct_baseline(c25_saccades, c25_bl_saccades);
-    c50_saccades_bl = compute_pct_baseline(c50_saccades, c50_bl_saccades);
-    c75_saccades_bl = compute_pct_baseline(c75_saccades, c75_bl_saccades);
-    c100_saccades_bl = compute_pct_baseline(c100_saccades, c100_bl_saccades);
-    c25_saccades_bl_early = compute_pct_baseline(c25_saccades_early, c25_bl_saccades);
-    c50_saccades_bl_early = compute_pct_baseline(c50_saccades_early, c50_bl_saccades);
-    c75_saccades_bl_early = compute_pct_baseline(c75_saccades_early, c75_bl_saccades);
-    c100_saccades_bl_early = compute_pct_baseline(c100_saccades_early, c100_bl_saccades);
-    c25_saccades_bl_late = compute_pct_baseline(c25_saccades_late, c25_bl_saccades);
-    c50_saccades_bl_late = compute_pct_baseline(c50_saccades_late, c50_bl_saccades);
-    c75_saccades_bl_late = compute_pct_baseline(c75_saccades_late, c75_bl_saccades);
-    c100_saccades_bl_late = compute_pct_baseline(c100_saccades_late, c100_bl_saccades);
+    c25_saccades_bl = c25_pct_saccades; c50_saccades_bl = c50_pct_saccades;
+    c75_saccades_bl = c75_pct_saccades; c100_saccades_bl = c100_pct_saccades;
+    c25_saccades_bl_early = c25_pct_saccades_early; c50_saccades_bl_early = c50_pct_saccades_early;
+    c75_saccades_bl_early = c75_pct_saccades_early; c100_saccades_bl_early = c100_pct_saccades_early;
+    c25_saccades_bl_late = c25_pct_saccades_late; c50_saccades_bl_late = c50_pct_saccades_late;
+    c75_saccades_bl_late = c75_pct_saccades_late; c100_saccades_bl_late = c100_pct_saccades_late;
 
     subj_data_gaze = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
         'Condition', num2cell([1;2;3;4]), ...
-        'GazeStdX',      num2cell([c25_gSDx;   c50_gSDx;   c75_gSDx;   c100_gSDx]), ...
-        'GazeStdY',      num2cell([c25_gSDy;   c50_gSDy;   c75_gSDy;   c100_gSDy]), ...
         'BCEA',          num2cell([c25_bcea;   c50_bcea;   c75_bcea;   c100_bcea]), ...
         'PupilSize',     num2cell([c25_pups;   c50_pups;   c75_pups;   c100_pups]), ...
         'MSRate',        num2cell([c25_msrate; c50_msrate; c75_msrate; c100_msrate]), ...
@@ -951,8 +837,6 @@ for subj = 1:numel(subjects)
         'Blinks',        num2cell([c25_blinks; c50_blinks; c75_blinks; c100_blinks]), ...
         'Fixations',     num2cell([c25_fixations;c50_fixations;c75_fixations;c100_fixations]), ...
         'Saccades',      num2cell([c25_saccades; c50_saccades; c75_saccades; c100_saccades]), ...
-        'BaselineGazeStdX',      num2cell([c25_bl_gSDx;   c50_bl_gSDx;   c75_bl_gSDx;   c100_bl_gSDx]), ...
-        'BaselineGazeStdY',      num2cell([c25_bl_gSDy;   c50_bl_gSDy;   c75_bl_gSDy;   c100_bl_gSDy]), ...
         'BaselineBCEA',          num2cell([c25_bl_bcea;   c50_bl_bcea;   c75_bl_bcea;   c100_bl_bcea]), ...
         'BaselinePupilSize',     num2cell([c25_bl_pups;   c50_bl_pups;   c75_bl_pups;   c100_bl_pups]), ...
         'BaselineMSRate',        num2cell([c25_bl_msrate; c50_bl_msrate; c75_bl_msrate; c100_bl_msrate]), ...
@@ -962,8 +846,6 @@ for subj = 1:numel(subjects)
         'BaselineBlinks',        num2cell([c25_bl_blinks; c50_bl_blinks; c75_bl_blinks; c100_bl_blinks]), ...
         'BaselineFixations',     num2cell([c25_bl_fixations; c50_bl_fixations; c75_bl_fixations; c100_bl_fixations]), ...
         'BaselineSaccades',      num2cell([c25_bl_saccades; c50_bl_saccades; c75_bl_saccades; c100_bl_saccades]), ...
-        'GazeStdX_bl',      num2cell([c25_gSDx_bl;   c50_gSDx_bl;   c75_gSDx_bl;   c100_gSDx_bl]), ...
-        'GazeStdY_bl',      num2cell([c25_gSDy_bl;   c50_gSDy_bl;   c75_gSDy_bl;   c100_gSDy_bl]), ...
         'BCEA_bl',          num2cell([c25_bcea_bl;   c50_bcea_bl;   c75_bcea_bl;   c100_bcea_bl]), ...
         'BCEA_bl_early',    num2cell([c25_bcea_bl_early; c50_bcea_bl_early; c75_bcea_bl_early; c100_bcea_bl_early]), ...
         'BCEA_bl_late',     num2cell([c25_bcea_bl_late;  c50_bcea_bl_late;  c75_bcea_bl_late;  c100_bcea_bl_late]), ...
@@ -995,8 +877,6 @@ for subj = 1:numel(subjects)
     subj_data_gaze_baseline = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
         'Condition', num2cell([1;2;3;4]), ...
-        'BaselineGazeStdX',      num2cell([c25_bl_gSDx;   c50_bl_gSDx;   c75_bl_gSDx;   c100_bl_gSDx]), ...
-        'BaselineGazeStdY',      num2cell([c25_bl_gSDy;   c50_bl_gSDy;   c75_bl_gSDy;   c100_bl_gSDy]), ...
         'BaselineBCEA',          num2cell([c25_bl_bcea;   c50_bl_bcea;   c75_bl_bcea;   c100_bl_bcea]), ...
         'BaselinePupilSize',     num2cell([c25_bl_pups;   c50_bl_pups;   c75_bl_pups;   c100_bl_pups]), ...
         'BaselineMSRate',        num2cell([c25_bl_msrate; c50_bl_msrate; c75_bl_msrate; c100_bl_msrate]), ...
@@ -1010,8 +890,6 @@ for subj = 1:numel(subjects)
     subj_data_gaze_bl = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
         'Condition', num2cell([1;2;3;4]), ...
-        'GazeStdX_bl',      num2cell([c25_gSDx_bl;   c50_gSDx_bl;   c75_gSDx_bl;   c100_gSDx_bl]), ...
-        'GazeStdY_bl',      num2cell([c25_gSDy_bl;   c50_gSDy_bl;   c75_gSDy_bl;   c100_gSDy_bl]), ...
         'BCEA_bl',          num2cell([c25_bcea_bl;   c50_bcea_bl;   c75_bcea_bl;   c100_bcea_bl]), ...
         'BCEA_bl_early',    num2cell([c25_bcea_bl_early; c50_bcea_bl_early; c75_bcea_bl_early; c100_bcea_bl_early]), ...
         'BCEA_bl_late',     num2cell([c25_bcea_bl_late;  c50_bcea_bl_late;  c75_bcea_bl_late;  c100_bcea_bl_late]), ...
@@ -1067,7 +945,7 @@ for subj = 1:numel(subjects)
         'msTS_c25','msTS_c50','msTS_c75','msTS_c100', ...
         'msTS_c25_bl_db','msTS_c50_bl_db','msTS_c75_bl_db','msTS_c100_bl_db');
 
-    % Engbert microsaccade onset/offset times (s) per trial for MS-free EEG
+    % Engbert microsaccade onset/offset times (s) per trial
     save(fullfile(savepath, 'gaze_microsaccade_events'), ...
         'ms_events_c25', 'ms_events_c50', 'ms_events_c75', 'ms_events_c100');
 
@@ -1138,101 +1016,10 @@ rho = corr(x(:), y(:));
 val = 2 * 2.291 * pi * sx * sy * sqrt(1 - rho^2);
 end
 
-function ev = eyelink_event_rates_subject(mergedRoot, subj, winList, baselineWin)
-% Rates [Hz] per condition (rows 1..4) x analysis window (cols), plus baseline.
-nWin = numel(winList);
-nCond = 4;
-condCodes = {'61','62','63','64'};
-ev = struct();
-ev.blinks = nan(nCond, nWin);
-ev.fixations = nan(nCond, nWin);
-ev.saccades = nan(nCond, nWin);
-ev.bl_blinks = nan(nCond, 1);
-ev.bl_fixations = nan(nCond, 1);
-ev.bl_saccades = nan(nCond, 1);
-
-subjPath = fullfile(mergedRoot, subj);
-for c = 1:nCond
-    counts = zeros(nWin + 1, 3);
-    nTrials = zeros(nWin + 1, 1);
-    for block = 1:4
-        f = fullfile(subjPath, sprintf('%s_EEG_ET_GCP_block%d_merged.mat', subj, block));
-        if ~isfile(f), continue; end
-        B = load(f, 'EEG');
-        if ~isfield(B, 'EEG') || ~isfield(B.EEG, 'event') || isempty(B.EEG.event)
-            continue
-        end
-        EEG = B.EEG;
-        for wi = 1:(nWin + 1)
-            if wi <= nWin
-                tw = winList{wi};
-            else
-                tw = baselineWin;
-            end
-            try
-                EEG_ep = pop_epoch(EEG, condCodes(c), tw);
-            catch
-                continue
-            end
-            if EEG_ep.trials < 1, continue; end
-            nTrials(wi) = nTrials(wi) + EEG_ep.trials;
-            [nb, nf, ns] = count_eyelink_events(EEG_ep);
-            counts(wi, :) = counts(wi, :) + [nb, nf, ns];
-        end
-    end
-    for wi = 1:nWin
-        dur = diff(winList{wi});
-        if nTrials(wi) > 0 && dur > 0
-            rates = counts(wi, :) ./ (nTrials(wi) * dur);
-            ev.blinks(c, wi) = rates(1);
-            ev.fixations(c, wi) = rates(2);
-            ev.saccades(c, wi) = rates(3);
-        end
-    end
-    durBl = diff(baselineWin);
-    if nTrials(end) > 0 && durBl > 0
-        ratesBl = counts(end, :) ./ (nTrials(end) * durBl);
-        ev.bl_blinks(c) = ratesBl(1);
-        ev.bl_fixations(c) = ratesBl(2);
-        ev.bl_saccades(c) = ratesBl(3);
-    end
-end
-end
-
-function [nBlink, nFix, nSacc] = count_eyelink_events(EEG_ep)
-types = cell(1, numel(EEG_ep.event));
-for ev = 1:numel(EEG_ep.event)
-    t = EEG_ep.event(ev).type;
-    if ischar(t)
-        types{ev} = t;
-    elseif isstring(t)
-        types{ev} = char(t);
-    elseif iscell(t) && ~isempty(t)
-        types{ev} = char(string(t{1}));
-    else
-        types{ev} = '';
-    end
-end
-isBlink = strcmp(types, 'L_blink') | strcmp(types, 'R_blink');
-isFix = strcmp(types, 'L_fixation') | strcmp(types, 'R_fixation');
-isSacc = strcmp(types, 'L_saccade') | strcmp(types, 'R_saccade');
-nBlink = sum(isBlink);
-nFix = sum(isFix);
-blinkLat = [EEG_ep.event(isBlink).latency];
-nSacc = 0;
-saccIdx = find(isSacc);
-for k = 1:numel(saccIdx)
-    saccLat = EEG_ep.event(saccIdx(k)).latency;
-    if isempty(blinkLat) || ~any(abs(saccLat - blinkLat) <= 50)
-        nSacc = nSacc + 1;
-    end
-end
-end
-
 function save_gaze_window_summaries(featuresRoot, subjects, gaze_data)
 % Build cond x subject matrices for boxplots (no recomputation downstream).
 metricBases = {'MSRate_bl','Vel2D_bl','PupilSize_bl','BCEA_bl', ...
-    'Blinks_bl','Fixations_bl','Saccades_bl'};
+        'Blinks_bl','Fixations_bl','Saccades_bl'};
 winSuffix = {'', '_early', '_late'};
 winName = {'full', 'early', 'late'};
 nSubj = numel(subjects);
