@@ -144,10 +144,9 @@ for s = 1:numel(subjects)
     G = standardize_id_condition(G);
 
     keep = {'ID','Condition', ...
-            'GazeStdX','GazeStdY','BCEA','PupilSize','MSRate', ...
+            'BCEA','PupilSize','MSRate', ...
             'VelH','VelV','Vel2D', ...
             'Blinks','Fixations','Saccades', ...
-            'GazeStdX_bl','GazeStdY_bl', ...
             'BCEA_bl','BCEA_bl_early','BCEA_bl_late', ...
             'PupilSize_bl','PupilSize_bl_early','PupilSize_bl_late', ...
             'MSRate_bl','MSRate_bl_early','MSRate_bl_late', ...
@@ -167,13 +166,10 @@ end
 function tbl_ged = load_subject_level_ged_table(features_root, subjects)
 tbl_ged = table();
 
-% Subject-level GED gamma metrics come from the current GED pipeline output
-% (GCP_eeg_fex_GED.m -> GCP_eeg_GED.mat). Power is the subject-condition
-% robust mean of per-trial peak gamma power [dB] (trials_gamma_power);
-% Frequency is the median per-trial peak gamma frequency [Hz] (trials_median).
-% This is the same per-trial peak definition the trial-level rainclouds use,
-% so the subject-level boxplots and the single-subject GED spectra share one
-% source instead of a stale legacy matrix.
+% Subject-level GED gamma metrics come from peaks of condition-averaged
+% power spectra (GCP_eeg_fex_GED.m -> all_condition_peak_*_full), not from
+% averaging per-trial peak values. Trial-level peaks remain in
+% GCP_eeg_GED.mat / GCP_merged_data_trials for trial analyses.
 ged_path = fullfile(features_root, 'GCP_eeg_GED.mat');
 if ~isfile(ged_path)
     warning('GCP_master_matrix:NoGED', ...
@@ -181,11 +177,12 @@ if ~isfile(ged_path)
     return
 end
 
-dat = load(ged_path, 'trials_gamma_power', 'trials_gamma_power_plotstat', ...
-    'trials_median', 'trials_mean', 'subjects');
+dat = load(ged_path, ...
+    'all_condition_peak_freq_full', 'all_condition_peak_power_full', ...
+    'subjects');
 
-pow_mat = pick_first_numeric_matrix(dat, {'trials_gamma_power', 'trials_gamma_power_plotstat'});
-freq_mat = pick_first_numeric_matrix(dat, {'trials_median', 'trials_mean'});
+freq_mat = pick_first_numeric_matrix(dat, {'all_condition_peak_freq_full'});
+pow_mat  = pick_first_numeric_matrix(dat, {'all_condition_peak_power_full'});
 
 if isfield(dat, 'subjects') && ~isempty(dat.subjects)
     ged_subjects = dat.subjects;

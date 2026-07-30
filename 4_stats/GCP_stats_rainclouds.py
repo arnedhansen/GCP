@@ -1,5 +1,8 @@
-# %% GCP Stats Rainclouds — trial-level GED, gaze, and behavior
-# Raincloud figures with half-kernel densities, boxplots, jittered trials.
+# %% GCP Stats Rainclouds — GED condition peaks, gaze/behavior trials
+# Gamma frequency/power: one point per subject x condition from peaks of
+# condition-averaged GED spectra (all_condition_peak_*_full).
+# Gaze/behavior: trial-level rainclouds from the merged trial table.
+# Raincloud figures with half-kernel densities, boxplots, jittered points.
 # Significance brackets are optional (commented out by default).
 #
 # Run:
@@ -99,6 +102,39 @@ def reconstruct_trial_peak_power(
             continue
         power[t] = np.nanmean(powratio[t, band])
     return power
+
+
+def load_ged_condition_metrics(mat_path: str) -> pd.DataFrame:
+    """Subject x condition peaks from condition-averaged GED spectra."""
+    ged = scipy.io.loadmat(mat_path, squeeze_me=True, struct_as_record=False)
+    freq = np.asarray(ged["all_condition_peak_freq_full"], dtype=float)
+    power = np.asarray(ged["all_condition_peak_power_full"], dtype=float)
+    subjects = _as_str_list(ged["subjects"])
+
+    if freq.ndim != 2 or power.ndim != 2:
+        raise ValueError(
+            "Expected all_condition_peak_freq/power_full as [condition x subject] matrices."
+        )
+    if freq.shape != power.shape:
+        raise ValueError(
+            f"Frequency/power matrix shape mismatch: {freq.shape} vs {power.shape}"
+        )
+
+    n_cond, n_subj = freq.shape
+    rows: list[dict] = []
+    for c in range(n_cond):
+        cond_label = CONDITION_ORDER[c] if c < len(CONDITION_ORDER) else str(c + 1)
+        for s in range(n_subj):
+            sid = subjects[s] if s < len(subjects) else str(s + 1)
+            rows.append(
+                {
+                    "ID": sid,
+                    "Condition": cond_label,
+                    "GammaFrequency": float(freq[c, s]) if np.isfinite(freq[c, s]) else np.nan,
+                    "GammaPower": float(power[c, s]) if np.isfinite(power[c, s]) else np.nan,
+                }
+            )
+    return pd.DataFrame(rows)
 
 
 def load_ged_trial_metrics(mat_path: str, peak_power_halfwidth_hz: float = 5.0) -> pd.DataFrame:
@@ -233,8 +269,14 @@ def plot_raincloud(
     ax.set_facecolor("white")
 
     viol_alpha = 0.60
-    dot_alpha = 0.18
-    dot_size = 24
+    # Subject-level gamma rainclouds have few points; keep them readable.
+    n_per_cond = [
+        int(dvar.loc[dvar["Condition"] == c, var].notna().sum())
+        for c in CONDITION_ORDER
+    ]
+    few_points = bool(n_per_cond) and max(n_per_cond) <= 20
+    dot_alpha = 0.85 if few_points else 0.18
+    dot_size = 70 if few_points else 24
     box_width = 0.20
     cloud_offset = -0.20
     max_violsw = 0.40
@@ -387,7 +429,7 @@ def main() -> None:
         controls_dir,
     )
     ged = filter_gcp_analysis_cohort(
-        label_condition(load_ged_trial_metrics(ged_mat)),
+        label_condition(load_ged_condition_metrics(ged_mat)),
         controls_dir,
     )
 

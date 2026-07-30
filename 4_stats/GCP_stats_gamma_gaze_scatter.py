@@ -3,7 +3,10 @@
 # oculomotor metrics. Grey shading marks the hypothesis-consistent quadrant:
 #   gamma frequency/power increase with contrast (Δ > 0 on x)
 #   microsaccade rate decreases with contrast (Δ < 0 on y)
-#   saccade cleaned fixational velocity increases with contrast (Δ > 0 on y)
+#   eye velocity increases with contrast (Δ > 0 on y)
+#
+# Gamma values are peaks from condition-averaged GED spectra (not trial-peak
+# means). Gaze values are subject-condition means of trial metrics.
 #
 # Run:
 #   python GCP_stats_gamma_gaze_scatter.py
@@ -28,7 +31,7 @@ from GCP_stats_rainclouds import (
     CONDITION_ORDER,
     filter_gcp_analysis_cohort,
     label_condition,
-    load_ged_trial_metrics,
+    load_ged_condition_metrics,
     load_merged_trial_metrics,
 )
 
@@ -76,17 +79,17 @@ PANELS = [
         "x": "GammaFrequency",
         "y": "Vel2D_bl",
         "xlab": r"$\Delta$ Peak Gamma Frequency [Hz] (100% $-$ 25%)",
-        "ylab": r"$\Delta$ Fixational Eye Velocity [%] (100% $-$ 25%)",
-        "hypothesis": "x_pos_y_neg",
-        "title": "Gamma Frequency vs. Fixational Velocity",
+        "ylab": r"$\Delta$ Eye Velocity [%] (100% $-$ 25%)",
+        "hypothesis": "x_pos_y_pos",
+        "title": "Gamma Frequency vs. Eye Velocity",
     },
     {
         "x": "GammaPower",
         "y": "Vel2D_bl",
         "xlab": r"$\Delta$ Peak Gamma Power [dB] (100% $-$ 25%)",
-        "ylab": r"$\Delta$ Fixational Eye Velocity [%] (100% $-$ 25%)",
-        "hypothesis": "x_pos_y_neg",
-        "title": "Gamma Power vs. Fixational Velocity",
+        "ylab": r"$\Delta$ Eye Velocity [%] (100% $-$ 25%)",
+        "hypothesis": "x_pos_y_pos",
+        "title": "Gamma Power vs. Eye Velocity",
     },
 ]
 
@@ -303,8 +306,8 @@ def main() -> None:
         _rename_gaze_columns(load_merged_trial_metrics(merged_csv)),
         controls_dir,
     )
-    ged = label_condition(load_ged_trial_metrics(ged_mat))
-    # Keep GED trials to the same analysis cohort selected from merged metrics.
+    ged = label_condition(load_ged_condition_metrics(ged_mat))
+    # Keep GED subjects to the same analysis cohort selected from merged metrics.
     included_ids = set(merged["ID"].astype(str).unique())
     ged = ged.loc[ged["ID"].astype(str).isin(included_ids)].copy()
 
@@ -317,10 +320,18 @@ def main() -> None:
     ged_vars = ["GammaFrequency", "GammaPower"]
 
     gaze_trials = _trial_table_with_outliers(merged, gaze_vars)
-    ged_trials = _trial_table_with_outliers(ged, ged_vars)
-
     gaze_means = _subject_condition_means(gaze_trials, gaze_vars)
-    ged_means = _subject_condition_means(ged_trials, ged_vars)
+
+    # Condition-averaged spectral peaks are already one row per subject x condition.
+    ged_means = ged.loc[:, ["ID", "Condition", *ged_vars]].copy()
+    ged_means["ID"] = ged_means["ID"].astype(str)
+    for var in ged_vars:
+        dvar = ged_means.loc[ged_means[var].notna(), ["ID", "Condition", var]].copy()
+        if dvar.empty:
+            continue
+        dvar = iqr_outlier_filter(dvar, [var], by="Condition")
+        drop_idx = dvar.index[dvar[var].isna()]
+        ged_means.loc[drop_idx, var] = np.nan
 
     gaze_delta = _contrast_delta(gaze_means, gaze_vars)
     ged_delta = _contrast_delta(ged_means, ged_vars)

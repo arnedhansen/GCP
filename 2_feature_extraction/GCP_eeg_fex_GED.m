@@ -18,7 +18,9 @@
 %      within peak frequency +/- 5 Hz.
 %
 % Outputs
-%   - Peak frequency and power summaries (full, early, late windows).
+%   - Trial-level peak frequency/power cell arrays (trials_peaks, ...).
+%   - Condition-averaged spectral peaks (all_condition_peak_freq/power_*),
+%     used by subject-level master matrix, boxplots, and rainclouds.
 %   - Detectability, trial CV, peak power, and condition separation.
 %   - Subject diagnostics (component selection, rejection reasons,
 %     topographies, spectra), group summary figures.

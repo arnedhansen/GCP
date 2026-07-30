@@ -13,7 +13,7 @@ end
 % Keep all numeric variables, but exclude non baselined gaze measures
 var_names = T.Properties.VariableNames;
 gaze_roots = {'MSRate', 'BCEA', 'Vel2D', 'VelV', 'PupilSize', ...
-    'Blinks', 'Fixations', 'Saccades', 'GazeStdX', 'GazeStdY'};
+    'Blinks', 'Fixations', 'Saccades'};
 numeric_vars = {};
 
 for i = 1:numel(var_names)
