@@ -78,9 +78,9 @@ end
 fig5 = figureSpec('Figure5', 1, 2, [0 0 1512 982]);
 fig5.panels = {
     panelSpec(fullfile(gazeDir, 'velocity', 'GCP_gaze_velocity_Vel2D_TC_db.png'), ...
-        'A', 'Combined Eye Velocity Time Course', 1, [1 1]);
+        'A', 'Eye Velocity Time Course', 1, [1 1]);
     panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl.png'), ...
-        'B', 'Combined Eye Velocity', 2, [1 1])
+        'B', 'Eye Velocity', 2, [1 1])
     };
 fig5.panels{2}.imageScale = 0.90;
 for iPanel = 1:numel(fig5.panels)

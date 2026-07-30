@@ -17,14 +17,7 @@ nSubj = length(subjects);
 %% Parameters
 fsample = 500;
 merge_tol_ms = 20;
-
-% Gaussian smoothing kernel
-sigma_ms   = 50;
-sigma_samp = round(sigma_ms / (1000 / fsample));
-kHalf      = 3 * sigma_samp;
-x_kern     = -kHalf : kHalf;
-gKernel    = exp(-x_kern.^2 / (2 * sigma_samp^2));
-gKernel    = gKernel / sum(gKernel);
+saccade_blink_exclusion_ms = 100;
 
 % Time windows
 t_comp     = [-2.0 2.5];
@@ -59,11 +52,19 @@ eventDefs = struct( ...
     'name',      {'Saccades',    'Blinks',     'Fixations'}, ...
     'labels',    {{'L_saccade', 'R_saccade'}, {'L_blink', 'R_blink'}, {'L_fixation', 'R_fixation'}}, ...
     'yLabel',    {'Saccade Rate [dB]', 'Blink Rate [dB]', 'Fixation Rate [dB]'}, ...
-    'fileTag',   {'saccades',   'blinks',     'fixations'});
+    'fileTag',   {'saccades',   'blinks',     'fixations'}, ...
+    'sigma_ms',  {50, 140, 50});
 
 %% Process each event type
 for ev = 1:numel(eventDefs)
     fprintf('\n=== %s ===\n', eventDefs(ev).name);
+
+    % Event specific smoothing
+    sigma_samp = max(1, round(eventDefs(ev).sigma_ms / (1000 / fsample)));
+    kHalf      = 3 * sigma_samp;
+    x_kern     = -kHalf : kHalf;
+    gKernel    = exp(-x_kern.^2 / (2 * sigma_samp^2));
+    gKernel    = gKernel / sum(gKernel);
 
     subjRate = nan(nSubj, n_store, nConds);
 
@@ -101,6 +102,7 @@ for ev = 1:numel(eventDefs)
                 nTrialSamples = EEG_ep.pnts;
                 nTrialsBlock  = EEG_ep.trials;
                 merge_tol_samp = max(0, round(merge_tol_ms / 1000 * fsample));
+                sacc_blink_excl_samp = max(0, round(saccade_blink_exclusion_ms / 1000 * fsample));
 
                 if ~all(isfield(EEG_ep.event, {'type', 'latency', 'epoch', 'duration'}))
                     continue
@@ -124,6 +126,7 @@ for ev = 1:numel(eventDefs)
                 for lab = 1:numel(eventDefs(ev).labels)
                     isTarget = isTarget | strcmp(eventTypes, eventDefs(ev).labels{lab});
                 end
+                isBlink = strcmp(eventTypes, 'L_blink') | strcmp(eventTypes, 'R_blink');
 
                 for trl = 1:nTrialsBlock
                     onsetVec = zeros(1, nTrialSamples);
@@ -131,10 +134,18 @@ for ev = 1:numel(eventDefs)
 
                     trlMask = [EEG_ep.event.epoch] == trl;
                     trlEvents = find(isTarget & trlMask);
+                    trlBlinkEvents = find(isBlink & trlMask);
+                    trlBlinkLat = double([EEG_ep.event(trlBlinkEvents).latency]);
 
                     for ei = 1:numel(trlEvents)
                         latencyVal = double(EEG_ep.event(trlEvents(ei)).latency);
                         if ~isfinite(latencyVal), continue; end
+                        % Match feature extraction logic: remove saccades near blinks.
+                        if strcmp(eventDefs(ev).name, 'Saccades') && ~isempty(trlBlinkLat)
+                            if any(abs(latencyVal - trlBlinkLat) <= sacc_blink_excl_samp)
+                                continue
+                            end
+                        end
                         onsetTrial = mod(round(latencyVal) - 1, nTrialSamples) + 1;
                         onsetCandidates(end+1) = onsetTrial; %#ok<AGROW>
                     end

@@ -1,5 +1,5 @@
-%% GCP Fixational Eye Velocity Time Course
-% Loads saccade cleaned, percentage-change velocity time courses from
+%% GCP Eye Velocity Time Course
+% Loads percentage-change velocity time courses from
 % 2_feature_extraction/GCP_gaze_fex.m (velTS_cXX_bl_db).
 
 %% Setup
@@ -9,12 +9,12 @@ subjects = gcp_subject_inclusion(subjects, paths);
 addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 
 % Plot labels (three distinct velocity measures)
-velocityYLabels = {'Fixational Eye Velocity X [%]', ...
-    'Fixational Eye Velocity Y [%]', ...
-    'Fixational Eye Velocity [%]'};
+velocityYLabels = {'Eye Velocity X [%]', ...
+    'Eye Velocity Y [%]', ...
+    'Eye Velocity [%]'};
 channels      = {'VelH', 'VelV', 'Vel2D'};
-channeltitles = {'Horizontal Fixational Velocity', ...
-    'Vertical Fixational Velocity', 'Combined Fixational Velocity'};
+channeltitles = {'Horizontal Eye Velocity', ...
+    'Vertical Eye Velocity', 'Combined Eye Velocity'};
     labels        = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
 if numel(velocityYLabels) ~= numel(channels)
     error('Velocity y-labels must match number of channels.');
