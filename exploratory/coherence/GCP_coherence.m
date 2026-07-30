@@ -1,10 +1,10 @@
 %% GCP Oculo-Cortical Coherence (OCC) in the Gamma Band
 %
-% Computes magnitude-squared coherence between saccade-cleaned eye velocity
+% Computes magnitude-squared coherence between eye velocity
 % (velOCC) and occipital EEG across contrast conditions (25/50/75/100%).
 %
 % Method (following the SNF proposal):
-%   1. Load per-subject velOCC (saccade-zeroed, rectified) and EEG data.
+%   1. Load per-subject velOCC (rectified) and EEG data.
 %   2. Combine ET velocity and EEG channels into a single FieldTrip struct.
 %   3. Compute cross-spectral density (multitaper, dpss, 3 Hz smoothing).
 %   4. Derive magnitude-squared coherence between velocity and EEG channels.
