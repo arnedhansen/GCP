@@ -33,11 +33,11 @@ allSubjects = {}; % To store subject IDs
 impData = {};     % To store impedance data
 
 %% Loop through all .cnt files
-fprintf('Starting impedance extraction and visualisation...\n');
+fprintf('[CTRL IMPEDANCE] Starting impedance extraction and visualisation...\n');
 for i = 1%:length(cntFiles)
     % Get current file path
     filePath = cntFiles{i};
-    fprintf('Processing file: %s\n', filePath);
+    fprintf('[CTRL IMPEDANCE] Processing file: %s\n', filePath);
     
     % Extract subject ID from path
     parts = strsplit(filePath, filesep);
@@ -49,7 +49,7 @@ for i = 1%:length(cntFiles)
         [imps, offsetBefore, offsetAfter, imps_bipolar] = ...
             getImpsTEST(filePath, taskStartTrig, taskEndTrig);
     catch ME
-        fprintf('Error processing file %s: %s\n', filePath, ME.message);
+        fprintf('[CTRL IMPEDANCE] Error processing file %s: %s\n', filePath, ME.message);
         continue;
     end
 
@@ -90,7 +90,7 @@ for i = 1%:length(cntFiles)
 end
 
 %% Summary Output
-fprintf('Finished processing %d files.\n', length(cntFiles));
+fprintf('[CTRL IMPEDANCE] Finished processing %d files.\n', length(cntFiles));
 
 
 function [imps, offsetBefore, offsetAfter, imps_bipolar] = getImpsTEST(fullFileName, taskStartTrig, taskEndTrig)
@@ -150,7 +150,7 @@ try
     end
 catch ME
     % Display error message and continue execution
-    fprintf('Error processing file %s: %s\n', fullFileName, ME.message);
+    fprintf('[CTRL IMPEDANCE] Error processing file %s: %s\n', fullFileName, ME.message);
 end
 
 end

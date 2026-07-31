@@ -85,7 +85,7 @@ n_trials_stim = nan(nSub, nCond);
 n_trials_base = nan(nSub, nCond);
 valid_subj = false(nSub, 1);
 
-fprintf('Gaze pixel GED: %d subjects, map %d x %d (%d pixels)\n', ...
+fprintf('[VIZ GAZE HEATMAP GED] Gaze pixel GED: %d subjects, map %d x %d (%d pixels)\n', ...
     nSub, nX, nY, nPix);
 
 %% Subject loop
@@ -93,12 +93,12 @@ for subj = 1:nSub
     datapath = fullfile(pathFeat, subjects{subj}, 'gaze');
     etFile = fullfile(datapath, 'dataET.mat');
     if ~isfile(etFile)
-        fprintf('[skip] Subject %s: missing dataET\n', subjects{subj});
+        fprintf('[VIZ GAZE HEATMAP GED] skip Subject %s: missing dataET\n', subjects{subj});
         continue
     end
     T = load(etFile, condVars{:});
     clc
-    fprintf('[GED] Subject %s (%d/%d)\n', subjects{subj}, subj, nSub);
+    fprintf('[VIZ GAZE HEATMAP GED] Subject %s (%d/%d)\n', subjects{subj}, subj, nSub);
 
     % --- Pass 1: counts + support (no full map storage) ---
     supportAcc = zeros(nX, nY);
@@ -131,7 +131,7 @@ for subj = 1:nSub
     nStimAcc = sum(nPerStim);
     nBaseAcc = sum(nPerBase);
     if ~all(okCond) || nStimAcc < min_trials_cond || nBaseAcc < min_trials_cond
-        fprintf('[skip] Subject %s: insufficient trials in one or more conditions\n', ...
+        fprintf('[VIZ GAZE HEATMAP GED] skip Subject %s: insufficient trials in one or more conditions\n', ...
             subjects{subj});
         continue
     end
@@ -143,7 +143,7 @@ for subj = 1:nSub
     nSup = numel(pixIdx);
     n_support(subj) = nSup;
     if nSup < min_support_pix
-        fprintf('[skip] Subject %s: support too small (%d pixels)\n', ...
+        fprintf('[VIZ GAZE HEATMAP GED] skip Subject %s: support too small (%d pixels)\n', ...
             subjects{subj}, nSup);
         continue
     end
@@ -165,7 +165,7 @@ for subj = 1:nSub
             T.(condVars{c}), baselineWindow, baseDur, ...
             x_edges, y_edges, blink_win, screenH, smoothing_sigma, pixIdx);
         if nSt ~= nPerStim(c) || nBa ~= nPerBase(c)
-            fprintf('[skip] Subject %s: trial count mismatch on pass 2\n', subjects{subj});
+            fprintf('[VIZ GAZE HEATMAP GED] skip Subject %s: trial count mismatch on pass 2\n', subjects{subj});
             okCond(c) = false;
             break
         end
@@ -263,7 +263,7 @@ nKeep = numel(subjKeep);
 if nKeep < 2
     error('Fewer than 2 subjects with valid gaze pixel GED.');
 end
-fprintf('\nValid subjects: %d / %d\n', nKeep, nSub);
+fprintf('\n[VIZ GAZE HEATMAP GED] Valid subjects: %d / %d\n', nKeep, nSub);
 
 %% Group averages (sign-align Haufe to first valid subject)
 ref = squeeze(haufe_pix(subjKeep(1), :, :));
@@ -306,7 +306,7 @@ cond_ga = cond_ga / nKeep;
 scores = score_stim_cond(subjKeep, :);
 score_linear = scores * linearWeights(:);
 [~, p_lin, ~, stats_lin] = ttest(score_linear);
-fprintf('Linear contrast of GED stim scores: t(%d)=%.3f, p=%.4g, mean=%.4g\n', ...
+fprintf('[VIZ GAZE HEATMAP GED] Linear contrast of GED stim scores: t(%d)=%.3f, p=%.4g, mean=%.4g\n', ...
     stats_lin.df, stats_lin.tstat, p_lin, mean(score_linear));
 
 %% Figures
@@ -405,9 +405,9 @@ save(outMat, ...
     'smoothing_sigma', 'support_frac', 'n_pc_max', 'ged_reg', ...
     'x_centers', 'y_centers', 'nX', 'nY', ...
     '-v7.3');
-fprintf('Saved: %s\n', outMat);
-fprintf('Figures: %s\n', figDir);
-fprintf('DONE.\n');
+fprintf('[VIZ GAZE HEATMAP GED] Saved: %s\n', outMat);
+fprintf('[VIZ GAZE HEATMAP GED] Figures: %s\n', figDir);
+fprintf('[VIZ GAZE HEATMAP GED] DONE.\n');
 
 %% Local functions
 function [x, y] = cleanGazeTrial(trialMat, blink_win, screenH)

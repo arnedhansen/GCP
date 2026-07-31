@@ -16,8 +16,8 @@ boxplotDir = fullfile(paths.figures, 'stats', 'boxplots');
 gazeDir = fullfile(paths.figures, 'gaze');
 eegDir = fullfile(paths.figures, 'eeg');
 
-fprintf('Assembling GCP manuscript figures...\n');
-fprintf('Output directory: %s\n', outDir);
+fprintf('[VIZ MANUSCRIPT] Assembling GCP manuscript figures...\n');
+fprintf('[VIZ MANUSCRIPT] Output directory: %s\n', outDir);
 
 %% Figure 1: Contrast detection paradigm
 fig1 = figureSpec('Figure1', 1, 1, [0 0 1512 982]);
@@ -168,10 +168,10 @@ for iFig = 1:numel(figSpecs)
     spec = figSpecs{iFig};
     outPng = fullfile(outDir, ['GCP_manuscript_' spec.name '.png']);
     assembleManuscriptFigure(spec, outPng, exportDpi);
-    fprintf('Saved %s\n', outPng);
+    fprintf('[VIZ MANUSCRIPT] Saved %s\n', outPng);
 end
 
-fprintf('\nDone. Manuscript composites saved to:\n  %s\n', outDir);
+fprintf('\n[VIZ MANUSCRIPT] Done. Manuscript composites saved to:\n  %s\n', outDir);
 
 %% Local functions
 function spec = figureSpec(name, nrow, ncol, figSize)
@@ -206,7 +206,7 @@ for iPanel = 1:numel(spec.panels)
 end
 
 if ~isempty(missing)
-    fprintf('\nMissing panel files for %s:\n', spec.name);
+    fprintf('\n[VIZ MANUSCRIPT] Missing panel files for %s:\n', spec.name);
     for iMissing = 1:numel(missing)
         fprintf('  %s\n', missing{iMissing});
     end

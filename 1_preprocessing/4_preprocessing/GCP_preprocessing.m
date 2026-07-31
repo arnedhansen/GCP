@@ -17,6 +17,7 @@ epoch_window    = [-2 3.5];
 for subj = 1:length(subjects)
     clearvars -except subjects subj mergedPath paths ...
         baseline_window analysis_full analysis_early analysis_late eyelink_wins epoch_window
+    clc; fprintf('[PREP] Subject %s (%d/%d)\n', subjects{subj}, subj, length(subjects));
     datapath = fullfile(mergedPath, subjects{subj});
     cd(datapath)
 
@@ -30,10 +31,10 @@ for subj = 1:length(subjects)
             load(sprintf('%s_EEG_ET_GCP_block%d_merged.mat', subjects{subj}, block))
             alleeg{block} = EEG;
             clear EEG
-            fprintf('Subject GCP %.3s (%.3d/%.3d): Block %.1d loaded \n', subjects{subj}, subj, length(subjects), block)
+            fprintf('[PREP] Subject %s (%d/%d): Block %d loaded\n', subjects{subj}, subj, length(subjects), block)
         catch ME
             ME.message
-            disp(['ERROR loading Block ' num2str(block) '!'])
+            fprintf('[PREP] ERROR loading Block %d!\n', block)
         end
     end
 
@@ -68,7 +69,7 @@ for subj = 1:length(subjects)
                 data_c100{block} = eeglab2fieldtrip(EEG_c100, 'raw');
             catch ME
                 ME.message
-                disp(['ERROR segmenting Block ' num2str(block) '!'])
+                fprintf('[PREP] ERROR segmenting Block %d!\n', block)
             end
         end
 
@@ -90,7 +91,7 @@ for subj = 1:length(subjects)
                 data_c25{block}.trialinfo = zeros(numel(data_c25{block}.trial), 1) + 61;
             catch ME
                 ME.message
-                disp(['ERROR adding trialinfo (c25) in Block ' num2str(block) '!'])
+                fprintf('[PREP] ERROR adding trialinfo (c25) in Block %d!\n', block)
             end
         end
         for block = 1:numel(data_c50)
@@ -98,7 +99,7 @@ for subj = 1:length(subjects)
                 data_c50{block}.trialinfo = zeros(numel(data_c50{block}.trial), 1) + 62;
             catch ME
                 ME.message
-                disp(['ERROR adding trialinfo (c50) in Block ' num2str(block) '!'])
+                fprintf('[PREP] ERROR adding trialinfo (c50) in Block %d!\n', block)
             end
         end
         for block = 1:numel(data_c75)
@@ -106,7 +107,7 @@ for subj = 1:length(subjects)
                 data_c75{block}.trialinfo = zeros(numel(data_c75{block}.trial), 1) + 63;
             catch ME
                 ME.message
-                disp(['ERROR adding trialinfo (c75) in Block ' num2str(block) '!'])
+                fprintf('[PREP] ERROR adding trialinfo (c75) in Block %d!\n', block)
             end
         end
         for block = 1:numel(data_c100)
@@ -114,7 +115,7 @@ for subj = 1:length(subjects)
                 data_c100{block}.trialinfo = zeros(numel(data_c100{block}.trial), 1) + 64;
             catch ME
                 ME.message
-                disp(['ERROR adding trialinfo (c100) in Block ' num2str(block) '!'])
+                fprintf('[PREP] ERROR adding trialinfo (c100) in Block %d!\n', block)
             end
         end
 
@@ -262,9 +263,9 @@ for subj = 1:length(subjects)
 
     clc
     if subj == length(subjects)
-        disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. PREPROCESSING FINALIZED.'])
+        fprintf('[PREP] Subject %s (%d/%d) done. PREPROCESSING FINALIZED.\n', subjects{subj}, subj, length(subjects))
     else
-        disp(['Subject GCP ' num2str(subjects{subj})  ' (' num2str(subj) '/' num2str(length(subjects)) ') done. Loading next subject...'])
+        fprintf('[PREP] Subject %s (%d/%d) done. Loading next subject...\n', subjects{subj}, subj, length(subjects))
     end
 end
 

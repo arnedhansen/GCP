@@ -78,16 +78,16 @@ for subjects = 1 : length(subjectIDs)
                 end
                 save(fullfile(resultFolder, fileName), 'EEG', '-v7.3')
                 if strcmp(task, 'Resting_EEG.mat') == 1
-                    disp(['GCP' char(subjectID) ': Resting done' ])
+                    fprintf('[MERGE] Subject %s: Resting done\n', char(subjectID))
                 else
                     step = sprintf('%s', char(fileTaskName(3)), '_', char(fileTaskName(4)));
-                    disp(['GCP' char(subjectID) ': ' step ' done' ])
+                    fprintf('[MERGE] Subject %s: %s done\n', char(subjectID), step)
                 end
             end
         catch ME
-            fprintf('ERROR processing file %d: %s\n', files, ME.message);
+            fprintf('[MERGE] ERROR processing file %d: %s\n', files, ME.message);
         end
     end
 end
-disp('SYNCHRONIZATION COMPLETE')
+fprintf('[MERGE] SYNCHRONIZATION COMPLETE\n')
 toc

@@ -7,13 +7,15 @@ load(fullfile(paths.features, 'GCP_merged_data.mat'))
 T = struct2table(merged_data);
 
 if ismember('Include', T.Properties.VariableNames)
-    T = T(T.Include, :);
+    T = T(T.Include == 1, :);
 end
 
-% Keep all numeric variables, but exclude non baselined gaze measures
+% Keep all numeric variables, but exclude non baselined gaze measures.
+% Velocity: Vel2D only (drop axis components VelH/VelV and Baseline* scalars).
 var_names = T.Properties.VariableNames;
-gaze_roots = {'MSRate', 'BCEA', 'Vel2D', 'VelV', 'PupilSize', ...
+gaze_roots = {'MSRate', 'BCEA', 'Vel2D', 'PupilSize', ...
     'Blinks', 'Fixations', 'Saccades'};
+drop_roots = {'VelH', 'VelV', 'Baseline'};
 numeric_vars = {};
 
 for i = 1:numel(var_names)
@@ -27,6 +29,18 @@ for i = 1:numel(var_names)
     end
 
     vn_core = regexprep(vn, '^Gaze_', '');
+
+    drop_var = false;
+    for di = 1:numel(drop_roots)
+        if startsWith(vn_core, drop_roots{di})
+            drop_var = true;
+            break
+        end
+    end
+    if drop_var
+        continue
+    end
+
     is_gaze_metric = false;
     for gi = 1:numel(gaze_roots)
         if startsWith(vn_core, gaze_roots{gi})

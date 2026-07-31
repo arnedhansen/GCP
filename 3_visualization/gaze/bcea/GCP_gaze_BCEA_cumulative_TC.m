@@ -41,13 +41,13 @@ fontSize = 50;
 lineW = 4;
 
 %% Compute participant time courses
-fprintf('\n=== GCP BCEA time course (cumulative) ===\n');
-fprintf('Cumulative window: [%.2f, t] (starts before display)\n', cumulStart);
-fprintf('Display: %.2f to %.2f s; at t=-0.5 BCEA equals full baseline\n', ...
+fprintf('\n[VIZ GAZE BCEA TC] Cumulative time course\n');
+fprintf('[VIZ GAZE BCEA TC] Cumulative window: [%.2f, t] (starts before display)\n', cumulStart);
+fprintf('[VIZ GAZE BCEA TC] Display: %.2f to %.2f s; at t=-0.5 BCEA equals full baseline\n', ...
     displayWindow);
-fprintf('Baseline reference: %.2f to %.2f s\n', baselineWindow);
-fprintf('Minimum samples per estimate: %d\n', minValidSamples);
-fprintf('Outlier trials: MAD thresh=%.1f, abs |%%| cap=%.0f\n', ...
+fprintf('[VIZ GAZE BCEA TC] Baseline reference: %.2f to %.2f s\n', baselineWindow);
+fprintf('[VIZ GAZE BCEA TC] Minimum samples per estimate: %d\n', minValidSamples);
+fprintf('[VIZ GAZE BCEA TC] Outlier trials: MAD thresh=%.1f, abs |%%| cap=%.0f\n', ...
     outlierMadThresh, outlierAbsPct);
 
 tVec = [];
@@ -64,7 +64,7 @@ for subj = 1:nSubj
     if ~isfile(dataPath)
         dataPath = fullfile(gazePath, 'dataET');
     end
-    fprintf('Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
+    clc; fprintf('[VIZ GAZE BCEA TC] Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
     dat = load(dataPath, condVars{:});
 
     for c = 1:nCond
@@ -165,9 +165,9 @@ hold off
 outFigure = fullfile(figpath, 'GCP_gaze_BCEA_TC_db.png');
 exportgraphics(gcf, outFigure, 'Resolution', 600, 'BackgroundColor', 'white');
 
-fprintf('\nSaved figure: %s\n', outFigure);
-fprintf('Saved participant time courses: %s\n', outData);
-fprintf('Saved TC summaries for boxplots: %s\n', outSum);
+fprintf('\n[VIZ GAZE BCEA TC] Saved figure: %s\n', outFigure);
+fprintf('[VIZ GAZE BCEA TC] Saved participant time courses: %s\n', outData);
+fprintf('[VIZ GAZE BCEA TC] Saved TC summaries for boxplots: %s\n', outSum);
 fprintf('Median BCEA_bl summary (cumulative endpoint) by condition: %s\n', ...
     mat2str(median(BCEA_bl_summary, 1, 'omitnan'), 4));
 fprintf('Grand-mean at t=-0.5 by condition: %s\n', ...
@@ -176,9 +176,9 @@ fprintf('Valid participants at t=-0.5 by condition: %s\n', ...
     mat2str(squeeze(nValid(:, nearestTimeIndex(tVec, -0.5)))'));
 fprintf('Baseline BCEA medians [px^2]: %s\n', ...
     mat2str(median(baselineBCEA, 1, 'omitnan'), 5));
-fprintf('Outlier trials excluded (sum over subjects) by condition: %s\n', ...
+fprintf('[VIZ GAZE BCEA TC] Outlier trials excluded (sum over subjects) by condition: %s\n', ...
     mat2str(sum(nTrialsOutlier, 1, 'omitnan')));
-fprintf('=== GCP BCEA time course done ===\n\n');
+fprintf('[VIZ GAZE BCEA TC] Done.\n\n');
 
 %% Local functions
 function [tVec, bceaMean, bceaPctMean, baselineMean, nKeep, nOut] = ...

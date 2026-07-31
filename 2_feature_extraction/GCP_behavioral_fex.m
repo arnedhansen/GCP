@@ -12,6 +12,7 @@ behav_data = struct('ID', {}, 'Condition', {}, 'Accuracy', {}, 'ReactionTime', {
 
 %% Read data
 for subj = 1:length(subjects)
+    clc; fprintf('[BEHAV FEX] Subject %d / %d (%s)\n', subj, length(subjects), subjects{subj});
     datapath = fullfile(rawPath, subjects{subj});
     cd(datapath)
 
@@ -80,9 +81,10 @@ for subj = 1:length(subjects)
     save acc c25_acc c50_acc c75_acc c100_acc
     save rt c25_rt c50_rt c75_rt c100_rt
     clc
-    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' behavioral feature extraction done.'])
+    fprintf('[BEHAV FEX] Subject %d / %d (%s) done\n', subj, length(subjects), subjects{subj})
 
     % Append to the final structure array
     behav_data = [behav_data; subj_data_behav];
 end
 save(fullfile(paths.features, 'GCP_behavioral_matrix.mat'), 'behav_data')
+fprintf('[BEHAV FEX] Done. %d/%d subjects\n', length(subjects), length(subjects))

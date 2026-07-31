@@ -76,7 +76,7 @@ for ev = 1:numel(eventDefs)
 
             for block = 1:4
                 clc
-                fprintf('[GCP %s TC] Subject %d/%d (%s) Cond %s Block %d/4\n', ...
+                fprintf('[VIZ GAZE ETEVENTS] %s | Subject %d/%d (%s) Cond %s Block %d/4\n', ...
                     eventDefs(ev).name, subj, nSubj, subjects{subj}, condCodes{c}, block);
 
                 mergedFile = fullfile(subjMergedPath, ...
@@ -237,4 +237,4 @@ for ev = 1:numel(eventDefs)
     print(gcf, fullfile(outdir, sprintf('GCP_gaze_%s_rate_db_TC.png', eventDefs(ev).fileTag)), '-dpng', '-r600');
 end
 
-fprintf('\n=== All event TC figures saved to %s ===\n', outdir);
+fprintf('\n[VIZ GAZE ETEVENTS] All event TC figures saved to %s\n', outdir);

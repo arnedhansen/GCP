@@ -48,7 +48,7 @@ p_subj_mc        = nan(1, nSubj);
 
 %% Subject loop
 for subj = 1:nSubj
-    fprintf('Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
+    clc; fprintf('[EXPL COHERENCE POOLED] Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
 
     eeg_path = fullfile(paths.features, subjects{subj}, 'eeg', 'dataEEG.mat');
     if ~isfile(eeg_path)
@@ -202,7 +202,7 @@ for subj = 1:nSubj
     end
 end
 
-fprintf('Pooled coherence computation complete.\n');
+fprintf('[EXPL COHERENCE POOLED] Pooled coherence computation complete.\n');
 
 %% Grand-average occipital spectra
 valid_subj = find(~cellfun(@isempty, coh_spectra) & ~cellfun(@isempty, surr_occ_spectra));
@@ -433,10 +433,10 @@ save(fullfile(paths.data, 'features', 'GCP_OCC_coherence_pooled.mat'), ...
     'freq_axis', 'stat_coh', 'p_group_mc', 'p_stouffer', ...
     'coh_latency', 'foi_range', 'tapsmofrq', 'nSurrogate', 'nGroupPerm', '-v7.3');
 
-fprintf('Group MC (mean gamma OCC): p = %.4g\n', p_group_mc);
-fprintf('Stouffer combined subject MC: p = %.4g\n', p_stouffer);
-fprintf('All figures saved to: %s\n', fig_dir);
-fprintf('Data saved to: %s\n', fullfile(paths.data, 'features', 'GCP_OCC_coherence_pooled.mat'));
+fprintf('[EXPL COHERENCE POOLED] Group MC (mean gamma OCC): p = %.4g\n', p_group_mc);
+fprintf('[EXPL COHERENCE POOLED] Stouffer combined subject MC: p = %.4g\n', p_stouffer);
+fprintf('[EXPL COHERENCE POOLED] All figures saved to: %s\n', fig_dir);
+fprintf('[EXPL COHERENCE POOLED] Data saved to: %s\n', fullfile(paths.data, 'features', 'GCP_OCC_coherence_pooled.mat'));
 
 %% Local helpers
 function [idxEEG, idxVel] = local_match_by_sampleinfo(dataEEG, dataET, dataVel, subjLabel, condLabel)

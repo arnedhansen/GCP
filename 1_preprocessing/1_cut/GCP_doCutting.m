@@ -19,7 +19,7 @@ for f = 1 : size(d, 1)
     GCP_cutData(filePath) % Perform cutting
     id = strsplit(d(f).name, '_');
     ids{f} = id{1};
-    fprintf('Cutting of data for Subject GCP %.3s done', ids{f})
+    fprintf('[CUT] Subject %s done\n', ids{f})
 end
 
 %% Load and synchronize EEG & Eyelink
@@ -74,4 +74,4 @@ for id = 1 : length(ids)
         movefile(source,destination)
     end
 end
-disp('SYNCHRONIZATION COMPLETE')
+fprintf('[CUT] SYNCHRONIZATION COMPLETE\n')

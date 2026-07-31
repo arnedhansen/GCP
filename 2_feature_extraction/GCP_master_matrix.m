@@ -9,7 +9,7 @@
 %% Setup
 [subjects, paths] = setup('GCP', 0);
 features_root = paths.features;
-fprintf('Building subject-level merged matrix for %d subjects.\n', numel(subjects));
+fprintf('[MASTER MATRIX] Building subject-level merged matrix for %d subjects.\n', numel(subjects));
 
 %% Load subject-level behavioral data
 tbl_behav = table();
@@ -75,8 +75,8 @@ n_gaze = height(tbl_gaze);
 n_ged = height(tbl_ged);
 n_merge = height(tbl_merge);
 
-fprintf('Rows loaded: behavior=%d, gaze=%d, ged=%d\n', n_behav, n_gaze, n_ged);
-fprintf('Rows merged: %d\n', n_merge);
+fprintf('[MASTER MATRIX] Rows loaded: behavior=%d, gaze=%d, ged=%d\n', n_behav, n_gaze, n_ged);
+fprintf('[MASTER MATRIX] Rows merged: %d\n', n_merge);
 
 %% Save outputs
 merged_table = tbl_merge; %#ok<NASGU>
@@ -88,7 +88,7 @@ save(fullfile(features_root, 'GCP_merged_data.mat'), ...
     'merged_data', 'merged_table', 'GCP_merged_data', 'GCP_merged_table');
 writetable(tbl_merge, fullfile(features_root, 'GCP_merged_data.csv'));
 
-fprintf('Saved:\n');
+fprintf('[MASTER MATRIX] Saved:\n');
 fprintf('  %s\n', fullfile(features_root, 'GCP_merged_data.mat'));
 fprintf('  %s\n', fullfile(features_root, 'GCP_merged_data.csv'));
 

@@ -63,7 +63,7 @@ ged_filter_meta = cell(1, nSubj);
 
 %% Subject loop
 for subj = 1:nSubj
-    fprintf('GED-TFR Subject %s (%d/%d)\n', subjects{subj}, subj, nSubj);
+    clc; fprintf('[GED TFR] Subject %s (%d/%d)\n', subjects{subj}, subj, nSubj);
 
     % Load subject EEG
     subj_eeg_path = fullfile(paths.features, subjects{subj}, 'eeg', 'dataEEG.mat');
@@ -164,4 +164,4 @@ save(out_path, ...
     'tfr_foi', 'tfr_toi', 'tfr_win_sec', 'tfr_tapsmofrq', ...
     '-v7.3');
 
-fprintf('Saved GED-TFR data to: %s\n', out_path);
+fprintf('[GED TFR] Saved GED-TFR data to: %s\n', out_path);

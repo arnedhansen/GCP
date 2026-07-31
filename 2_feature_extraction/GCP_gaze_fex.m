@@ -41,8 +41,7 @@ clc
 for subj = 1:numel(subjects)
 
     % Load preprocessed ET data
-    clc
-    fprintf('Loading Subject %d/%d...\n', subj, numel(subjects));
+    clc; fprintf('[GAZE FEX] Subject %d / %d (%s)\n', subj, numel(subjects), subjects{subj});
     datapath = fullfile(paths.features, subjects{subj}, 'gaze');
     cd(datapath)
     load(fullfile(datapath,'dataET'));
@@ -962,7 +961,7 @@ save(fullfile(paths.features, 'GCP_gaze_raw.mat'), 'gaze_x_c25','gaze_y_c25','ga
 save(fullfile(paths.features, 'GCP_gaze_matrix.mat'), 'gaze_data');
 save_gaze_window_summaries(paths.features, subjects, gaze_data);
 clc;
-fprintf('[GCP] Gaze Fex done! %d/%d Subjects\n', subj, numel(subjects));
+fprintf('[GAZE FEX] Done. %d/%d subjects\n', subj, numel(subjects));
 
 
 function [fullV, earlyV, lateV] = tc_window_means(avg, t, winFull, winEarly, winLate)
@@ -1056,7 +1055,7 @@ end
 
 outPath = fullfile(featuresRoot, 'GCP_gaze_window_summaries.mat');
 save(outPath, '-struct', 'out');
-fprintf('Saved %s\n', outPath);
+fprintf('[GAZE FEX] Saved %s\n', outPath);
 end
 
 function db = compute_db_baseline(stim, baseline)

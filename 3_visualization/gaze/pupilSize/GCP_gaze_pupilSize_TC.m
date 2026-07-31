@@ -39,7 +39,7 @@ alltlk100et = cell(1, numel(subjects));
 
 for subj = 1:numel(subjects)
     datapath = fullfile(paths.features, subjects{subj}, 'gaze');
-    disp(['[GCP Pupil Size] Loading Subject ', num2str(subjects{subj})])
+    clc; fprintf('[VIZ GAZE PUPIL] Subject %d/%d (%s)\n', subj, numel(subjects), subjects{subj})
     dat = load(fullfile(datapath, 'gaze_pupil_timeseries'));
     alltlk25et{subj}  = dat.pupTS_c25_bl_db;
     alltlk50et{subj}  = dat.pupTS_c50_bl_db;

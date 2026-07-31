@@ -38,7 +38,7 @@ alltlk100et = cell(1, numel(subjects));
 
 for subj = 1:numel(subjects)
     datapath = fullfile(paths.features, subjects{subj}, 'gaze');
-    disp(['[GCP Eye Velocity] Loading Subject ', num2str(subjects{subj})])
+    clc; fprintf('[VIZ GAZE VELOCITY] Subject %d/%d (%s)\n', subj, numel(subjects), subjects{subj})
     dat = load(fullfile(datapath, 'gaze_velocity_timeseries'));
     alltlk25et{subj}  = dat.velTS_c25_bl_db;
     alltlk50et{subj}  = dat.velTS_c50_bl_db;

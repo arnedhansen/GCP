@@ -46,8 +46,7 @@ rateSupportAll = cell(nCond, nSub);
 for subj = 1:nSub
     datapath = fullfile(path, subjects{subj}, 'gaze');
     T = load(fullfile(datapath, 'dataET'), condVars{:});
-    clc
-    disp(upper(['Loading ET data for subject ' num2str(subj) '/' num2str(nSub) '...']))
+    clc; fprintf('[VIZ GAZE HEATMAP CBPT] Subject %d/%d (%s)\n', subj, nSub, subjects{subj})
 
     for c = 1:nCond
         hmStim = buildGazeHeatmap(T.(condVars{c}), stimWindow, ...

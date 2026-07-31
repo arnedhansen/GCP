@@ -29,8 +29,8 @@ startup
 subjects = gcp_subject_inclusion(subjects, paths);
 
 nSubj = length(subjects);
-fprintf('Subjects (N=%d, GED cohort): %s\n', nSubj, strjoin(subjects, ', '));
-fprintf('Outlier trials rejected per condition (IQR, 1.5x; matches rainclouds).\n');
+fprintf('[STATS HYP TRIALS] Subjects (N=%d, GED cohort): %s\n', nSubj, strjoin(subjects, ', '));
+fprintf('[STATS HYP TRIALS] Outlier trials rejected per condition (IQR, 1.5x; matches rainclouds).\n');
 
 condLabels    = {'25%', '50%', '75%', '100%'};
 contrast_vals = [25, 50, 75, 100];
@@ -45,10 +45,10 @@ merged_csv = fullfile(data_dir, 'GCP_merged_data_trials.csv');
 merged_mat = fullfile(data_dir, 'GCP_merged_data_trials.mat');
 
 if isfile(merged_csv)
-    fprintf('Loading merged trial table:\n  %s\n', merged_csv);
+    fprintf('[STATS HYP TRIALS] Loading merged trial table:\n  %s\n', merged_csv);
     T = readtable(merged_csv);
 elseif isfile(merged_mat)
-    fprintf('Loading merged trial MAT:\n  %s\n', merged_mat);
+    fprintf('[STATS HYP TRIALS] Loading merged trial MAT:\n  %s\n', merged_mat);
     S = load(merged_mat);
     if isfield(S, 'GCP_merged_table_trials')
         T = S.GCP_merged_table_trials;
@@ -59,7 +59,7 @@ elseif isfile(merged_mat)
             'No expected merged variable in %s', merged_mat);
     end
 else
-    fprintf('Merged table missing; building trial vectors from gaze + GED files.\n');
+    fprintf('[STATS HYP TRIALS] Merged table missing; building trial vectors from gaze + GED files.\n');
     T = build_trial_table_from_sources(subjects, paths, data_dir);
 end
 
@@ -308,10 +308,10 @@ text(0.05, 0.55, txt, 'FontSize', 12, 'VerticalAlignment', 'middle', ...
 exportgraphics(fig6, fullfile(fig_dir, 'GCP_hypotheses_summary_trials.png'), 'Resolution', 600);
 
 %% Done
-fprintf('\n=== GCP Trial-Level Hypothesis Testing Complete ===\n');
-fprintf('Figures saved to:\n  %s\n', fig_dir);
-fprintf('LME table saved to:\n  %s\n', fullfile(data_dir, 'GCP_hypotheses_trials_lme.csv'));
-fprintf('Trial rows: %d | Subjects: %d\n', height(T), nSubj);
+fprintf('\n[STATS HYP TRIALS] Trial-Level Hypothesis Testing Complete\n');
+fprintf('[STATS HYP TRIALS] Figures saved to:\n  %s\n', fig_dir);
+fprintf('[STATS HYP TRIALS] LME table saved to:\n  %s\n', fullfile(data_dir, 'GCP_hypotheses_trials_lme.csv'));
+fprintf('[STATS HYP TRIALS] Trial rows: %d | Subjects: %d\n', height(T), nSubj);
 
 %% HELPER FUNCTIONS
 

@@ -38,7 +38,7 @@ for c = 1:nCond
             end
         end
     end
-    fprintf('Condition %s: %d subjects with GED TFR\n', dat.condLabels{c}, numel(tfr_all{c}));
+    fprintf('[VIZ EEG ERSD] Condition %s: %d subjects with GED TFR\n', dat.condLabels{c}, numel(tfr_all{c}));
 end
 
 cfg = [];

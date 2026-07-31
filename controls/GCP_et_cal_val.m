@@ -36,7 +36,7 @@ for subj = 1:length(subjects)
         % Increment file counter
         fileCounter = fileCounter + 1;
     end
-    disp(['Subject ' num2str(subjects{subj}) ' loaded.'])
+    fprintf('[CTRL ET CAL] Subject %s loaded.\n', subjects{subj})
 end
 
 %% VISUALIZE for each subject
@@ -97,7 +97,7 @@ for subjIdx = 1:numSubjects
         set(gcf, 'PaperPositionMode', 'auto');
         print(gcf, saveName, '-dpng', '-r600');
     catch
-        disp(['Could not create VALIDATION overview for subject ' num2str(subjects{subjIdx})])
+        fprintf('[CTRL ET CAL] Could not create VALIDATION overview for subject %s\n', subjects{subjIdx})
     end
 end
 

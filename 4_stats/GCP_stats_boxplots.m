@@ -21,7 +21,7 @@ startup
 [subjects, paths, colors, ~] = setup('GCP', 0);
 subjects = gcp_subject_inclusion(subjects, paths);
 nSubj = numel(subjects);
-fprintf('Included GED cohort: N = %d (%s)\n', nSubj, strjoin(subjects, ', '));
+fprintf('[STATS BOX] Included GED cohort: N = %d (%s)\n', nSubj, strjoin(subjects, ', '));
 
 nCond = 4;
 xtickLabs = {'25%', '50%', '75%', '100%'};
@@ -221,11 +221,11 @@ for iMetric = 1:size(plotSpecs, 1)
         drawnow;
         set(gcf, 'PaperPositionMode', 'auto');
         print(gcf, outPath, '-dpng', '-r600');
-        fprintf('Saved %s\n', outPath);
+        fprintf('[STATS BOX] Saved %s\n', outPath);
     end
 end
 
-fprintf('\nDone. Boxplots in:\n  %s\n', out_dir);
+fprintf('\n[STATS BOX] Done. Boxplots in:\n  %s\n', out_dir);
 
 %% Local functions
 function idx = match_subjects(allSubjects, keepSubjects)

@@ -15,7 +15,7 @@ for subj = 1:length(subjects)
     tfr75{subj}  = tfr_c75_fooof_bl;
     tfr100{subj} = tfr_c100_fooof_bl;
 
-    disp(['Subject ' num2str(subj) '/' num2str(length(subjects)) ' TFR loaded.'])
+    clc; fprintf('[VIZ EEG TFR FOOOF] Subject %d/%d (%s) loaded\n', subj, length(subjects), subjects{subj})
 end
 
 % Compute grand average

@@ -75,11 +75,11 @@ subject_summary = nan(n_subjects, n_conditions, n_variants);
 common_display_time = [];
 
 %% Detect gaze shifts and construct subject time courses
-fprintf('\n=== van Ede gaze-shift detection ===\n');
+fprintf('\n[VIZ GAZE MS VANEDE] Gaze-shift detection\n');
 
 for subject_index = 1:n_subjects
     subject_id = subjects{subject_index};
-    fprintf('Subject %d/%d (%s)\n', subject_index, n_subjects, subject_id);
+    clc; fprintf('[VIZ GAZE MS VANEDE] Subject %d/%d (%s)\n', subject_index, n_subjects, subject_id);
 
     input_file = fullfile(datapath, subject_id, 'gaze', 'dataET.mat');
     if ~isfile(input_file)
@@ -363,4 +363,4 @@ save(summary_file, 'subjects', 'condition_names', 'condition_labels', ...
     'common_display_time', 'detector_cfg', 'rate_window_ms', ...
     'minimum_baseline_rate_hz');
 
-fprintf('Saved all four van Ede analysis variants.\n');
+fprintf('[VIZ GAZE MS VANEDE] Saved all four van Ede analysis variants.\n');

@@ -39,14 +39,14 @@ condLabels = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast
 nConds     = length(condFields);
 
 %% Process all conditions
-fprintf('\n=== Processing GCP Contrast Conditions ===\n');
+fprintf('\n[VIZ GAZE MS] Processing contrast conditions\n');
 
 % Store per-subject, per-condition display traces
 subjCurves = cell(nSubj, nConds);
 t_vec = [];
 
 for subj = 1:nSubj
-    fprintf('  Subject %d/%d (%s)\n', subj, nSubj, subjects{subj});
+    clc; fprintf('[VIZ GAZE MS] Subject %d/%d (%s)\n', subj, nSubj, subjects{subj});
     spath = fullfile(datapath, subjects{subj}, 'gaze');
 
     % Load already processed microsaccade time courses from feature extraction

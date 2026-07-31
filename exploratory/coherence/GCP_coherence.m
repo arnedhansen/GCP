@@ -48,7 +48,7 @@ coh_gamma_mean = nan(nCond, nSubj);
 
 %% Subject loop
 for subj = 1:nSubj
-    fprintf('Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
+    clc; fprintf('[EXPL COHERENCE] Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
 
     % Load EEG
     eeg_path = fullfile(paths.features, subjects{subj}, 'eeg', 'dataEEG.mat');
@@ -155,7 +155,7 @@ for subj = 1:nSubj
     end
 end
 
-fprintf('Coherence computation complete.\n');
+fprintf('[EXPL COHERENCE] Coherence computation complete.\n');
 
 %% Grand-average coherence spectra
 % Compute mean coherence spectrum across subjects for occipital channels
@@ -420,5 +420,5 @@ save(fullfile(paths.data, 'features', 'GCP_OCC_coherence.mat'), ...
     'ga_coh_spectra', 'ga_coh_sem', 'freq_axis', ...
     'statF_coh', 'coh_latency', 'foi_range', 'tapsmofrq', '-v7.3');
 
-fprintf('All figures saved to: %s\n', fig_dir);
-fprintf('Data saved to: %s\n', fullfile(paths.data, 'features', 'GCP_OCC_coherence.mat'));
+fprintf('[EXPL COHERENCE] All figures saved to: %s\n', fig_dir);
+fprintf('[EXPL COHERENCE] Data saved to: %s\n', fullfile(paths.data, 'features', 'GCP_OCC_coherence.mat'));

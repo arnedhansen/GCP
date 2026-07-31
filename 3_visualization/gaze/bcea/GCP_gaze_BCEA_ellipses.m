@@ -1,17 +1,17 @@
 %% GCP Gaze BCEA Ellipses
 % Computes one gaze dispersion estimate per participant and condition.
-% The screen plot shows group mean within participant covariance ellipses
-% at exactly 2 SD and 3 SD. BCEA95 uses the same 95% formula as
-% GCP_gaze_fex.m.
+% The screen plot shows the group mean BCEA95 ellipse only
+% (Mahalanobis radius sqrt(2*k) with k = 2.291, ~2.14 SD; not 2 SD or 3 SD),
+% on full screen coordinates, with a textbox of BCEA95 areas.
+% Same formula as GCP_gaze_fex.m; values are also saved for LMMs.
 
 %% Setup
 startup
-[subjects, paths, colors, ~] = setup('GCP');
+[subjects, paths, colors, ~] = setup('GCP', 0);
 subjects = gcp_subject_inclusion(subjects, paths);
-
 figpath = fullfile(paths.figures, 'gaze', 'bcea');
-if ~isfolder(figpath), mkdir(figpath); end
 
+%% Settings
 condVars = {'dataET_c25', 'dataET_c50', 'dataET_c75', 'dataET_c100'};
 condValues = [25 50 75 100];
 condLabels = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
@@ -26,7 +26,7 @@ blinkWin = 25;
 bceaK95 = 2.291;
 
 fontSize = 40;
-lineW = 4;
+lineW = 2;
 
 %% Participant and condition estimates
 centroidStim = nan(nSubj, nCond, 2);
@@ -36,10 +36,10 @@ bceaBase = nan(nSubj, nCond);
 nValidStim = zeros(nSubj, nCond);
 nValidBase = zeros(nSubj, nCond);
 
-fprintf('\n=== GCP BCEA participant and condition estimates ===\n');
-fprintf('Stimulus window: %.2f to %.2f s\n', stimWindow);
-fprintf('Baseline window: %.2f to %.2f s\n', baselineWindow);
-fprintf('BCEA95 formula: 2 x %.3f x pi x sqrt(det(covariance))\n', bceaK95);
+fprintf('\n[VIZ GAZE BCEA] Participant and condition estimates\n');
+fprintf('[VIZ GAZE BCEA] Stimulus window: %.2f to %.2f s\n', stimWindow);
+fprintf('[VIZ GAZE BCEA] Baseline window: %.2f to %.2f s\n', baselineWindow);
+fprintf('[VIZ GAZE BCEA] BCEA95 formula: 2 x %.3f x pi x sqrt(det(covariance))\n', bceaK95);
 
 for subj = 1:nSubj
     gazePath = fullfile(paths.features, subjects{subj}, 'gaze');
@@ -47,7 +47,7 @@ for subj = 1:nSubj
     if ~isfile(dataPath)
         dataPath = fullfile(gazePath, 'dataET');
     end
-    fprintf('Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
+    clc; fprintf('[VIZ GAZE BCEA] Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
     dat = load(dataPath, condVars{:});
 
     for c = 1:nCond
@@ -120,9 +120,12 @@ writetable(bceaTable, csvPath);
 save(matPath, 'bceaTable', 'bceaStim', 'bceaBase', 'BCEA_bl', ...
     'centroidStim', 'covStim', 'subjects', 'condValues');
 
-%% Group mean within participant ellipses on screen coordinates
+%% Group mean within participant BCEA95 ellipses on screen coordinates
+% Area = 2*k*pi*sqrt(det(cov)) equals pi*c^2*sqrt(det(cov)) with c = sqrt(2*k).
+bceaRadius = sqrt(2 * bceaK95);  % ~2.14 SD for k = 2.291
 groupCentroid = nan(nCond, 2);
 groupCov = nan(2, 2, nCond);
+areaBCEA95 = nan(nCond, 1);
 
 for c = 1:nCond
     validSubj = squeeze(all(isfinite(covStim(:, :, :, c)), [1 2]));
@@ -131,6 +134,7 @@ for c = 1:nCond
     end
     groupCentroid(c, :) = squeeze(mean(centroidStim(validSubj, c, :), 1, 'omitnan'));
     groupCov(:, :, c) = mean(covStim(:, :, validSubj, c), 3, 'omitnan');
+    areaBCEA95(c) = 2 * bceaK95 * pi * sqrt(max(det(groupCov(:, :, c)), 0));
 end
 
 close all
@@ -142,18 +146,13 @@ unitCircle = [cos(theta); sin(theta)];
 for c = 1:nCond
     [vectors, values] = eig(groupCov(:, :, c));
     axisTransform = vectors * sqrt(max(values, 0));
+    ellipse95 = groupCentroid(c, :)' + bceaRadius * axisTransform * unitCircle;
 
-    ellipse2 = groupCentroid(c, :)' + 2 * axisTransform * unitCircle;
-    ellipse3 = groupCentroid(c, :)' + 3 * axisTransform * unitCircle;
-
-    patch(ellipse3(1, :), ellipse3(2, :), colors(c, :), ...
-        'FaceAlpha', 0.035, 'EdgeColor', colors(c, :), ...
-        'LineStyle', ':', 'LineWidth', lineW, 'HandleVisibility', 'off');
-    patch(ellipse2(1, :), ellipse2(2, :), colors(c, :), ...
+    patch(ellipse95(1, :), ellipse95(2, :), colors(c, :), ...
         'FaceAlpha', 0.125, 'EdgeColor', colors(c, :), ...
-        'LineStyle', '-', 'LineWidth', lineW, 'HandleVisibility', 'off');
+        'LineStyle', '--', 'LineWidth', lineW, 'HandleVisibility', 'off');
     plot(groupCentroid(c, 1), groupCentroid(c, 2), 'o', ...
-        'MarkerSize', 10, 'MarkerFaceColor', colors(c, :), ...
+        'MarkerSize', 8, 'MarkerFaceColor', colors(c, :), ...
         'MarkerEdgeColor', 'w', 'HandleVisibility', 'off');
 end
 
@@ -166,30 +165,48 @@ for c = 1:nCond
         'FaceAlpha', 0.25, 'EdgeColor', colors(c, :), 'LineWidth', 1.5);
 end
 
-xlim([0 screenW]);
-ylim([0 screenH]);
-xticks(0:200:800);
-yticks(0:150:600);
 axis equal
+pbaspect([4 3 1]);
+xlim([300 500])
+ylim([225 375])
+%xlim([0 screenW]);
+%ylim([0 screenH]);
+xline(400, '--', 'LineWidth', 0.25)
+yline(300, '--', 'LineWidth', 0.25)
+axis manual
+%xticks(0:200:800);
+%yticks(0:150:600);
 box off
 set(gca, 'FontSize', fontSize);
 xlabel('Screen Width [px]', 'FontSize', fontSize);
 ylabel('Screen Height [px]', 'FontSize', fontSize);
 legend(conditionHandles, condLabels, 'Location', 'northeast', ...
-    'FontSize', fontSize * 0.65, 'Box', 'off');
+    'FontSize', fontSize * 0.55, 'Box', 'off');
 
-outFigure = fullfile(figpath, 'GCP_gaze_BCEA_ellipses_2SD_3SD.png');
+areaLines = cell(nCond + 1, 1);
+areaLines{1} = 'BCEA95 [px^2]';
+for c = 1:nCond
+    areaLines{c + 1} = sprintf('%d%%: %.0f', condValues(c), areaBCEA95(c));
+end
+% annotation('textbox', [0.5 0.5 0.7 0.7], 'String', areaLines, ...
+%     'FontName', 'FixedWidth', 'FontSize', fontSize * 0.45, ...
+%     'EdgeColor', 'k', 'LineWidth', 1.2, 'BackgroundColor', 'w', ...
+%     'Margin', 10, 'VerticalAlignment', 'middle', 'FitBoxToText', 'on');
+
+outFigure = fullfile(figpath, 'GCP_gaze_BCEA_ellipses.png');
 exportgraphics(gcf, outFigure, 'Resolution', 600, 'BackgroundColor', 'white');
 
-fprintf('\nSaved figure: %s\n', outFigure);
-fprintf('Saved LMM table: %s\n', csvPath);
-fprintf('Valid participant estimates by condition: %s\n', ...
+fprintf('\n[VIZ GAZE BCEA] Saved figure: %s\n', outFigure);
+fprintf('[VIZ GAZE BCEA] Saved LMM table: %s\n', csvPath);
+fprintf('[VIZ GAZE BCEA] Valid participant estimates by condition: %s\n', ...
     mat2str(sum(isfinite(bceaStim), 1)));
-fprintf('Median BCEA95 by condition [px^2]: %s\n', ...
+fprintf('[VIZ GAZE BCEA] BCEA95 Mahalanobis radius: %.3f SD (neither 2 nor 3)\n', bceaRadius);
+fprintf('[VIZ GAZE BCEA] Group BCEA95 areas [px^2]: %s\n', mat2str(areaBCEA95', 5));
+fprintf('[VIZ GAZE BCEA] Median BCEA95 by condition [px^2]: %s\n', ...
     mat2str(median(bceaStim, 1, 'omitnan'), 5));
-fprintf('Median BCEA_bl by condition [dB]: %s\n', ...
+fprintf('[VIZ GAZE BCEA] Median BCEA_bl by condition [dB]: %s\n', ...
     mat2str(median(BCEA_bl, 1, 'omitnan'), 4));
-fprintf('=== GCP BCEA done ===\n\n');
+fprintf('[VIZ GAZE BCEA] Done.\n\n');
 
 %% Local functions
 function [centroid, covariance, nValid] = conditionMoments(dataET, timeWindow, screenW, screenH, blinkWin)
