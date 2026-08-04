@@ -1,9 +1,7 @@
 %% GCP Gaze BCEA Ellipses
 % Computes one gaze dispersion estimate per participant and condition.
-% The screen plot shows the group mean BCEA95 ellipse only
-% (Mahalanobis radius sqrt(2*k) with k = 2.291, ~2.14 SD; not 2 SD or 3 SD),
-% on full screen coordinates, with a textbox of BCEA95 areas.
-% Same formula as GCP_gaze_fex.m; values are also saved for LMMs.
+% Plot shows the group mean BCEA95 ellipse
+% (Mahalanobis radius sqrt(2*k) with k = 2.291, ~2.14 SD)
 
 %% Setup
 startup
@@ -70,10 +68,10 @@ for subj = 1:nSubj
     end
 end
 
-BCEA_bl = 10 * log10(bceaStim ./ bceaBase);
+BCEA_bl = 100 * (bceaStim - bceaBase) ./ bceaBase;
 BCEA_bl(~isfinite(BCEA_bl) | bceaStim <= 0 | bceaBase <= 0) = NaN;
 
-%% Save long format data for LMMs
+%% Save BCEA data
 nRows = nSubj * nCond;
 Subject = cell(nRows, 1);
 Condition = nan(nRows, 1);
@@ -82,11 +80,14 @@ BaselineBCEA = nan(nRows, 1);
 BCEA_bl_long = nan(nRows, 1);
 CentroidX = nan(nRows, 1);
 CentroidY = nan(nRows, 1);
+BCEA_Direction = nan(nRows, 1);
 SDX = nan(nRows, 1);
 SDY = nan(nRows, 1);
 RhoXY = nan(nRows, 1);
 ValidSamples = nan(nRows, 1);
 BaselineValidSamples = nan(nRows, 1);
+
+fixXY = [400 300];
 
 row = 0;
 for subj = 1:nSubj
@@ -99,6 +100,10 @@ for subj = 1:nSubj
         BCEA_bl_long(row) = BCEA_bl(subj, c);
         CentroidX(row) = centroidStim(subj, c, 1);
         CentroidY(row) = centroidStim(subj, c, 2);
+        if all(isfinite([CentroidX(row) CentroidY(row)]))
+            BCEA_Direction(row) = atan2( ...
+                CentroidY(row) - fixXY(2), CentroidX(row) - fixXY(1)) * (180 / pi);
+        end
         thisCov = covStim(:, :, subj, c);
         SDX(row) = sqrt(thisCov(1, 1));
         SDY(row) = sqrt(thisCov(2, 2));
@@ -109,9 +114,9 @@ for subj = 1:nSubj
 end
 
 bceaTable = table(Subject, Condition, BCEA, BaselineBCEA, BCEA_bl_long, ...
-    CentroidX, CentroidY, SDX, SDY, RhoXY, ValidSamples, BaselineValidSamples, ...
+    CentroidX, CentroidY, BCEA_Direction, SDX, SDY, RhoXY, ValidSamples, BaselineValidSamples, ...
     'VariableNames', {'Subject', 'Condition', 'BCEA', 'BaselineBCEA', 'BCEA_bl', ...
-    'CentroidX', 'CentroidY', 'SDX', 'SDY', 'RhoXY', ...
+    'CentroidX', 'CentroidY', 'BCEA_Direction', 'SDX', 'SDY', 'RhoXY', ...
     'ValidSamples', 'BaselineValidSamples'});
 
 csvPath = fullfile(paths.features, 'GCP_gaze_BCEA_subject_condition.csv');
@@ -122,7 +127,7 @@ save(matPath, 'bceaTable', 'bceaStim', 'bceaBase', 'BCEA_bl', ...
 
 %% Group mean within participant BCEA95 ellipses on screen coordinates
 % Area = 2*k*pi*sqrt(det(cov)) equals pi*c^2*sqrt(det(cov)) with c = sqrt(2*k).
-bceaRadius = sqrt(2 * bceaK95);  % ~2.14 SD for k = 2.291
+bceaRadius = sqrt(2 * bceaK95);  % ~2.14 SD for k = 2.291 (Mahalanobis radius)
 groupCentroid = nan(nCond, 2);
 groupCov = nan(2, 2, nCond);
 areaBCEA95 = nan(nCond, 1);
@@ -152,7 +157,7 @@ for c = 1:nCond
         'FaceAlpha', 0.125, 'EdgeColor', colors(c, :), ...
         'LineStyle', '--', 'LineWidth', lineW, 'HandleVisibility', 'off');
     plot(groupCentroid(c, 1), groupCentroid(c, 2), 'o', ...
-        'MarkerSize', 8, 'MarkerFaceColor', colors(c, :), ...
+        'MarkerSize', 12, 'MarkerFaceColor', colors(c, :), ...
         'MarkerEdgeColor', 'w', 'HandleVisibility', 'off');
 end
 
@@ -204,7 +209,7 @@ fprintf('[VIZ GAZE BCEA] BCEA95 Mahalanobis radius: %.3f SD (neither 2 nor 3)\n'
 fprintf('[VIZ GAZE BCEA] Group BCEA95 areas [px^2]: %s\n', mat2str(areaBCEA95', 5));
 fprintf('[VIZ GAZE BCEA] Median BCEA95 by condition [px^2]: %s\n', ...
     mat2str(median(bceaStim, 1, 'omitnan'), 5));
-fprintf('[VIZ GAZE BCEA] Median BCEA_bl by condition [dB]: %s\n', ...
+fprintf('[VIZ GAZE BCEA] Median BCEA_bl by condition [%%]: %s\n', ...
     mat2str(median(BCEA_bl, 1, 'omitnan'), 4));
 fprintf('[VIZ GAZE BCEA] Done.\n\n');
 

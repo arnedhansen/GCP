@@ -52,7 +52,7 @@ fprintf('[VIZ GAZE BCEA TC] Outlier trials: MAD thresh=%.1f, abs |%%| cap=%.0f\n
 
 tVec = [];
 bceaRaw = [];
-bceaDB = [];
+bceaPct = [];
 baselineBCEA = nan(nSubj, nCond);
 BCEA_bl_summary = nan(nSubj, nCond);
 nTrialsKept = nan(nSubj, nCond);
@@ -68,7 +68,7 @@ for subj = 1:nSubj
     dat = load(dataPath, condVars{:});
 
     for c = 1:nCond
-        [thisTime, thisBCEA, thisDB, thisBaseline, nKeep, nOut] = ...
+        [thisTime, thisBCEA, thisPct, thisBaseline, nKeep, nOut] = ...
             conditionBceaTimeCourse( ...
             dat.(condVars{c}), computeWindow, baselineWindow, cumulStart, ...
             screenW, screenH, blinkWin, bceaK95, minValidSamples, ...
@@ -77,15 +77,15 @@ for subj = 1:nSubj
         if isempty(tVec)
             tVec = thisTime;
             bceaRaw = nan(nSubj, nCond, numel(tVec));
-            bceaDB = nan(nSubj, nCond, numel(tVec));
+            bceaPct = nan(nSubj, nCond, numel(tVec));
         elseif numel(thisTime) ~= numel(tVec) || ...
                 max(abs(thisTime - tVec)) > 1e-9
             thisBCEA = interp1(thisTime, thisBCEA, tVec, 'linear', NaN);
-            thisDB = interp1(thisTime, thisDB, tVec, 'linear', NaN);
+            thisPct = interp1(thisTime, thisPct, tVec, 'linear', NaN);
         end
 
         bceaRaw(subj, c, :) = thisBCEA;
-        bceaDB(subj, c, :) = thisDB;
+        bceaPct(subj, c, :) = thisPct;
         baselineBCEA(subj, c) = thisBaseline;
         nTrialsKept(subj, c) = nKeep;
         nTrialsOutlier(subj, c) = nOut;
@@ -97,7 +97,7 @@ for subj = 1:nSubj
         analysisIdx = tVec >= analysisWindow(1) & tVec <= analysisWindow(2);
         endIdx = find(analysisIdx, 1, 'last');
         if ~isempty(endIdx)
-            BCEA_bl_summary(subj, c) = thisDB(endIdx);
+            BCEA_bl_summary(subj, c) = thisPct(endIdx);
         end
     end
 end
@@ -108,7 +108,7 @@ end
 
 %% Save participant time courses and TC-derived summaries for boxplots
 outData = fullfile(paths.features, 'GCP_gaze_BCEA_timeseries.mat');
-save(outData, 'bceaRaw', 'bceaDB', 'baselineBCEA', 'BCEA_bl_summary', 'tVec', ...
+save(outData, 'bceaRaw', 'bceaPct', 'baselineBCEA', 'BCEA_bl_summary', 'tVec', ...
     'subjects', 'condValues', 'baselineWindow', 'analysisWindow', 'cumulStart', ...
     'nTrialsKept', 'nTrialsOutlier', 'outlierMadThresh', 'outlierAbsPct');
 
@@ -116,10 +116,10 @@ outSum = fullfile(paths.features, 'GCP_gaze_BCEA_trace_summaries.mat');
 save(outSum, 'BCEA_bl_summary', 'subjects', 'condValues', 'analysisWindow');
 
 %% Grand average and SEM
-grandMeanDB = squeeze(mean(bceaDB, 1, 'omitnan'));
-nValid = squeeze(sum(isfinite(bceaDB), 1));
-grandSemDB = squeeze(std(bceaDB, 0, 1, 'omitnan')) ./ sqrt(max(nValid, 1));
-grandSemDB(nValid < 2) = NaN;
+grandMeanPct = squeeze(mean(bceaPct, 1, 'omitnan'));
+nValid = squeeze(sum(isfinite(bceaPct), 1));
+grandSemPct = squeeze(std(bceaPct, 0, 1, 'omitnan')) ./ sqrt(max(nValid, 1));
+grandSemPct(nValid < 2) = NaN;
 
 %% Figure
 close all
@@ -131,8 +131,8 @@ x = tVec(displayIdx);
 
 % Ensure display starts on a finite sample (should already be true at -0.5)
 for c = 1:nCond
-    mu = grandMeanDB(c, displayIdx);
-    sem = grandSemDB(c, displayIdx);
+    mu = grandMeanPct(c, displayIdx);
+    sem = grandSemPct(c, displayIdx);
     if ~isfinite(mu(1))
         warning('Condition %d: first display sample is non-finite.', c);
     end
@@ -162,7 +162,7 @@ legend(legendHandles, condLabels, 'Location', 'best', ...
 box off
 hold off
 
-outFigure = fullfile(figpath, 'GCP_gaze_BCEA_TC_db.png');
+outFigure = fullfile(figpath, 'GCP_gaze_BCEA_TC.png');
 exportgraphics(gcf, outFigure, 'Resolution', 600, 'BackgroundColor', 'white');
 
 fprintf('\n[VIZ GAZE BCEA TC] Saved figure: %s\n', outFigure);
@@ -171,7 +171,7 @@ fprintf('[VIZ GAZE BCEA TC] Saved TC summaries for boxplots: %s\n', outSum);
 fprintf('Median BCEA_bl summary (cumulative endpoint) by condition: %s\n', ...
     mat2str(median(BCEA_bl_summary, 1, 'omitnan'), 4));
 fprintf('Grand-mean at t=-0.5 by condition: %s\n', ...
-    mat2str(grandMeanDB(:, nearestTimeIndex(tVec, -0.5))', 4));
+    mat2str(grandMeanPct(:, nearestTimeIndex(tVec, -0.5))', 4));
 fprintf('Valid participants at t=-0.5 by condition: %s\n', ...
     mat2str(squeeze(nValid(:, nearestTimeIndex(tVec, -0.5)))'));
 fprintf('Baseline BCEA medians [px^2]: %s\n', ...
