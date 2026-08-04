@@ -1,6 +1,6 @@
 %% GCP Pupil Size Time Course
 % Loads percentage-change pupil time courses from
-% 2_feature_extraction/GCP_gaze_fex.m (pupTS_cXX_bl_db).
+% 2_feature_extraction/GCP_gaze_fex.m (pupTS_cXX_bl).
 
 %% Setup
 startup
@@ -11,7 +11,7 @@ addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 % Plot labels
 channels      = {'Pupil'};
 channeltitles = {'Pupil Size'};
-ylabs_db      = {'Pupil Size [%]'};
+ylabs         = {'Pupil Size [%]'};
 labels        = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
 fontSize = 50;
 t_comp   = [-2 3];
@@ -41,10 +41,10 @@ for subj = 1:numel(subjects)
     datapath = fullfile(paths.features, subjects{subj}, 'gaze');
     clc; fprintf('[VIZ GAZE PUPIL] Subject %d/%d (%s)\n', subj, numel(subjects), subjects{subj})
     dat = load(fullfile(datapath, 'gaze_pupil_timeseries'));
-    alltlk25et{subj}  = dat.pupTS_c25_bl_db;
-    alltlk50et{subj}  = dat.pupTS_c50_bl_db;
-    alltlk75et{subj}  = dat.pupTS_c75_bl_db;
-    alltlk100et{subj} = dat.pupTS_c100_bl_db;
+    alltlk25et{subj}  = dat.pupTS_c25_bl;
+    alltlk50et{subj}  = dat.pupTS_c50_bl;
+    alltlk75et{subj}  = dat.pupTS_c75_bl;
+    alltlk100et{subj} = dat.pupTS_c100_bl;
 end
 
 %% Grand average
@@ -54,7 +54,6 @@ ga25et  = ft_timelockgrandaverage(cfg, alltlk25et{:});
 ga50et  = ft_timelockgrandaverage(cfg, alltlk50et{:});
 ga75et  = ft_timelockgrandaverage(cfg, alltlk75et{:});
 ga100et = ft_timelockgrandaverage(cfg, alltlk100et{:});
-ylabs = ylabs_db;
 
 %% Figure Pupil Time Course
 close all
@@ -114,4 +113,4 @@ legend(leg_p, labels, 'Location', 'best', 'FontSize', fontSize*0.65, 'Box', 'off
 box off
 hold off
 set(gcf, 'PaperPositionMode', 'auto');
-print(gcf, fullfile(outdir, 'GCP_gaze_pupil_size_TC_db.png'), '-dpng', '-r600');
+print(gcf, fullfile(outdir, 'GCP_gaze_pupil_size_TC.png'), '-dpng', '-r600');

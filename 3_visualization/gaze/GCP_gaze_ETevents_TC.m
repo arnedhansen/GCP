@@ -1,7 +1,7 @@
 %% GCP Gaze Event Time Courses (Saccades, Blinks, Fixations)
 % Builds event-rate time courses per contrast condition from EyeLink events.
-% Rate is reconstructed from onset events, Gaussian-smoothed, dB baseline-
-% normalised (10*log10(stim/baseline)), and plotted with SEM shading.
+% Rate is reconstructed from onset events, Gaussian-smoothed, baseline-
+% normalised as percentage change, and plotted with SEM shading.
 
 %% Setup
 startup
@@ -51,7 +51,7 @@ nConds     = length(condCodes);
 eventDefs = struct( ...
     'name',      {'Saccades',    'Blinks',     'Fixations'}, ...
     'labels',    {{'L_saccade', 'R_saccade'}, {'L_blink', 'R_blink'}, {'L_fixation', 'R_fixation'}}, ...
-    'yLabel',    {'Saccade Rate [dB]', 'Blink Rate [dB]', 'Fixation Rate [dB]'}, ...
+    'yLabel',    {'Saccade Rate [%]', 'Blink Rate [%]', 'Fixation Rate [%]'}, ...
     'fileTag',   {'saccades',   'blinks',     'fixations'}, ...
     'sigma_ms',  {50, 140, 50});
 
@@ -179,26 +179,25 @@ for ev = 1:numel(eventDefs)
         end
     end
 
-    %% dB baseline normalisation
-    subjRate_db = nan(size(subjRate));
+    %% Percentage-change baseline normalisation
+    subjRate_bl = nan(size(subjRate));
     for subj = 1:nSubj
         for c = 1:nConds
             ts = subjRate(subj, :, c);
             if all(isnan(ts)), continue; end
             bl_mean = nanmean(ts(bl_idx));
             if bl_mean <= 0 || isnan(bl_mean), continue; end
-            ratio = ts ./ bl_mean;
-            db_ts = 10 * log10(ratio);
-            db_ts(~isfinite(ts) | ~isfinite(ratio) | ratio <= 0) = NaN;
-            subjRate_db(subj, :, c) = db_ts;
+            pct_ts = 100 * (ts - bl_mean) ./ bl_mean;
+            pct_ts(~isfinite(ts) | ~isfinite(pct_ts)) = NaN;
+            subjRate_bl(subj, :, c) = pct_ts;
         end
     end
 
     %% Grand averages (display portion)
-    subjRate_db_disp = subjRate_db(:, disp_idx, :);
-    grandMean = squeeze(nanmean(subjRate_db_disp, 1));
-    nValid    = squeeze(sum(~isnan(subjRate_db_disp), 1));
-    grandSEM  = squeeze(nanstd(subjRate_db_disp, 0, 1)) ./ sqrt(max(nValid, 1));
+    subjRate_bl_disp = subjRate_bl(:, disp_idx, :);
+    grandMean = squeeze(nanmean(subjRate_bl_disp, 1));
+    nValid    = squeeze(sum(~isnan(subjRate_bl_disp), 1));
+    grandSEM  = squeeze(nanstd(subjRate_bl_disp, 0, 1)) ./ sqrt(max(nValid, 1));
     grandSEM(nValid < 2) = NaN;
 
     %% Plot
@@ -234,7 +233,7 @@ for ev = 1:numel(eventDefs)
     hold off
 
     set(gcf, 'PaperPositionMode', 'auto');
-    print(gcf, fullfile(outdir, sprintf('GCP_gaze_%s_rate_db_TC.png', eventDefs(ev).fileTag)), '-dpng', '-r600');
+    print(gcf, fullfile(outdir, sprintf('GCP_gaze_%s_rate_TC.png', eventDefs(ev).fileTag)), '-dpng', '-r600');
 end
 
 fprintf('\n[VIZ GAZE ETEVENTS] All event TC figures saved to %s\n', outdir);

@@ -1,6 +1,6 @@
 %% GCP Eye Velocity Time Course
 % Loads percentage-change velocity time courses from
-% 2_feature_extraction/GCP_gaze_fex.m (velTS_cXX_bl_db).
+% 2_feature_extraction/GCP_gaze_fex.m.
 
 %% Setup
 startup
@@ -29,7 +29,7 @@ lineW    = 4;
 outdir = fullfile(paths.figures, 'gaze', 'velocity');
 mkdir(outdir);
 
-%% Load dB-baselined data (per subject)
+%% Load % change baselined data (per subject)
 clc
 alltlk25et  = cell(1, numel(subjects));
 alltlk50et  = cell(1, numel(subjects));
@@ -40,10 +40,10 @@ for subj = 1:numel(subjects)
     datapath = fullfile(paths.features, subjects{subj}, 'gaze');
     clc; fprintf('[VIZ GAZE VELOCITY] Subject %d/%d (%s)\n', subj, numel(subjects), subjects{subj})
     dat = load(fullfile(datapath, 'gaze_velocity_timeseries'));
-    alltlk25et{subj}  = dat.velTS_c25_bl_db;
-    alltlk50et{subj}  = dat.velTS_c50_bl_db;
-    alltlk75et{subj}  = dat.velTS_c75_bl_db;
-    alltlk100et{subj} = dat.velTS_c100_bl_db;
+    alltlk25et{subj}  = dat.velTS_c25_bl;
+    alltlk50et{subj}  = dat.velTS_c50_bl;
+    alltlk75et{subj}  = dat.velTS_c75_bl;
+    alltlk100et{subj} = dat.velTS_c100_bl;
 end
 
 %% Grand average
@@ -111,5 +111,5 @@ for c = 3%%%%%1:numel(channels)
     hold off
 
     set(gcf, 'PaperPositionMode', 'auto');
-    print(gcf, fullfile(outdir, sprintf('GCP_gaze_velocity_%s_TC_db.png', channels{c})), '-dpng', '-r600');
+    print(gcf, fullfile(outdir, sprintf('GCP_gaze_velocity_%s_TC.png', channels{c})), '-dpng', '-r600');
 end
