@@ -43,7 +43,7 @@ dotAlpha       = 0.85;
 jitter         = 0.4;
 boxWidth       = 0.55;
 
-%% Load gamma data (peaks from condition-averaged spectra)
+%% Load gamma data
 ged = load(fullfile(paths.features, 'GCP_eeg_GED.mat'), ...
     'all_condition_peak_freq_full', 'all_condition_peak_freq_early', 'all_condition_peak_freq_late', ...
     'all_condition_peak_power_full', 'all_condition_peak_power_early', 'all_condition_peak_power_late', ...
@@ -60,37 +60,23 @@ gamma.Power.late      = pick_matrix(ged.all_condition_peak_power_late, ged_idx);
 
 %% Gaze
 gazePath = fullfile(paths.features, 'GCP_gaze_window_summaries.mat');
-if ~isfile(gazePath)
-    error('GCP_stats_boxplots:MissingGazeSummaries', ...
-        ['Missing %s. Run GCP_gaze_fex.m first so full/early/late ', ...
-         'subject x condition scalars exist.'], gazePath);
-end
 gazeSum = load(gazePath);
 gaze_idx = match_subjects(gazeSum.subjects, subjects);
-
 gazeMetrics = {'MSRate_bl','BCEA_bl','Vel2D_bl','PupilSize_bl', ...
     'Blinks_bl','Fixations_bl','Saccades_bl'};
 gaze = struct();
 for mi = 1:numel(gazeMetrics)
     name = gazeMetrics{mi};
-    if ~isfield(gazeSum, name)
-        error('GCP_stats_boxplots:MissingMetric', ...
-            'Metric %s missing in %s', name, gazePath);
-    end
     for wi = 1:numel(winNames)
         wn = winNames{wi};
-        if ~isfield(gazeSum.(name), wn)
-            error('GCP_stats_boxplots:MissingWindow', ...
-                'Metric %s window %s missing in %s', name, wn, gazePath);
-        end
         gaze.(name).(wn) = pick_matrix(gazeSum.(name).(wn), gaze_idx);
     end
 end
 
-%% Plot specs: {varName, windowsStruct, yLabel, drawZero}
+%% Specs: {varName, windowsStruct, yLabel, drawZero}
 plotSpecs = {
-    'Frequency',   gamma.Frequency,    'Frequency [Hz]',        false
-    'Power',       gamma.Power,        'Power [dB]',            true
+    'Frequency',    gamma.Frequency,    'Frequency [Hz]',         false
+    'Power',        gamma.Power,        'Power [dB]',             true
     'MSRate_bl',    gaze.MSRate_bl,      'Microsaccade Rate [%]', true
     'BCEA_bl',      gaze.BCEA_bl,        'BCEA [%]',              true
     'Vel2D_bl',     gaze.Vel2D_bl,       'Eye Velocity [%]',      true
@@ -102,7 +88,7 @@ plotSpecs = {
 
 subjIDs = str2double(string(subjects(:)));
 
-%% Loop
+%% Plot
 for iMetric = 1:size(plotSpecs, 1)
     varName = plotSpecs{iMetric, 1};
     winMats = plotSpecs{iMetric, 2};
@@ -133,9 +119,6 @@ for iMetric = 1:size(plotSpecs, 1)
                 end
             end
         end
-
-        fprintf('%s %s: %d finite of %d cells\n', ...
-            varName, winName, nnz(isfinite(y)), numel(y));
 
         close all
         figure('Position', [0 0 1512 982], 'Color', 'w');
@@ -218,7 +201,7 @@ for iMetric = 1:size(plotSpecs, 1)
             outName = sprintf('GCP_stats_boxplot_%s_%s.png', varName, winName);
         end
         outPath = fullfile(out_dir, outName);
-        drawnow;
+        drawnow; pause(0.05);
         set(gcf, 'PaperPositionMode', 'auto');
         print(gcf, outPath, '-dpng', '-r600');
         fprintf('[STATS BOX] Saved %s\n', outPath);

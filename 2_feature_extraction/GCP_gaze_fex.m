@@ -4,6 +4,7 @@
 %   BCEA (Bivariate Contour Ellipse Area, k=2.291, 95%)
 %   BCEA_Direction (polar angle of gaze centroid vs fixation [400 300];
 %                   deg; 0 = right, 90 = up; y flipped screen coords)
+%   BCEA_Eccentricity (|centroid - fixation| in dva; ppd = 50)
 %   Pupil size (Time Series Raw, Baselined % change)
 %   Microsaccades (TC ground truth: boxplot scalar = mean of % TC)
 %   Eye velocity (Raw, Baselined % change)
@@ -33,6 +34,7 @@ win_size          = 25;    % blink‐removal window (samples)
 fsample           = 500;   % eye‐tracker sampling rate
 fixX              = 400;   % fixation cross X (screen gaze space)
 fixY              = 300;   % fixation cross Y (after 600 - rawY flip)
+ppd               = 50;    % pixels per degree (GCP_gratingsTask gaze space)
 
 % prepare raw gaze storage across all subjects
 gaze_x_c25   = {};  gaze_y_c25   = {};
@@ -70,6 +72,7 @@ for subj = 1:numel(subjects)
         bcea               = [];  baselineBcea      = [];
         bcea_early         = [];  bcea_late         = [];
         bceaDirection      = [];  bceaDirection_early = [];  bceaDirection_late = [];
+        bceaEccentricity   = [];  bceaEccentricity_early = [];  bceaEccentricity_late = [];
         centroidX          = [];  centroidY         = [];
         centroidX_early    = [];  centroidY_early   = [];
         centroidX_late     = [];  centroidY_late    = [];
@@ -269,10 +272,13 @@ for subj = 1:numel(subjects)
             bcea_late_val  = bcea_in_window(raw, tVec, analysis_late, win_size);
             bcea_dir_val = bcea_direction_from_xy(x, y, fixX, fixY);
             [cx_full, cy_full] = bcea_centroid_from_xy(x, y);
+            bcea_ecc_val = bcea_eccentricity_from_centroid(cx_full, cy_full, fixX, fixY, ppd);
             [bcea_dir_early_val, cx_early, cy_early] = bcea_direction_in_window( ...
                 raw, tVec, analysis_early, win_size, fixX, fixY);
             [bcea_dir_late_val, cx_late, cy_late] = bcea_direction_in_window( ...
                 raw, tVec, analysis_late, win_size, fixX, fixY);
+            bcea_ecc_early_val = bcea_eccentricity_from_centroid(cx_early, cy_early, fixX, fixY, ppd);
+            bcea_ecc_late_val = bcea_eccentricity_from_centroid(cx_late, cy_late, fixX, fixY, ppd);
             pupil       = mean(an_dat(3,:),'omitnan')/1000;
             [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
             msrate_early = ms_rate_in_window(raw, tVec, analysis_early, win_size, fsample);
@@ -441,6 +447,9 @@ for subj = 1:numel(subjects)
             bceaDirection(end+1)    = bcea_dir_val;
             bceaDirection_early(end+1) = bcea_dir_early_val;
             bceaDirection_late(end+1)  = bcea_dir_late_val;
+            bceaEccentricity(end+1) = bcea_ecc_val;
+            bceaEccentricity_early(end+1) = bcea_ecc_early_val;
+            bceaEccentricity_late(end+1)  = bcea_ecc_late_val;
             centroidX(end+1)        = cx_full;
             centroidY(end+1)        = cy_full;
             centroidX_early(end+1)  = cx_early;
@@ -568,6 +577,9 @@ for subj = 1:numel(subjects)
                 c25_bcea_dir       = direction_from_trial_centroids(centroidX, centroidY, fixX, fixY);
                 c25_bcea_dir_early = direction_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY);
                 c25_bcea_dir_late  = direction_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY);
+                c25_bcea_ecc       = eccentricity_from_trial_centroids(centroidX, centroidY, fixX, fixY, ppd);
+                c25_bcea_ecc_early = eccentricity_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY, ppd);
+                c25_bcea_ecc_late  = eccentricity_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY, ppd);
                 c25_pups      = mean(pupilSize,'omitnan');
                 c25_bl_pups   = mean(baselinePupilSize,'omitnan');
                 c25_msrate    = mean(microsaccadeRate,'omitnan');
@@ -605,6 +617,7 @@ for subj = 1:numel(subjects)
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
                     'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
                     'BCEA_Direction',bceaDirection, 'BCEA_Direction_early',bceaDirection_early, 'BCEA_Direction_late',bceaDirection_late, ...
+                    'BCEA_Eccentricity',bceaEccentricity, 'BCEA_Eccentricity_early',bceaEccentricity_early, 'BCEA_Eccentricity_late',bceaEccentricity_late, ...
                     'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
                     'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
                     'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
@@ -639,6 +652,9 @@ for subj = 1:numel(subjects)
                 c50_bcea_dir       = direction_from_trial_centroids(centroidX, centroidY, fixX, fixY);
                 c50_bcea_dir_early = direction_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY);
                 c50_bcea_dir_late  = direction_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY);
+                c50_bcea_ecc       = eccentricity_from_trial_centroids(centroidX, centroidY, fixX, fixY, ppd);
+                c50_bcea_ecc_early = eccentricity_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY, ppd);
+                c50_bcea_ecc_late  = eccentricity_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY, ppd);
                 c50_pups      = mean(pupilSize,'omitnan');
                 c50_bl_pups   = mean(baselinePupilSize,'omitnan');
                 c50_msrate    = mean(microsaccadeRate,'omitnan');
@@ -676,6 +692,7 @@ for subj = 1:numel(subjects)
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
                     'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
                     'BCEA_Direction',bceaDirection, 'BCEA_Direction_early',bceaDirection_early, 'BCEA_Direction_late',bceaDirection_late, ...
+                    'BCEA_Eccentricity',bceaEccentricity, 'BCEA_Eccentricity_early',bceaEccentricity_early, 'BCEA_Eccentricity_late',bceaEccentricity_late, ...
                     'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
                     'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
                     'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
@@ -706,6 +723,9 @@ for subj = 1:numel(subjects)
                 c75_bcea_dir       = direction_from_trial_centroids(centroidX, centroidY, fixX, fixY);
                 c75_bcea_dir_early = direction_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY);
                 c75_bcea_dir_late  = direction_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY);
+                c75_bcea_ecc       = eccentricity_from_trial_centroids(centroidX, centroidY, fixX, fixY, ppd);
+                c75_bcea_ecc_early = eccentricity_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY, ppd);
+                c75_bcea_ecc_late  = eccentricity_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY, ppd);
                 c75_pups      = mean(pupilSize,'omitnan');
                 c75_bl_pups   = mean(baselinePupilSize,'omitnan');
                 c75_msrate    = mean(microsaccadeRate,'omitnan');
@@ -743,6 +763,7 @@ for subj = 1:numel(subjects)
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
                     'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
                     'BCEA_Direction',bceaDirection, 'BCEA_Direction_early',bceaDirection_early, 'BCEA_Direction_late',bceaDirection_late, ...
+                    'BCEA_Eccentricity',bceaEccentricity, 'BCEA_Eccentricity_early',bceaEccentricity_early, 'BCEA_Eccentricity_late',bceaEccentricity_late, ...
                     'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
                     'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
                     'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
@@ -773,6 +794,9 @@ for subj = 1:numel(subjects)
                 c100_bcea_dir       = direction_from_trial_centroids(centroidX, centroidY, fixX, fixY);
                 c100_bcea_dir_early = direction_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY);
                 c100_bcea_dir_late  = direction_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY);
+                c100_bcea_ecc       = eccentricity_from_trial_centroids(centroidX, centroidY, fixX, fixY, ppd);
+                c100_bcea_ecc_early = eccentricity_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY, ppd);
+                c100_bcea_ecc_late  = eccentricity_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY, ppd);
                 c100_pups      = mean(pupilSize,'omitnan');
                 c100_bl_pups   = mean(baselinePupilSize,'omitnan');
                 c100_msrate    = mean(microsaccadeRate,'omitnan');
@@ -810,6 +834,7 @@ for subj = 1:numel(subjects)
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
                     'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
                     'BCEA_Direction',bceaDirection, 'BCEA_Direction_early',bceaDirection_early, 'BCEA_Direction_late',bceaDirection_late, ...
+                    'BCEA_Eccentricity',bceaEccentricity, 'BCEA_Eccentricity_early',bceaEccentricity_early, 'BCEA_Eccentricity_late',bceaEccentricity_late, ...
                     'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
                     'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
                     'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
@@ -870,6 +895,9 @@ for subj = 1:numel(subjects)
         'BCEA_Direction',       num2cell([c25_bcea_dir;       c50_bcea_dir;       c75_bcea_dir;       c100_bcea_dir]), ...
         'BCEA_Direction_early', num2cell([c25_bcea_dir_early; c50_bcea_dir_early; c75_bcea_dir_early; c100_bcea_dir_early]), ...
         'BCEA_Direction_late',  num2cell([c25_bcea_dir_late;  c50_bcea_dir_late;  c75_bcea_dir_late;  c100_bcea_dir_late]), ...
+        'BCEA_Eccentricity',       num2cell([c25_bcea_ecc;       c50_bcea_ecc;       c75_bcea_ecc;       c100_bcea_ecc]), ...
+        'BCEA_Eccentricity_early', num2cell([c25_bcea_ecc_early; c50_bcea_ecc_early; c75_bcea_ecc_early; c100_bcea_ecc_early]), ...
+        'BCEA_Eccentricity_late',  num2cell([c25_bcea_ecc_late;  c50_bcea_ecc_late;  c75_bcea_ecc_late;  c100_bcea_ecc_late]), ...
         'PupilSize',     num2cell([c25_pups;   c50_pups;   c75_pups;   c100_pups]), ...
         'MSRate',        num2cell([c25_msrate; c50_msrate; c75_msrate; c100_msrate]), ...
         'VelH',          num2cell([c25_velHorz;   c50_velHorz;   c75_velHorz;   c100_velHorz]), ...
@@ -1111,10 +1139,29 @@ end
 theta = atan2(mean(cy(keep)) - fixY, mean(cx(keep)) - fixX) * (180 / pi);
 end
 
+function r = bcea_eccentricity_from_centroid(cx, cy, fixX, fixY, ppd)
+% |centroid - fixation| in degrees of visual angle.
+if ~(isfinite(cx) && isfinite(cy) && ppd > 0)
+    r = NaN;
+    return
+end
+r = hypot(cx - fixX, cy - fixY) / ppd;
+end
+
+function r = eccentricity_from_trial_centroids(cx, cy, fixX, fixY, ppd)
+% Subject-level eccentricity from the mean of trial centroids.
+keep = isfinite(cx) & isfinite(cy);
+if ~any(keep) || ~(ppd > 0)
+    r = NaN;
+    return
+end
+r = hypot(mean(cx(keep)) - fixX, mean(cy(keep)) - fixY) / ppd;
+end
+
 function save_gaze_window_summaries(featuresRoot, subjects, gaze_data)
 % Build cond x subject matrices for boxplots (no recomputation downstream).
 metricBases = {'MSRate_bl','Vel2D_bl','PupilSize_bl','BCEA_bl', ...
-        'BCEA_Direction', ...
+        'BCEA_Direction','BCEA_Eccentricity', ...
         'Blinks_bl','Fixations_bl','Saccades_bl'};
 winSuffix = {'', '_early', '_late'};
 winName = {'full', 'early', 'late'};

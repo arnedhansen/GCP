@@ -189,7 +189,7 @@ run_slope_sensitivity <- function(
       labels = sprintf("%.2f", seq(0, 1, by = 0.2)),
       guide = ggplot2::guide_colorbar(
         nbin = 200,
-        display = "gradient",
+        display = "raster",
         frame.colour = "black",
         ticks.colour = "black"
       )

@@ -1,6 +1,7 @@
 %% GCP Gaze BCEA Ellipses
 % Computes one gaze dispersion estimate per participant and condition.
-% Plot shows the group mean BCEA95 ellipse
+% Figure 1: group mean BCEA95 ellipse
+% Figure 2: single-subject BCEA95 ellipses (one subplot per participant)
 % (Mahalanobis radius sqrt(2*k) with k = 2.291, ~2.14 SD)
 
 %% Setup
@@ -81,6 +82,7 @@ BCEA_bl_long = nan(nRows, 1);
 CentroidX = nan(nRows, 1);
 CentroidY = nan(nRows, 1);
 BCEA_Direction = nan(nRows, 1);
+BCEA_Eccentricity = nan(nRows, 1);
 SDX = nan(nRows, 1);
 SDY = nan(nRows, 1);
 RhoXY = nan(nRows, 1);
@@ -88,6 +90,7 @@ ValidSamples = nan(nRows, 1);
 BaselineValidSamples = nan(nRows, 1);
 
 fixXY = [400 300];
+ppd = 50;
 
 row = 0;
 for subj = 1:nSubj
@@ -101,8 +104,10 @@ for subj = 1:nSubj
         CentroidX(row) = centroidStim(subj, c, 1);
         CentroidY(row) = centroidStim(subj, c, 2);
         if all(isfinite([CentroidX(row) CentroidY(row)]))
-            BCEA_Direction(row) = atan2( ...
-                CentroidY(row) - fixXY(2), CentroidX(row) - fixXY(1)) * (180 / pi);
+            dx = CentroidX(row) - fixXY(1);
+            dy = CentroidY(row) - fixXY(2);
+            BCEA_Direction(row) = atan2(dy, dx) * (180 / pi);
+            BCEA_Eccentricity(row) = hypot(dx, dy) / ppd;
         end
         thisCov = covStim(:, :, subj, c);
         SDX(row) = sqrt(thisCov(1, 1));
@@ -114,9 +119,10 @@ for subj = 1:nSubj
 end
 
 bceaTable = table(Subject, Condition, BCEA, BaselineBCEA, BCEA_bl_long, ...
-    CentroidX, CentroidY, BCEA_Direction, SDX, SDY, RhoXY, ValidSamples, BaselineValidSamples, ...
+    CentroidX, CentroidY, BCEA_Direction, BCEA_Eccentricity, SDX, SDY, RhoXY, ...
+    ValidSamples, BaselineValidSamples, ...
     'VariableNames', {'Subject', 'Condition', 'BCEA', 'BaselineBCEA', 'BCEA_bl', ...
-    'CentroidX', 'CentroidY', 'BCEA_Direction', 'SDX', 'SDY', 'RhoXY', ...
+    'CentroidX', 'CentroidY', 'BCEA_Direction', 'BCEA_Eccentricity', 'SDX', 'SDY', 'RhoXY', ...
     'ValidSamples', 'BaselineValidSamples'});
 
 csvPath = fullfile(paths.features, 'GCP_gaze_BCEA_subject_condition.csv');
@@ -172,8 +178,10 @@ end
 
 axis equal
 pbaspect([4 3 1]);
-xlim([300 500])
-ylim([225 375])
+xlimMain = [300 500];
+ylimMain = [225 375];
+xlim(xlimMain)
+ylim(ylimMain)
 %xlim([0 screenW]);
 %ylim([0 screenH]);
 xline(400, '--', 'LineWidth', 0.25)
@@ -181,27 +189,233 @@ yline(300, '--', 'LineWidth', 0.25)
 axis manual
 %xticks(0:200:800);
 %yticks(0:150:600);
-box off
+box on
 set(gca, 'FontSize', fontSize);
 xlabel('Screen Width [px]', 'FontSize', fontSize);
 ylabel('Screen Height [px]', 'FontSize', fontSize);
-legend(conditionHandles, condLabels, 'Location', 'northeast', ...
+axMain = gca;
+legend(axMain, conditionHandles, condLabels, 'Location', 'northeast', ...
     'FontSize', fontSize * 0.55, 'Box', 'off');
 
-areaLines = cell(nCond + 1, 1);
-areaLines{1} = 'BCEA95 [px^2]';
-for c = 1:nCond
-    areaLines{c + 1} = sprintf('%d%%: %.0f', condValues(c), areaBCEA95(c));
+% Top-left screen overview inset inside the visible plot box
+drawnow;
+axMain.Units = 'normalized';
+pos = [0.1825 0.1675 0.8750 0.8710];
+dataAsp = diff(xlimMain) / diff(ylimMain);
+axAsp = pos(3) / pos(4);
+if axAsp > dataAsp
+    pbH = pos(4);
+    pbW = pos(4) * dataAsp;
+    pbL = pos(1) + (pos(3) - pbW) / 2;
+    pbB = pos(2);
+else
+    pbW = pos(3);
+    pbH = pos(3) / dataAsp;
+    pbL = pos(1);
+    pbB = pos(2) + (pos(4) - pbH) / 2;
 end
-% annotation('textbox', [0.5 0.5 0.7 0.7], 'String', areaLines, ...
-%     'FontName', 'FixedWidth', 'FontSize', fontSize * 0.45, ...
-%     'EdgeColor', 'k', 'LineWidth', 1.2, 'BackgroundColor', 'w', ...
-%     'Margin', 10, 'VerticalAlignment', 'middle', 'FitBoxToText', 'on');
+insetW = pbW * 0.30;
+insetH = insetW * (screenH / screenW);
+if insetH > pbH * 0.42
+    insetH = pbH * 0.42;
+    insetW = insetH * (screenW / screenH);
+end
+marginX = pbW * 0.04;
+marginY = pbH * 0.04;
+axInset = axes( ...
+    'Parent', gcf, ...
+    'Units', 'normalized', ...
+    'Position', [pbL + marginX, pbB + pbH - marginY - insetH, insetW, insetH], ...
+    'Color', 'w', ...
+    'Box', 'on');
+hold(axInset, 'on');
+zoomFace = [0.70 0.70 0.70];
+zoomEdge = [0.35 0.35 0.35];
+patch(axInset, ...
+    [xlimMain(1) xlimMain(2) xlimMain(2) xlimMain(1)], ...
+    [ylimMain(1) ylimMain(1) ylimMain(2) ylimMain(2)], ...
+    zoomFace, 'FaceAlpha', 0.25, 'EdgeColor', zoomEdge, ...
+    'LineWidth', 1.5, 'HandleVisibility', 'off');
+xline(axInset, 400, '--', 'LineWidth', 0.25, 'Color', [0.5 0.5 0.5], ...
+    'HandleVisibility', 'off');
+yline(axInset, 300, '--', 'LineWidth', 0.25, 'Color', [0.5 0.5 0.5], ...
+    'HandleVisibility', 'off');
+plot(axInset, 400, 300, '+', 'MarkerSize', 10, 'LineWidth', 1.5, ...
+    'Color', 'k', 'HandleVisibility', 'off');
+set(axInset, ...
+    'XLim', [0 screenW], ...
+    'YLim', [0 screenH], ...
+    'DataAspectRatio', [1 1 1], ...
+    'PlotBoxAspectRatio', [screenW screenH 1], ...
+    'XTick', 0:200:screenW, ...
+    'YTick', 0:150:screenH, ...
+    'FontSize', fontSize * 0.28, ...
+    'Color', 'w', ...
+    'Box', 'on');
+xlabel(axInset, 'Screen Width [px]', 'FontSize', fontSize * 0.28);
+ylabel(axInset, 'Screen Height [px]', 'FontSize', fontSize * 0.28);
+uistack(axInset, 'top');
 
+drawnow; pause(0.05);
 outFigure = fullfile(figpath, 'GCP_gaze_BCEA_ellipses.png');
 exportgraphics(gcf, outFigure, 'Resolution', 600, 'BackgroundColor', 'white');
 
 fprintf('\n[VIZ GAZE BCEA] Saved figure: %s\n', outFigure);
+
+%% Single-subject BCEA95 ellipses (one subplot per participant)
+nCols = 5;
+nRows = 2;
+nSubjTiles = 8;  % tiles 1-8 for subjects; tiles 9-10 combined = screen overview
+fontSizeSub = max(14, round(fontSize * 0.45));
+lineWSub = max(1, lineW * 0.75);
+limPad = 0.15;  % +/- 15% of ellipse span per axis
+
+if nSubj > nSubjTiles
+    error('Subject layout reserves tiles 1-%d; nSubj = %d exceeds that.', ...
+        nSubjTiles, nSubj);
+end
+
+% Shared axis limits from all subject ellipses (+/- 15% of span)
+allEllipseX = [];
+allEllipseY = [];
+ellipseBySubj = cell(nSubj, nCond);
+centroidBySubj = nan(nSubj, nCond, 2);
+for subj = 1:nSubj
+    for c = 1:nCond
+        thisCov = covStim(:, :, subj, c);
+        thisMu = squeeze(centroidStim(subj, c, :))';
+        centroidBySubj(subj, c, :) = thisMu;
+        if ~(all(isfinite(thisCov), 'all') && all(isfinite(thisMu)))
+            continue
+        end
+        [vectors, values] = eig(thisCov);
+        axisTransform = vectors * sqrt(max(values, 0));
+        ellipse95 = thisMu' + bceaRadius * axisTransform * unitCircle;
+        ellipseBySubj{subj, c} = ellipse95;
+        allEllipseX = [allEllipseX, ellipse95(1, :)]; %#ok<AGROW>
+        allEllipseY = [allEllipseY, ellipse95(2, :)]; %#ok<AGROW>
+    end
+end
+if isempty(allEllipseX)
+    error('No valid subject ellipses to set shared axis limits.');
+end
+xMin = min(allEllipseX);
+xMax = max(allEllipseX);
+yMin = min(allEllipseY);
+yMax = max(allEllipseY);
+xPad = limPad * max(xMax - xMin, eps);
+yPad = limPad * max(yMax - yMin, eps);
+xlimShared = [xMin - xPad, xMax + xPad];
+ylimShared = [yMin - yPad, yMax + yPad];
+
+figure('Position', [0 0 1512 982], 'Color', 'w');
+tiledlayout(nRows, nCols, 'Padding', 'compact', 'TileSpacing', 'compact');
+
+for subj = 1:nSubj
+    nexttile(subj)
+    hold on
+
+    for c = 1:nCond
+        ellipse95 = ellipseBySubj{subj, c};
+        thisMu = squeeze(centroidBySubj(subj, c, :))';
+        if isempty(ellipse95) || ~all(isfinite(thisMu))
+            continue
+        end
+        patch(ellipse95(1, :), ellipse95(2, :), colors(c, :), ...
+            'FaceAlpha', 0.125, 'EdgeColor', colors(c, :), ...
+            'LineStyle', '--', 'LineWidth', lineWSub, 'HandleVisibility', 'off');
+        plot(thisMu(1), thisMu(2), 'o', ...
+            'MarkerSize', 7, 'MarkerFaceColor', colors(c, :), ...
+            'MarkerEdgeColor', 'w', 'HandleVisibility', 'off');
+    end
+
+    plot(400, 300, '+', 'MarkerSize', 12, 'LineWidth', 1.5, ...
+        'Color', 'k', 'HandleVisibility', 'off');
+    xline(400, '--', 'LineWidth', 0.25, 'HandleVisibility', 'off');
+    yline(300, '--', 'LineWidth', 0.25, 'HandleVisibility', 'off');
+
+    axis equal
+    xlim(xlimShared);
+    ylim(ylimShared);
+    axis manual
+    box on
+    set(gca, 'FontSize', fontSizeSub);
+    title(sprintf('S%s', subjects{subj}), 'FontSize', fontSizeSub, 'FontWeight', 'normal');
+
+    if subj > nCols
+        xlabel('Screen Width [px]', 'FontSize', fontSizeSub);
+    end
+    if mod(subj - 1, nCols) == 0
+        ylabel('Screen Height [px]', 'FontSize', fontSizeSub);
+    end
+end
+
+% Contrast legend in first free subject tile (if any)
+conditionHandles = gobjects(nCond, 1);
+if nSubj < nSubjTiles
+    nexttile(nSubj + 1)
+    axis off
+    hold on
+    for c = 1:nCond
+        conditionHandles(c) = patch(nan, nan, colors(c, :), ...
+            'FaceAlpha', 0.25, 'EdgeColor', colors(c, :), 'LineWidth', 1.5);
+    end
+    lgd = legend(conditionHandles, condLabels, 'Location', 'west', ...
+        'FontSize', fontSizeSub * 0.7, 'Box', 'off');
+    lgd.ItemTokenSize = [12 12];
+end
+
+% Tiles 9-10 combined: full screen with zoom-region indicator
+nexttile(9, [1 2])
+hold on
+zoomFace = [0.70 0.70 0.70];
+zoomEdge = [0.35 0.35 0.35];
+patch([xlimShared(1) xlimShared(2) xlimShared(2) xlimShared(1)], ...
+    [ylimShared(1) ylimShared(1) ylimShared(2) ylimShared(2)], ...
+    zoomFace, 'FaceAlpha', 0.25, 'EdgeColor', zoomEdge, ...
+    'LineWidth', 1.5, 'HandleVisibility', 'off');
+xline(400, '--', 'LineWidth', 0.25, 'Color', [0.5 0.5 0.5], ...
+    'HandleVisibility', 'off');
+yline(300, '--', 'LineWidth', 0.25, 'Color', [0.5 0.5 0.5], ...
+    'HandleVisibility', 'off');
+plot(400, 300, '+', 'MarkerSize', 14, 'LineWidth', 1.5, ...
+    'Color', 'k', 'HandleVisibility', 'off');
+axis equal
+pbaspect([screenW / screenH, 1, 1]);
+xlim([0 screenW]);
+ylim([0 screenH]);
+axis manual
+box on
+set(gca, 'FontSize', fontSizeSub * 0.85, ...
+    'XTick', 0:200:screenW, 'YTick', 0:150:screenH);
+xlabel('Screen Width [px]', 'FontSize', fontSizeSub * 0.85);
+ylabel('Screen Height [px]', 'FontSize', fontSizeSub * 0.85);
+title('Screen (zoom region)', 'FontSize', fontSizeSub * 0.85, 'FontWeight', 'normal');
+
+% Shrink axes within the dual tile so it does not crowd the legend tile
+axScreen = gca;
+pos = axScreen.Position;
+scale = 0.82;
+axScreen.Position = [ ...
+    pos(1) + pos(3) * (1 - scale) * 0.55, ...
+    pos(2) + pos(4) * (1 - scale) * 0.5, ...
+    pos(3) * scale, ...
+    pos(4) * scale];
+
+if nSubj >= nSubjTiles
+    for c = 1:nCond
+        conditionHandles(c) = patch(nan, nan, colors(c, :), ...
+            'FaceAlpha', 0.25, 'EdgeColor', colors(c, :), 'LineWidth', 1.5);
+    end
+    lgd = legend(conditionHandles, condLabels, 'Location', 'northeast', ...
+        'FontSize', fontSizeSub * 0.7, 'Box', 'off');
+    lgd.ItemTokenSize = [12 12];
+end
+
+outFigureSubj = fullfile(figpath, 'GCP_gaze_BCEA_ellipses_subjects.png');
+exportgraphics(gcf, outFigureSubj, 'Resolution', 600, 'BackgroundColor', 'white');
+
+fprintf('[VIZ GAZE BCEA] Saved figure: %s\n', outFigureSubj);
 fprintf('[VIZ GAZE BCEA] Saved LMM table: %s\n', csvPath);
 fprintf('[VIZ GAZE BCEA] Valid participant estimates by condition: %s\n', ...
     mat2str(sum(isfinite(bceaStim), 1)));
