@@ -1,0 +1,90 @@
+function plot_combined_topo_spectra_windows(save_dir, subject_id, scan_freqs, cfg_topo, topo_labels, ...
+    searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
+    searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
+    searchTopos_late, searchMeanPrSpectrum_late, selected_idx_late, w_combined_late, ...
+    analysis_freq_range)
+% Subject figure of combined GED topo and spectrum for early, full, and late windows.
+fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+win_names = {'early', 'full', 'late'};
+all_topos = {searchTopos_early, searchTopos_full, searchTopos_late};
+all_specs = {searchMeanPrSpectrum_early, searchMeanPrSpectrum_full, searchMeanPrSpectrum_late};
+all_idx = {selected_idx_early, selected_idx_full, selected_idx_late};
+all_w = {w_combined_early, w_combined_full, w_combined_late};
+
+for wi = 1:3
+    subplot(2, 3, wi);
+    topo_mat = all_topos{wi};
+    spec_mat = all_specs{wi};
+    sel_idx = all_idx{wi};
+    sel_w = all_w{wi};
+    [sel_idx, sel_w] = sanitize_selected_components(sel_idx, sel_w, size(spec_mat, 1));
+    if isempty(sel_idx) || isempty(topo_mat)
+        axis off;
+        text(0.5, 0.5, sprintf('No combined components (%s)', upper(win_names{wi})), ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+            'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+    else
+        topo_vec = topo_mat(:, sel_idx) * sel_w(:);
+        topo_data = [];
+        topo_data.label = topo_labels;
+        topo_data.avg = topo_vec;
+        topo_data.dimord = 'chan';
+        topo_vals = topo_vec(isfinite(topo_vec));
+        topo_clim = max(abs(topo_vals));
+        if ~isfinite(topo_clim) || topo_clim <= 0
+            topo_clim = 1;
+        end
+        cfg_ci = cfg_topo;
+        cfg_ci.zlim = [-topo_clim topo_clim];
+        try
+            ft_topoplotER(cfg_ci, topo_data);
+        catch
+            imagesc(topo_vec(:)); axis tight;
+            caxis([-topo_clim topo_clim]); colorbar;
+        end
+        title(sprintf('Combined Topography (%s, n=%d)', upper(win_names{wi}), numel(sel_idx)), ...
+            'FontSize', 11, 'Interpreter', 'none');
+    end
+    set(gca, 'FontSize', 10);
+
+    subplot(2, 3, wi + 3); hold on;
+    if isempty(sel_idx) || isempty(spec_mat)
+        axis off;
+        text(0.5, 0.5, sprintf('No combined spectrum (%s)', upper(win_names{wi})), ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+            'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+        continue;
+    end
+    spec_vec = sel_w(:)' * spec_mat(sel_idx, :);
+    [pf_score, pf_peak_hz] = compute_combined_powspctrm_form_metrics( ...
+        spec_vec, scan_freqs, analysis_freq_range);
+    plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0);
+    add_peak_point_overlay(scan_freqs, spec_vec, pf_peak_hz);
+    yline(0, 'k--', 'LineWidth', 0.8);
+    xlim([analysis_freq_range(1) analysis_freq_range(2)]);
+    spec_finite = spec_vec(isfinite(spec_vec));
+    if ~isempty(spec_finite)
+        sp_min = min(spec_finite);
+        sp_max = max(spec_finite);
+        if isfinite(sp_min) && isfinite(sp_max) && sp_min < sp_max
+            sp_range = sp_max - sp_min;
+            ylim([sp_min - 0.12 * sp_range, sp_max + 0.20 * sp_range]);
+        end
+    end
+    format_power_change_db_axis(gca);
+    xlabel('Hz'); ylabel('Power [dB]');
+    box on;
+    text(0.02, 0.98, sprintf('PF = %.2f | peak = %.1f Hz', ...
+        pf_score, pf_peak_hz), ...
+        'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
+        'FontSize', 9, 'Interpreter', 'none', 'Color', [0.1 0.1 0.1]);
+    title(sprintf('Combined Spectrum (%s)', upper(win_names{wi})), ...
+        'FontSize', 11, 'Interpreter', 'none');
+    set(gca, 'FontSize', 10);
+end
+
+sgtitle(sprintf('Combined GED Components: %s', subject_id), ...
+    'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_combined.png', subject_id)));
+close(fig);
+end

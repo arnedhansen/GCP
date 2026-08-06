@@ -27,7 +27,6 @@ if ispc
 
     % EEG
     run('C:\Users\Administrator\Documents\GitHub\GCP\2_feature_extraction\GCP_eeg_fex_GED.m');
-    run('C:\Users\Administrator\Documents\GitHub\GCP\2_feature_extraction\GCP_eeg_fex_GED_TFR.m');
 
     % Master Matrices
     run('C:\Users\Administrator\Documents\GitHub\GCP\2_feature_extraction\GCP_master_matrix.m');
@@ -68,7 +67,6 @@ else
 
     % EEG
     run('/Users/Arne/Documents/GitHub/GCP/2_feature_extraction/GCP_eeg_fex_GED.m');
-    run('/Users/Arne/Documents/GitHub/GCP/2_feature_extraction/GCP_eeg_fex_GED_TFR.m');
 
     % Master Matrices
     run('/Users/Arne/Documents/GitHub/GCP/2_feature_extraction/GCP_master_matrix.m');

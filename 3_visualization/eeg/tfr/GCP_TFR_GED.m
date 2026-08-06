@@ -4,7 +4,7 @@
 %   1) Grand-average TFR per condition (2x2 panel)
 %   2) Difference TFR (100% - 25%)
 %
-% Input structure (from GCP_eeg_fex_GED_TFR.m):
+% Input structure (from GCP_eeg_fex_GED.m when do_tfr is true):
 %   tfr_cond_avg{c, s}  FieldTrip freq struct, label = {'GED'}, baseline-corrected dB
 
 %% Setup
