@@ -32,11 +32,11 @@
 %% Setup
 startup
 [subjects, paths, colors, headmodel] = setup('GCP');
-ged_helpers_dir = fullfile(paths.code, '2_feature_extraction', 'GED-helpers');
-if ~isfolder(ged_helpers_dir)
-    error('GED helpers folder not found: %s', ged_helpers_dir);
+if ispc
+    addpath('C:\Users\Administrator\Documents\GitHub\GCP\2_feature_extraction\GED-helpers')
+else
+    addpath('/Users/Arne/Documents/GitHub/GCP/2_feature_extraction/GED-helpers');
 end
-addpath(ged_helpers_dir);
 nSubj = length(subjects);
 total_runtime_tic = tic;
 
