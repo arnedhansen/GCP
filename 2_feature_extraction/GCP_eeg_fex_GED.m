@@ -114,6 +114,8 @@ all_topos       = cell(1, nSubj);
 all_topos_early = cell(1, nSubj);
 all_topos_late  = cell(1, nSubj);
 all_topo_labels = cell(1, nSubj);
+all_combined_spectrum_full = cell(1, nSubj);
+all_combined_eigenvalue_full = nan(1, nSubj);
 all_eigenvalues = nan(1, nSubj);
 all_selected_comp_idx  = nan(1, nSubj);
 all_selected_comp_corr = nan(1, nSubj);
@@ -731,6 +733,18 @@ for subj = 1:nSubj
     all_topos_late{subj} = topo_temp_late;
     all_selected_comp_indices_multi{subj} = selected_idx_full;
     all_selected_comp_weights{subj} = w_combined_full(:)';
+    [sel_idx_spec, sel_w_spec] = sanitize_selected_components( ...
+        selected_idx_full, w_combined_full, size(searchMeanPrSpectrum_full, 1));
+    if isempty(sel_idx_spec) || isempty(searchMeanPrSpectrum_full)
+        all_combined_spectrum_full{subj} = [];
+        all_combined_eigenvalue_full(subj) = NaN;
+    else
+        all_combined_spectrum_full{subj} = sel_w_spec(:)' * searchMeanPrSpectrum_full(sel_idx_spec, :);
+        evals_sel = evals_sorted_full(sel_idx_spec);
+        evals_sel = evals_sel(:);
+        evals_sel(~isfinite(evals_sel)) = NaN;
+        all_combined_eigenvalue_full(subj) = sum(sel_w_spec(:) .* evals_sel);
+    end
     if isempty(selected_idx_full)
         all_selected_comp_idx(subj) = NaN;
         all_selected_comp_corr(subj) = NaN;
@@ -1849,6 +1863,20 @@ title('Gamma Peak Power Shift', ...
 cond_shift_power_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_power.png');
 save_figure_png(fig_condition_shift_power, cond_shift_power_path);
 
+%% All-subjects FULL combined topography + spectrum overview
+cfg_topo_all = [];
+cfg_topo_all.layout    = headmodel.layANThead;
+cfg_topo_all.comment   = 'no';
+cfg_topo_all.marker    = 'off';
+cfg_topo_all.style     = 'straight';
+cfg_topo_all.gridscale = 300;
+cfg_topo_all.zlim      = 'maxabs';
+cfg_topo_all.colormap  = '*RdBu';
+cfg_topo_all.figure    = 'gcf';
+plot_all_subjects_full_combined_topo_spectra( ...
+    fig_save_dir_component_selection_root, subjects, scan_freqs, analysis_freq_range, cfg_topo_all, ...
+    all_topo_labels, all_topos, all_combined_spectrum_full, all_combined_eigenvalue_full);
+
 %% Save results
 save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_GED.mat');
 save(save_path, ...
@@ -1864,7 +1892,8 @@ save(save_path, ...
     'trials_trialcv_early', 'trials_trialcv_late', ...
     'trials_mean_centroid', 'trials_median_centroid', ...
     'trials_gamma_power', 'trials_gamma_power_early', 'trials_gamma_power_late', ...
-    'all_topos', 'all_topos_early', 'all_topos_late', 'all_topo_labels', 'all_eigenvalues', ...
+    'all_topos', 'all_topos_early', 'all_topos_late', 'all_topo_labels', ...
+    'all_combined_spectrum_full', 'all_combined_eigenvalue_full', 'all_eigenvalues', ...
     'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
     'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
     'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
@@ -2829,6 +2858,115 @@ end
 sgtitle(sprintf('Combined GED Components: %s', subject_id), ...
     'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
 save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_combined.png', subject_id)));
+close(fig);
+end
+
+function plot_all_subjects_full_combined_topo_spectra( ...
+    save_dir, subjects, scan_freqs, analysis_freq_range, cfg_topo, ...
+    all_topo_labels, all_topos, all_combined_spectrum_full, all_combined_eigenvalue_full)
+nSubj = numel(subjects);
+n_rows = 5;
+n_cols = 2;
+n_slots = n_rows * n_cols;
+if nSubj > n_slots
+    warning('GED:AllSubjectsFullOverview', ...
+        'More than %d subjects; only the first %d are shown in the FULL overview figure.', ...
+        n_slots, n_slots);
+end
+n_plot = min(nSubj, n_slots);
+
+fig = figure('Position', [0 0 1512 982], 'Color', 'w');
+left_m = 0.04;
+right_m = 0.99;
+bottom_m = 0.04;
+top_m = 0.93;
+gap_x = 0.035;
+gap_y = 0.045;
+inner_gap = 0.012;
+topo_frac = 0.55;
+cell_w = (right_m - left_m - (n_cols - 1) * gap_x) / n_cols;
+cell_h = (top_m - bottom_m - (n_rows - 1) * gap_y) / n_rows;
+
+for subj = 1:n_plot
+    row = ceil(subj / n_cols);
+    col = mod(subj - 1, n_cols) + 1;
+    x0 = left_m + (col - 1) * (cell_w + gap_x);
+    y0 = bottom_m + (n_rows - row) * (cell_h + gap_y);
+    h_spec = cell_h * (1 - topo_frac) - inner_gap / 2;
+    h_topo = cell_h * topo_frac - inner_gap / 2;
+
+    axes('Position', [x0, y0 + h_spec + inner_gap, cell_w, h_topo]);
+    topo_vec = all_topos{subj};
+    topo_labels = all_topo_labels{subj};
+    if isempty(topo_vec) || isempty(topo_labels) || all(~isfinite(topo_vec(:)))
+        axis off;
+        text(0.5, 0.5, sprintf('%s: no topo', subjects{subj}), ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+            'FontSize', 9, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+    else
+        topo_data = [];
+        topo_data.label = topo_labels;
+        topo_data.avg = topo_vec(:);
+        topo_data.dimord = 'chan';
+        topo_vals = topo_vec(isfinite(topo_vec));
+        topo_clim = max(abs(topo_vals));
+        if ~isfinite(topo_clim) || topo_clim <= 0
+            topo_clim = 1;
+        end
+        cfg_ci = cfg_topo;
+        cfg_ci.zlim = [-topo_clim topo_clim];
+        try
+            ft_topoplotER(cfg_ci, topo_data);
+        catch
+            imagesc(topo_vec(:)); axis tight;
+            caxis([-topo_clim topo_clim]);
+        end
+        title(sprintf('%s', subjects{subj}), 'FontSize', 11, 'FontWeight', 'bold', 'Interpreter', 'none');
+    end
+    set(gca, 'FontSize', 8);
+
+    axes('Position', [x0, y0, cell_w, h_spec]);
+    hold on;
+    spec_vec = all_combined_spectrum_full{subj};
+    if isempty(spec_vec) || all(~isfinite(spec_vec(:)))
+        axis off;
+        text(0.5, 0.5, sprintf('%s: no spectrum', subjects{subj}), ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+            'FontSize', 9, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+    else
+        plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 1.5);
+        yline(0, 'k--', 'LineWidth', 0.7);
+        xlim([analysis_freq_range(1) analysis_freq_range(2)]);
+        spec_finite = spec_vec(isfinite(spec_vec));
+        if ~isempty(spec_finite)
+            sp_min = min(spec_finite);
+            sp_max = max(spec_finite);
+            if isfinite(sp_min) && isfinite(sp_max) && sp_min < sp_max
+                sp_range = sp_max - sp_min;
+                ylim([sp_min - 0.12 * sp_range, sp_max + 0.28 * sp_range]);
+            end
+        end
+        format_power_change_db_axis(gca);
+        if col == 1
+            ylabel('Power [dB]', 'FontSize', 8);
+        end
+        if row == n_rows
+            xlabel('Hz', 'FontSize', 8);
+        end
+        box on;
+        eig_val = all_combined_eigenvalue_full(subj);
+        if isfinite(eig_val)
+            text(0.02, 0.96, sprintf('\\lambda = %.2f', eig_val), ...
+                'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
+                'FontSize', 8, 'Interpreter', 'tex', 'Color', [0.1 0.1 0.1]);
+        end
+        set(gca, 'FontSize', 8);
+    end
+end
+
+sgtitle('Combined GED Components (FULL)', ...
+    'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
+save_figure_png(fig, fullfile(save_dir, 'GCP_eeg_GED_topo_spectra_combined_full_allsubjects.png'));
 close(fig);
 end
 
