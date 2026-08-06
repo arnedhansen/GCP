@@ -7,8 +7,10 @@
 %      regularisation and rank candidate components by eigenvalue.
 %   - Retain candidates that pass SNR (lambda), spectral peak-form (PF),
 %      posterior>frontal and posterior>temporal dominance (post_front,
-%      post_temp), and rising HF-slope EMG exclusion. Combine up to 5
-%      eligible components with eigenvalue-proportional weights.
+%      post_temp), low whole-scalp single-channel peak fraction (rejects
+%      ultra-focal EMG anywhere on the montage), and rising HF-slope EMG
+%      exclusion. Combine up to 5 eligible components with
+%      eigenvalue-proportional weights.
 %   - A signed occipital/frontal spatial template is used only to align
 %      component polarity before scoring and for QC storage.
 %
@@ -63,7 +65,7 @@ mtmfft_tapsmofrq_hz = 3; % FieldTrip cfg.tapsmofrq for mtmfft (Hz)
 % GED
 lambda = 0.05;              % regularization
 ged_search_n = 10;          % search first N GED components
-min_eigval = 1.1;           % minimum GED eigenvalue (lambda >= 1.1)
+min_eigval = 1.05;           % minimum GED eigenvalue (lambda >= 1.05)
 min_powspctrm_form = 0.75;  % minimum PF (powspctrm-form) score for candidate eligibility
 random_seed = 123;
 % TFR (GED-projected multitaper)
@@ -313,6 +315,7 @@ for subj = 1:nSubj
     eligible_full = []; eligible_early = []; eligible_late = [];
     post_front_full = []; post_front_early = []; post_front_late = [];
     post_temp_full = []; post_temp_early = []; post_temp_late = [];
+    topo_peak_frac_full = []; topo_peak_frac_early = []; topo_peak_frac_late = [];
     emg_hf_slope_full = []; emg_hf_slope_early = []; emg_hf_slope_late = [];
     powspctrm_form_score_full = []; powspctrm_form_score_early = []; powspctrm_form_score_late = [];
 
@@ -371,6 +374,7 @@ for subj = 1:nSubj
         searchTempStrength = nan(nSearch, 1);
         searchPostFront = nan(nSearch, 1);
         searchPostTemp = nan(nSearch, 1);
+        searchTopoPeakFrac = nan(nSearch, 1);
         searchEmgHfSlope = nan(nSearch, 1);
         searchEmgClass = repmat({'unassigned'}, nSearch, 1);
         searchMeanPrSpectrum = nan(nSearch, numel(scan_freqs));
@@ -404,6 +408,13 @@ for subj = 1:nSubj
                 temp_strength = 0;
                 post_temp_ci = Inf;
             end
+            topo_abs = abs(topo_ci(:));
+            topo_abs_sum = sum(topo_abs(isfinite(topo_abs)));
+            if isfinite(topo_abs_sum) && topo_abs_sum > 0
+                topo_peak_frac_ci = max(topo_abs(isfinite(topo_abs))) / topo_abs_sum;
+            else
+                topo_peak_frac_ci = NaN;
+            end
             proxy_ci = estimate_component_artifact_proxies( ...
                 w_ci, dat_per_cond, stim_windows{w}, baseline_window, fsample, scan_freqs, mtmfft_tapsmofrq_hz);
 
@@ -415,27 +426,31 @@ for subj = 1:nSubj
             searchTempStrength(ci) = temp_strength;
             searchPostFront(ci) = post_front_ci;
             searchPostTemp(ci) = post_temp_ci;
+            searchTopoPeakFrac(ci) = topo_peak_frac_ci;
             searchEmgHfSlope(ci) = proxy_ci.hf_slope;
             searchMeanPrSpectrum(ci, :) = proxy_ci.mean_pr_spectrum(:)';
         end
 
-        % Stage-1 gates: SNR, PF, post>front, post>temp, rising HF EMG
+        % Stage-1 gates: SNR, PF, post>front, post>temp, non-focal topo, rising HF EMG
         eval_raw_vec = evals_sorted(1:nSearch);
         post_front_vec = searchPostFront;
         post_temp_vec = searchPostTemp;
+        topo_peak_frac_vec = searchTopoPeakFrac;
         emg_hf_slope_vec = searchEmgHfSlope;
         emg_hf_slope_vec(~isfinite(emg_hf_slope_vec)) = 0;
         [powspctrm_form_score_vec, ~] = compute_powspctrm_form_laplacian_score_from_spectra( ...
             searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
         finite_metrics = isfinite(eval_raw_vec) & isfinite(post_front_vec) & ...
-            isfinite(post_temp_vec) & isfinite(powspctrm_form_score_vec);
+            isfinite(post_temp_vec) & isfinite(topo_peak_frac_vec) & ...
+            isfinite(powspctrm_form_score_vec);
         pass_eig_gate = finite_metrics & (eval_raw_vec >= min_eigval);
         pass_peak_gate = finite_metrics & (powspctrm_form_score_vec >= min_powspctrm_form);
         pass_post_front_gate = finite_metrics & (post_front_vec > 1);
         pass_post_temp_gate = finite_metrics & (post_temp_vec > 1);
+        fail_topo_peak_frac = finite_metrics & (topo_peak_frac_vec > 0.25);
         fail_emg_hf_slope = finite_metrics & (emg_hf_slope_vec > 0);
         for ci = 1:nSearch
-            if fail_emg_hf_slope(ci)
+            if fail_emg_hf_slope(ci) || fail_topo_peak_frac(ci)
                 searchEmgClass{ci} = 'EMG';
             elseif ~(post_front_vec(ci) > 1)
                 searchEmgClass{ci} = 'frontal';
@@ -446,7 +461,7 @@ for subj = 1:nSubj
             end
         end
         eligible = pass_eig_gate & pass_peak_gate & pass_post_front_gate & ...
-            pass_post_temp_gate & ~fail_emg_hf_slope;
+            pass_post_temp_gate & ~fail_topo_peak_frac & ~fail_emg_hf_slope;
         no_threshold_match = ~any(eligible);
         selection_pool_mask = eligible;
         searchScores = eval_raw_vec;
@@ -485,6 +500,7 @@ for subj = 1:nSubj
             bestFront = NaN;
             bestPostFront = NaN;
             bestPostTemp = NaN;
+            bestTopoPeakFrac = NaN;
             topo_temp = nan(nChans, 1);
         else
             bestIdx = selected_idx(1);
@@ -494,6 +510,7 @@ for subj = 1:nSubj
             bestFront = searchFrontStrength(bestIdx);
             bestPostFront = post_front_vec(bestIdx);
             bestPostTemp = post_temp_vec(bestIdx);
+            bestTopoPeakFrac = topo_peak_frac_vec(bestIdx);
 
             topComp = searchFilters(:, bestIdx);
             if numel(selected_idx) > 1
@@ -526,6 +543,7 @@ for subj = 1:nSubj
             eligible_full = eligible;
             post_front_full = post_front_vec;
             post_temp_full = post_temp_vec;
+            topo_peak_frac_full = topo_peak_frac_vec;
             emg_hf_slope_full = emg_hf_slope_vec;
             powspctrm_form_score_full = powspctrm_form_score_vec;
         elseif w == 2
@@ -540,6 +558,7 @@ for subj = 1:nSubj
             eligible_early = eligible;
             post_front_early = post_front_vec;
             post_temp_early = post_temp_vec;
+            topo_peak_frac_early = topo_peak_frac_vec;
             emg_hf_slope_early = emg_hf_slope_vec;
             powspctrm_form_score_early = powspctrm_form_score_vec;
         else
@@ -554,6 +573,7 @@ for subj = 1:nSubj
             eligible_late = eligible;
             post_front_late = post_front_vec;
             post_temp_late = post_temp_vec;
+            topo_peak_frac_late = topo_peak_frac_vec;
             emg_hf_slope_late = emg_hf_slope_vec;
             powspctrm_form_score_late = powspctrm_form_score_vec;
         end
@@ -592,10 +612,12 @@ for subj = 1:nSubj
             'best_corr', bestCorr, ...
             'best_post_front', bestPostFront, ...
             'best_post_temp', bestPostTemp, ...
+            'best_topo_peak_frac', bestTopoPeakFrac, ...
             'best_front', bestFront, ...
             'best_post', bestPost, ...
             'post_front', post_front_vec, ...
             'post_temp', post_temp_vec, ...
+            'topo_peak_frac', topo_peak_frac_vec, ...
             'emg_hf_slope', emg_hf_slope_vec, ...
             'emg_class', {searchEmgClass}, ...
             'eligible', eligible, ...
@@ -684,28 +706,28 @@ for subj = 1:nSubj
     cfg_topo.zlim      = 'maxabs';
     cfg_topo.colormap  = '*RdBu';
     cfg_topo.figure    = 'gcf';
-    plot_emg_exclusion_diagnostics( ...
+    plot_selected_components( ...
         fig_save_dir_component_selection, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(eligible_full)), ...
         searchEmgClass_full, ...
         eligible_full, ...
-        post_front_full, post_temp_full, emg_hf_slope_full, ...
+        post_front_full, post_temp_full, topo_peak_frac_full, emg_hf_slope_full, ...
         cfg_topo, all_topo_labels{subj}, powspctrm_form_score_full, ...
         selected_idx_full);
-    plot_emg_exclusion_diagnostics( ...
+    plot_selected_components( ...
         fig_save_dir_component_selection, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(eligible_early)), ...
         searchEmgClass_early, ...
         eligible_early, ...
-        post_front_early, post_temp_early, emg_hf_slope_early, ...
+        post_front_early, post_temp_early, topo_peak_frac_early, emg_hf_slope_early, ...
         cfg_topo, all_topo_labels{subj}, powspctrm_form_score_early, ...
         selected_idx_early);
-    plot_emg_exclusion_diagnostics( ...
+    plot_selected_components( ...
         fig_save_dir_component_selection, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(eligible_late)), ...
         searchEmgClass_late, ...
         eligible_late, ...
-        post_front_late, post_temp_late, emg_hf_slope_late, ...
+        post_front_late, post_temp_late, topo_peak_frac_late, emg_hf_slope_late, ...
         cfg_topo, all_topo_labels{subj}, powspctrm_form_score_late, ...
         selected_idx_late);
     plot_combined_topo_spectra_windows( ...
