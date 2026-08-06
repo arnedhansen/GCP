@@ -6,9 +6,11 @@
 %   - Solve window-specific GED (S_stim * w = lambda * S_base * w) with
 %      regularisation and rank candidate components by eigenvalue.
 %   - Retain candidates that pass SNR (lambda), spectral peak-form (PF),
-%      correlation with a predefined occipital/frontal spatial template,
-%      and rising HF-slope EMG exclusion. Combine up to 5 eligible
-%      components with eigenvalue-proportional weights.
+%      posterior>frontal and posterior>temporal dominance (post_front,
+%      post_temp), and rising HF-slope EMG exclusion. Combine up to 5
+%      eligible components with eigenvalue-proportional weights.
+%   - A signed occipital/frontal spatial template is used only to align
+%      component polarity before scoring and for QC storage.
 %
 % Trial-level spectral scanning (per subject, condition, trial)
 %   - Project each trial to the combined GED component space and compute
@@ -63,13 +65,7 @@ lambda = 0.05;              % regularization
 ged_search_n = 10;          % search first N GED components
 min_eigval = 1.1;           % minimum GED eigenvalue (lambda >= 1.1)
 min_powspctrm_form = 0.75;  % minimum PF (powspctrm-form) score for candidate eligibility
-min_template_corr = 0.30;   % minimum corr(topo, occipital template) after polarity alignment
-max_components_to_combine = 5; % top-K cap for lambda-weighted combination
 random_seed = 123;
-powratio_trial_freq_smooth_bins = 5;      % movmean length (frequency bins) on per-trial powratio for peak/centroid
-powratio_condition_freq_smooth_bins = 1;  % movmean length on condition-mean powratio before condition-level peaks/plots
-peak_power_halfwidth_hz = 5;  % peak power = mean power within peak_hz +/-
-
 % TFR (GED-projected multitaper)
 tfr_foi = 30:1:90;
 tfr_toi = -1.75:0.05:2.00;
@@ -315,8 +311,8 @@ for subj = 1:nSubj
     searchMeanPrSpectrum_full = []; searchMeanPrSpectrum_early = []; searchMeanPrSpectrum_late = [];
     searchEmgClass_full = {}; searchEmgClass_early = {}; searchEmgClass_late = {};
     eligible_full = []; eligible_early = []; eligible_late = [];
-    occdom_full = []; occdom_early = []; occdom_late = [];
-    emg_temp_full = []; emg_temp_early = []; emg_temp_late = [];
+    post_front_full = []; post_front_early = []; post_front_late = [];
+    post_temp_full = []; post_temp_early = []; post_temp_late = [];
     emg_hf_slope_full = []; emg_hf_slope_early = []; emg_hf_slope_late = [];
     powspctrm_form_score_full = []; powspctrm_form_score_early = []; powspctrm_form_score_late = [];
 
@@ -370,11 +366,11 @@ for subj = 1:nSubj
         searchFilters = nan(nChans, nSearch);
         searchTopos = nan(nChans, nSearch);
         searchCorrs = nan(nSearch, 1);
-        searchOccStrength = nan(nSearch, 1);
+        searchPostStrength = nan(nSearch, 1);
         searchFrontStrength = nan(nSearch, 1);
         searchTempStrength = nan(nSearch, 1);
-        searchOccdom = nan(nSearch, 1);
-        searchEmgTemp = nan(nSearch, 1);
+        searchPostFront = nan(nSearch, 1);
+        searchPostTemp = nan(nSearch, 1);
         searchEmgHfSlope = nan(nSearch, 1);
         searchEmgClass = repmat({'unassigned'}, nSearch, 1);
         searchMeanPrSpectrum = nan(nSearch, numel(scan_freqs));
@@ -389,63 +385,68 @@ for subj = 1:nSubj
                 topo_ci = -topo_ci;
                 r_ci = -r_ci;
             end
-            occ_strength = mean(abs(topo_ci(occ_idx)));
+            if ~isempty(post_idx)
+                post_strength = mean(abs(topo_ci(post_idx)));
+            else
+                post_strength = 0;
+            end
             if ~isempty(front_idx)
                 front_strength = mean(abs(topo_ci(front_idx)));
-                occdom_ci = occ_strength / max(front_strength, eps);
+                post_front_ci = post_strength / max(front_strength, eps);
             else
                 front_strength = 0;
-                occdom_ci = Inf;
+                post_front_ci = Inf;
             end
             if ~isempty(temp_idx)
                 temp_strength = mean(abs(topo_ci(temp_idx)));
+                post_temp_ci = post_strength / max(temp_strength, eps);
             else
                 temp_strength = 0;
+                post_temp_ci = Inf;
             end
-            emg_temp_ci = temp_strength / max(occ_strength, eps);
             proxy_ci = estimate_component_artifact_proxies( ...
                 w_ci, dat_per_cond, stim_windows{w}, baseline_window, fsample, scan_freqs, mtmfft_tapsmofrq_hz);
 
             searchFilters(:, ci) = w_ci;
             searchTopos(:, ci) = topo_ci;
             searchCorrs(ci) = r_ci;
-            searchOccStrength(ci) = occ_strength;
+            searchPostStrength(ci) = post_strength;
             searchFrontStrength(ci) = front_strength;
             searchTempStrength(ci) = temp_strength;
-            searchOccdom(ci) = occdom_ci;
-            searchEmgTemp(ci) = emg_temp_ci;
+            searchPostFront(ci) = post_front_ci;
+            searchPostTemp(ci) = post_temp_ci;
             searchEmgHfSlope(ci) = proxy_ci.hf_slope;
             searchMeanPrSpectrum(ci, :) = proxy_ci.mean_pr_spectrum(:)';
         end
 
-        % Stage-1 gates: SNR, PF, occipital template correlation, rising HF EMG
+        % Stage-1 gates: SNR, PF, post>front, post>temp, rising HF EMG
         eval_raw_vec = evals_sorted(1:nSearch);
-        template_corr_vec = searchCorrs;
-        occdom_vec = searchOccdom;
-        emg_temp_vec = searchEmgTemp;
+        post_front_vec = searchPostFront;
+        post_temp_vec = searchPostTemp;
         emg_hf_slope_vec = searchEmgHfSlope;
         emg_hf_slope_vec(~isfinite(emg_hf_slope_vec)) = 0;
         [powspctrm_form_score_vec, ~] = compute_powspctrm_form_laplacian_score_from_spectra( ...
             searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
-        finite_metrics = isfinite(eval_raw_vec) & isfinite(template_corr_vec) & ...
-            isfinite(powspctrm_form_score_vec);
+        finite_metrics = isfinite(eval_raw_vec) & isfinite(post_front_vec) & ...
+            isfinite(post_temp_vec) & isfinite(powspctrm_form_score_vec);
         pass_eig_gate = finite_metrics & (eval_raw_vec >= min_eigval);
         pass_peak_gate = finite_metrics & (powspctrm_form_score_vec >= min_powspctrm_form);
-        pass_template_gate = finite_metrics & (template_corr_vec >= min_template_corr);
+        pass_post_front_gate = finite_metrics & (post_front_vec > 1);
+        pass_post_temp_gate = finite_metrics & (post_temp_vec > 1);
         fail_emg_hf_slope = finite_metrics & (emg_hf_slope_vec > 0);
         for ci = 1:nSearch
             if fail_emg_hf_slope(ci)
                 searchEmgClass{ci} = 'EMG';
-            elseif ~(template_corr_vec(ci) >= min_template_corr)
-                searchEmgClass{ci} = 'non-occipital';
-            elseif searchTempStrength(ci) >= searchOccStrength(ci) && ...
-                    searchTempStrength(ci) >= searchFrontStrength(ci)
+            elseif ~(post_front_vec(ci) > 1)
+                searchEmgClass{ci} = 'frontal';
+            elseif ~(post_temp_vec(ci) > 1)
                 searchEmgClass{ci} = 'temporal';
             else
-                searchEmgClass{ci} = 'occipital';
+                searchEmgClass{ci} = 'posterior';
             end
         end
-        eligible = pass_eig_gate & pass_peak_gate & pass_template_gate & ~fail_emg_hf_slope;
+        eligible = pass_eig_gate & pass_peak_gate & pass_post_front_gate & ...
+            pass_post_temp_gate & ~fail_emg_hf_slope;
         no_threshold_match = ~any(eligible);
         selection_pool_mask = eligible;
         searchScores = eval_raw_vec;
@@ -463,7 +464,7 @@ for subj = 1:nSubj
         else
             [~, combined_ord] = sort(eval_raw_vec(combined_idx), 'descend');
             combined_idx = combined_idx(combined_ord);
-            combined_idx = combined_idx(1:min(max_components_to_combine, numel(combined_idx)));
+            combined_idx = combined_idx(1:min(5, numel(combined_idx)));
 
             combined_weights = eval_raw_vec(combined_idx)';
             combined_weights(~isfinite(combined_weights) | combined_weights <= 0) = 0;
@@ -480,19 +481,19 @@ for subj = 1:nSubj
             bestIdx = NaN;
             bestScore = NaN;
             bestCorr = NaN;
-            bestOcc = NaN;
+            bestPost = NaN;
             bestFront = NaN;
-            bestRatio = NaN;
-            bestLeak = NaN;
+            bestPostFront = NaN;
+            bestPostTemp = NaN;
             topo_temp = nan(nChans, 1);
         else
             bestIdx = selected_idx(1);
             bestScore = searchScores(bestIdx);
             bestCorr = searchCorrs(bestIdx);
-            bestOcc = searchOccStrength(bestIdx);
+            bestPost = searchPostStrength(bestIdx);
             bestFront = searchFrontStrength(bestIdx);
-            bestRatio = occdom_vec(bestIdx);
-            bestLeak = 1 / max(occdom_vec(bestIdx), eps);
+            bestPostFront = post_front_vec(bestIdx);
+            bestPostTemp = post_temp_vec(bestIdx);
 
             topComp = searchFilters(:, bestIdx);
             if numel(selected_idx) > 1
@@ -523,8 +524,8 @@ for subj = 1:nSubj
             searchMeanPrSpectrum_full = searchMeanPrSpectrum;
             searchEmgClass_full = searchEmgClass;
             eligible_full = eligible;
-            occdom_full = occdom_vec;
-            emg_temp_full = emg_temp_vec;
+            post_front_full = post_front_vec;
+            post_temp_full = post_temp_vec;
             emg_hf_slope_full = emg_hf_slope_vec;
             powspctrm_form_score_full = powspctrm_form_score_vec;
         elseif w == 2
@@ -537,8 +538,8 @@ for subj = 1:nSubj
             searchMeanPrSpectrum_early = searchMeanPrSpectrum;
             searchEmgClass_early = searchEmgClass;
             eligible_early = eligible;
-            occdom_early = occdom_vec;
-            emg_temp_early = emg_temp_vec;
+            post_front_early = post_front_vec;
+            post_temp_early = post_temp_vec;
             emg_hf_slope_early = emg_hf_slope_vec;
             powspctrm_form_score_early = powspctrm_form_score_vec;
         else
@@ -551,8 +552,8 @@ for subj = 1:nSubj
             searchMeanPrSpectrum_late = searchMeanPrSpectrum;
             searchEmgClass_late = searchEmgClass;
             eligible_late = eligible;
-            occdom_late = occdom_vec;
-            emg_temp_late = emg_temp_vec;
+            post_front_late = post_front_vec;
+            post_temp_late = post_temp_vec;
             emg_hf_slope_late = emg_hf_slope_vec;
             powspctrm_form_score_late = powspctrm_form_score_vec;
         end
@@ -589,14 +590,12 @@ for subj = 1:nSubj
             'best_idx', bestIdx, ...
             'best_score', bestScore, ...
             'best_corr', bestCorr, ...
-            'best_occdom', bestRatio, ...
+            'best_post_front', bestPostFront, ...
+            'best_post_temp', bestPostTemp, ...
             'best_front', bestFront, ...
-            'best_occ', bestOcc, ...
-            'best_front_leak', bestLeak, ...
-            'template_corr', template_corr_vec, ...
-            'min_template_corr', min_template_corr, ...
-            'occdom', occdom_vec, ...
-            'emg_temp', emg_temp_vec, ...
+            'best_post', bestPost, ...
+            'post_front', post_front_vec, ...
+            'post_temp', post_temp_vec, ...
             'emg_hf_slope', emg_hf_slope_vec, ...
             'emg_class', {searchEmgClass}, ...
             'eligible', eligible, ...
@@ -690,8 +689,7 @@ for subj = 1:nSubj
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(eligible_full)), ...
         searchEmgClass_full, ...
         eligible_full, ...
-        searchCorrs_full, emg_hf_slope_full, min_template_corr, ...
-        occdom_full, emg_temp_full, ...
+        post_front_full, post_temp_full, emg_hf_slope_full, ...
         cfg_topo, all_topo_labels{subj}, powspctrm_form_score_full, ...
         selected_idx_full);
     plot_emg_exclusion_diagnostics( ...
@@ -699,8 +697,7 @@ for subj = 1:nSubj
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(eligible_early)), ...
         searchEmgClass_early, ...
         eligible_early, ...
-        searchCorrs_early, emg_hf_slope_early, min_template_corr, ...
-        occdom_early, emg_temp_early, ...
+        post_front_early, post_temp_early, emg_hf_slope_early, ...
         cfg_topo, all_topo_labels{subj}, powspctrm_form_score_early, ...
         selected_idx_early);
     plot_emg_exclusion_diagnostics( ...
@@ -708,8 +705,7 @@ for subj = 1:nSubj
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(eligible_late)), ...
         searchEmgClass_late, ...
         eligible_late, ...
-        searchCorrs_late, emg_hf_slope_late, min_template_corr, ...
-        occdom_late, emg_temp_late, ...
+        post_front_late, post_temp_late, emg_hf_slope_late, ...
         cfg_topo, all_topo_labels{subj}, powspctrm_form_score_late, ...
         selected_idx_late);
     plot_combined_topo_spectra_windows( ...
@@ -1125,7 +1121,7 @@ for subj = 1:nSubj
         [trl_peaks, trial_peak_power_full, trl_centroid] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            powratio_trial_freq_smooth_bins, peak_power_halfwidth_hz);
+            5, 5);
 
         trials_peaks{cond, subj} = trl_peaks;
         trials_centroid{cond, subj}     = trl_centroid;
@@ -1136,11 +1132,11 @@ for subj = 1:nSubj
         [trl_peaks_early, trial_peak_power_early, trl_centroid_early] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_early_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            powratio_trial_freq_smooth_bins, peak_power_halfwidth_hz);
+            5, 5);
         [trl_peaks_late, trial_peak_power_late, trl_centroid_late] = ...
             compute_trial_peak_metrics_from_powratio_fullscan( ...
             powratio_trials_late_fullscan, scan_freqs, true(size(scan_freqs)), ...
-            powratio_trial_freq_smooth_bins, peak_power_halfwidth_hz);
+            5, 5);
         % Trial-level metric outlier rejection (subject-condition specific).
         [outlier_mask_freq_full, ~] = detect_trial_metric_outliers_iqr( ...
             trl_peaks, trial_metric_outlier_iqr_mult);
@@ -1201,9 +1197,9 @@ for subj = 1:nSubj
         all_condition_powspctrm_full_unsmoothed{cond, subj} = cond_avg_full;
         all_condition_powspctrm_early_unsmoothed{cond, subj} = cond_avg_early;
         all_condition_powspctrm_late_unsmoothed{cond, subj} = cond_avg_late;
-        cond_avg_full = movmean(cond_avg_full, max(1, round(powratio_condition_freq_smooth_bins)), 'omitnan');
-        cond_avg_early = movmean(cond_avg_early, max(1, round(powratio_condition_freq_smooth_bins)), 'omitnan');
-        cond_avg_late = movmean(cond_avg_late, max(1, round(powratio_condition_freq_smooth_bins)), 'omitnan');
+        cond_avg_full = movmean(cond_avg_full, 1, 'omitnan');
+        cond_avg_early = movmean(cond_avg_early, 1, 'omitnan');
+        cond_avg_late = movmean(cond_avg_late, 1, 'omitnan');
         all_condition_powspctrm_full{cond, subj} = cond_avg_full;
         all_condition_powspctrm_early{cond, subj} = cond_avg_early;
         all_condition_powspctrm_late{cond, subj} = cond_avg_late;
@@ -1215,9 +1211,9 @@ for subj = 1:nSubj
         subj_condition_avg_early{cond} = cond_avg_early;
         subj_condition_avg_late{cond} = cond_avg_late;
 
-        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 1, peak_power_halfwidth_hz);
-        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 1, peak_power_halfwidth_hz);
-        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 1, peak_power_halfwidth_hz);
+        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 1, 5);
+        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 1, 5);
+        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 1, 5);
         all_condition_peak_freq_full(cond, subj) = peak_full_hz;
         all_condition_peak_freq_early(cond, subj) = peak_early_hz;
         all_condition_peak_freq_late(cond, subj) = peak_late_hz;
