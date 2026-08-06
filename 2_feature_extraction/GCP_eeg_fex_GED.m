@@ -5,9 +5,10 @@
 %      (30-90 Hz FIR) for three windows (full/early/late) and baseline.
 %   - Solve window-specific GED (S_stim * w = lambda * S_base * w) with
 %      regularisation and rank candidate components by eigenvalue.
-%   - Score candidates using occipital evidence, spectral powspctrm form
-%      quality, and artifact metrics. Exclude extreme outliers and build
-%      eigenvalue-weighted combined component.
+%   - Retain candidates that pass SNR (lambda), spectral peak-form (PF),
+%      occipital>frontal dominance (occdom), and transparent EMG gates
+%      (temporal dominance or rising HF slope). Combine up to 5 eligible
+%      components with eigenvalue-proportional weights.
 %
 % Trial-level spectral scanning (per subject, condition, trial)
 %   - Project each trial to the combined GED component space and compute
@@ -49,8 +50,9 @@ mtmfft_tapsmofrq_hz = 3; % FieldTrip cfg.tapsmofrq for mtmfft (Hz)
 % GED
 lambda = 0.05;              % regularization
 ged_search_n = 10;          % search first N GED components
-min_eigval = 1.1;           % minimum GED eigenvalue (lambda >= 1.1)
-min_powspctrm_form = 0.8;        % minimum PF (powspctrm-form) score for candidate eligibility
+min_eigval = 1.05;          % minimum GED eigenvalue (lambda >= 1.05)
+min_powspctrm_form = 0.75;  % minimum PF (powspctrm-form) score for candidate eligibility
+max_components_to_combine = 5; % top-K cap for lambda-weighted combination
 random_seed = 123;
 powratio_trial_freq_smooth_bins = 5;      % movmean length (frequency bins) on per-trial powratio for peak/centroid
 powratio_condition_freq_smooth_bins = 1;  % movmean length on condition-mean powratio before condition-level peaks/plots
@@ -291,22 +293,11 @@ for subj = 1:nSubj
     searchTopos_full = []; searchTopos_early = []; searchTopos_late = [];
     searchMeanPrSpectrum_full = []; searchMeanPrSpectrum_early = []; searchMeanPrSpectrum_late = [];
     searchEmgClass_full = {}; searchEmgClass_early = {}; searchEmgClass_late = {};
-    rejection_flags_full = struct(); rejection_flags_early = struct(); rejection_flags_late = struct();
-    warn_flags_full = struct(); warn_flags_early = struct(); warn_flags_late = struct();
     eligible_full = []; eligible_early = []; eligible_late = [];
-    front_leak_full = []; front_leak_early = []; front_leak_late = [];
-    temp_leak_full = []; temp_leak_early = []; temp_leak_late = [];
-    combined_leak_full = []; combined_leak_early = []; combined_leak_late = [];
-    lineharm_full = []; lineharm_early = []; lineharm_late = [];
-    hf_slope_full = []; hf_slope_early = []; hf_slope_late = [];
-    emg_artifact_score_full = []; emg_artifact_score_early = []; emg_artifact_score_late = [];
-    extreme_component_outlier_full = []; extreme_component_outlier_early = []; extreme_component_outlier_late = [];
+    occdom_full = []; occdom_early = []; occdom_late = [];
+    emg_temp_full = []; emg_temp_early = []; emg_temp_late = [];
+    emg_hf_slope_full = []; emg_hf_slope_early = []; emg_hf_slope_late = [];
     powspctrm_form_score_full = []; powspctrm_form_score_early = []; powspctrm_form_score_late = [];
-    powspctrm_form_deduct_full = []; powspctrm_form_deduct_early = []; powspctrm_form_deduct_late = [];
-    thr_max_combined_leak_full = NaN; thr_max_combined_leak_early = NaN; thr_max_combined_leak_late = NaN;
-    thr_max_hf_slope_full = NaN; thr_max_hf_slope_early = NaN; thr_max_hf_slope_late = NaN;
-    thr_max_emg_score_full = NaN; thr_max_emg_score_early = NaN; thr_max_emg_score_late = NaN;
-    thr_max_lineharm_full = NaN; thr_max_lineharm_early = NaN; thr_max_lineharm_late = NaN;
 
     % Simulated signed occipital template (same for all windows)
     template_front_weight = 0.75; % anti-template weight for frontal channels
@@ -361,14 +352,12 @@ for subj = 1:nSubj
         searchCorrs = nan(nSearch, 1);
         searchOccStrength = nan(nSearch, 1);
         searchFrontStrength = nan(nSearch, 1);
-        searchOccFrontRatio = nan(nSearch, 1);
-        searchFrontLeak = nan(nSearch, 1);
-        searchTempLeak = nan(nSearch, 1);
-        searchLineHarmRatio = nan(nSearch, 1);
-        searchHFSlope = nan(nSearch, 1);
+        searchTempStrength = nan(nSearch, 1);
+        searchOccdom = nan(nSearch, 1);
+        searchEmgTemp = nan(nSearch, 1);
+        searchEmgHfSlope = nan(nSearch, 1);
         searchEmgClass = repmat({'unassigned'}, nSearch, 1);
         searchMeanPrSpectrum = nan(nSearch, numel(scan_freqs));
-        searchTopoPosteriorConcentration = nan(nSearch, 1);
 
         % Forward model for topoplot and component scoring (window-specific)
         for ci = 1:nSearch
@@ -383,24 +372,17 @@ for subj = 1:nSubj
             occ_strength = mean(abs(topo_ci(occ_idx)));
             if ~isempty(front_idx)
                 front_strength = mean(abs(topo_ci(front_idx)));
-                ratio_ci = occ_strength / max(front_strength, eps);
-                front_leak_ci = front_strength / max(occ_strength, eps);
+                occdom_ci = occ_strength / max(front_strength, eps);
             else
                 front_strength = 0;
-                ratio_ci = Inf;
-                front_leak_ci = 0;
+                occdom_ci = Inf;
             end
-            temp_strength = mean(abs(topo_ci(temp_idx)));
-            temp_leak_ci = temp_strength / max(occ_strength, eps);
-            topo_abs = abs(topo_ci(:));
-            topo_finite = topo_abs(isfinite(topo_abs));
-            if isempty(topo_finite)
-                topo_finite = 0;
+            if ~isempty(temp_idx)
+                temp_strength = mean(abs(topo_ci(temp_idx)));
+            else
+                temp_strength = 0;
             end
-            posterior_mass = mean(topo_abs(post_idx));
-            total_mass = mean(topo_finite);
-            topo_posterior_concentration_ci = posterior_mass / max(total_mass, eps);
-            % Lightweight artifact proxies from trial-level component spectra
+            emg_temp_ci = temp_strength / max(occ_strength, eps);
             proxy_ci = estimate_component_artifact_proxies( ...
                 w_ci, dat_per_cond, stim_windows{w}, baseline_window, fsample, scan_freqs, mtmfft_tapsmofrq_hz);
 
@@ -409,120 +391,45 @@ for subj = 1:nSubj
             searchCorrs(ci) = r_ci;
             searchOccStrength(ci) = occ_strength;
             searchFrontStrength(ci) = front_strength;
-            searchOccFrontRatio(ci) = ratio_ci;
-            searchFrontLeak(ci) = front_leak_ci;
-            searchTempLeak(ci) = temp_leak_ci;
-            searchLineHarmRatio(ci) = proxy_ci.lineharm_ratio;
-            searchHFSlope(ci) = proxy_ci.hf_slope;
+            searchTempStrength(ci) = temp_strength;
+            searchOccdom(ci) = occdom_ci;
+            searchEmgTemp(ci) = emg_temp_ci;
+            searchEmgHfSlope(ci) = proxy_ci.hf_slope;
             searchMeanPrSpectrum(ci, :) = proxy_ci.mean_pr_spectrum(:)';
-            searchTopoPosteriorConcentration(ci) = topo_posterior_concentration_ci;
         end
 
-        % Candidate components metrics
-        max_combined_leak = 1.30;             % artifact guard: mean(front leak, temporal leak)
-        max_lineharm_ratio = 0.60;            % artifact guard: line-harmonic dominance ratio
-        max_hf_slope = -0.15;                 % informative only (diagnostics); not an eligibility gate
-        max_emg_score = 0.85;                 % anchor: very high EMG score
-        max_components_to_combine = 10;       % top-K cap for combined GED branch
-        outlier_ratio_thr = 3.0;              % lambda1/lambda2 threshold for extreme-component outlier detection
-        outlier_mad_mult = 4.0;               % MAD multiplier on log-eigenvalue distance
-        topo_nonposterior_max = 0.28;         % posterior concentration below this is non-posterior
-        occ_class_thr = 0.60;                 % occipital-evidence threshold for occipital class
-        emg_class_thr = 0.50;                 % EMG-score threshold for EMG class
-        min_occ_margin = 0.05;                % occipital-vs-EMG margin threshold
-        corr_vec = searchCorrs;
-        ratio_vec = searchOccFrontRatio;
+        % Stage-1 gates: SNR, PF, occipital>frontal, not EMG
         eval_raw_vec = evals_sorted(1:nSearch);
-        leak_vec = searchFrontLeak;
-        temp_leak_vec = searchTempLeak;
-        combined_leak_vec = 0.5 * (leak_vec + temp_leak_vec);
-        lineharm_vec = searchLineHarmRatio;
-        hf_slope_vec = searchHFSlope;
-        hf_slope_for_score = hf_slope_vec;
-        hf_slope_for_score(~isfinite(hf_slope_for_score)) = 0;
-        finite_metrics = isfinite(corr_vec) & isfinite(ratio_vec) & ...
-            isfinite(eval_raw_vec) & isfinite(leak_vec) & isfinite(temp_leak_vec) & ...
-            isfinite(combined_leak_vec) & isfinite(lineharm_vec);
-        peak_bonus_vec = compute_peak_bonus_from_spectra( ...
+        occdom_vec = searchOccdom;
+        emg_temp_vec = searchEmgTemp;
+        emg_hf_slope_vec = searchEmgHfSlope;
+        emg_hf_slope_vec(~isfinite(emg_hf_slope_vec)) = 0;
+        [powspctrm_form_score_vec, ~] = compute_powspctrm_form_laplacian_score_from_spectra( ...
             searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
-        [powspctrm_form_score_vec, powspctrm_form_deduct_vec] = compute_powspctrm_form_laplacian_score_from_spectra( ...
-            searchMeanPrSpectrum, scan_freqs, analysis_freq_range);
-        topo_posterior_vec = searchTopoPosteriorConcentration;
-        topo_nonposterior_fail_vec = topo_posterior_vec < topo_nonposterior_max;
-        occipital_evidence = 0.40 * normalize_robust(corr_vec) + ...
-            0.25 * normalize_robust(ratio_vec) + ...
-            0.35 * normalize_robust(topo_posterior_vec);
-        emg_artifact_score = 0.30 * normalize_robust(leak_vec) + ...
-            0.20 * normalize_robust(temp_leak_vec) + ...
-            0.30 * normalize_robust(lineharm_vec) + ...
-            0.20 * normalize_robust(max(hf_slope_for_score, 0));
-        enforced_min_eigval = min_eigval;
-        pass_eig_gate = finite_metrics & (eval_raw_vec >= enforced_min_eigval);
+        finite_metrics = isfinite(eval_raw_vec) & isfinite(occdom_vec) & ...
+            isfinite(emg_temp_vec) & isfinite(powspctrm_form_score_vec);
+        pass_eig_gate = finite_metrics & (eval_raw_vec >= min_eigval);
         pass_peak_gate = finite_metrics & (powspctrm_form_score_vec >= min_powspctrm_form);
-        fail_leak = finite_metrics & (combined_leak_vec > max_combined_leak);
-        fail_lineharm = finite_metrics & (lineharm_vec > max_lineharm_ratio);
-        fail_hf_slope = false(nSearch, 1); % HF slope kept in EMG score only; no eligibility gate
-        fail_emg_score = finite_metrics & (emg_artifact_score > max_emg_score);
-        hard_artifact_flags = fail_leak | fail_emg_score;
-        artifact_flags = fail_leak | fail_emg_score | ...
-            topo_nonposterior_fail_vec;
-        warn_any = fail_lineharm;
-        warn_flags = struct( ...
-            'combined_leak', false(nSearch, 1), ...
-            'lineharm', fail_lineharm, ...
-            'hf_slope', false(nSearch, 1), ...
-            'emg_score', false(nSearch, 1), ...
-            'any', warn_any);
-        rejection_flags = struct( ...
-            'combined_leak', fail_leak, ...
-            'lineharm', false(nSearch, 1), ...
-            'hf_slope', fail_hf_slope, ...
-            'emg_score', fail_emg_score, ...
-            'topo_nonposterior', topo_nonposterior_fail_vec);
-        occ_minus_emg_vec = occipital_evidence - emg_artifact_score;
+        pass_occdom_gate = finite_metrics & (occdom_vec > 1);
+        fail_emg_temp = finite_metrics & (emg_temp_vec >= 1);
+        fail_emg_hf_slope = finite_metrics & (emg_hf_slope_vec > 0);
+        fail_emg = fail_emg_temp | fail_emg_hf_slope;
         for ci = 1:nSearch
-            occ_minus_emg_ci = occ_minus_emg_vec(ci);
-            if (occipital_evidence(ci) >= occ_class_thr) && ...
-                    (emg_artifact_score(ci) < emg_class_thr) && ...
-                    (occ_minus_emg_ci >= min_occ_margin)
-                searchEmgClass{ci} = 'occipital';
-            elseif (occipital_evidence(ci) < occ_class_thr) && ...
-                    (emg_artifact_score(ci) >= emg_class_thr) && ...
-                    (-occ_minus_emg_ci >= min_occ_margin)
+            if fail_emg(ci)
                 searchEmgClass{ci} = 'EMG';
-            elseif (occipital_evidence(ci) >= occ_class_thr) && ...
-                    (emg_artifact_score(ci) >= emg_class_thr)
-                if abs(occ_minus_emg_ci) < min_occ_margin && ...
-                        (topo_posterior_vec(ci) >= topo_nonposterior_max)
-                    searchEmgClass{ci} = 'mixed';
-                elseif occ_minus_emg_ci >= 0
-                    searchEmgClass{ci} = 'occipital';
-                else
-                    searchEmgClass{ci} = 'EMG';
-                end
+            elseif ~(occdom_vec(ci) > 1)
+                searchEmgClass{ci} = 'frontal';
+            elseif searchTempStrength(ci) >= searchOccStrength(ci) && ...
+                    searchTempStrength(ci) >= searchFrontStrength(ci)
+                searchEmgClass{ci} = 'temporal';
             else
-                searchEmgClass{ci} = 'mixed';
+                searchEmgClass{ci} = 'occipital';
             end
         end
-        extreme_component_outlier_mask = false(nSearch, 1);
-        occipital_class_mask = cellfun(@(c) strcmpi(c, 'occipital'), searchEmgClass(:));
-        mixed_class_mask = cellfun(@(c) strcmpi(c, 'mixed'), searchEmgClass(:));
-        mixed_rescue_mask = mixed_class_mask & ...
-            ~hard_artifact_flags;
-        eligible_class_mask = (~artifact_flags & occipital_class_mask) | mixed_rescue_mask;
-        raw_eligible_for_outlier = pass_eig_gate & pass_peak_gate & ...
-            eligible_class_mask;
-        [~, extreme_component_outlier_idx] = exclude_extreme_component_outlier( ...
-            evals_sorted(1:nSearch), raw_eligible_for_outlier, outlier_ratio_thr, outlier_mad_mult);
-        if ~isempty(extreme_component_outlier_idx)
-            extreme_component_outlier_mask(extreme_component_outlier_idx) = true;
-        end
-        eligible = pass_eig_gate & pass_peak_gate & ...
-            ~extreme_component_outlier_mask & eligible_class_mask;
+        eligible = pass_eig_gate & pass_peak_gate & pass_occdom_gate & ~fail_emg;
         no_threshold_match = ~any(eligible);
         selection_pool_mask = eligible;
-        searchScores = compute_calibrated_rank_aggregation_score( ...
-            eval_raw_vec, powspctrm_form_score_vec, peak_bonus_vec, occipital_evidence, emg_artifact_score);
+        searchScores = eval_raw_vec;
         searchScores(~finite_metrics) = -Inf;
         searchScores(~selection_pool_mask) = -Inf;
         [bestScore, bestIdx] = max(searchScores);
@@ -531,18 +438,15 @@ for subj = 1:nSubj
             bestScore = NaN;
         end
 
-        combined_idx = find(selection_pool_mask & isfinite(searchScores));
+        combined_idx = find(selection_pool_mask);
         if isempty(combined_idx)
             combined_weights = [];
         else
-            [~, combined_ord] = sort(searchScores(combined_idx), 'descend');
-            if ~any(isfinite(searchScores(combined_idx)))
-                [~, combined_ord] = sort(evals_sorted(combined_idx), 'descend');
-            end
+            [~, combined_ord] = sort(eval_raw_vec(combined_idx), 'descend');
             combined_idx = combined_idx(combined_ord);
             combined_idx = combined_idx(1:min(max_components_to_combine, numel(combined_idx)));
 
-            combined_weights = evals_sorted(combined_idx)';
+            combined_weights = eval_raw_vec(combined_idx)';
             combined_weights(~isfinite(combined_weights) | combined_weights <= 0) = 0;
             if sum(combined_weights) <= 0
                 combined_weights = ones(1, numel(combined_idx));
@@ -568,8 +472,8 @@ for subj = 1:nSubj
             bestCorr = searchCorrs(bestIdx);
             bestOcc = searchOccStrength(bestIdx);
             bestFront = searchFrontStrength(bestIdx);
-            bestRatio = searchOccFrontRatio(bestIdx);
-            bestLeak = searchFrontLeak(bestIdx);
+            bestRatio = occdom_vec(bestIdx);
+            bestLeak = 1 / max(occdom_vec(bestIdx), eps);
 
             topComp = searchFilters(:, bestIdx);
             if numel(selected_idx) > 1
@@ -599,22 +503,11 @@ for subj = 1:nSubj
             searchTopos_full = searchTopos;
             searchMeanPrSpectrum_full = searchMeanPrSpectrum;
             searchEmgClass_full = searchEmgClass;
-            rejection_flags_full = rejection_flags;
-            warn_flags_full = warn_flags;
             eligible_full = eligible;
-            front_leak_full = leak_vec;
-            temp_leak_full = temp_leak_vec;
-            combined_leak_full = combined_leak_vec;
-            lineharm_full = lineharm_vec;
-            hf_slope_full = hf_slope_vec;
-            emg_artifact_score_full = emg_artifact_score;
-            extreme_component_outlier_full = extreme_component_outlier_mask;
+            occdom_full = occdom_vec;
+            emg_temp_full = emg_temp_vec;
+            emg_hf_slope_full = emg_hf_slope_vec;
             powspctrm_form_score_full = powspctrm_form_score_vec;
-            powspctrm_form_deduct_full = powspctrm_form_deduct_vec;
-            thr_max_combined_leak_full = max_combined_leak;
-            thr_max_hf_slope_full = max_hf_slope;
-            thr_max_emg_score_full = max_emg_score;
-            thr_max_lineharm_full = max_lineharm_ratio;
         elseif w == 2
             searchFilters_early = searchFilters;
             selected_idx_early = selected_idx;
@@ -624,22 +517,11 @@ for subj = 1:nSubj
             searchTopos_early = searchTopos;
             searchMeanPrSpectrum_early = searchMeanPrSpectrum;
             searchEmgClass_early = searchEmgClass;
-            rejection_flags_early = rejection_flags;
-            warn_flags_early = warn_flags;
             eligible_early = eligible;
-            front_leak_early = leak_vec;
-            temp_leak_early = temp_leak_vec;
-            combined_leak_early = combined_leak_vec;
-            lineharm_early = lineharm_vec;
-            hf_slope_early = hf_slope_vec;
-            emg_artifact_score_early = emg_artifact_score;
-            extreme_component_outlier_early = extreme_component_outlier_mask;
+            occdom_early = occdom_vec;
+            emg_temp_early = emg_temp_vec;
+            emg_hf_slope_early = emg_hf_slope_vec;
             powspctrm_form_score_early = powspctrm_form_score_vec;
-            powspctrm_form_deduct_early = powspctrm_form_deduct_vec;
-            thr_max_combined_leak_early = max_combined_leak;
-            thr_max_hf_slope_early = max_hf_slope;
-            thr_max_emg_score_early = max_emg_score;
-            thr_max_lineharm_early = max_lineharm_ratio;
         else
             searchFilters_late = searchFilters;
             selected_idx_late = selected_idx;
@@ -649,22 +531,11 @@ for subj = 1:nSubj
             searchTopos_late = searchTopos;
             searchMeanPrSpectrum_late = searchMeanPrSpectrum;
             searchEmgClass_late = searchEmgClass;
-            rejection_flags_late = rejection_flags;
-            warn_flags_late = warn_flags;
             eligible_late = eligible;
-            front_leak_late = leak_vec;
-            temp_leak_late = temp_leak_vec;
-            combined_leak_late = combined_leak_vec;
-            lineharm_late = lineharm_vec;
-            hf_slope_late = hf_slope_vec;
-            emg_artifact_score_late = emg_artifact_score;
-            extreme_component_outlier_late = extreme_component_outlier_mask;
+            occdom_late = occdom_vec;
+            emg_temp_late = emg_temp_vec;
+            emg_hf_slope_late = emg_hf_slope_vec;
             powspctrm_form_score_late = powspctrm_form_score_vec;
-            powspctrm_form_deduct_late = powspctrm_form_deduct_vec;
-            thr_max_combined_leak_late = max_combined_leak;
-            thr_max_hf_slope_late = max_hf_slope;
-            thr_max_emg_score_late = max_emg_score;
-            thr_max_lineharm_late = max_lineharm_ratio;
         end
 
         if w == 1
@@ -699,18 +570,15 @@ for subj = 1:nSubj
             'best_idx', bestIdx, ...
             'best_score', bestScore, ...
             'best_corr', bestCorr, ...
-            'best_ratio', bestRatio, ...
+            'best_occdom', bestRatio, ...
             'best_front', bestFront, ...
             'best_occ', bestOcc, ...
-            'best_leak', bestLeak, ...
-            'emg_artifact_score', emg_artifact_score, ...
-            'occipital_evidence', occipital_evidence, ...
-            'occ_minus_emg', occ_minus_emg_vec, ...
+            'best_front_leak', bestLeak, ...
+            'occdom', occdom_vec, ...
+            'emg_temp', emg_temp_vec, ...
+            'emg_hf_slope', emg_hf_slope_vec, ...
             'emg_class', {searchEmgClass}, ...
-            'mixed_rescue_mask', mixed_rescue_mask, ...
-            'reject_flags', artifact_flags, ...
-            'warn_flags', warn_flags, ...
-            'rejection_flags', rejection_flags, ...
+            'eligible', eligible, ...
             'no_threshold_match', no_threshold_match);
         if w == 1
             all_component_selection_stats_full{subj} = comp_sel_struct;
@@ -721,13 +589,27 @@ for subj = 1:nSubj
         end
     end
 
-    W_combined_full = searchFilters_full(:, selected_idx_full);
-    W_combined_early = searchFilters_early(:, selected_idx_early);
-    W_combined_late = searchFilters_late(:, selected_idx_late);
-
-    topo_temp_full = searchTopos_full(:, selected_idx_full) * w_combined_full(:);
-    topo_temp_early = searchTopos_early(:, selected_idx_early) * w_combined_early(:);
-    topo_temp_late = searchTopos_late(:, selected_idx_late) * w_combined_late(:);
+    if isempty(selected_idx_full)
+        W_combined_full = [];
+        topo_temp_full = nan(nChans, 1);
+    else
+        W_combined_full = searchFilters_full(:, selected_idx_full);
+        topo_temp_full = searchTopos_full(:, selected_idx_full) * w_combined_full(:);
+    end
+    if isempty(selected_idx_early)
+        W_combined_early = [];
+        topo_temp_early = nan(nChans, 1);
+    else
+        W_combined_early = searchFilters_early(:, selected_idx_early);
+        topo_temp_early = searchTopos_early(:, selected_idx_early) * w_combined_early(:);
+    end
+    if isempty(selected_idx_late)
+        W_combined_late = [];
+        topo_temp_late = nan(nChans, 1);
+    else
+        W_combined_late = searchFilters_late(:, selected_idx_late);
+        topo_temp_late = searchTopos_late(:, selected_idx_late) * w_combined_late(:);
+    end
     all_topos{subj} = topo_temp_full;
     all_topos_early{subj} = topo_temp_early;
     all_topos_late{subj} = topo_temp_late;
@@ -787,39 +669,24 @@ for subj = 1:nSubj
         searchMeanPrSpectrum_full, evals_sorted_full(1:numel(eligible_full)), ...
         searchEmgClass_full, ...
         eligible_full, ...
-        rejection_flags_full, ...
-        front_leak_full, temp_leak_full, combined_leak_full, ...
-        lineharm_full, hf_slope_full, emg_artifact_score_full, ...
-        extreme_component_outlier_full, ...
-        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_full, powspctrm_form_deduct_full, ...
-        thr_max_combined_leak_full, thr_max_hf_slope_full, ...
-        thr_max_emg_score_full, thr_max_lineharm_full, ...
+        occdom_full, emg_temp_full, emg_hf_slope_full, ...
+        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_full, ...
         selected_idx_full);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_component_selection, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
         searchMeanPrSpectrum_early, evals_sorted_early(1:numel(eligible_early)), ...
         searchEmgClass_early, ...
         eligible_early, ...
-        rejection_flags_early, ...
-        front_leak_early, temp_leak_early, combined_leak_early, ...
-        lineharm_early, hf_slope_early, emg_artifact_score_early, ...
-        extreme_component_outlier_early, ...
-        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_early, powspctrm_form_deduct_early, ...
-        thr_max_combined_leak_early, thr_max_hf_slope_early, ...
-        thr_max_emg_score_early, thr_max_lineharm_early, ...
+        occdom_early, emg_temp_early, emg_hf_slope_early, ...
+        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_early, ...
         selected_idx_early);
     plot_emg_exclusion_diagnostics( ...
         fig_save_dir_component_selection, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
         searchMeanPrSpectrum_late, evals_sorted_late(1:numel(eligible_late)), ...
         searchEmgClass_late, ...
         eligible_late, ...
-        rejection_flags_late, ...
-        front_leak_late, temp_leak_late, combined_leak_late, ...
-        lineharm_late, hf_slope_late, emg_artifact_score_late, ...
-        extreme_component_outlier_late, ...
-        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_late, powspctrm_form_deduct_late, ...
-        thr_max_combined_leak_late, thr_max_hf_slope_late, ...
-        thr_max_emg_score_late, thr_max_lineharm_late, ...
+        occdom_late, emg_temp_late, emg_hf_slope_late, ...
+        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_late, ...
         selected_idx_late);
     plot_combined_topo_spectra_windows( ...
         fig_save_dir_component_selection, subjects{subj}, scan_freqs, cfg_topo, all_topo_labels{subj}, ...
@@ -2279,84 +2146,12 @@ set(gca, 'XTick', 1:4, 'XTickLabel', strcat(condLabels, ' Contrast'), 'FontSize'
 xlim([0.5 4.5]);
 end
 
-function z = normalize_robust(x)
-x = x(:);
-z = nan(size(x));
-valid = isfinite(x);
-if ~any(valid)
-    return;
-end
-xv = x(valid);
-xm = median(xv);
-xs = mad(xv, 1);
-if ~isfinite(xs) || xs <= eps
-    xs = std(xv);
-end
-if ~isfinite(xs) || xs <= eps
-    xs = 1;
-end
-z(valid) = (xv - xm) / xs;
-z(valid) = max(min(z(valid), 3), -3);
-end
-
-function rank_vec = compute_descending_rank(x)
-rank_vec = nan(size(x));
-valid = isfinite(x);
-if ~any(valid)
-    return;
-end
-[~, ord] = sort(x(valid), 'descend');
-idx_valid = find(valid);
-rank_vals = nan(sum(valid), 1);
-rank_vals(ord) = 1:numel(ord);
-rank_vec(idx_valid) = rank_vals;
-end
-
-function score_vec = compute_calibrated_rank_aggregation_score( ...
-    eval_raw_vec, powspctrm_form_vec, peak_bonus_vec, occipital_evidence_vec, emg_artifact_vec)
-nComp = numel(eval_raw_vec);
-score_vec = -Inf(nComp, 1);
-if nComp == 0
-    return;
-end
-
-z_eig = normalize_robust(log(max(eval_raw_vec(:), eps)));
-z_pf = normalize_robust(powspctrm_form_vec(:));
-z_pb = normalize_robust(peak_bonus_vec(:));
-z_occ = normalize_robust(occipital_evidence_vec(:));
-z_anti_emg = normalize_robust(-emg_artifact_vec(:));
-metric_mat = [z_eig, z_pf, z_pb, z_occ, z_anti_emg];
-finite_rows = all(isfinite(metric_mat), 2);
-if ~any(finite_rows)
-    return;
-end
-
-point_mat = nan(nComp, size(metric_mat, 2));
-for mi = 1:size(metric_mat, 2)
-    rank_m = compute_descending_rank(metric_mat(:, mi));
-    valid_rank = isfinite(rank_m);
-    if ~any(valid_rank)
-        continue;
-    end
-    n_valid = sum(valid_rank);
-    if n_valid <= 1
-        point_mat(valid_rank, mi) = 1;
-    else
-        point_mat(valid_rank, mi) = (n_valid - rank_m(valid_rank)) / (n_valid - 1);
-    end
-end
-score_vec = mean(point_mat, 2, 'omitnan');
-score_vec(~finite_rows) = -Inf;
-end
-
 function plot_emg_exclusion_diagnostics(save_dir, subject_id, win_name, scan_freqs, searchTopos, ...
     searchMeanPrSpectrum, eigval_vec, emg_class, ...
-    eligible, rejection_flags, ...
-    front_leak_vec, temp_leak_vec, combined_leak_vec, lineharm_vec, hf_slope_vec, emg_score_vec, ...
-    extreme_component_outlier, ...
+    eligible, ...
+    occdom_vec, emg_temp_vec, emg_hf_slope_vec, ...
     cfg_topo, topo_labels, ...
-    powspctrm_form_score, powspctrm_form_multi_peak_deduction, ...
-    max_combined_leak_thr, max_hf_slope_thr, max_emg_score_thr, max_lineharm_ratio_thr, ...
+    powspctrm_form_score, ...
     selected_idx)
 nComp = numel(eigval_vec);
 if nComp < 1
@@ -2427,10 +2222,8 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        [info_lines, info_viol] = ...
-            build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, combined_leak_vec, ...
-            lineharm_vec, hf_slope_vec, emg_score_vec, extreme_component_outlier, ...
-            max_combined_leak_thr, max_hf_slope_thr, max_emg_score_thr, max_lineharm_ratio_thr);
+        [info_lines, info_viol] = build_selection_gate_info_columns( ...
+            ci, occdom_vec, emg_temp_vec, emg_hf_slope_vec);
         plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
@@ -2481,10 +2274,8 @@ for k = 1:nCols
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
         end
-        [info_lines, info_viol] = ...
-            build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, combined_leak_vec, ...
-            lineharm_vec, hf_slope_vec, emg_score_vec, extreme_component_outlier, ...
-            max_combined_leak_thr, max_hf_slope_thr, max_emg_score_thr, max_lineharm_ratio_thr);
+        [info_lines, info_viol] = build_selection_gate_info_columns( ...
+            ci, occdom_vec, emg_temp_vec, emg_hf_slope_vec);
         plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
@@ -2519,28 +2310,19 @@ close(figSel);
 
 end
 
-function [info_lines, info_viol] = ...
-    build_rejection_info_columns(ci, rejection_flags, front_leak_vec, temp_leak_vec, combined_leak_vec, ...
-    lineharm_vec, hf_slope_vec, emg_score_vec, extreme_component_outlier, ...
-    max_combined_leak_thr, max_hf_slope_thr, max_emg_score_thr, max_lineharm_ratio_thr)
-combined_leak_val = combined_leak_vec(ci);
-extreme_outlier_fail = logical(extreme_component_outlier(ci));
+function [info_lines, info_viol] = build_selection_gate_info_columns( ...
+    ci, occdom_vec, emg_temp_vec, emg_hf_slope_vec)
+occdom_val = occdom_vec(ci);
+emg_temp_val = emg_temp_vec(ci);
+emg_hf_val = emg_hf_slope_vec(ci);
+fail_occdom = ~(isfinite(occdom_val) && occdom_val > 1);
+fail_emg_temp = isfinite(emg_temp_val) && emg_temp_val >= 1;
+fail_emg_hf = isfinite(emg_hf_val) && emg_hf_val > 0;
 info_lines = { ...
-    sprintf('extreme outlier: %d', extreme_outlier_fail), ...
-    sprintf('combined_leak gate: %d (%.2f <= %.2f)', ~get_flag_value(rejection_flags, 'combined_leak', ci), combined_leak_val, max_combined_leak_thr), ...
-    sprintf('hf_slope (not gated): %.2f (ref %.2f)', hf_slope_vec(ci), max_hf_slope_thr), ...
-    sprintf('emg_score gate: %d (%.2f <= %.2f)', ~get_flag_value(rejection_flags, 'emg_score', ci), emg_score_vec(ci), max_emg_score_thr), ...
-    sprintf('topo_nonposterior gate: %d', ~get_flag_value(rejection_flags, 'topo_nonposterior', ci)), ...
-    sprintf('lineharm warn: %d (%.2f > %.2f)', lineharm_vec(ci) > max_lineharm_ratio_thr, lineharm_vec(ci), max_lineharm_ratio_thr), ...
-    sprintf('front/temp leak: %.2f/%.2f', front_leak_vec(ci), temp_leak_vec(ci))};
-info_viol = [ ...
-    extreme_outlier_fail, ...
-    get_flag_value(rejection_flags, 'combined_leak', ci), ...
-    get_flag_value(rejection_flags, 'hf_slope', ci), ...
-    get_flag_value(rejection_flags, 'emg_score', ci), ...
-    get_flag_value(rejection_flags, 'topo_nonposterior', ci), ...
-    false, ...
-    false];
+    sprintf('occdom: %.2f (> 1)', occdom_val), ...
+    sprintf('EMG_temp: %.2f (< 1)', emg_temp_val), ...
+    sprintf('EMG_hf_slope: %.2f (<= 0)', emg_hf_val)};
+info_viol = [fail_occdom, fail_emg_temp, fail_emg_hf];
 end
 
 function plot_covariance_matrix_diagnostics(save_dir, subject_id, chan_labels, covBase_full, covStim_per_win, win_names_cap, lambdas)
@@ -2732,41 +2514,22 @@ end
 
 function plot_rejection_info_text_columns(info_lines, info_viol)
 y0 = 1.42;
-dy = 0.08;
-criteria_font_size = 3.5;
+dy = 0.10;
+criteria_font_size = 6;
 if isempty(info_lines)
     return;
 end
 n_lines = numel(info_lines);
-n_left = ceil(n_lines / 2);
-x_cols = [0.02, 0.52];
 for li = 1:n_lines
-    if li <= n_left
-        col_idx = 1;
-        row_idx = li;
-    else
-        col_idx = 2;
-        row_idx = li - n_left;
-    end
     if info_viol(li)
         txt_col = [0.82 0.10 0.10];
     else
         txt_col = [0.10 0.10 0.10];
     end
-    text(x_cols(col_idx), y0 - (row_idx - 1) * dy, info_lines{li}, ...
+    text(0.02, y0 - (li - 1) * dy, info_lines{li}, ...
         'Units', 'normalized', 'Clipping', 'off', ...
         'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
         'FontSize', criteria_font_size, 'Color', txt_col, 'Interpreter', 'none');
-end
-end
-
-function val = get_flag_value(flags_struct, field_name, idx)
-val = false;
-if isfield(flags_struct, field_name)
-    field_val = flags_struct.(field_name);
-    if numel(field_val) >= idx && isfinite(field_val(idx))
-        val = logical(field_val(idx));
-    end
 end
 end
 
@@ -2865,8 +2628,8 @@ function plot_all_subjects_full_combined_topo_spectra( ...
     save_dir, subjects, scan_freqs, analysis_freq_range, cfg_topo, ...
     all_topo_labels, all_topos, all_combined_spectrum_full, all_combined_eigenvalue_full)
 nSubj = numel(subjects);
-n_rows = 5;
-n_cols = 2;
+n_rows = 2;
+n_cols = 5;
 n_slots = n_rows * n_cols;
 if nSubj > n_slots
     warning('GED:AllSubjectsFullOverview', ...
@@ -2878,11 +2641,11 @@ n_plot = min(nSubj, n_slots);
 fig = figure('Position', [0 0 1512 982], 'Color', 'w');
 left_m = 0.04;
 right_m = 0.99;
-bottom_m = 0.04;
+bottom_m = 0.05;
 top_m = 0.93;
-gap_x = 0.035;
-gap_y = 0.045;
-inner_gap = 0.012;
+gap_x = 0.025;
+gap_y = 0.06;
+inner_gap = 0.02;
 topo_frac = 0.55;
 cell_w = (right_m - left_m - (n_cols - 1) * gap_x) / n_cols;
 cell_h = (top_m - bottom_m - (n_rows - 1) * gap_y) / n_rows;
@@ -2894,16 +2657,20 @@ for subj = 1:n_plot
     y0 = bottom_m + (n_rows - row) * (cell_h + gap_y);
     h_spec = cell_h * (1 - topo_frac) - inner_gap / 2;
     h_topo = cell_h * topo_frac - inner_gap / 2;
+    has_component = ~(isempty(all_topos{subj}) || isempty(all_topo_labels{subj}) || ...
+        all(~isfinite(all_topos{subj}(:))) || isempty(all_combined_spectrum_full{subj}) || ...
+        all(~isfinite(all_combined_spectrum_full{subj}(:))));
 
     axes('Position', [x0, y0 + h_spec + inner_gap, cell_w, h_topo]);
-    topo_vec = all_topos{subj};
-    topo_labels = all_topo_labels{subj};
-    if isempty(topo_vec) || isempty(topo_labels) || all(~isfinite(topo_vec(:)))
+    if ~has_component
         axis off;
-        text(0.5, 0.5, sprintf('%s: no topo', subjects{subj}), ...
+        text(0.5, 0.5, 'no eligible GED component', ...
             'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
             'FontSize', 9, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+        title(sprintf('%s', subjects{subj}), 'FontSize', 11, 'FontWeight', 'bold', 'Interpreter', 'none');
     else
+        topo_vec = all_topos{subj};
+        topo_labels = all_topo_labels{subj};
         topo_data = [];
         topo_data.label = topo_labels;
         topo_data.avg = topo_vec(:);
@@ -2927,13 +2694,13 @@ for subj = 1:n_plot
 
     axes('Position', [x0, y0, cell_w, h_spec]);
     hold on;
-    spec_vec = all_combined_spectrum_full{subj};
-    if isempty(spec_vec) || all(~isfinite(spec_vec(:)))
+    if ~has_component
         axis off;
-        text(0.5, 0.5, sprintf('%s: no spectrum', subjects{subj}), ...
+        text(0.5, 0.5, 'no eligible GED component', ...
             'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
             'FontSize', 9, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
     else
+        spec_vec = all_combined_spectrum_full{subj};
         plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 1.5);
         yline(0, 'k--', 'LineWidth', 0.7);
         xlim([analysis_freq_range(1) analysis_freq_range(2)]);
@@ -2943,7 +2710,7 @@ for subj = 1:n_plot
             sp_max = max(spec_finite);
             if isfinite(sp_min) && isfinite(sp_max) && sp_min < sp_max
                 sp_range = sp_max - sp_min;
-                ylim([sp_min - 0.12 * sp_range, sp_max + 0.28 * sp_range]);
+                ylim([sp_min - 0.12 * sp_range, sp_max + 0.20 * sp_range]);
             end
         end
         format_power_change_db_axis(gca);
@@ -2951,14 +2718,12 @@ for subj = 1:n_plot
             ylabel('Power [dB]', 'FontSize', 8);
         end
         if row == n_rows
-            xlabel('Hz', 'FontSize', 8);
+            xlabel('Frequency [Hz]', 'FontSize', 8);
         end
         box on;
         eig_val = all_combined_eigenvalue_full(subj);
         if isfinite(eig_val)
-            text(0.02, 0.96, sprintf('\\lambda = %.2f', eig_val), ...
-                'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
-                'FontSize', 8, 'Interpreter', 'tex', 'Color', [0.1 0.1 0.1]);
+            title(sprintf('\\lambda = %.2f', eig_val), 'FontSize', 10, 'Interpreter', 'tex');
         end
         set(gca, 'FontSize', 8);
     end
@@ -3237,59 +3002,6 @@ if isempty(yt)
 end
 yt_lbl = arrayfun(@(v) sprintf('%g', v), yt, 'UniformOutput', false);
 set(axh, 'YTickLabel', yt_lbl);
-end
-
-function [peak_bonus_vec, peak_count_vec] = compute_peak_bonus_from_spectra( ...
-    mean_pr_spectrum, scan_freqs, analysis_freq_range)
-nComp = size(mean_pr_spectrum, 1);
-peak_bonus_vec = zeros(nComp, 1);
-peak_count_vec = zeros(nComp, 1);
-peak_prom_abs_floor = 0.02;
-if isempty(mean_pr_spectrum) || isempty(scan_freqs)
-    return;
-end
-freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
-for ci = 1:nComp
-    y = mean_pr_spectrum(ci, :);
-    if all(~isfinite(y))
-        continue;
-    end
-    y_band = y(freq_mask);
-    x_band = scan_freqs(freq_mask);
-    valid = isfinite(y_band) & isfinite(x_band);
-    y_band = y_band(valid);
-    x_band = x_band(valid);
-    if numel(y_band) < 5
-        continue;
-    end
-    y_band = movmean(y_band, 3);
-    y_shape = max(y_band - median(y_band), 0);
-    peak_scale = max(y_shape);
-    if ~isfinite(peak_scale) || peak_scale <= eps
-        continue;
-    end
-    robust_scale = robust_mad(y_shape);
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = iqr(y_shape);
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = std(y_shape(isfinite(y_shape)));
-    end
-    if ~isfinite(robust_scale) || robust_scale <= eps
-        robust_scale = 1;
-    end
-    min_prom = max([0, 0.10 * peak_scale, peak_prom_abs_floor, 0.15 * robust_scale]);
-    [pks, ~] = findpeaks(y_shape, x_band, 'MinPeakProminence', min_prom, 'MinPeakDistance', 5);
-    if isempty(pks)
-        continue;
-    end
-    pks = sort(pks(:), 'descend');
-    n_keep = min(2, numel(pks));
-    peak_count_vec(ci) = n_keep;
-    amp_score = min(1, mean(pks(1:n_keep)) / max(peak_scale, eps));
-    count_score = n_keep / 2;
-    peak_bonus_vec(ci) = max(0, min(1, 0.65 * amp_score + 0.35 * count_score));
-end
 end
 
 function [outlier_mask, stats] = detect_trial_metric_outliers_iqr(x, iqr_mult)
@@ -3825,55 +3537,6 @@ for ci = 1:size(W, 2)
         continue;
     end
     Wn(:, ci) = w / sqrt(denom);
-end
-end
-
-function [eligible_mask_out, extreme_component_outlier_idx] = exclude_extreme_component_outlier(eigvals_sorted, eligible_mask_in, ratio_thr, mad_mult)
-eligible_mask_out = logical(eligible_mask_in(:));
-extreme_component_outlier_idx = [];
-if isempty(eigvals_sorted) || isempty(eligible_mask_out)
-    return;
-end
-
-eigvals_sorted = eigvals_sorted(:);
-if numel(eigvals_sorted) ~= numel(eligible_mask_out)
-    return;
-end
-
-eligible_idx = find(eligible_mask_out & isfinite(eigvals_sorted) & eigvals_sorted > 0);
-if numel(eligible_idx) < 2
-    return;
-end
-
-[~, elig_ord] = sort(eigvals_sorted(eligible_idx), 'descend');
-eligible_ranked_idx = eligible_idx(elig_ord);
-top_idx = eligible_ranked_idx(1);
-lambda_top = eigvals_sorted(top_idx);
-lambda_second = eigvals_sorted(eligible_ranked_idx(2));
-rest_vals = eigvals_sorted(eligible_ranked_idx(2:end));
-if isempty(rest_vals) || ~isfinite(lambda_top) || ~isfinite(lambda_second) || lambda_second <= 0
-    return;
-end
-
-rest_log = log(rest_vals);
-rest_log = rest_log(isfinite(rest_log));
-if isempty(rest_log)
-    return;
-end
-
-lambda_top_log = log(max(lambda_top, eps));
-ratio12 = lambda_top / max(lambda_second, eps);
-med_rest = median(rest_log);
-mad_rest = mad(rest_log, 1);
-if ~isfinite(mad_rest) || mad_rest <= eps
-    mad_criterion = lambda_top_log > med_rest;
-else
-    mad_criterion = lambda_top_log > (med_rest + mad_mult * mad_rest);
-end
-
-if ratio12 >= ratio_thr && mad_criterion
-    eligible_mask_out(top_idx) = false;
-    extreme_component_outlier_idx = top_idx;
 end
 end
 
