@@ -15,7 +15,7 @@ diag = struct( ...
 if isempty(mean_pr_spectrum) || isempty(scan_freqs)
     return;
 end
-freq_mask = scan_freqs >= analysis_freq_range(1) & scan_freqs <= analysis_freq_range(2);
+freq_mask = scan_freqs >= 35 & scan_freqs <= 85;
 if ~any(freq_mask)
     return;
 end

@@ -90,6 +90,5 @@ for i = 1:nVars
     grid on;
 end
 
-sgtitle('All Variables with Baselined Gaze Measures: Boxplots per Condition');
 set(gcf, 'PaperPositionMode', 'auto');
 print(gcf, fullfile(paths.figures, 'stats', 'overview', 'GCP_stats_overview.png'), '-dpng', '-r600');
