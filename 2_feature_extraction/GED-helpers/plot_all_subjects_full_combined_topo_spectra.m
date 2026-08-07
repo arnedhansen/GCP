@@ -17,7 +17,7 @@ fig = figure('Position', [0 0 1512 982], 'Color', 'w');
 left_m = 0.04;
 right_m = 0.99;
 bottom_m = 0.05;
-top_m = 0.93;
+top_m = 0.97;
 gap_x = 0.025;
 gap_y = 0.06;
 inner_gap = 0.02;
@@ -35,14 +35,15 @@ for subj = 1:n_plot
     has_component = ~(isempty(all_topos{subj}) || isempty(all_topo_labels{subj}) || ...
         all(~isfinite(all_topos{subj}(:))) || isempty(all_combined_spectrum_full{subj}) || ...
         all(~isfinite(all_combined_spectrum_full{subj}(:))));
+    subj_title = sprintf('Subject %s', subjects{subj});
 
     axes('Position', [x0, y0 + h_spec + inner_gap, cell_w, h_topo]);
     if ~has_component
         axis off;
-        text(0.5, 0.5, 'no eligible GED component', ...
+        text(0.5, 0.5, 'NO ELIGIBLE GED COMPONENT', ...
             'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-            'FontSize', 9, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
-        title(sprintf('%s', subjects{subj}), 'FontSize', 11, 'FontWeight', 'bold', 'Interpreter', 'none');
+            'FontSize', 11, 'FontWeight', 'bold', 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+        title(subj_title, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
     else
         topo_vec = all_topos{subj};
         topo_labels = all_topo_labels{subj};
@@ -63,7 +64,7 @@ for subj = 1:n_plot
             imagesc(topo_vec(:)); axis tight;
             caxis([-topo_clim topo_clim]);
         end
-        title(sprintf('%s', subjects{subj}), 'FontSize', 11, 'FontWeight', 'bold', 'Interpreter', 'none');
+        title(subj_title, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
     end
     set(gca, 'FontSize', 8);
 
@@ -71,13 +72,9 @@ for subj = 1:n_plot
     hold on;
     if ~has_component
         axis off;
-        text(0.5, 0.5, 'no eligible GED component', ...
-            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-            'FontSize', 9, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
     else
         spec_vec = all_combined_spectrum_full{subj};
         plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 1.5);
-        yline(0, 'k--', 'LineWidth', 0.7);
         xlim([analysis_freq_range(1) analysis_freq_range(2)]);
         spec_finite = spec_vec(isfinite(spec_vec));
         if ~isempty(spec_finite)
@@ -96,16 +93,10 @@ for subj = 1:n_plot
             xlabel('Frequency [Hz]', 'FontSize', 8);
         end
         box on;
-        eig_val = all_combined_eigenvalue_full(subj);
-        if isfinite(eig_val)
-            title(sprintf('\\lambda = %.2f', eig_val), 'FontSize', 10, 'Interpreter', 'tex');
-        end
         set(gca, 'FontSize', 8);
     end
 end
 
-sgtitle('Combined GED Components (FULL)', ...
-    'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
-save_figure_png(fig, fullfile(save_dir, 'GCP_eeg_GED_topo_spectra_combined_full_allsubjects.png'));
+save_figure_png(fig, fullfile(save_dir, 'GCP_eeg_GED_components_full_allsubjects.png'));
 close(fig);
 end

@@ -85,6 +85,6 @@ end
 
 sgtitle(sprintf('Combined GED Components: %s', subject_id), ...
     'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
-save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_combined.png', subject_id)));
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_components_combined.png', subject_id)));
 close(fig);
 end

@@ -158,7 +158,7 @@ sgtitle(sprintf('Selected and Rejected Components: %s (%s)', subject_id, win_nam
     'FontSize', 14, 'FontWeight', 'bold');
 drawnow;
 pause(0.05);
-save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_topo_spectra_selected_%s.png', subject_id, win_name)));
+save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_component_selection_%s.png', subject_id, win_name)));
 close(figSel);
 
 end

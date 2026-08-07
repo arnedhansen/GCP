@@ -65,8 +65,8 @@ mtmfft_tapsmofrq_hz = 3; % FieldTrip cfg.tapsmofrq for mtmfft (Hz)
 % GED
 lambda = 0.05;              % regularization
 ged_search_n = 10;          % search first N GED components
-min_eigval = 1.05;           % minimum GED eigenvalue (lambda >= 1.05)
-min_powspctrm_form = 0.75;  % minimum PF (powspctrm-form) score for candidate eligibility
+min_eigval = 1.1;            % minimum GED eigenvalue (lambda >= 1.1)
+min_powspctrm_form = 0.80;  % minimum PF (powspctrm-form) score for candidate eligibility
 random_seed = 123;
 % TFR (GED-projected multitaper)
 tfr_foi = 30:1:90;
