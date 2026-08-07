@@ -17,7 +17,6 @@ startup
 subjects = gcp_subject_inclusion(subjects, paths);
 path = paths.features;
 figDir = fullfile(paths.figures, 'gaze', 'heatmap');
-if ~isfolder(figDir), mkdir(figDir); end
 
 stimWindow = [0 2];
 baselineWindow = [-1.5 -0.5];

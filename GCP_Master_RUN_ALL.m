@@ -42,7 +42,7 @@ if ispc
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\microsaccades\GCP_gaze_microsaccades_TC.m');
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\pupilSize\GCP_gaze_pupilSize_TC.m');
     run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\velocity\GCP_gaze_velocity_TC.m');
-    run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\heatmap\GCP_gaze_heatmap.m');
+    run('C:\Users\Administrator\Documents\GitHub\GCP\3_visualization\gaze\heatmap\GCP_gaze_heatmap_CBPT.m');
 
     %% 4 Stats
     % Subject-level overview and boxplots (MATLAB)
@@ -82,7 +82,7 @@ else
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/microsaccades/GCP_gaze_microsaccades_TC.m');
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/pupilSize/GCP_gaze_pupilSize_TC.m');
     run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/velocity/GCP_gaze_velocity_TC.m');
-    run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/heatmap/GCP_gaze_heatmap.m');
+    run('/Users/Arne/Documents/GitHub/GCP/3_visualization/gaze/heatmap/GCP_gaze_heatmap_CBPT.m');
 
     %% 4 Stats
     % Subject-level overview and boxplots
