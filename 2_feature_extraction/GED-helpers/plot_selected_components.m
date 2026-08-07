@@ -56,8 +56,9 @@ for k = 1:nCols
             imagesc(topo_data.avg(:)); axis tight;
             caxis([-topo_clim_ci topo_clim_ci]);
         end
-        ttl = sprintf('C%d (%s)', ci, emg_class{ci});
-        title(ttl, 'FontSize', 8, 'Interpreter', 'none');
+        ttl = sprintf('C%d (\\lambda=%.2f, PF=%.2f, %s)', ...
+            ci, eigval_vec(ci), powspctrm_form_score(ci), emg_class{ci});
+        title(ttl, 'FontSize', 8, 'Interpreter', 'tex');
     else
         axis off;
     end
@@ -80,8 +81,6 @@ for k = 1:nCols
         plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
-        title(sprintf('\\lambda=%.2f, PF=%.2f', ...
-            eigval_vec(ci), powspctrm_form_score(ci)), 'FontSize', 7);
         box on;
     else
         axis off;
@@ -108,8 +107,9 @@ for k = 1:nCols
             imagesc(topo_data.avg(:)); axis tight;
             caxis([-topo_clim_ci topo_clim_ci]);
         end
-        ttl = sprintf('C%d (%s)', ci, emg_class{ci});
-        title(ttl, 'FontSize', 8, 'Interpreter', 'none');
+        ttl = sprintf('C%d (\\lambda=%.2f, PF=%.2f, %s)', ...
+            ci, eigval_vec(ci), powspctrm_form_score(ci), emg_class{ci});
+        title(ttl, 'FontSize', 8, 'Interpreter', 'tex');
     else
         axis off;
     end
@@ -132,8 +132,6 @@ for k = 1:nCols
         plot_rejection_info_text_columns(info_lines, info_viol);
         format_power_change_db_axis(gca);
         xlabel('Hz'); ylabel('Power [dB]');
-        title(sprintf('\\lambda=%.2f, PF=%.2f', ...
-            eigval_vec(ci), powspctrm_form_score(ci)), 'FontSize', 7);
         box on;
     else
         axis off;
