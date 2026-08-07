@@ -30,6 +30,7 @@
 %   - Subject diagnostics (component selection, rejection reasons,
 %     topographies, spectra), group summary figures.
 %   - Optional GED-projected condition TFRs (toggle do_tfr below).
+%   - Optional diagnostic/summary figures (toggle do_plots below).
 %
 % Helpers live in paths.code/2_feature_extraction/GED-helpers (added to path at startup).
 
@@ -47,7 +48,9 @@ total_runtime_tic = tic;
 %% Parameters
 
 % Toggles
-do_tfr = true; % set false to skip GED-projected TFR feature extraction
+do_tfr = true;   % set false to skip GED-projected TFR feature extraction
+do_plots = true; % set false to skip diagnostic/summary figure generation
+topo_gridscale = 300; % topo interpolation density (was 300; raise for publication)
 
 % Time windows
 baseline_window = [-1.5, -0.5];
@@ -160,6 +163,9 @@ all_haufe_pattern_full = cell(4, nSubj);
 all_haufe_patterns_multicomp_full = cell(4, nSubj);
 all_reconstruction_patterns_full = cell(1, nSubj);
 freq_reconstructed_multicomp_full = cell(4, nSubj);
+tfr_cond_trials = cell(4, nSubj);
+tfr_cond_avg = cell(4, nSubj);
+ged_filter_meta = cell(1, nSubj);
 subject_runtime_seconds = nan(nSubj, 1);
 
 trials_powratio_components_full  = cell(4, nSubj);
@@ -245,9 +251,7 @@ for subj = 1:nSubj
         trlIdx = trialIndices{cond};
         if isempty(trlIdx), continue; end
 
-        cfg = [];
-        cfg.trials = trlIdx;
-        dat = ft_selectdata(cfg, dat);
+        dat = select_trials_by_index(dat, trlIdx);
         dat_per_cond{cond} = dat;
 
         cfg_filt = [];
@@ -255,36 +259,21 @@ for subj = 1:nSubj
         cfg_filt.bpfreq     = analysis_freq_range;
         cfg_filt.bpfilttype = 'fir';
         cfg_filt.bpfiltord  = round(3 * fsample / analysis_freq_range(1));
+        cfg_filt.feedback   = 'none';
         dat_gamma = ft_preprocessing(cfg_filt, dat);
 
-        cfg_t = [];
-        cfg_t.latency = baseline_window;
-        dat_base = ft_selectdata(cfg_t, dat_gamma);
-
-        cfg_t.latency = full_window;
-        dat_stim_full = ft_selectdata(cfg_t, dat_gamma);
-        cfg_t.latency = early_window;
-        dat_stim_early = ft_selectdata(cfg_t, dat_gamma);
-        cfg_t.latency = late_window;
-        dat_stim_late = ft_selectdata(cfg_t, dat_gamma);
-
-        nTrl = length(dat_stim_full.trial);
+        nTrl = numel(dat_gamma.trial);
         if nTrl > 0
-            cfg_cov = [];
-            cfg_cov.covariance = 'yes';
-            cfg_cov.covariancewindow = 'all';
-            cfg_cov.removemean = 'yes';
+            cov_base = compute_pooled_covariance_window(dat_gamma, baseline_window);
+            cov_full = compute_pooled_covariance_window(dat_gamma, full_window);
+            cov_early = compute_pooled_covariance_window(dat_gamma, early_window);
+            cov_late = compute_pooled_covariance_window(dat_gamma, late_window);
 
-            tl_base = ft_timelockanalysis(cfg_cov, dat_base);
-            tl_stim_full = ft_timelockanalysis(cfg_cov, dat_stim_full);
-            tl_stim_early = ft_timelockanalysis(cfg_cov, dat_stim_early);
-            tl_stim_late = ft_timelockanalysis(cfg_cov, dat_stim_late);
-
-            covBase_full = covBase_full + double(tl_base.cov) * nTrl;
-            covStim_full = covStim_full + double(tl_stim_full.cov) * nTrl;
-            covStim_early = covStim_early + double(tl_stim_early.cov) * nTrl;
-            covStim_late = covStim_late + double(tl_stim_late.cov) * nTrl;
-            covStim_full_by_cond{cond} = double(tl_stim_full.cov);
+            covBase_full = covBase_full + cov_base * nTrl;
+            covStim_full = covStim_full + cov_full * nTrl;
+            covStim_early = covStim_early + cov_early * nTrl;
+            covStim_late = covStim_late + cov_late * nTrl;
+            covStim_full_by_cond{cond} = cov_full;
         end
         nTrials_total = nTrials_total + nTrl;
     end
@@ -299,9 +288,11 @@ for subj = 1:nSubj
 
     % Covariances per window
     covStim_per_win = {covStim_full, covStim_early, covStim_late};
-    plot_covariance_matrix_diagnostics( ...
-        fig_save_dir_component_selection, subjects{subj}, dataEEG_c25.label, ...
-        covBase_full, covStim_per_win, win_names_cap, lambdas);
+    if do_plots
+        plot_covariance_matrix_diagnostics( ...
+            fig_save_dir_component_selection, subjects{subj}, dataEEG_c25.label, ...
+            covBase_full, covStim_per_win, win_names_cap, lambdas);
+    end
 
     %% Run GED + component selection per window
     searchFilters_full  = []; searchFilters_early = []; searchFilters_late  = [];
@@ -379,7 +370,9 @@ for subj = 1:nSubj
         searchEmgClass = repmat({'unassigned'}, nSearch, 1);
         searchMeanPrSpectrum = nan(nSearch, numel(scan_freqs));
 
-        % Forward model for topoplot and component scoring (window-specific)
+        % Forward model for topoplot and component scoring (window-specific).
+        % Polarity/topo metrics first; proxy spectra are batched across
+        % components in one mtmfft call (same per-segment spectra as before).
         for ci = 1:nSearch
             w_ci = W_full(:, ci);
             topo_ci = covStim_reg * w_ci;
@@ -415,8 +408,6 @@ for subj = 1:nSubj
             else
                 topo_peak_frac_ci = NaN;
             end
-            proxy_ci = estimate_component_artifact_proxies( ...
-                w_ci, dat_per_cond, stim_windows{w}, baseline_window, fsample, scan_freqs, mtmfft_tapsmofrq_hz);
 
             searchFilters(:, ci) = w_ci;
             searchTopos(:, ci) = topo_ci;
@@ -427,8 +418,16 @@ for subj = 1:nSubj
             searchPostFront(ci) = post_front_ci;
             searchPostTemp(ci) = post_temp_ci;
             searchTopoPeakFrac(ci) = topo_peak_frac_ci;
-            searchEmgHfSlope(ci) = proxy_ci.hf_slope;
-            searchMeanPrSpectrum(ci, :) = proxy_ci.mean_pr_spectrum(:)';
+        end
+
+        cw_prefix = sprintf('[GED] Subject GCP%s (%d/%d) [%s]', ...
+            subjects{subj}, subj, nSubj, win_names{w});
+        proxies = estimate_components_artifact_proxies( ...
+            searchFilters, dat_per_cond, stim_windows{w}, baseline_window, ...
+            fsample, scan_freqs, mtmfft_tapsmofrq_hz, cw_prefix);
+        for ci = 1:nSearch
+            searchEmgHfSlope(ci) = proxies(ci).hf_slope;
+            searchMeanPrSpectrum(ci, :) = proxies(ci).mean_pr_spectrum(:)';
         end
 
         % Stage-1 gates: SNR, PF, post>front, post>temp, non-focal topo, rising HF EMG
@@ -702,40 +701,42 @@ for subj = 1:nSubj
     cfg_topo.comment   = 'no';
     cfg_topo.marker    = 'off';
     cfg_topo.style     = 'straight';
-    cfg_topo.gridscale = 300;
+    cfg_topo.gridscale = topo_gridscale;
     cfg_topo.zlim      = 'maxabs';
     cfg_topo.colormap  = '*RdBu';
     cfg_topo.figure    = 'gcf';
-    plot_selected_components( ...
-        fig_save_dir_component_selection, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
-        searchMeanPrSpectrum_full, evals_sorted_full(1:numel(eligible_full)), ...
-        searchEmgClass_full, ...
-        eligible_full, ...
-        post_front_full, post_temp_full, topo_peak_frac_full, emg_hf_slope_full, ...
-        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_full, ...
-        selected_idx_full);
-    plot_selected_components( ...
-        fig_save_dir_component_selection, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
-        searchMeanPrSpectrum_early, evals_sorted_early(1:numel(eligible_early)), ...
-        searchEmgClass_early, ...
-        eligible_early, ...
-        post_front_early, post_temp_early, topo_peak_frac_early, emg_hf_slope_early, ...
-        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_early, ...
-        selected_idx_early);
-    plot_selected_components( ...
-        fig_save_dir_component_selection, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
-        searchMeanPrSpectrum_late, evals_sorted_late(1:numel(eligible_late)), ...
-        searchEmgClass_late, ...
-        eligible_late, ...
-        post_front_late, post_temp_late, topo_peak_frac_late, emg_hf_slope_late, ...
-        cfg_topo, all_topo_labels{subj}, powspctrm_form_score_late, ...
-        selected_idx_late);
-    plot_combined_topo_spectra_windows( ...
-        fig_save_dir_component_selection, subjects{subj}, scan_freqs, cfg_topo, all_topo_labels{subj}, ...
-        searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
-        searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
-        searchTopos_late, searchMeanPrSpectrum_late, selected_idx_late, w_combined_late, ...
-        analysis_freq_range);
+    if do_plots
+        plot_selected_components( ...
+            fig_save_dir_component_selection, subjects{subj}, 'full', scan_freqs, searchTopos_full, ...
+            searchMeanPrSpectrum_full, evals_sorted_full(1:numel(eligible_full)), ...
+            searchEmgClass_full, ...
+            eligible_full, ...
+            post_front_full, post_temp_full, topo_peak_frac_full, emg_hf_slope_full, ...
+            cfg_topo, all_topo_labels{subj}, powspctrm_form_score_full, ...
+            selected_idx_full);
+        plot_selected_components( ...
+            fig_save_dir_component_selection, subjects{subj}, 'early', scan_freqs, searchTopos_early, ...
+            searchMeanPrSpectrum_early, evals_sorted_early(1:numel(eligible_early)), ...
+            searchEmgClass_early, ...
+            eligible_early, ...
+            post_front_early, post_temp_early, topo_peak_frac_early, emg_hf_slope_early, ...
+            cfg_topo, all_topo_labels{subj}, powspctrm_form_score_early, ...
+            selected_idx_early);
+        plot_selected_components( ...
+            fig_save_dir_component_selection, subjects{subj}, 'late', scan_freqs, searchTopos_late, ...
+            searchMeanPrSpectrum_late, evals_sorted_late(1:numel(eligible_late)), ...
+            searchEmgClass_late, ...
+            eligible_late, ...
+            post_front_late, post_temp_late, topo_peak_frac_late, emg_hf_slope_late, ...
+            cfg_topo, all_topo_labels{subj}, powspctrm_form_score_late, ...
+            selected_idx_late);
+        plot_combined_topo_spectra_windows( ...
+            fig_save_dir_component_selection, subjects{subj}, scan_freqs, cfg_topo, all_topo_labels{subj}, ...
+            searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
+            searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
+            searchTopos_late, searchMeanPrSpectrum_late, selected_idx_late, w_combined_late, ...
+            analysis_freq_range);
+    end
 
     adequate_full = false;
     adequate_early = false;
@@ -856,20 +857,27 @@ for subj = 1:nSubj
                     (cov_cond * combined_filter_full) / combined_variance_cond;
             end
 
-            % Reconstruct the selected GED subspace at the sensors using one
-            % pooled activation matrix so condition maps remain comparable.
-            dat_reconstructed = dat_cond;
-            for trl = 1:numel(dat_cond.trial)
+            % Reconstruct selected GED subspace only in analysis windows
+            % (avoid full-epoch reconstruction + ft_selectdata copies).
+            nTrl_cond = numel(dat_cond.trial);
+            dat_reconstructed_base = [];
+            dat_reconstructed_base.label = dat_cond.label;
+            dat_reconstructed_base.fsample = dat_cond.fsample;
+            dat_reconstructed_base.trial = cell(1, nTrl_cond);
+            dat_reconstructed_base.time = cell(1, nTrl_cond);
+            dat_reconstructed_stim = dat_reconstructed_base;
+            for trl = 1:nTrl_cond
                 x = double(dat_cond.trial{trl});
-                component_data = W_selected_full' * x;
-                dat_reconstructed.trial{trl} = reconstruction_patterns * component_data;
+                t = dat_cond.time{trl};
+                idx_base = t >= baseline_window(1) & t <= baseline_window(2);
+                idx_stim = t >= full_window(1) & t <= full_window(2);
+                dat_reconstructed_base.trial{trl} = ...
+                    reconstruction_patterns * (W_selected_full' * x(:, idx_base));
+                dat_reconstructed_base.time{trl} = t(idx_base);
+                dat_reconstructed_stim.trial{trl} = ...
+                    reconstruction_patterns * (W_selected_full' * x(:, idx_stim));
+                dat_reconstructed_stim.time{trl} = t(idx_stim);
             end
-
-            cfg_select = [];
-            cfg_select.latency = baseline_window;
-            dat_reconstructed_base = ft_selectdata(cfg_select, dat_reconstructed);
-            cfg_select.latency = full_window;
-            dat_reconstructed_stim = ft_selectdata(cfg_select, dat_reconstructed);
 
             cfg_freq = [];
             cfg_freq.method = 'mtmfft';
@@ -937,6 +945,10 @@ for subj = 1:nSubj
         baseline_power_comb_early = nan(nTrl, 1);
         baseline_power_comb_late = nan(nTrl, 1);
         trial_cache = cell(nTrl, 1);
+        has_base = false(nTrl, 1);
+        has_full = false(nTrl, 1);
+        has_early = false(nTrl, 1);
+        has_late = false(nTrl, 1);
         for trl = 1:nTrl
             x = double(dat.trial{trl});
             t = dat.time{trl};
@@ -949,7 +961,11 @@ for subj = 1:nSubj
             x_early = x(:, idx_early);
             x_late = x(:, idx_late);
             trial_cache{trl} = struct('x_base', x_base, 'x_full', x_full, 'x_early', x_early, 'x_late', x_late);
-            if ~isempty(x_base)
+            has_base(trl) = ~isempty(x_base);
+            has_full(trl) = ~isempty(x_full);
+            has_early(trl) = ~isempty(x_early);
+            has_late(trl) = ~isempty(x_late);
+            if has_base(trl)
                 pow_base_chan = mean(x_base.^2, 2);
                 baseline_power_raw(trl) = sum(post_w(:) .* pow_base_chan(:));
                 if adequate_full && ~isempty(filters.full.W_combined)
@@ -994,34 +1010,15 @@ for subj = 1:nSubj
         [base_floor_early, ~] = compute_baseline_floor_stats(baseline_power_comb_early, ratio_floor_prctile, ratio_floor_frac);
         [base_floor_late, ~] = compute_baseline_floor_stats(baseline_power_comb_late, ratio_floor_prctile, ratio_floor_frac);
 
-        has_base = false(nTrl, 1);
-        has_full = false(nTrl, 1);
-        has_early = false(nTrl, 1);
-        has_late = false(nTrl, 1);
-        for trl = 1:nTrl
-            tc = trial_cache{trl};
-            has_base(trl) = ~isempty(tc.x_base);
-            has_full(trl) = ~isempty(tc.x_full);
-            has_early(trl) = ~isempty(tc.x_early);
-            has_late(trl) = ~isempty(tc.x_late);
-        end
-
         if adequate_full
             trial_mask_full = has_base & has_full & ~bad_base_full;
-            [ratio_cube_full, near_floor_count_full] = compute_scan_ratio_for_window_batch( ...
-                trial_cache, filters.full.W_combined, 'x_full', trial_mask_full, ...
+            [ratio_cube_full, ratio_trials_full_combined, near_floor_count_full, ...
+                near_floor_count_full_combined, valid_freq_counts_full_combined] = ...
+                compute_scan_ratio_for_window_and_combined_batch( ...
+                trial_cache, filters.full.W_combined, filters.full.w_combined, 'x_full', trial_mask_full, ...
                 fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_full, instability_near_floor_mult);
             powratio_components = ratio_cube_full;
-            filter_vec_full = build_combined_filter_vector(filters.full.W_combined, filters.full.w_combined);
-            [ratio_trials_full_combined, near_floor_count_full_combined, valid_freq_counts_full_combined] = ...
-                compute_scan_ratio_for_combined_filter_batch( ...
-                trial_cache, filter_vec_full, 'x_full', trial_mask_full, ...
-                fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_full, instability_near_floor_mult);
             for trl = 1:nTrl
-                ratio_mat_full = squeeze(powratio_components(:, trl, :));
-                if isvector(ratio_mat_full)
-                    ratio_mat_full = reshape(ratio_mat_full, size(powratio_components, 1), []);
-                end
                 if ~isempty(ratio_trials_full_combined)
                     powratio_methods_full(1, trl, :) = ratio_trials_full_combined(trl, :);
                 end
@@ -1030,7 +1027,7 @@ for subj = 1:nSubj
                 end
                 if trl <= numel(near_floor_count_full_combined) && valid_freq_counts_full(trl) > 0
                     unstable_freq_counts_full(trl) = near_floor_count_full_combined(trl);
-                elseif any(any(isfinite(ratio_mat_full), 1))
+                elseif any(isfinite(powratio_components(:, trl, :)))
                     unstable_freq_counts_full(trl) = near_floor_count_full(trl);
                 end
             end
@@ -1038,20 +1035,13 @@ for subj = 1:nSubj
 
         if adequate_early
             trial_mask_early = has_base & has_early & ~bad_base_early;
-            [ratio_cube_early, near_floor_count_early] = compute_scan_ratio_for_window_batch( ...
-                trial_cache, filters.early.W_combined, 'x_early', trial_mask_early, ...
+            [ratio_cube_early, ratio_trials_early_combined, near_floor_count_early, ...
+                near_floor_count_early_combined, valid_freq_counts_early_combined] = ...
+                compute_scan_ratio_for_window_and_combined_batch( ...
+                trial_cache, filters.early.W_combined, filters.early.w_combined, 'x_early', trial_mask_early, ...
                 fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_early, instability_near_floor_mult);
             powratio_components_early = ratio_cube_early;
-            filter_vec_early = build_combined_filter_vector(filters.early.W_combined, filters.early.w_combined);
-            [ratio_trials_early_combined, near_floor_count_early_combined, valid_freq_counts_early_combined] = ...
-                compute_scan_ratio_for_combined_filter_batch( ...
-                trial_cache, filter_vec_early, 'x_early', trial_mask_early, ...
-                fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_early, instability_near_floor_mult);
             for trl = 1:nTrl
-                ratio_mat_early = squeeze(powratio_components_early(:, trl, :));
-                if isvector(ratio_mat_early)
-                    ratio_mat_early = reshape(ratio_mat_early, size(powratio_components_early, 1), []);
-                end
                 if ~isempty(ratio_trials_early_combined)
                     powratio_methods_early(1, trl, :) = ratio_trials_early_combined(trl, :);
                 end
@@ -1060,7 +1050,7 @@ for subj = 1:nSubj
                 end
                 if trl <= numel(near_floor_count_early_combined) && valid_freq_counts_early(trl) > 0
                     unstable_freq_counts_early(trl) = near_floor_count_early_combined(trl);
-                elseif any(any(isfinite(ratio_mat_early), 1))
+                elseif any(isfinite(powratio_components_early(:, trl, :)))
                     unstable_freq_counts_early(trl) = near_floor_count_early(trl);
                 end
             end
@@ -1068,20 +1058,13 @@ for subj = 1:nSubj
 
         if adequate_late
             trial_mask_late = has_base & has_late & ~bad_base_late;
-            [ratio_cube_late, near_floor_count_late] = compute_scan_ratio_for_window_batch( ...
-                trial_cache, filters.late.W_combined, 'x_late', trial_mask_late, ...
+            [ratio_cube_late, ratio_trials_late_combined, near_floor_count_late, ...
+                near_floor_count_late_combined, valid_freq_counts_late_combined] = ...
+                compute_scan_ratio_for_window_and_combined_batch( ...
+                trial_cache, filters.late.W_combined, filters.late.w_combined, 'x_late', trial_mask_late, ...
                 fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_late, instability_near_floor_mult);
             powratio_components_late = ratio_cube_late;
-            filter_vec_late = build_combined_filter_vector(filters.late.W_combined, filters.late.w_combined);
-            [ratio_trials_late_combined, near_floor_count_late_combined, valid_freq_counts_late_combined] = ...
-                compute_scan_ratio_for_combined_filter_batch( ...
-                trial_cache, filter_vec_late, 'x_late', trial_mask_late, ...
-                fsample, scan_freqs, mtmfft_tapsmofrq_hz, base_floor_late, instability_near_floor_mult);
             for trl = 1:nTrl
-                ratio_mat_late = squeeze(powratio_components_late(:, trl, :));
-                if isvector(ratio_mat_late)
-                    ratio_mat_late = reshape(ratio_mat_late, size(powratio_components_late, 1), []);
-                end
                 if ~isempty(ratio_trials_late_combined)
                     powratio_methods_late(1, trl, :) = ratio_trials_late_combined(trl, :);
                 end
@@ -1090,7 +1073,7 @@ for subj = 1:nSubj
                 end
                 if trl <= numel(near_floor_count_late_combined) && valid_freq_counts_late(trl) > 0
                     unstable_freq_counts_late(trl) = near_floor_count_late_combined(trl);
-                elseif any(any(isfinite(ratio_mat_late), 1))
+                elseif any(isfinite(powratio_components_late(:, trl, :)))
                     unstable_freq_counts_late(trl) = near_floor_count_late(trl);
                 end
             end
@@ -1283,7 +1266,21 @@ for subj = 1:nSubj
 
     end % condition loop
 
+    if do_tfr && adequate_full && ~isempty(all_combined_filter_full{subj})
+        fprintf('[GED TFR] Subject GCP%s (%d/%d)\n', subjects{subj}, subj, nSubj);
+        stat_full = all_component_selection_stats_full{subj};
+        if isempty(stat_full)
+            stat_full = struct();
+        end
+        [tfr_cond_trials(:, subj), tfr_cond_avg(:, subj), ged_filter_meta{subj}] = ...
+            compute_ged_tfr_subject( ...
+            dat_per_cond, all_combined_filter_full{subj}, all_topo_labels{subj}, ...
+            subjects{subj}, subj, stat_full, ...
+            baseline_window, tfr_foi, tfr_toi, tfr_win_sec, tfr_tapsmofrq, condCodes);
+    end
+
     %  PER-SUBJECT FIGURES (one each for full, early, late; raw spectra)
+    if do_plots
     close all
     cmap_div = interp1([0 0.5 1], ...
         [0.17 0.27 0.53; 0.97 0.97 0.97; 0.70 0.09 0.17], linspace(0,1,256));
@@ -1294,7 +1291,7 @@ for subj = 1:nSubj
     cfg_topo.comment   = 'no';
     cfg_topo.marker    = 'off';
     cfg_topo.style     = 'straight';
-    cfg_topo.gridscale = 300;
+    cfg_topo.gridscale = topo_gridscale;
     cfg_topo.zlim      = 'maxabs';
     cfg_topo.colormap  = '*RdBu';
     cfg_topo.figure    = 'gcf';
@@ -1501,10 +1498,12 @@ for subj = 1:nSubj
         save_figure_png(fig, fullfile(fig_save_dir_component_selection, ...
             sprintf('GCP_eeg_GED_subj%s_trials_overview_%s.png', subjects{subj}, window_names{wi})));
     end
+    end % do_plots (per-subject figures)
     subject_runtime_seconds(subj) = toc(subj_runtime_tic);
 end % subject loop
 
 % CENTROID METRIC: Subject/group summaries and concordance
+if do_plots
 fig_cent = figure('Position', [0 0 1512 982], 'Color', 'w');
 sgtitle('Trial-Level Gamma Centroid', ...
     'FontSize', 18, 'FontWeight', 'bold');
@@ -1755,13 +1754,14 @@ cfg_topo_all.layout    = headmodel.layANThead;
 cfg_topo_all.comment   = 'no';
 cfg_topo_all.marker    = 'off';
 cfg_topo_all.style     = 'straight';
-cfg_topo_all.gridscale = 300;
+cfg_topo_all.gridscale = topo_gridscale;
 cfg_topo_all.zlim      = 'maxabs';
 cfg_topo_all.colormap  = '*RdBu';
 cfg_topo_all.figure    = 'gcf';
 plot_all_subjects_full_combined_topo_spectra( ...
     fig_save_dir_component_selection_root, subjects, scan_freqs, analysis_freq_range, cfg_topo_all, ...
     all_topo_labels, all_topos, all_combined_spectrum_full, all_combined_eigenvalue_full);
+end % do_plots (group figures)
 
 %% Save results
 save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_GED.mat');
@@ -1812,14 +1812,8 @@ Include = any(isfinite(trials_gamma_power), 1)';
 subject_inclusion = table(SubjID, Include, 'VariableNames', {'SubjID', 'Include'});
 save(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion', '-v7.3');
 
-%% GED-projected TFR
+%% GED-projected TFR (computed in the subject loop when do_tfr is true)
 if do_tfr
-    [tfr_cond_trials, tfr_cond_avg, ged_filter_meta] = compute_ged_tfr( ...
-        subjects, paths, all_combined_filter_full, all_topo_labels, ...
-        all_component_selection_stats_full, ...
-        baseline_window, ...
-        tfr_foi, tfr_toi, tfr_win_sec, tfr_tapsmofrq, ...
-        condNames, condCodes);
     tfr_save_path = fullfile(gcp_feature_data_path, 'GCP_eeg_GED_TFR.mat');
     save(tfr_save_path, ...
         'tfr_cond_trials', 'tfr_cond_avg', ...

@@ -1,5 +1,7 @@
 function [p_stim_scan, p_base_scan] = compute_scan_power_mtmfft_ft_pair(sig_stim, sig_base, fs, scan_freqs, tapsmofrq_hz)
-% Joint stim/baseline multitaper power spectra for matched signal sets.
+% Joint stim/baseline multitaper power spectra for matched 1D signal sets.
+% Returns [nSig x nFreq]. Equal-length series are channel-packed with a shared
+% nextpow2 pad (see compute_scan_power_mtmfft_ft).
 if ~iscell(sig_stim) && isvector(sig_stim)
     sig_stim = sig_stim(:)';
 end

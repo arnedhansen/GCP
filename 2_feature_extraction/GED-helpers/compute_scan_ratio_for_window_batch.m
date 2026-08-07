@@ -9,44 +9,68 @@ if nComp == 0 || nTrl == 0 || ~any(trial_mask)
     return;
 end
 
-sig_stim_cells = cell(0, 1);
-sig_base_cells = cell(0, 1);
-row_comp_idx = zeros(0, 1);
-row_trial_idx = zeros(0, 1);
-for trl = 1:nTrl
-    if ~trial_mask(trl)
-        continue;
-    end
+valid_trls = find(trial_mask(:));
+nValid = numel(valid_trls);
+stim_trials = cell(nValid, 1);
+base_trials = cell(nValid, 1);
+keep = false(nValid, 1);
+for vi = 1:nValid
+    trl = valid_trls(vi);
     tc = trial_cache{trl};
     x_base = tc.x_base;
     x_stim = tc.(stim_field);
     if isempty(x_base) || isempty(x_stim)
         continue;
     end
-    comp_base = search_filters' * x_base;
-    comp_stim = search_filters' * x_stim;
-    for ci = 1:nComp
-        sig_base_cells{end+1, 1} = comp_base(ci, :);
-        sig_stim_cells{end+1, 1} = comp_stim(ci, :);
-        row_comp_idx(end+1, 1) = ci;
-        row_trial_idx(end+1, 1) = trl;
-    end
+    stim_trials{vi} = search_filters' * x_stim;
+    base_trials{vi} = search_filters' * x_base;
+    keep(vi) = true;
 end
-if isempty(sig_stim_cells)
+if ~any(keep)
+    return;
+end
+stim_trials = stim_trials(keep);
+base_trials = base_trials(keep);
+valid_trls = valid_trls(keep);
+nValid = numel(valid_trls);
+
+[p_stim, p_base] = compute_scan_power_mtmfft_ft_pair_trialchans( ...
+    stim_trials, base_trials, fs, scan_freqs, tapsmofrq_hz);
+if isempty(p_stim) || isempty(p_base)
     return;
 end
 
-[ratio_rows, ~, near_floor_row_mask] = compute_scan_ratio_from_timeseries( ...
-    sig_stim_cells, sig_base_cells, fs, scan_freqs, tapsmofrq_hz, base_floor, near_floor_mult);
-for ri = 1:size(ratio_rows, 1)
-    ratio_cube(row_comp_idx(ri), row_trial_idx(ri), :) = ratio_rows(ri, :);
+if ~isfinite(near_floor_mult) || near_floor_mult <= 0
+    near_floor_mult = 1.5;
 end
-for trl = 1:nTrl
-    rows = row_trial_idx == trl;
-    if ~any(rows)
-        continue;
+floor_fallback = max(base_floor, eps);
+near_floor_comp_rows = false(nValid, nComp, nFreq);
+for vi = 1:nValid
+    trl = valid_trls(vi);
+    for ci = 1:nComp
+        p_stim_row = double(squeeze(p_stim(vi, ci, :))).';
+        p_base_row = double(squeeze(p_base(vi, ci, :))).';
+        valid_base = isfinite(p_base_row) & (p_base_row > 0);
+        if ~any(valid_base)
+            continue;
+        end
+        base_anchor = prctile(p_base_row(valid_base), 20);
+        base_median = median(p_base_row(valid_base), 'omitnan');
+        if ~isfinite(base_anchor) || base_anchor <= 0
+            base_anchor = base_median;
+        end
+        if ~isfinite(base_anchor) || base_anchor <= 0
+            base_anchor = floor_fallback;
+        end
+        floor_row = max(0.25 * base_anchor, eps);
+        valid = isfinite(p_stim_row) & isfinite(p_base_row) & ...
+            (p_stim_row > 0) & (p_base_row > 0);
+        ratio_row = nan(1, nFreq);
+        ratio_row(valid) = 10 * log10(p_stim_row(valid) ./ p_base_row(valid));
+        ratio_cube(ci, trl, :) = ratio_row;
+        near_floor_comp_rows(vi, ci, valid) = p_base_row(valid) <= near_floor_mult * floor_row;
     end
-    near_floor_trial_mask = mean(near_floor_row_mask(rows, :), 1) >= 0.5;
-    near_floor_freq_count_per_trial(trl) = sum(near_floor_trial_mask);
+    nf = reshape(near_floor_comp_rows(vi, :, :), nComp, nFreq);
+    near_floor_freq_count_per_trial(trl) = sum(mean(nf, 1) >= 0.5);
 end
 end
