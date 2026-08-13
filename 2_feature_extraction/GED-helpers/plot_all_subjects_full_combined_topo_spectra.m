@@ -2,6 +2,7 @@ function plot_all_subjects_full_combined_topo_spectra( ...
     save_dir, subjects, scan_freqs, analysis_freq_range, cfg_topo, ...
     all_topo_labels, all_topos, all_combined_spectrum_full, all_combined_eigenvalue_full)
 % Group overview of combined GED topographies and spectra for the full window.
+% Electrodes used in further analyses (occipital region) are marked on the topoplots.
 nSubj = numel(subjects);
 n_rows = 2;
 n_cols = 5;
@@ -35,7 +36,7 @@ for subj = 1:n_plot
     has_component = ~(isempty(all_topos{subj}) || isempty(all_topo_labels{subj}) || ...
         all(~isfinite(all_topos{subj}(:))) || isempty(all_combined_spectrum_full{subj}) || ...
         all(~isfinite(all_combined_spectrum_full{subj}(:))));
-    subj_title = sprintf('Subject %s', subjects{subj});
+    subj_title = sprintf('Participant %s', subjects{subj});
 
     axes('Position', [x0, y0 + h_spec + inner_gap, cell_w, h_topo]);
     if ~has_component
@@ -43,7 +44,6 @@ for subj = 1:n_plot
         text(0.5, 0.5, 'NO ELIGIBLE GED COMPONENT', ...
             'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
             'FontSize', 11, 'FontWeight', 'bold', 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
-        title(subj_title, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
     else
         topo_vec = all_topos{subj};
         topo_labels = all_topo_labels{subj};
@@ -58,15 +58,27 @@ for subj = 1:n_plot
         end
         cfg_ci = cfg_topo;
         cfg_ci.zlim = [-topo_clim topo_clim];
+
+        % Highlight occipital electrodes used in further analyses
+        occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|PPO|P10|P9)', 'once')), topo_labels);
+        occ_highlight = topo_labels(occ_mask);
+        if ~isempty(occ_highlight)
+            cfg_ci.highlight          = {'on'};
+            cfg_ci.highlightchannel   = {occ_highlight};
+            cfg_ci.highlightsymbol    = {'.'};
+            cfg_ci.highlightsize      = {10};
+            cfg_ci.highlightcolor     = {[0 0 0]};
+        end
+
         try
             ft_topoplotER(cfg_ci, topo_data);
         catch
             imagesc(topo_vec(:)); axis tight;
             caxis([-topo_clim topo_clim]);
         end
-        title(subj_title, 'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
     end
     set(gca, 'FontSize', 8);
+    title(subj_title, 'FontSize', 15, 'FontWeight', 'bold', 'Interpreter', 'none');
 
     axes('Position', [x0, y0, cell_w, h_spec]);
     hold on;
