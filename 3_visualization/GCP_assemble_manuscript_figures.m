@@ -1,31 +1,27 @@
 %% GCP Assemble Manuscript Figures
-% Combines exported PNG panels into manuscript figures.
 
 %% Setup
 startup
 [~, paths, ~, ~] = setup('GCP', 0);
-
-exportDpi = 600;
 outDir = fullfile(paths.figures, 'manuscript');
-if ~isfolder(outDir)
-    mkdir(outDir);
-end
-
 powerDir = fullfile(paths.figures, 'power_analysis');
 boxplotDir = fullfile(paths.figures, 'stats', 'boxplots');
 gazeDir = fullfile(paths.figures, 'gaze');
 eegDir = fullfile(paths.figures, 'eeg');
 
+exportDpi = 300;
+titleFontSize = 20;
+denseTitleFontSize = 16;
+overallTitleFontSize = 24;
+statsDir = fullfile(paths.figures, 'stats');
 fprintf('[VIZ MANUSCRIPT] Assembling GCP manuscript figures...\n');
-fprintf('[VIZ MANUSCRIPT] Output directory: %s\n', outDir);
 
 %% Figure 1: Contrast detection paradigm
 fig1 = figureSpec('Figure1', 1, 1, [0 0 1512 982]);
-fig1.titleFontSize = 16;
-fig1.panels = {
-    panelSpec(fullfile(paths.figures, 'paradigm', 'GCP_paradigm.png'), ...
-        'A', 'Grating Task Paradigm', 1, [1 1])
-    };
+fig1.titleFontSize = titleFontSize;
+fig1.overallTitle = 'Grating Task Paradigm';
+fig1.overallTitleFontSize = overallTitleFontSize;
+fig1.panels = {panelSpec(fullfile(paths.figures, 'paradigm', 'GCP_paradigm.png'), '', '')};
 
 %% Figure 2: Power analyses
 fig2 = figureSpec('Figure2', 2, 2, [0 0 1512 982]);
@@ -33,145 +29,129 @@ fig2.colGap = 0.035;
 fig2.rowGap = 0.02;
 fig2.forceFill = false;
 fig2.equalPanelHeight = true;
-fig2.titleFontSize = 16;
+fig2.titleFontSize = denseTitleFontSize;
+fig2.overallTitle = 'Gamma Power and Frequency Power Analysis';
+fig2.overallTitleFontSize = overallTitleFontSize;
 fig2.panels = {
-    panelSpec(fullfile(powerDir, 'GCP_power_analysis_frequency_heatmap.png'), ...
-        'A', 'Gamma Frequency Statistical Power Heatmap', 1, [1 1]);
-    panelSpec(fullfile(powerDir, 'GCP_power_analysis_frequency.png'), ...
-        'B', 'Gamma Frequency Statistical Power Curve', 2, [1 1]);
     panelSpec(fullfile(powerDir, 'GCP_power_analysis_power_heatmap.png'), ...
-        'C', 'Gamma Power Statistical Power Heatmap', 3, [1 1]);
+        'A', 'Gamma Power Statistical Power Heatmap', 1);
     panelSpec(fullfile(powerDir, 'GCP_power_analysis_power.png'), ...
-        'D', 'Gamma Power Statistical Power Curve', 4, [1 1])
+        'B', 'Gamma Power Statistical Power Curve', 2);
+    panelSpec(fullfile(powerDir, 'GCP_power_analysis_frequency_heatmap.png'), ...
+        'C', 'Gamma Frequency Statistical Power Heatmap', 3);
+    panelSpec(fullfile(powerDir, 'GCP_power_analysis_frequency.png'), ...
+        'D', 'Gamma Frequency Statistical Power Curve', 4)
     };
 for iPanel = 1:numel(fig2.panels)
     fig2.panels{iPanel}.trimWhite = true;
 end
 
-%% Figure 3: Pupil size
-fig3 = figureSpec('Figure3', 1, 2, [0 0 1512 982]);
+%% Figure 3: Gaze TCs and Boxplots
+fig3 = figureSpec('Figure3', 4, 2, ...
+    [0 0 1512 round(982 * 2)]);
+fig3.titleFontSize = denseTitleFontSize;
+fig3.overallTitle = 'Gaze Measures Time Courses and Boxplots';
+fig3.overallTitleFontSize = overallTitleFontSize;
+fig3.colGap = 0.018;
+fig3.rowGap = 0.015;
+fig3.packAdjacent = true;
+fig3.fixedColumnLayout = true;
 fig3.panels = {
     panelSpec(fullfile(gazeDir, 'pupil', 'GCP_gaze_pupil_size_TC.png'), ...
-        'A', 'Pupil Size Time Course', 1, [1 1]);
+        'A', 'Pupil Size Time Course', 1);
     panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_PupilSize_bl.png'), ...
-        'B', 'Pupil Size', 2, [1 1])
+        'B', 'Pupil Size Boxplots', 2);
+    panelSpec(fullfile(gazeDir, 'microsaccades', 'GCP_gaze_microsaccades_rate.png'), ...
+        'C', 'Microsaccade Rate Time Course', 3);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_MSRate_bl.png'), ...
+        'D', 'Microsaccade Rate Boxplots', 4);
+    panelSpec(fullfile(gazeDir, 'bcea', 'GCP_gaze_BCEA_ellipses.png'), ...
+        'E', 'Gaze Dispersion Ellipses', 5);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_BCEA_bl.png'), ...
+        'F', 'Gaze Dispersion Boxplots', 6);
+    panelSpec(fullfile(gazeDir, 'velocity', 'GCP_gaze_velocity_Vel2D_TC.png'), ...
+        'G', 'Eye Velocity Time Course', 7);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl.png'), ...
+        'H', 'Eye Velocity Boxplots', 8)
     };
-fig3.panels{2}.imageScale = 0.90;
 for iPanel = 1:numel(fig3.panels)
     fig3.panels{iPanel}.trimWhite = true;
 end
 
-%% Figure 4: Microsaccade rate
-fig4 = figureSpec('Figure4', 1, 2, [0 0 1512 982]);
+%% Figure 4: F-tests on Gaze Measures
+fig4 = figureSpec('Figure4', 1, 1, [0 0 1512 982]);
+fig4.titleFontSize = titleFontSize;
+fig4.overallTitle = 'F-tests on Gaze Measure Time Courses';
+fig4.overallTitleFontSize = overallTitleFontSize;
 fig4.panels = {
-    panelSpec(fullfile(gazeDir, 'microsaccades', 'GCP_gaze_microsaccades_rate.png'), ...
-        'A', 'Microsaccade Rate Time Course', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_MSRate_bl.png'), ...
-        'B', 'Microsaccade Rate', 2, [1 1])
+    panelSpec(fullfile(statsDir, 'f-tests', 'GCP_stats_gaze_ftests.png'), ...
+        '', '')
     };
-fig4.panels{2}.imageScale = 0.90;
-for iPanel = 1:numel(fig4.panels)
-    fig4.panels{iPanel}.trimWhite = true;
-end
 
-%% Figure 5: Eye velocity
-fig5 = figureSpec('Figure5', 1, 2, [0 0 1512 982]);
+%% Figure 5: Power Spectrum
+fig5 = figureSpec('Figure5', 1, 1, [0 0 1512 982]);
+fig5.titleFontSize = titleFontSize;
+fig5.overallTitle = 'Power Spectrum';
+fig5.overallTitleFontSize = overallTitleFontSize;
 fig5.panels = {
-    panelSpec(fullfile(gazeDir, 'velocity', 'GCP_gaze_velocity_Vel2D_TC.png'), ...
-        'A', 'Eye Velocity Time Course', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl.png'), ...
-        'B', 'Eye Velocity', 2, [1 1])
+    panelSpec(fullfile(eegDir, 'powspctrm', 'GCP_eeg_GED_powspctrm_grand_average.png'), ...
+        '', '')
     };
-fig5.panels{2}.imageScale = 0.90;
-for iPanel = 1:numel(fig5.panels)
-    fig5.panels{iPanel}.trimWhite = true;
-end
 
-%% Figure 6: Bivariate contour ellipse area
+%% Figure 6: Gamma power and frequency boxplots
 fig6 = figureSpec('Figure6', 1, 2, [0 0 1512 982]);
+fig6.titleFontSize = titleFontSize;
+fig6.overallTitle = 'Gamma Power and Frequency Boxplots';
+fig6.overallTitleFontSize = overallTitleFontSize;
 fig6.panels = {
-    panelSpec(fullfile(gazeDir, 'bcea', 'GCP_gaze_BCEA_ellipses.png'), ...
-        'A', 'Gaze Dispersion Ellipses', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_BCEA_bl.png'), ...
-        'B', 'Gaze Dispersion', 2, [1 1])
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Power.png'), ...
+        'A', 'Gamma Power', 1);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Frequency.png'), ...
+        'B', 'Gamma Peak Frequency', 2)
     };
-fig6.panels{2}.imageScale = 0.90;
 for iPanel = 1:numel(fig6.panels)
     fig6.panels{iPanel}.trimWhite = true;
 end
 
-%% Gaze composite
-figGazeComp = figureSpec('figGazeComp', 4, 2, ...
-    [0 0 1512 round(982 * 2)]);
-figGazeComp.titleFontSize = 16;
-figGazeComp.panels = {
-    panelSpec(fullfile(gazeDir, 'pupil', 'GCP_gaze_pupil_size_TC.png'), ...
-        'A', 'Pupil Size Time Course', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_PupilSize_bl.png'), ...
-        'B', 'Pupil Size', 2, [1 1]);
-    panelSpec(fullfile(gazeDir, 'microsaccades', 'GCP_gaze_microsaccades_rate.png'), ...
-        'C', 'Microsaccade Rate Time Course', 3, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_MSRate_bl.png'), ...
-        'D', 'Microsaccade Rate', 4, [1 1]);
-    panelSpec(fullfile(gazeDir, 'velocity', 'GCP_gaze_velocity_Vel2D_TC.png'), ...
-        'E', 'Combined Eye Velocity Time Course', 5, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl.png'), ...
-        'F', 'Combined Eye Velocity', 6, [1 1]);
-    panelSpec(fullfile(gazeDir, 'bcea', 'GCP_gaze_BCEA_ellipses.png'), ...
-        'G', 'Gaze Dispersion Ellipses', 7, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_BCEA_bl.png'), ...
-        'H', 'Gaze Dispersion', 8, [1 1])
-    };
-for iPanel = 2:2:numel(figGazeComp.panels)
-    figGazeComp.panels{iPanel}.imageScale = 0.90;
-end
-for iPanel = 1:numel(figGazeComp.panels)
-    figGazeComp.panels{iPanel}.trimWhite = true;
-end
-
-%% Figure 7: Gamma power and frequency
-fig7 = figureSpec('Figure7', 1, 3, [0 0 1512 982]);
+%% Figure 7: Gamma GED time frequency representation
+fig7 = figureSpec('Figure7', 1, 1, [0 0 1512 982]);
+fig7.titleFontSize = titleFontSize;
+fig7.overallTitle = 'Time-Frequency Representations';
+fig7.overallTitleFontSize = overallTitleFontSize;
 fig7.panels = {
-    panelSpec(fullfile(eegDir, 'ersd', 'GCP_eeg_ersd_GED_timecourse.png'), ...
-        'A', 'Gamma ERSD Time Course', 1, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Power.png'), ...
-        'B', 'Gamma Power', 2, [1 1]);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Frequency.png'), ...
-        'C', 'Gamma Peak Frequency', 3, [1 1])
-    };
-fig7.panels{2}.imageScale = 0.88;
-fig7.panels{3}.imageScale = 0.88;
-for iPanel = 1:numel(fig7.panels)
-    fig7.panels{iPanel}.trimWhite = true;
-end
-
-%% Figure 8: Gamma GED time frequency representation
-fig8 = figureSpec('Figure8', 1, 1, [0 0 1512 982]);
-fig8.panels = {
     panelSpec(fullfile(eegDir, 'tfr', 'GCP_eeg_tfr_GED.png'), ...
-        'A', 'Time-Frequency Representations', 1, [1 1])
+        '', '')
     };
 
-%% Supplementary Figure S1: Single participant power spectra
+%% Supplementary Figure S1: Combined GED components
 figS1 = figureSpec('FigureS1', 1, 1, [0 0 1512 982]);
-figS1.titleFontSize = 16;
+figS1.titleFontSize = titleFontSize;
+figS1.titleGap = 0.05;
 figS1.panels = {
+    panelSpec(fullfile(eegDir, 'ged', 'component_selection', ...
+        'GCP_eeg_GED_components_full_allsubjects.png'), ...
+        '', 'Combined GED Components')
+    };
+
+%% Supplementary Figure S2: Single participant power spectra
+figS2 = figureSpec('FigureS2', 1, 1, [0 0 1512 982]);
+figS2.titleFontSize = titleFontSize;
+figS2.titleGap = 0.005;
+figS2.panels = {
     panelSpec(fullfile(eegDir, 'powspctrm', ...
         'GCP_eeg_GED_powspctrm_overview_subjects.png'), ...
-        'S1', 'Single Subject Powerspectra', 1, [1 1])
+        '', 'Single Subject Powerspectra')
     };
 
 %% Assemble all figures
-figSpecs = {fig1, fig2, fig3, fig4, fig5, fig6, ...
-    figGazeComp, fig7, fig8, figS1};
+figSpecs = {fig1, fig2, fig3, fig4, fig5, fig6, fig7, figS1, figS2};
 for iFig = 1:numel(figSpecs)
     spec = figSpecs{iFig};
     outPng = fullfile(outDir, ['GCP_manuscript_' spec.name '.png']);
     assembleManuscriptFigure(spec, outPng, exportDpi);
     fprintf('[VIZ MANUSCRIPT] Saved %s\n', outPng);
 end
-
-fprintf('\n[VIZ MANUSCRIPT] Done. Manuscript composites saved to:\n  %s\n', outDir);
+disp(datestr(now))
 
 %% Local functions
 function spec = figureSpec(name, nrow, ncol, figSize)
@@ -183,16 +163,19 @@ spec.figSize = figSize;
 spec.panels = {};
 end
 
-function p = panelSpec(imagePath, letter, titleText, tile, span, trimWhite)
+function p = panelSpec(imagePath, letter, titleText, tile, trimWhite)
+if nargin < 4 || isempty(tile)
+    tile = 1;
+end
 p = struct( ...
     'file', imagePath, ...
     'letter', letter, ...
     'title', titleText, ...
     'tile', tile, ...
-    'span', span, ...
     'trimWhite', false, ...
-    'imageScale', 1);
-if nargin >= 6 && ~isempty(trimWhite)
+    'imageScale', 1, ...
+    'displayScale', 1);
+if nargin >= 5 && ~isempty(trimWhite)
     p.trimWhite = trimWhite;
 end
 end
@@ -214,16 +197,47 @@ if ~isempty(missing)
         'Cannot assemble %s until all panel PNG files exist.', spec.name);
 end
 
-fig = figure('Position', spec.figSize, 'Color', 'w');
+fig = figure('Visible', 'off', 'Color', 'w');
+fig.Units = 'pixels';
+fig.Position = spec.figSize;
+drawnow;
 titleFontSize = 20;
 if isfield(spec, 'titleFontSize')
     titleFontSize = spec.titleFontSize;
+end
+overallTitleFontSize = 24;
+if isfield(spec, 'overallTitleFontSize')
+    overallTitleFontSize = spec.overallTitleFontSize;
+end
+% Draw the overall title first, with the same annotation mechanism used for
+% the panel titles, so it cannot be affected by later axes creation.
+hasOverallTitle = isfield(spec, 'overallTitle') && ~isempty(spec.overallTitle);
+overallTitleBand = 0;
+overallTitleGap = 0.035;
+% Hold the band and the gap below it at a constant pixel height, otherwise a
+% taller canvas gets a proportionally larger gap under the title.
+bandScale = 982 / spec.figSize(4);
+if hasOverallTitle
+    overallTitleBand = 0.055 * bandScale;
+    overallTitleGap = 0.035 * bandScale;
+    annotation(fig, 'textbox', ...
+        [0, 1 - overallTitleBand, 1, overallTitleBand], ...
+        'String', spec.overallTitle, ...
+        'Interpreter', 'tex', ...
+        'FontSize', overallTitleFontSize, ...
+        'FontWeight', 'bold', ...
+        'HorizontalAlignment', 'center', ...
+        'VerticalAlignment', 'middle', ...
+        'FitBoxToText', 'off', ...
+        'Margin', 0, ...
+        'EdgeColor', 'none', ...
+        'BackgroundColor', 'none');
 end
 
 if isfield(spec, 'colWidths') || spec.ncol == 2
     left = 0.025;
     right = 0.025;
-    top = 0.035;
+    top = overallTitleGap + overallTitleBand;
     bottom = 0.025;
     colGap = 0.010;
     if isfield(spec, 'colGap')
@@ -250,6 +264,10 @@ if isfield(spec, 'colWidths') || spec.ncol == 2
     if isfield(spec, 'equalPanelHeight')
         equalPanelHeight = spec.equalPanelHeight;
     end
+    packAdjacent = ~equalPanelHeight && ~forceFill;
+    if isfield(spec, 'packAdjacent')
+        packAdjacent = spec.packAdjacent;
+    end
 
     panelImages = cell(size(spec.panels));
     panelAspects = zeros(1, numel(spec.panels));
@@ -270,8 +288,11 @@ if isfield(spec, 'colWidths') || spec.ncol == 2
         colWidths = usableWidth .* columnWeights ./ sum(columnWeights);
     end
 
+    % Use the requested canvas size for layout math, not a screen-clamped
+    % on-screen window (that mismatch was stretching force-filled panels).
     figWidth = spec.figSize(3);
     figHeight = spec.figSize(4);
+    fig.Position = [spec.figSize(1:2) figWidth figHeight];
     rowTargetHeight = zeros(1, spec.nrow);
     if equalPanelHeight
         for iRow = 1:spec.nrow
@@ -291,42 +312,215 @@ if isfield(spec, 'colWidths') || spec.ncol == 2
         end
     end
 
-    for iPanel = 1:numel(spec.panels)
-        p = spec.panels{iPanel};
-        row = ceil(p.tile / spec.ncol);
-        col = mod(p.tile - 1, spec.ncol) + 1;
-        xTile = left + sum(colWidths(1:col - 1)) + (col - 1) * colGap;
-        yTile = 1 - top - row * rowHeight - (row - 1) * rowGap;
-        if equalPanelHeight
-            panelHeight = rowTargetHeight(row);
-            panelWidth = panelHeight * panelAspects(iPanel) * ...
-                figHeight / figWidth;
-            xPosition = xTile + (colWidths(col) - panelWidth) / 2;
-            yPosition = yTile + rowHeight - panelHeight;
-            ax = axes(fig, 'Position', ...
-                [xPosition yPosition panelWidth panelHeight]);
-            renderPanel(ax, p, titleFontSize, true, panelImages{iPanel});
-        else
-            ax = axes(fig, 'Position', ...
-                [xTile yTile colWidths(col) rowHeight]);
-            renderPanel(ax, p, titleFontSize, forceFill, ...
-                panelImages{iPanel});
+    if packAdjacent
+        % Place panels in pixel units so width/height match image aspect
+        % exactly, independent of any on-screen window resizing.
+        titleBand = 0.028;
+        if isfield(spec, 'titleBand')
+            titleBand = spec.titleBand;
         end
+        fixedColumnLayout = false;
+        if isfield(spec, 'fixedColumnLayout')
+            fixedColumnLayout = spec.fixedColumnLayout;
+        end
+        packWidth = 1 - left - right;
+        rowPanels = cell(1, spec.nrow);
+        for iPanel = 1:numel(spec.panels)
+            row = ceil(spec.panels{iPanel}.tile / spec.ncol);
+            rowPanels{row}(end + 1) = iPanel; %#ok<AGROW>
+        end
+        columnX = [];
+        columnWidths = [];
+        slotHeightFixed = [];
+        if fixedColumnLayout && spec.ncol == 2
+            colAspect = zeros(1, 2);
+            colCount = zeros(1, 2);
+            for iPanel = 1:numel(spec.panels)
+                col = mod(spec.panels{iPanel}.tile - 1, spec.ncol) + 1;
+                colAspect(col) = colAspect(col) + panelAspects(iPanel);
+                colCount(col) = colCount(col) + 1;
+            end
+            colAspect = colAspect ./ max(1, colCount);
+            heightBudget = max(rowHeight - titleBand, eps);
+            widthBudget = packWidth - colGap;
+            heightFromWidth = widthBudget / ...
+                (sum(colAspect) * figHeight / figWidth);
+            slotHeightFixed = min(heightBudget, heightFromWidth);
+            columnWidths = slotHeightFixed * colAspect * figHeight / figWidth;
+            rowWidthFixed = sum(columnWidths) + colGap;
+            columnX = [left, left] + (packWidth - rowWidthFixed) / 2;
+            columnX(2) = columnX(1) + columnWidths(1) + colGap;
+        end
+        for iRow = 1:spec.nrow
+            idxs = rowPanels{iRow};
+            if isempty(idxs)
+                continue
+            end
+            [~, order] = sort(cellfun(@(p) p.tile, spec.panels(idxs)));
+            idxs = idxs(order);
+            aspects = panelAspects(idxs);
+            nInRow = numel(idxs);
+            if fixedColumnLayout && spec.ncol == 2
+                slotHeight = slotHeightFixed;
+                slotWidths = zeros(1, nInRow);
+                xSlots = zeros(1, nInRow);
+                for iInRow = 1:nInRow
+                    col = mod(spec.panels{idxs(iInRow)}.tile - 1, spec.ncol) + 1;
+                    slotWidths(iInRow) = columnWidths(col);
+                    xSlots(iInRow) = columnX(col);
+                end
+            else
+                heightBudget = max(rowHeight - titleBand, eps);
+                widthBudget = packWidth - (nInRow - 1) * colGap;
+                heightFromWidth = widthBudget / ...
+                    (sum(aspects) * figHeight / figWidth);
+                slotHeight = min(heightBudget, heightFromWidth);
+                slotWidths = slotHeight * aspects * figHeight / figWidth;
+                rowWidth = sum(slotWidths) + (nInRow - 1) * colGap;
+                xSlots = zeros(1, nInRow);
+                xSlots(1) = left + (packWidth - rowWidth) / 2;
+                for iInRow = 2:nInRow
+                    xSlots(iInRow) = xSlots(iInRow - 1) + ...
+                        slotWidths(iInRow - 1) + colGap;
+                end
+            end
+            yTile = 1 - top - iRow * rowHeight - (iRow - 1) * rowGap;
+            ySlot = yTile + rowHeight - titleBand - slotHeight;
+            for iInRow = 1:nInRow
+                iPanel = idxs(iInRow);
+                p = spec.panels{iPanel};
+                displayScale = 1;
+                if isfield(p, 'displayScale') && ~isempty(p.displayScale)
+                    displayScale = p.displayScale;
+                end
+                imgHeight = slotHeight * displayScale;
+                imgWidth = slotWidths(iInRow) * displayScale;
+                xImg = xSlots(iInRow) + (slotWidths(iInRow) - imgWidth) / 2;
+                % Keep top edge aligned with the full-size neighbour (F).
+                yImg = ySlot + slotHeight - imgHeight;
+
+                ax = axes(fig, 'Units', 'pixels', 'Position', ...
+                    panelPixels(figWidth, figHeight, ...
+                    xImg, yImg, imgWidth, imgHeight));
+                renderPanel(ax, p, titleFontSize, false, ...
+                    panelImages{iPanel}, false);
+
+                panelTitleStr = panelTitleString(p);
+                if ~isempty(panelTitleStr)
+                    annotation(fig, 'textbox', ...
+                        [xSlots(iInRow), ySlot + slotHeight, ...
+                        slotWidths(iInRow), titleBand], ...
+                        'String', panelTitleStr, ...
+                        'Interpreter', 'tex', ...
+                        'FontSize', titleFontSize, ...
+                        'FontWeight', 'bold', ...
+                        'HorizontalAlignment', 'center', ...
+                        'VerticalAlignment', 'middle', ...
+                        'EdgeColor', 'none', ...
+                        'BackgroundColor', 'none');
+                end
+            end
+        end
+    else
+        for iPanel = 1:numel(spec.panels)
+            p = spec.panels{iPanel};
+            row = ceil(p.tile / spec.ncol);
+            col = mod(p.tile - 1, spec.ncol) + 1;
+            xTile = left + sum(colWidths(1:col - 1)) + (col - 1) * colGap;
+            yTile = 1 - top - row * rowHeight - (row - 1) * rowGap;
+            if equalPanelHeight
+                panelHeight = rowTargetHeight(row);
+                panelWidth = panelHeight * panelAspects(iPanel) * ...
+                    figHeight / figWidth;
+                xPosition = xTile + (colWidths(col) - panelWidth) / 2;
+                yPosition = yTile + rowHeight - panelHeight;
+                ax = axes(fig, 'Position', ...
+                    [xPosition yPosition panelWidth panelHeight]);
+                renderPanel(ax, p, titleFontSize, true, panelImages{iPanel});
+            else
+                ax = axes(fig, 'Position', ...
+                    [xTile yTile colWidths(col) rowHeight]);
+                renderPanel(ax, p, titleFontSize, forceFill, ...
+                    panelImages{iPanel});
+            end
+        end
+    end
+elseif spec.ncol == 1 && spec.nrow == 1
+    % Place the single panel explicitly. Using tiledlayout here left a large
+    % unpredictable gap between the overall title and the image.
+    p = spec.panels{1};
+    img = loadPanelImage(p);
+    imgAspect = size(img, 2) / size(img, 1);
+    figWidth = spec.figSize(3);
+    figHeight = spec.figSize(4);
+    left = 0.03;
+    right = 0.03;
+    bottom = 0.03;
+    panelTitleStr = panelTitleString(p);
+    subtitleBand = 0;
+    if ~isempty(panelTitleStr)
+        subtitleBand = 0.05;
+    end
+    titleGap = 0.012;
+    if isfield(spec, 'titleGap')
+        titleGap = spec.titleGap;
+    end
+    usableWidth = 1 - left - right;
+    contentTop = 1 - overallTitleBand - subtitleBand - titleGap;
+    usableHeight = contentTop - bottom;
+    heightFromWidth = usableWidth * figWidth / (imgAspect * figHeight);
+    imgHeight = min(usableHeight, heightFromWidth);
+    imgWidth = imgHeight * imgAspect * figHeight / figWidth;
+    xImg = left + (usableWidth - imgWidth) / 2;
+    yImg = contentTop - imgHeight;
+    ax = axes(fig, 'Position', [xImg yImg imgWidth imgHeight]);
+    renderPanel(ax, p, titleFontSize, true, img, false);
+    if ~isempty(panelTitleStr)
+        annotation(fig, 'textbox', ...
+            [xImg, yImg + imgHeight + titleGap, imgWidth, subtitleBand], ...
+            'String', panelTitleStr, ...
+            'Interpreter', 'tex', ...
+            'FontSize', titleFontSize, ...
+            'FontWeight', 'bold', ...
+            'HorizontalAlignment', 'center', ...
+            'VerticalAlignment', 'bottom', ...
+            'FitBoxToText', 'off', ...
+            'Margin', 0, ...
+            'EdgeColor', 'none', ...
+            'BackgroundColor', 'none');
     end
 else
     tl = tiledlayout(fig, spec.nrow, spec.ncol, ...
         'TileSpacing', 'compact', 'Padding', 'compact');
+    if hasOverallTitle
+        tl.OuterPosition = [0, 0, 1, 1 - overallTitleBand];
+    end
     for iPanel = 1:numel(spec.panels)
         p = spec.panels{iPanel};
-        ax = nexttile(tl, p.tile, p.span);
+        ax = nexttile(tl, p.tile);
         renderPanel(ax, p, titleFontSize, false);
     end
 end
 
-drawnow;
-exportgraphics(fig, outPng, 'Resolution', exportDpi, ...
-    'BackgroundColor', 'white');
+drawnow; pause(0.05);
+% print renders the whole canvas. exportgraphics crops to what it considers
+% content and at 600 dpi that dropped the overall title band on multi-row
+% layouts, so the surrounding white is trimmed here instead.
+fig.PaperPositionMode = 'auto';
+fig.InvertHardcopy = 'off';
+print(fig, outPng, '-dpng', sprintf('-r%d', exportDpi));
 close(fig);
+imwrite(trimWhiteBorders(imread(outPng), round(exportDpi / 12)), outPng);
+end
+
+function str = panelTitleString(p)
+if ~isempty(p.letter) && ~isempty(p.title)
+    str = sprintf('\\bf{%s} | %s', p.letter, p.title);
+elseif ~isempty(p.letter)
+    str = sprintf('\\bf{%s}', p.letter);
+else
+    str = p.title;
+end
 end
 
 function img = loadPanelImage(p)
@@ -339,22 +533,37 @@ if p.imageScale ~= 1
 end
 end
 
-function renderPanel(ax, p, titleFontSize, forceFill, img)
+function posPx = panelPixels(figWidth, figHeight, xNorm, yNorm, wNorm, hNorm)
+% Convert normalized figure coordinates to pixel axes Position, snapping
+% width from height so rounding cannot introduce aspect distortion.
+x = max(1, round(xNorm * figWidth) + 1);
+y = max(1, round(yNorm * figHeight) + 1);
+h = max(1, round(hNorm * figHeight));
+imgAspect = (wNorm / max(hNorm, eps)) * (figWidth / figHeight);
+w = max(1, round(h * imgAspect));
+posPx = [x, y, w, h];
+end
+
+function renderPanel(ax, p, titleFontSize, forceFill, img, showTitle)
 if nargin < 5 || isempty(img)
     img = loadPanelImage(p);
 end
+if nargin < 6
+    showTitle = true;
+end
 
 image(ax, img);
-if forceFill
-    axis(ax, 'normal');
-else
-    axis(ax, 'image');
-end
+axis(ax, 'image');
 axis(ax, 'off');
-set(ax, 'Color', 'w');
-title(ax, sprintf('\\bf{%s} | %s', p.letter, p.title), ...
-    'Interpreter', 'tex', 'FontSize', titleFontSize, ...
-    'FontWeight', 'bold');
+set(ax, 'Color', 'w', 'DataAspectRatio', [1 1 1]);
+if showTitle
+    panelTitleStr = panelTitleString(p);
+    if ~isempty(panelTitleStr)
+        title(ax, panelTitleStr, ...
+            'Interpreter', 'tex', 'FontSize', titleFontSize, ...
+            'FontWeight', 'bold');
+    end
+end
 end
 
 function imgOut = scaleImageOnCanvas(imgIn, imageScale)
@@ -372,7 +581,10 @@ colEnd = colStart + size(scaledImage, 2) - 1;
 imgOut(rowStart:rowEnd, colStart:colEnd, :) = scaledImage;
 end
 
-function imgOut = trimWhiteBorders(imgIn)
+function imgOut = trimWhiteBorders(imgIn, padding)
+if nargin < 2 || isempty(padding)
+    padding = 6;
+end
 imgOut = imgIn;
 if isempty(imgIn)
     return
@@ -390,7 +602,6 @@ if ~any(mask(:))
 end
 
 [rows, cols] = find(mask);
-padding = 6;
 r1 = max(1, min(rows) - padding);
 r2 = min(size(imgIn, 1), max(rows) + padding);
 c1 = max(1, min(cols) - padding);
