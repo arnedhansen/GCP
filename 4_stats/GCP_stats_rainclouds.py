@@ -3,7 +3,7 @@
 # condition-averaged GED spectra (all_condition_peak_*_full).
 # Gaze/behavior: trial-level rainclouds from the merged trial table.
 # Raincloud figures with half-kernel densities, boxplots, jittered points.
-# Significance brackets are optional (commented out by default).
+# Annotation: continuous contrast slope (beta, 95% CI, p), not pairwise brackets.
 #
 # Run:
 #   python GCP_stats_rainclouds.py
@@ -12,20 +12,19 @@
 import os
 import sys
 import warnings
-from typing import Optional
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.io
-from scipy.stats import gaussian_kde
+import statsmodels.formula.api as smf
+from scipy.stats import gaussian_kde, norm
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
 
 sys.path.insert(0, os.path.expanduser("/Users/Arne/Documents/GitHub"))
 
-from functions.rainclouds_plotting_helpers import add_stat_brackets
-from functions.stats_helpers import iqr_outlier_filter, mixedlm_pairwise_contrasts, p_to_signif
+from functions.stats_helpers import iqr_outlier_filter
 
 warnings.filterwarnings("ignore", category=ConvergenceWarning, module="statsmodels")
 
@@ -33,14 +32,9 @@ warnings.filterwarnings("ignore", category=ConvergenceWarning, module="statsmode
 PAL = ["#FFE680", "#E69966", "#E66666", "#000000"]
 CONDITION_ORDER = ["25%", "50%", "75%", "100%"]
 COND_NUM_TO_LABEL = {1: "25%", 2: "50%", 3: "75%", 4: "100%"}
-COMPARISONS = [
-    ("25%", "50%"),
-    ("25%", "75%"),
-    ("25%", "100%"),
-    ("50%", "75%"),
-    ("50%", "100%"),
-    ("75%", "100%"),
-]
+COND_LABEL_TO_PCT = {"25%": 25.0, "50%": 50.0, "75%": 75.0, "100%": 100.0}
+CONTRAST_LEVELS = np.array([25.0, 50.0, 75.0, 100.0], dtype=float)
+CONTRAST_POP_SD = float(np.sqrt(np.mean((CONTRAST_LEVELS - CONTRAST_LEVELS.mean()) ** 2)))
 
 VARIABLES = [
     ("GammaFrequency", "Peak Gamma Frequency [Hz]", "gamma_freq"),
@@ -54,7 +48,7 @@ VARIABLES = [
 FIGURE_SAVE_DPI = 600
 YLABEL_GRID_X = -0.15
 YLIM_PAD_FRAC = 0.06
-SHOW_SIGNIFICANCE_BRACKETS = False  # set True to restore MixedLM brackets
+SHOW_SLOPE_ANNOTATION = True
 
 mpl.rcParams.update({
     "figure.dpi": 160,
@@ -240,21 +234,106 @@ def data_ylim(yvals: np.ndarray, pad_frac: float = YLIM_PAD_FRAC) -> tuple[float
     return ymin - pad, ymax + pad
 
 
-def bracket_labels_from_mixedlm(dvar: pd.DataFrame, var: str, comparisons: list) -> list[str]:
-    df = dvar.rename(columns={var: "value"}).copy()
-    try:
-        pw = mixedlm_pairwise_contrasts(
-            df, value_col="value", group_col="Condition", id_col="ID", p_adjust="fdr_bh"
-        )
-    except Exception as exc:
-        print(f"WARNING: MixedLM brackets failed for {var}: {exc}")
-        return ["n.s."] * len(comparisons)
+def contrast_num_c_from_labels(condition: pd.Series) -> np.ndarray:
+    """Centered/scaled contrast coding matching section 2.4 / power analysis."""
+    pct = condition.map(COND_LABEL_TO_PCT).to_numpy(dtype=float)
+    return (pct - float(CONTRAST_LEVELS.mean())) / CONTRAST_POP_SD
 
-    labels = []
-    for g1, g2 in comparisons:
-        row = pw.loc[(pw["group1"] == g1) & (pw["group2"] == g2)]
-        labels.append("n.s." if row.empty else p_to_signif(float(row["p_adj"].iloc[0])))
-    return labels
+
+def subject_condition_means(dvar: pd.DataFrame, var: str) -> pd.DataFrame:
+    """One row per subject x condition (confirmatory analysis unit)."""
+    out = (
+        dvar.groupby(["ID", "Condition"], observed=True, sort=False)[var]
+        .mean()
+        .reset_index()
+        .rename(columns={var: "value"})
+    )
+    out = out.loc[np.isfinite(out["value"])].copy()
+    out["contrast_num_c"] = contrast_num_c_from_labels(out["Condition"])
+    return out
+
+
+def fit_contrast_slope(dvar: pd.DataFrame, var: str) -> dict | None:
+    """
+    Fit value ~ contrast_num_c + (1 + contrast_num_c | Subject), with fallback
+    to (1 | Subject) on non-convergence / singularity.
+    """
+    dat = subject_condition_means(dvar, var)
+    if dat["ID"].nunique() < 2 or dat["contrast_num_c"].nunique() < 2:
+        return None
+
+    formula = "value ~ contrast_num_c"
+    fit_kwargs = dict(reml=False, method="lbfgs")
+
+    def _fit(re_formula: str):
+        model = smf.mixedlm(
+            formula,
+            data=dat,
+            groups=dat["ID"],
+            re_formula=re_formula,
+        )
+        return model.fit(**fit_kwargs)
+
+    res = None
+    used_re = "(1 + contrast_num_c | Subject)"
+    try:
+        res = _fit("~contrast_num_c")
+        if bool(getattr(res, "converged", True)) is False:
+            raise RuntimeError("random-slope fit did not converge")
+    except Exception:
+        used_re = "(1 | Subject)"
+        try:
+            res = _fit("1")
+        except Exception as exc:
+            print(f"WARNING: slope model failed for {var}: {exc}")
+            return None
+
+    if "contrast_num_c" not in res.params.index:
+        print(f"WARNING: contrast_num_c missing from slope fit for {var}")
+        return None
+
+    beta = float(res.params["contrast_num_c"])
+    # Prefer model SE; fall back to normal approx from bse if needed.
+    se = float(res.bse["contrast_num_c"]) if "contrast_num_c" in res.bse.index else np.nan
+    if np.isfinite(se) and se > 0:
+        z = beta / se
+        p = float(2.0 * (1.0 - norm.cdf(abs(z))))
+        ci_lo = beta - 1.96 * se
+        ci_hi = beta + 1.96 * se
+    else:
+        z = np.nan
+        p = np.nan
+        ci_lo = np.nan
+        ci_hi = np.nan
+
+    return {
+        "beta": beta,
+        "se": se,
+        "z": z,
+        "p": p,
+        "ci_lo": ci_lo,
+        "ci_hi": ci_hi,
+        "re": used_re,
+        "n_subjects": int(dat["ID"].nunique()),
+        "n_obs": int(len(dat)),
+    }
+
+
+def format_slope_annotation(stats: dict) -> str:
+    beta = stats["beta"]
+    ci_lo = stats["ci_lo"]
+    ci_hi = stats["ci_hi"]
+    p = stats["p"]
+    if not np.isfinite(p):
+        p_txt = "p = NA"
+    elif p < 0.001:
+        p_txt = "p < .001"
+    else:
+        p_txt = f"p = {p:.3f}".replace("0.", ".")
+
+    return (
+        f"β = {beta:.2f}, 95% CI [{ci_lo:.2f}, {ci_hi:.2f}], {p_txt}"
+    )
 
 
 def plot_raincloud(
@@ -375,22 +454,28 @@ def plot_raincloud(
     )
 
     range_y = ymax_plot - ymin_plot
-    step = 0.10 * range_y
-    y_positions = [float(np.nanmax(yvals_all)) + range_y * YLIM_PAD_FRAC + i * step for i in range(len(COMPARISONS))]
-
-    # Significance brackets (re-enable with SHOW_SIGNIFICANCE_BRACKETS = True)
-    if SHOW_SIGNIFICANCE_BRACKETS:
-        bracket_extra = range_y * 0.12
-        ymax_plot = ymax_plot + bracket_extra + (len(COMPARISONS) - 1) * (0.10 * range_y)
-        labels = bracket_labels_from_mixedlm(dvar, var, COMPARISONS)
-        add_stat_brackets(
-            ax=ax,
-            xcats=CONDITION_ORDER,
-            comparisons=COMPARISONS,
-            y_positions=y_positions,
-            labels=labels,
-            xmap=xpos,
-        )
+    if SHOW_SLOPE_ANNOTATION:
+        slope = fit_contrast_slope(dvar, var)
+        if slope is not None:
+            ann = format_slope_annotation(slope)
+            # Leave a little headroom so the annotation does not collide with clouds.
+            ymax_plot = ymax_plot + 0.08 * range_y
+            ax.text(
+                0.5,
+                0.98,
+                ann,
+                transform=ax.transAxes,
+                ha="center",
+                va="top",
+                fontsize=13,
+                color="black",
+            )
+            print(
+                f"  slope ({slope['re']}): β={slope['beta']:.3f}, "
+                f"p={slope['p']:.4g}, n_subj={slope['n_subjects']}"
+            )
+        else:
+            print(f"  slope annotation unavailable for {var}")
 
     ax.set_ylim(ymin_plot, ymax_plot)
     ax.set_xlim(-0.6, len(CONDITION_ORDER) - 0.4)
