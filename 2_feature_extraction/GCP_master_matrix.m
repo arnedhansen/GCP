@@ -1,6 +1,7 @@
 %% GCP Master Matrix (Subject-Level)
 %
-% Builds subject-level merged table across behavioral, gaze, and GED metrics
+% Builds subject-level merged table across behavioral, gaze, GED metrics,
+% GED inclusion, and VP demographics (Gender, Age, Handedness).
 %
 % Output:
 %   /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_merged_data.mat
@@ -68,6 +69,30 @@ merge_ids = to_numeric_col(tbl_merge.ID);
 [is_match, loc] = ismember(merge_ids, inc_ids);
 tbl_merge.Include = nan(height(tbl_merge), 1);
 tbl_merge.Include(is_match) = double(inc.Include(loc(is_match)));
+
+%% Demographics from VP table
+demog = readtable(paths.vp_table);
+demog = gcp_vp_demographics(demog);
+demoIDs = to_numeric_col(demog.ID);
+[has_vp, vp_loc] = ismember(merge_ids, demoIDs);
+tbl_merge.Gender = repmat({''}, height(tbl_merge), 1);
+tbl_merge.Age = nan(height(tbl_merge), 1);
+tbl_merge.Handedness = repmat({''}, height(tbl_merge), 1);
+if ~isempty(demog)
+    tbl_merge.Gender(has_vp) = demog.Gender(vp_loc(has_vp));
+    tbl_merge.Age(has_vp) = demog.Age(vp_loc(has_vp));
+    tbl_merge.Handedness(has_vp) = demog.Handedness(vp_loc(has_vp));
+    n_missing_vp = sum(~has_vp);
+    if n_missing_vp > 0
+        warning('GCP_master_matrix:MissingVP', ...
+            '%d merged rows have no VP match in %s.', n_missing_vp, paths.vp_table);
+    end
+end
+
+front = {'ID', 'Condition', 'Gender', 'Age', 'Handedness'};
+front = front(ismember(front, tbl_merge.Properties.VariableNames));
+rest = setdiff(tbl_merge.Properties.VariableNames, front, 'stable');
+tbl_merge = tbl_merge(:, [front, rest]);
 
 %% Diagnostics
 n_behav = height(tbl_behav);
@@ -169,9 +194,10 @@ function tbl_ged = load_subject_level_ged_table(features_root, subjects)
 tbl_ged = table();
 
 % Subject-level GED gamma metrics come from peaks of condition-averaged
-% power spectra (GCP_eeg_fex_GED.m -> all_condition_peak_*_full), not from
-% averaging per-trial peak values. Trial-level peaks remain in
-% GCP_eeg_GED.mat / GCP_merged_data_trials for trial analyses.
+% power spectra (GCP_eeg_fex_GED.m -> all_condition_peak_*), not from
+% averaging per-trial peak values. Full-window Power/Frequency are primary;
+% early/late columns are secondary preregistered windows. Trial-level peaks
+% remain in GCP_eeg_GED.mat / GCP_merged_data_trials for trial analyses.
 ged_path = fullfile(features_root, 'GCP_eeg_GED.mat');
 if ~isfile(ged_path)
     warning('GCP_master_matrix:NoGED', ...
@@ -181,10 +207,16 @@ end
 
 dat = load(ged_path, ...
     'all_condition_peak_freq_full', 'all_condition_peak_power_full', ...
+    'all_condition_peak_freq_early', 'all_condition_peak_power_early', ...
+    'all_condition_peak_freq_late', 'all_condition_peak_power_late', ...
     'subjects');
 
-freq_mat = pick_first_numeric_matrix(dat, {'all_condition_peak_freq_full'});
-pow_mat  = pick_first_numeric_matrix(dat, {'all_condition_peak_power_full'});
+freq_full  = pick_first_numeric_matrix(dat, {'all_condition_peak_freq_full'});
+pow_full   = pick_first_numeric_matrix(dat, {'all_condition_peak_power_full'});
+freq_early = pick_first_numeric_matrix(dat, {'all_condition_peak_freq_early'});
+pow_early  = pick_first_numeric_matrix(dat, {'all_condition_peak_power_early'});
+freq_late  = pick_first_numeric_matrix(dat, {'all_condition_peak_freq_late'});
+pow_late   = pick_first_numeric_matrix(dat, {'all_condition_peak_power_late'});
 
 if isfield(dat, 'subjects') && ~isempty(dat.subjects)
     ged_subjects = dat.subjects;
@@ -192,11 +224,15 @@ else
     ged_subjects = subjects;
 end
 
-tbl_ged = build_ged_table_from_arrays(pow_mat, freq_mat, ged_subjects);
+tbl_ged = build_ged_table_from_arrays( ...
+    pow_full, freq_full, pow_early, freq_early, pow_late, freq_late, ged_subjects);
 
 % Keep only key GED fields expected in downstream stats
 if ~isempty(tbl_ged)
-    keep = {'ID','Condition','Power','Frequency'};
+    keep = {'ID','Condition', ...
+        'Power','Frequency', ...
+        'Power_early','Frequency_early', ...
+        'Power_late','Frequency_late'};
     keep = keep(ismember(keep, tbl_ged.Properties.VariableNames));
     if numel(keep) >= 2
         tbl_ged = tbl_ged(:, keep);
@@ -204,26 +240,31 @@ if ~isempty(tbl_ged)
 end
 end
 
-function tbl = build_ged_table_from_arrays(pow_mat, freq_mat, subjects)
+function tbl = build_ged_table_from_arrays( ...
+    pow_full, freq_full, pow_early, freq_early, pow_late, freq_late, subjects)
 tbl = table();
 
-if isempty(freq_mat) && isempty(pow_mat)
+mats = {pow_full, freq_full, pow_early, freq_early, pow_late, freq_late};
+if all(cellfun(@isempty, mats))
     return
 end
 
 nCond = 4;
 nSubj = numel(subjects);
-if ~isempty(freq_mat)
-    nSubj = min(nSubj, size(freq_mat, 2));
-end
-if ~isempty(pow_mat)
-    nSubj = min(nSubj, size(pow_mat, 2));
+for i = 1:numel(mats)
+    if ~isempty(mats{i})
+        nSubj = min(nSubj, size(mats{i}, 2));
+    end
 end
 
 ID = nan(nCond * nSubj, 1);
 Condition = nan(nCond * nSubj, 1);
 Frequency = nan(nCond * nSubj, 1);
 Power = nan(nCond * nSubj, 1);
+Frequency_early = nan(nCond * nSubj, 1);
+Power_early = nan(nCond * nSubj, 1);
+Frequency_late = nan(nCond * nSubj, 1);
+Power_late = nan(nCond * nSubj, 1);
 
 row = 0;
 for s = 1:nSubj
@@ -232,16 +273,24 @@ for s = 1:nSubj
         row = row + 1;
         ID(row) = sid;
         Condition(row) = c;
-        if ~isempty(freq_mat) && size(freq_mat, 1) >= c
-            Frequency(row) = freq_mat(c, s);
-        end
-        if ~isempty(pow_mat) && size(pow_mat, 1) >= c
-            Power(row) = pow_mat(c, s);
-        end
+        Frequency(row) = read_cond_subj(freq_full, c, s);
+        Power(row) = read_cond_subj(pow_full, c, s);
+        Frequency_early(row) = read_cond_subj(freq_early, c, s);
+        Power_early(row) = read_cond_subj(pow_early, c, s);
+        Frequency_late(row) = read_cond_subj(freq_late, c, s);
+        Power_late(row) = read_cond_subj(pow_late, c, s);
     end
 end
 
-tbl = table(ID, Condition, Power, Frequency);
+tbl = table(ID, Condition, Power, Frequency, ...
+    Power_early, Frequency_early, Power_late, Frequency_late);
+end
+
+function v = read_cond_subj(M, c, s)
+v = NaN;
+if ~isempty(M) && size(M, 1) >= c && size(M, 2) >= s
+    v = M(c, s);
+end
 end
 
 function M = pick_first_numeric_matrix(dat, candidate_names)
@@ -255,5 +304,65 @@ for i = 1:numel(candidate_names)
             return
         end
     end
+end
+end
+
+function demog = gcp_vp_demographics(vp)
+ID = to_numeric_col(vp.ID);
+keep = isfinite(ID);
+vp = vp(keep, :);
+ID = ID(keep);
+
+Gender = cellstr(strtrim(string(vp_column(vp, {'Gender', 'Geschlecht'}))));
+Handedness = cellstr(strtrim(string(vp_column(vp, {'Handedness', 'H_ndigkeit'}))));
+
+if vp_has_column(vp, {'Alter', 'Age'})
+    Age = to_numeric_col(vp_column(vp, {'Alter', 'Age'}));
+else
+    testdate = to_datetime_col(vp_column(vp, {'Datum'}));
+    dob = to_datetime_col(vp_column(vp, {'Geburtsdatum'}));
+    Age = nan(size(ID));
+    has_dates = ~isnat(testdate) & ~isnat(dob);
+    Age(has_dates) = days(testdate(has_dates) - dob(has_dates)) / 365.25;
+end
+
+demog = table(ID, Gender, Age, Handedness);
+[~, uniq_idx] = unique(demog.ID, 'stable');
+demog = demog(uniq_idx, :);
+end
+
+function tf = vp_has_column(vp, candidates)
+tf = ~isempty(find_vp_column(vp.Properties.VariableNames, candidates));
+end
+
+function c = vp_column(vp, candidates)
+name = find_vp_column(vp.Properties.VariableNames, candidates);
+if isempty(name)
+    c = strings(height(vp), 1);
+    return
+end
+c = vp.(name);
+end
+
+function name = find_vp_column(names, candidates)
+name = '';
+norm = lower(regexprep(string(names), '[^a-zA-Z0-9]+', ''));
+cand = lower(regexprep(string(candidates), '[^a-zA-Z0-9]+', ''));
+for i = 1:numel(cand)
+    hit = find(norm == cand(i), 1);
+    if ~isempty(hit)
+        name = names{hit};
+        return
+    end
+end
+end
+
+function dt = to_datetime_col(c)
+if isdatetime(c)
+    dt = c;
+elseif isnumeric(c)
+    dt = datetime(c, 'ConvertFrom', 'excel');
+else
+    dt = datetime(c);
 end
 end

@@ -9,10 +9,10 @@
 %      posterior>frontal and posterior>temporal dominance (post_front,
 %      post_temp), low whole-scalp single-channel peak fraction (rejects
 %      ultra-focal EMG anywhere on the montage), and rising HF-slope EMG
-%      exclusion. Combine up to 5 eligible components with
-%      eigenvalue-proportional weights.
+%      exclusion. Combine all eligible components among the first 10
+%      with eigenvalue-proportional weights.
 %   - A signed occipital/frontal spatial template is used only to align
-%      component polarity before scoring and for QC storage.
+%      component polarity before scoring.
 %
 % Trial-level spectral scanning (per subject, condition, trial)
 %   - Project each trial to the combined GED component space and compute
@@ -23,12 +23,11 @@
 %      within peak frequency +/- 5 Hz.
 %
 % Outputs
-%   - Trial-level peak frequency/power cell arrays (trials_peaks, ...).
+%   - Trial-level peak frequency/power (trials_peaks, trials_powratio_fullscan,
+%     trials_outlier_mask_power_full) for trial hypotheses / rainclouds.
 %   - Condition-averaged spectral peaks (all_condition_peak_freq/power_*),
 %     used by subject-level master matrix, boxplots, and rainclouds.
-%   - Detectability, trial CV, peak power, and condition separation.
-%   - Subject diagnostics (component selection, rejection reasons,
-%     topographies, spectra), group summary figures.
+%   - Topographies / spectra / Haufe / reconstructed freq for viz scripts.
 %   - Optional GED-projected condition TFRs (toggle do_tfr below).
 %   - Optional diagnostic/summary figures (toggle do_plots below).
 %
@@ -105,80 +104,40 @@ if any(strcmp(component_leaf_dir, subjects))
 end
 
 %% Preallocate storage
-trials_powratio     = cell(4, nSubj);
 trials_powratio_fullscan = cell(4, nSubj);
-trials_powratio_early = cell(4, nSubj);
-trials_powratio_late  = cell(4, nSubj);
 trials_peaks = cell(4, nSubj);
-trials_peaks_early = cell(4, nSubj);
-trials_peaks_late  = cell(4, nSubj);
-trials_outlier_mask_freq_full = cell(4, nSubj);
-trials_outlier_mask_freq_early = cell(4, nSubj);
-trials_outlier_mask_freq_late = cell(4, nSubj);
 trials_outlier_mask_power_full = cell(4, nSubj);
-trials_outlier_mask_power_early = cell(4, nSubj);
-trials_outlier_mask_power_late = cell(4, nSubj);
-trials_centroid     = cell(4, nSubj);
-
-trials_mean   = nan(4, nSubj);
-trials_median = nan(4, nSubj);
-trials_mean_early   = nan(4, nSubj);
-trials_median_early = nan(4, nSubj);
-trials_mean_late    = nan(4, nSubj);
-trials_median_late  = nan(4, nSubj);
-trials_median_centroid_early = nan(4, nSubj);
-trials_median_centroid_late  = nan(4, nSubj);
-trials_trialcv_early       = nan(4, nSubj);
-trials_trialcv_late        = nan(4, nSubj);
-trials_mean_centroid   = nan(4, nSubj);
-trials_median_centroid = nan(4, nSubj);
-
-trials_gamma_power = nan(4, nSubj);
-trials_gamma_power_early = nan(4, nSubj);
-trials_gamma_power_late  = nan(4, nSubj);
+trials_centroid = cell(4, nSubj); % inprocess centroid figures only
+trials_median_centroid = nan(4, nSubj); % inprocess centroid figures only
+trials_gamma_power = nan(4, nSubj); % subject inclusion only
 
 all_topos       = cell(1, nSubj);
 all_topos_early = cell(1, nSubj);
 all_topos_late  = cell(1, nSubj);
 all_topo_labels = cell(1, nSubj);
 all_combined_spectrum_full = cell(1, nSubj);
+all_combined_spectrum_early = cell(1, nSubj);
+all_combined_spectrum_late = cell(1, nSubj);
 all_combined_eigenvalue_full = nan(1, nSubj);
-all_eigenvalues = nan(1, nSubj);
-all_selected_comp_idx  = nan(1, nSubj);
-all_selected_comp_corr = nan(1, nSubj);
-all_selected_comp_eval = nan(1, nSubj);
-all_top5_corrs         = nan(5, nSubj);
-all_top5_evals         = nan(5, nSubj);
-all_top5_topos         = cell(1, nSubj);
-all_simulated_templates = cell(1, nSubj);
-all_selected_comp_indices_multi = cell(1, nSubj);
-all_selected_comp_weights = cell(1, nSubj);
-all_component_selection_stats_full  = cell(1, nSubj);
+all_combined_eigenvalue_early = nan(1, nSubj);
+all_combined_eigenvalue_late = nan(1, nSubj);
+all_component_selection_stats_full  = cell(1, nSubj); % inprocess adequacy / TFR meta
 all_component_selection_stats_early = cell(1, nSubj);
 all_component_selection_stats_late  = cell(1, nSubj);
-all_combined_filter_full  = cell(1, nSubj);
-all_combined_filter_early = cell(1, nSubj);
-all_combined_filter_late  = cell(1, nSubj);
+all_combined_filter_full  = cell(1, nSubj); % inprocess TFR + Haufe
 all_haufe_pattern_full = cell(4, nSubj);
-all_haufe_patterns_multicomp_full = cell(4, nSubj);
-all_reconstruction_patterns_full = cell(1, nSubj);
 freq_reconstructed_multicomp_full = cell(4, nSubj);
-tfr_cond_trials = cell(4, nSubj);
+tfr_cond_trials = cell(4, nSubj); % returned by TFR helper; not saved
 tfr_cond_avg = cell(4, nSubj);
-ged_filter_meta = cell(1, nSubj);
+ged_filter_meta = cell(1, nSubj); % returned by TFR helper; not saved
 subject_runtime_seconds = nan(nSubj, 1);
 
-trials_powratio_components_full  = cell(4, nSubj);
-trials_powratio_components_early = cell(4, nSubj);
-trials_powratio_components_late  = cell(4, nSubj);
 all_condition_powspctrm_full = cell(4, nSubj);
 all_condition_powspctrm_early = cell(4, nSubj);
 all_condition_powspctrm_late = cell(4, nSubj);
-all_condition_powspctrm_full_unsmoothed = cell(4, nSubj);
-all_condition_powspctrm_early_unsmoothed = cell(4, nSubj);
-all_condition_powspctrm_late_unsmoothed = cell(4, nSubj);
-freq_powspctrm_full = cell(4, nSubj);
 freq_powspctrm_full_unsmoothed = cell(4, nSubj);
+freq_powspctrm_early_unsmoothed = cell(4, nSubj);
+freq_powspctrm_late_unsmoothed = cell(4, nSubj);
 all_condition_peak_freq_full = nan(4, nSubj);
 all_condition_peak_freq_early = nan(4, nSubj);
 all_condition_peak_freq_late = nan(4, nSubj);
@@ -299,7 +258,6 @@ for subj = 1:nSubj
     selected_idx_full  = []; selected_idx_early  = []; selected_idx_late  = [];
     w_combined_full  = []; w_combined_early  = []; w_combined_late  = [];
     evals_sorted_full = []; evals_sorted_early = []; evals_sorted_late = [];
-    searchCorrs_full = []; searchCorrs_early = []; searchCorrs_late = [];
     searchTopos_full = []; searchTopos_early = []; searchTopos_late = [];
     searchMeanPrSpectrum_full = []; searchMeanPrSpectrum_early = []; searchMeanPrSpectrum_late = [];
     searchEmgClass_full = {}; searchEmgClass_early = {}; searchEmgClass_late = {};
@@ -478,7 +436,6 @@ for subj = 1:nSubj
         else
             [~, combined_ord] = sort(eval_raw_vec(combined_idx), 'descend');
             combined_idx = combined_idx(combined_ord);
-            combined_idx = combined_idx(1:min(5, numel(combined_idx)));
 
             combined_weights = eval_raw_vec(combined_idx)';
             combined_weights(~isfinite(combined_weights) | combined_weights <= 0) = 0;
@@ -518,24 +475,12 @@ for subj = 1:nSubj
                 topo_temp = covStim_reg * topComp;
             end
         end
-        [~, topDispOrder] = sort(evals_sorted(1:nSearch), 'descend');
-        nStore = min(5, nSearch);
-        storeCompIdx = topDispOrder(1:nStore);
-        storeCorrsTop = searchCorrs(storeCompIdx);
-        storeEvalsTop = evals_sorted(storeCompIdx);
-        storeTopos = searchTopos(:, storeCompIdx);
-        storeCorrs = nan(5, 1);
-        storeEvals = nan(5, 1);
-        storeCorrs(1:nStore) = storeCorrsTop(:);
-        storeEvals(1:nStore) = storeEvalsTop(:);
-
         % Store per-window filters for trial-level scanning
         if w == 1
             searchFilters_full = searchFilters;
             selected_idx_full = selected_idx;
             w_combined_full = selected_weights(:)';
             evals_sorted_full = evals_sorted;
-            searchCorrs_full = searchCorrs;
             searchTopos_full = searchTopos;
             searchMeanPrSpectrum_full = searchMeanPrSpectrum;
             searchEmgClass_full = searchEmgClass;
@@ -545,12 +490,12 @@ for subj = 1:nSubj
             topo_peak_frac_full = topo_peak_frac_vec;
             emg_hf_slope_full = emg_hf_slope_vec;
             powspctrm_form_score_full = powspctrm_form_score_vec;
+            all_topo_labels{subj} = dataEEG_c25.label;
         elseif w == 2
             searchFilters_early = searchFilters;
             selected_idx_early = selected_idx;
             w_combined_early = selected_weights(:)';
             evals_sorted_early = evals_sorted;
-            searchCorrs_early = searchCorrs;
             searchTopos_early = searchTopos;
             searchMeanPrSpectrum_early = searchMeanPrSpectrum;
             searchEmgClass_early = searchEmgClass;
@@ -565,7 +510,6 @@ for subj = 1:nSubj
             selected_idx_late = selected_idx;
             w_combined_late = selected_weights(:)';
             evals_sorted_late = evals_sorted;
-            searchCorrs_late = searchCorrs;
             searchTopos_late = searchTopos;
             searchMeanPrSpectrum_late = searchMeanPrSpectrum;
             searchEmgClass_late = searchEmgClass;
@@ -575,31 +519,6 @@ for subj = 1:nSubj
             topo_peak_frac_late = topo_peak_frac_vec;
             emg_hf_slope_late = emg_hf_slope_vec;
             powspctrm_form_score_late = powspctrm_form_score_vec;
-        end
-
-        if w == 1
-            all_topos{subj}       = topo_temp;
-            all_topo_labels{subj} = dataEEG_c25.label;
-            if isempty(selected_idx) || ~isfinite(bestIdx)
-                all_eigenvalues(subj) = NaN;
-                all_selected_comp_idx(subj)  = NaN;
-                all_selected_comp_eval(subj) = NaN;
-            else
-                all_eigenvalues(subj) = evals_sorted(bestIdx);
-                all_selected_comp_idx(subj)  = bestIdx;
-                all_selected_comp_eval(subj) = evals_sorted(bestIdx);
-            end
-            all_selected_comp_corr(subj) = bestCorr;
-            all_top5_corrs(:, subj) = storeCorrs;
-            all_top5_evals(:, subj) = storeEvals;
-            all_top5_topos{subj} = storeTopos;
-            all_simulated_templates{subj} = sim_template;
-            all_selected_comp_indices_multi{subj} = selected_idx;
-            all_selected_comp_weights{subj} = selected_weights(:)';
-        elseif w == 2
-            all_topos_early{subj} = topo_temp;
-        else
-            all_topos_late{subj} = topo_temp;
         end
         comp_sel_struct = struct( ...
             'selection_mode', 'fixed_preregistered_weighted', ...
@@ -654,8 +573,6 @@ for subj = 1:nSubj
     all_topos{subj} = topo_temp_full;
     all_topos_early{subj} = topo_temp_early;
     all_topos_late{subj} = topo_temp_late;
-    all_selected_comp_indices_multi{subj} = selected_idx_full;
-    all_selected_comp_weights{subj} = w_combined_full(:)';
     [sel_idx_spec, sel_w_spec] = sanitize_selected_components( ...
         selected_idx_full, w_combined_full, size(searchMeanPrSpectrum_full, 1));
     if isempty(sel_idx_spec) || isempty(searchMeanPrSpectrum_full)
@@ -668,16 +585,31 @@ for subj = 1:nSubj
         evals_sel(~isfinite(evals_sel)) = NaN;
         all_combined_eigenvalue_full(subj) = sum(sel_w_spec(:) .* evals_sel);
     end
-    if isempty(selected_idx_full)
-        all_selected_comp_idx(subj) = NaN;
-        all_selected_comp_corr(subj) = NaN;
-        all_selected_comp_eval(subj) = NaN;
-        all_eigenvalues(subj) = NaN;
+    [sel_idx_spec_e, sel_w_spec_e] = sanitize_selected_components( ...
+        selected_idx_early, w_combined_early, size(searchMeanPrSpectrum_early, 1));
+    if isempty(sel_idx_spec_e) || isempty(searchMeanPrSpectrum_early)
+        all_combined_spectrum_early{subj} = [];
+        all_combined_eigenvalue_early(subj) = NaN;
     else
-        all_selected_comp_idx(subj) = selected_idx_full(1);
-        all_selected_comp_corr(subj) = searchCorrs_full(selected_idx_full(1));
-        all_selected_comp_eval(subj) = evals_sorted_full(selected_idx_full(1));
-        all_eigenvalues(subj) = evals_sorted_full(selected_idx_full(1));
+        all_combined_spectrum_early{subj} = sel_w_spec_e(:)' * ...
+            searchMeanPrSpectrum_early(sel_idx_spec_e, :);
+        evals_sel = evals_sorted_early(sel_idx_spec_e);
+        evals_sel = evals_sel(:);
+        evals_sel(~isfinite(evals_sel)) = NaN;
+        all_combined_eigenvalue_early(subj) = sum(sel_w_spec_e(:) .* evals_sel);
+    end
+    [sel_idx_spec_l, sel_w_spec_l] = sanitize_selected_components( ...
+        selected_idx_late, w_combined_late, size(searchMeanPrSpectrum_late, 1));
+    if isempty(sel_idx_spec_l) || isempty(searchMeanPrSpectrum_late)
+        all_combined_spectrum_late{subj} = [];
+        all_combined_eigenvalue_late(subj) = NaN;
+    else
+        all_combined_spectrum_late{subj} = sel_w_spec_l(:)' * ...
+            searchMeanPrSpectrum_late(sel_idx_spec_l, :);
+        evals_sel = evals_sorted_late(sel_idx_spec_l);
+        evals_sel = evals_sel(:);
+        evals_sel(~isfinite(evals_sel)) = NaN;
+        all_combined_eigenvalue_late(subj) = sum(sel_w_spec_l(:) .* evals_sel);
     end
     comp_stats_full = all_component_selection_stats_full{subj};
     comp_stats_early = all_component_selection_stats_early{subj};
@@ -750,14 +682,6 @@ for subj = 1:nSubj
     if ~isempty(all_component_selection_stats_late{subj}) && isfield(all_component_selection_stats_late{subj}, 'selected_idx')
         adequate_late = ~isempty(all_component_selection_stats_late{subj}.selected_idx);
     end
-    if ~adequate_full
-        all_selected_comp_idx(subj) = NaN;
-        all_selected_comp_corr(subj) = NaN;
-        all_selected_comp_eval(subj) = NaN;
-        all_eigenvalues(subj) = NaN;
-        all_selected_comp_indices_multi{subj} = NaN;
-        all_selected_comp_weights{subj} = NaN;
-    end
 
     %% Per-condition trial-level spectral scanning
     % Use window-specific filters for each dB-spectrum output
@@ -822,22 +746,17 @@ for subj = 1:nSubj
     filters.late.selected_idx = selected_idx_late_norm;
     filters.late.w_combined = w_combined_late_norm;
 
-    % Persist the exact signed, noise-normalized channel-space filters used
-    % for trial projection. Downstream analyses must reuse these vectors
+    % Persist the exact signed, noise-normalized channel-space filter used
+    % for trial projection / TFR. Downstream analyses must reuse this vector
     % rather than reconstructing the eigendecomposition.
     all_combined_filter_full{subj} = build_combined_filter_vector( ...
         filters.full.W_combined, filters.full.w_combined);
-    all_combined_filter_early{subj} = build_combined_filter_vector( ...
-        filters.early.W_combined, filters.early.w_combined);
-    all_combined_filter_late{subj} = build_combined_filter_vector( ...
-        filters.late.W_combined, filters.late.w_combined);
 
     %% Condition-specific Haufe patterns and multicomponent reconstruction
     if adequate_full && ~isempty(filters.full.W_combined)
         W_selected_full = filters.full.W_combined;
         component_cov_pool = W_selected_full' * covStim_full * W_selected_full;
         reconstruction_patterns = covStim_full * W_selected_full * pinv(component_cov_pool);
-        all_reconstruction_patterns_full{subj} = reconstruction_patterns;
 
         combined_filter_full = all_combined_filter_full{subj};
         for cond = 1:4
@@ -846,10 +765,6 @@ for subj = 1:nSubj
             if isempty(cov_cond) || isempty(dat_cond)
                 continue;
             end
-
-            component_cov_cond = W_selected_full' * cov_cond * W_selected_full;
-            all_haufe_patterns_multicomp_full{cond, subj} = ...
-                cov_cond * W_selected_full * pinv(component_cov_cond);
 
             combined_variance_cond = combined_filter_full' * cov_cond * combined_filter_full;
             if isfinite(combined_variance_cond) && combined_variance_cond > eps
@@ -1086,38 +1001,22 @@ for subj = 1:nSubj
         trial_unstable_late = unstable_trial_frac_late >= instability_trial_freq_frac_thr;
         if any(trial_unstable_full)
             powratio_methods_full(:, trial_unstable_full, :) = NaN;
-            powratio_components(:, trial_unstable_full, :) = NaN;
         end
         if any(trial_unstable_early)
             powratio_methods_early(:, trial_unstable_early, :) = NaN;
-            powratio_components_early(:, trial_unstable_early, :) = NaN;
         end
         if any(trial_unstable_late)
             powratio_methods_late(:, trial_unstable_late, :) = NaN;
-            powratio_components_late(:, trial_unstable_late, :) = NaN;
         end
-        powratio_methods_full_analysis = powratio_methods_full;
-        powratio_methods_early_analysis = powratio_methods_early;
-        powratio_methods_late_analysis = powratio_methods_late;
-        powratio_components_analysis = powratio_components;
-        powratio_components_early_analysis = powratio_components_early;
-        powratio_components_late_analysis = powratio_components_late;
-
-        trials_powratio_components_full{cond, subj}  = powratio_components_analysis;
-        trials_powratio_components_early{cond, subj} = powratio_components_early_analysis;
-        trials_powratio_components_late{cond, subj}  = powratio_components_late_analysis;
 
         % Keep full-window outputs based on weighted combined GED branch.
         powratio_trials_fullscan = squeeze(powratio_methods_full(1, :, :));
         powratio_trials_early_fullscan = squeeze(powratio_methods_early(1, :, :));
         powratio_trials_late_fullscan = squeeze(powratio_methods_late(1, :, :));
-        powratio_trials_full = squeeze(powratio_methods_full_analysis(1, :, :));
-        powratio_trials_early = squeeze(powratio_methods_early_analysis(1, :, :));
-        powratio_trials_late = squeeze(powratio_methods_late_analysis(1, :, :));
+        powratio_trials_full = powratio_trials_fullscan;
+        powratio_trials_early = squeeze(powratio_methods_early(1, :, :));
+        powratio_trials_late = squeeze(powratio_methods_late(1, :, :));
         trials_powratio_fullscan{cond, subj} = powratio_trials_fullscan;
-        trials_powratio{cond, subj} = powratio_trials_full;
-        trials_powratio_early{cond, subj} = powratio_trials_early;
-        trials_powratio_late{cond, subj} = powratio_trials_late;
         subj_powratio_fullscan{cond} = powratio_trials_fullscan;
         subj_powratio_early{cond} = powratio_trials_early;
         subj_powratio_late{cond} = powratio_trials_late;
@@ -1129,7 +1028,7 @@ for subj = 1:nSubj
             5, 5);
 
         trials_peaks{cond, subj} = trl_peaks;
-        trials_centroid{cond, subj}     = trl_centroid;
+        trials_centroid{cond, subj} = trl_centroid;
         subj_peaks_full{cond} = trl_peaks;
         subj_centroid_full{cond} = trl_centroid;
 
@@ -1162,14 +1061,7 @@ for subj = 1:nSubj
         trial_peak_power_early(outlier_mask_power_early) = NaN;
         trial_peak_power_late(outlier_mask_power_late) = NaN;
         trials_peaks{cond, subj} = trl_peaks;
-        trials_outlier_mask_freq_full{cond, subj} = outlier_mask_freq_full;
-        trials_outlier_mask_freq_early{cond, subj} = outlier_mask_freq_early;
-        trials_outlier_mask_freq_late{cond, subj} = outlier_mask_freq_late;
         trials_outlier_mask_power_full{cond, subj} = outlier_mask_power_full;
-        trials_outlier_mask_power_early{cond, subj} = outlier_mask_power_early;
-        trials_outlier_mask_power_late{cond, subj} = outlier_mask_power_late;
-        trials_peaks_early{cond, subj} = trl_peaks_early;
-        trials_peaks_late{cond, subj} = trl_peaks_late;
         subj_peaks_full{cond} = trl_peaks;
         subj_peaks_early{cond} = trl_peaks_early;
         subj_peaks_late{cond} = trl_peaks_late;
@@ -1190,35 +1082,29 @@ for subj = 1:nSubj
         if ~isempty(powratio_trials_late_avg)
             powratio_trials_late_avg(outlier_rows_late, :) = NaN;
         end
-        valid_s = ~isnan(trl_peaks);
-        valid_s_early = ~isnan(trl_peaks_early);
-        valid_s_late = ~isnan(trl_peaks_late);
 
         % Condition-level spectra and peak metrics from trial-averaged spectra
         % (FieldTrip averaging over the trial dimension).
         cond_avg_full = compute_condition_average_powratio_ft(powratio_trials_full_avg, scan_freqs);
         cond_avg_early = compute_condition_average_powratio_ft(powratio_trials_early_avg, scan_freqs);
         cond_avg_late = compute_condition_average_powratio_ft(powratio_trials_late_avg, scan_freqs);
-        all_condition_powspctrm_full_unsmoothed{cond, subj} = cond_avg_full;
-        all_condition_powspctrm_early_unsmoothed{cond, subj} = cond_avg_early;
-        all_condition_powspctrm_late_unsmoothed{cond, subj} = cond_avg_late;
-        cond_avg_full = movmean(cond_avg_full, 1, 'omitnan');
-        cond_avg_early = movmean(cond_avg_early, 1, 'omitnan');
-        cond_avg_late = movmean(cond_avg_late, 1, 'omitnan');
+        % Confirmatory condition-averaged peaks: no frequency-domain smoothing.
         all_condition_powspctrm_full{cond, subj} = cond_avg_full;
         all_condition_powspctrm_early{cond, subj} = cond_avg_early;
         all_condition_powspctrm_late{cond, subj} = cond_avg_late;
         freq_powspctrm_full_unsmoothed{cond, subj} = ged_powcurve_to_freq_ft( ...
-            all_condition_powspctrm_full_unsmoothed{cond, subj}, scan_freqs, dataEEG_c25);
-        freq_powspctrm_full{cond, subj} = ged_powcurve_to_freq_ft( ...
-            all_condition_powspctrm_full{cond, subj}, scan_freqs, dataEEG_c25);
+            cond_avg_full, scan_freqs, dataEEG_c25);
+        freq_powspctrm_early_unsmoothed{cond, subj} = ged_powcurve_to_freq_ft( ...
+            cond_avg_early, scan_freqs, dataEEG_c25);
+        freq_powspctrm_late_unsmoothed{cond, subj} = ged_powcurve_to_freq_ft( ...
+            cond_avg_late, scan_freqs, dataEEG_c25);
         subj_condition_avg_full{cond} = cond_avg_full;
         subj_condition_avg_early{cond} = cond_avg_early;
         subj_condition_avg_late{cond} = cond_avg_late;
 
-        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 1, 5);
-        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 1, 5);
-        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 1, 5);
+        [peak_full_hz, peak_full_power] = pick_tallest_peak(cond_avg_full, scan_freqs, 0, 5);
+        [peak_early_hz, peak_early_power] = pick_tallest_peak(cond_avg_early, scan_freqs, 0, 5);
+        [peak_late_hz, peak_late_power] = pick_tallest_peak(cond_avg_late, scan_freqs, 0, 5);
         all_condition_peak_freq_full(cond, subj) = peak_full_hz;
         all_condition_peak_freq_early(cond, subj) = peak_early_hz;
         all_condition_peak_freq_late(cond, subj) = peak_late_hz;
@@ -1229,40 +1115,11 @@ for subj = 1:nSubj
         subj_condition_peak_early(cond) = peak_early_hz;
         subj_condition_peak_late(cond) = peak_late_hz;
 
-        trials_mean(cond, subj) = robust_trial_mean(trl_peaks(valid_s));
-        trials_median(cond, subj) = median(trl_peaks(valid_s));
         valid_c = isfinite(trl_centroid);
-        trials_mean_centroid(cond, subj) = robust_trial_mean(trl_centroid(valid_c));
         trials_median_centroid(cond, subj) = median(trl_centroid(valid_c));
 
-        trials_mean_early(cond, subj) = robust_trial_mean(trl_peaks_early(valid_s_early));
-        trials_median_early(cond, subj) = median(trl_peaks_early(valid_s_early));
-        trials_mean_late(cond, subj) = robust_trial_mean(trl_peaks_late(valid_s_late));
-        trials_median_late(cond, subj) = median(trl_peaks_late(valid_s_late));
-
-        % Peak power: highest dB value in the smoothed trial spectrum.
+        % Peak power: highest dB value in the trial spectrum (inclusion).
         trials_gamma_power(cond, subj) = robust_trial_mean(trial_peak_power_full);
-        trials_gamma_power_early(cond, subj) = robust_trial_mean(trial_peak_power_early);
-        trials_gamma_power_late(cond, subj) = robust_trial_mean(trial_peak_power_late);
-
-        % Time-split centroid summaries.
-        valid_cent_early = isfinite(trl_centroid_early);
-        if any(valid_cent_early)
-            trials_median_centroid_early(cond, subj) = median(trl_centroid_early(valid_cent_early));
-        end
-        if sum(valid_s_early) >= 2
-            vf_early = trl_peaks_early(valid_s_early);
-            trials_trialcv_early(cond, subj) = std(vf_early) / abs(mean(vf_early));
-        end
-
-        valid_cent_late = isfinite(trl_centroid_late);
-        if any(valid_cent_late)
-            trials_median_centroid_late(cond, subj) = median(trl_centroid_late(valid_cent_late));
-        end
-        if sum(valid_s_late) >= 2
-            vf_late = trl_peaks_late(valid_s_late);
-            trials_trialcv_late(cond, subj) = std(vf_late) / abs(mean(vf_late));
-        end
 
     end % condition loop
 
@@ -1285,7 +1142,6 @@ for subj = 1:nSubj
     cmap_div = interp1([0 0.5 1], ...
         [0.17 0.27 0.53; 0.97 0.97 0.97; 0.70 0.09 0.17], linspace(0,1,256));
 
-    occ_highlight = dataEEG_c25.label(occ_idx);
     cfg_topo = [];
     cfg_topo.layout    = headmodel.layANThead;
     cfg_topo.comment   = 'no';
@@ -1295,11 +1151,6 @@ for subj = 1:nSubj
     cfg_topo.zlim      = 'maxabs';
     cfg_topo.colormap  = '*RdBu';
     cfg_topo.figure    = 'gcf';
-    cfg_topo.highlight          = {'on'};
-    cfg_topo.highlightchannel   = {occ_highlight};
-    cfg_topo.highlightsymbol    = {'.'};
-    cfg_topo.highlightsize      = {12};
-    cfg_topo.highlightcolor     = {[0 0 0]};
 
     window_names = {'full', 'early', 'late'};
     for wi = 1:3
@@ -1680,7 +1531,7 @@ tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile; hold on;
 plot_gamma_window_panel(all_condition_peak_freq_early, condLabels, colors, nSubj);
 ylabel('Gamma Frequency [Hz]');
-title('Early (0-500 ms)', 'FontWeight', 'bold');
+title('Early (0-1000 ms)', 'FontWeight', 'bold');
 
 nexttile; hold on;
 plot_gamma_window_panel(all_condition_peak_freq_full, condLabels, colors, nSubj);
@@ -1698,7 +1549,7 @@ tiledlayout(1, 3, 'Padding', 'compact', 'TileSpacing', 'compact');
 nexttile; hold on;
 plot_gamma_window_panel(all_condition_peak_power_early, condLabels, colors, nSubj);
 ylabel('Gamma Peak Power [dB]');
-title('Early (0-500 ms)', 'FontWeight', 'bold');
+title('Early (0-1000 ms)', 'FontWeight', 'bold');
 
 nexttile; hold on;
 plot_gamma_window_panel(all_condition_peak_power_full, condLabels, colors, nSubj);
@@ -1748,7 +1599,7 @@ title('Gamma Peak Power Shift', ...
 cond_shift_power_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_power.png');
 save_figure_png(fig_condition_shift_power, cond_shift_power_path);
 
-%% All-subjects FULL combined topography + spectrum overview
+%% All-subjects combined topography + spectrum overview (full / early / late)
 cfg_topo_all = [];
 cfg_topo_all.layout    = headmodel.layANThead;
 cfg_topo_all.comment   = 'no';
@@ -1760,40 +1611,28 @@ cfg_topo_all.colormap  = '*RdBu';
 cfg_topo_all.figure    = 'gcf';
 plot_all_subjects_full_combined_topo_spectra( ...
     fig_save_dir_component_selection_root, subjects, scan_freqs, analysis_freq_range, cfg_topo_all, ...
-    all_topo_labels, all_topos, all_combined_spectrum_full, all_combined_eigenvalue_full);
+    all_topo_labels, all_topos, all_combined_spectrum_full, all_combined_eigenvalue_full, 'full');
+plot_all_subjects_full_combined_topo_spectra( ...
+    fig_save_dir_component_selection_root, subjects, scan_freqs, analysis_freq_range, cfg_topo_all, ...
+    all_topo_labels, all_topos_early, all_combined_spectrum_early, all_combined_eigenvalue_early, 'early');
+plot_all_subjects_full_combined_topo_spectra( ...
+    fig_save_dir_component_selection_root, subjects, scan_freqs, analysis_freq_range, cfg_topo_all, ...
+    all_topo_labels, all_topos_late, all_combined_spectrum_late, all_combined_eigenvalue_late, 'late');
 end % do_plots (group figures)
 
 %% Save results
 save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_GED.mat');
 save(save_path, ...
-    'trials_powratio', ...
     'trials_powratio_fullscan', ...
-    'trials_powratio_early', 'trials_powratio_late', ...
-    'trials_peaks', 'trials_centroid', ...
-    'trials_peaks_early', 'trials_peaks_late', ...
-    'trials_mean', 'trials_median', ...
-    'trials_mean_early', 'trials_median_early', ...
-    'trials_mean_late', 'trials_median_late', ...
-    'trials_median_centroid_early', 'trials_median_centroid_late', ...
-    'trials_trialcv_early', 'trials_trialcv_late', ...
-    'trials_mean_centroid', 'trials_median_centroid', ...
-    'trials_gamma_power', 'trials_gamma_power_early', 'trials_gamma_power_late', ...
+    'trials_peaks', ...
+    'trials_outlier_mask_power_full', ...
     'all_topos', 'all_topos_early', 'all_topos_late', 'all_topo_labels', ...
-    'all_combined_spectrum_full', 'all_combined_eigenvalue_full', 'all_eigenvalues', ...
-    'all_selected_comp_idx', 'all_selected_comp_corr', 'all_selected_comp_eval', ...
-    'all_selected_comp_indices_multi', 'all_selected_comp_weights', ...
-    'all_component_selection_stats_full', 'all_component_selection_stats_early', 'all_component_selection_stats_late', ...
-    'all_combined_filter_full', 'all_combined_filter_early', 'all_combined_filter_late', ...
-    'all_haufe_pattern_full', 'all_haufe_patterns_multicomp_full', ...
-    'all_reconstruction_patterns_full', 'freq_reconstructed_multicomp_full', ...
-    'trials_powratio_components_full', 'trials_powratio_components_early', 'trials_powratio_components_late', ...
+    'all_combined_spectrum_full', 'all_combined_spectrum_early', 'all_combined_spectrum_late', ...
+    'all_combined_eigenvalue_full', 'all_combined_eigenvalue_early', 'all_combined_eigenvalue_late', ...
+    'all_haufe_pattern_full', 'freq_reconstructed_multicomp_full', ...
     'all_condition_powspctrm_full', 'all_condition_powspctrm_early', 'all_condition_powspctrm_late', ...
-    'all_condition_powspctrm_full_unsmoothed', 'all_condition_powspctrm_early_unsmoothed', 'all_condition_powspctrm_late_unsmoothed', ...
     'all_condition_peak_freq_full', 'all_condition_peak_freq_early', 'all_condition_peak_freq_late', ...
     'all_condition_peak_power_full', 'all_condition_peak_power_early', 'all_condition_peak_power_late', ...
-    'trials_outlier_mask_freq_full', 'trials_outlier_mask_freq_early', 'trials_outlier_mask_freq_late', ...
-    'trials_outlier_mask_power_full', 'trials_outlier_mask_power_early', 'trials_outlier_mask_power_late', ...
-    'all_top5_corrs', 'all_top5_evals', 'all_top5_topos', 'all_simulated_templates', ...
     'scan_freqs', 'subjects', 'condLabels', 'condNames', ...
     'baseline_window', 'full_window', 'early_window', 'late_window');
 
@@ -1802,9 +1641,14 @@ powspctrm_save_path = fullfile(gcp_root_path, 'data', 'features', 'GCP_eeg_powsp
 % freq_* cells: one FieldTrip freq per (cond, subj), chan_freq, for ft_freqgrandaverage like AOC powl2{subj}.
 % Do not add topolabel to those structs: FieldTrip ft_datatype sets iscomp if topolabel is present.
 save(powspctrm_save_path, ...
-    'freq_powspctrm_full', 'freq_powspctrm_full_unsmoothed', ...
-    'all_condition_peak_freq_full', 'scan_freqs', 'condLabels', 'subjects');
-fprintf('[GED] Subject-level freq (full-window GED spectra) saved to: %s\n', powspctrm_save_path);
+    'freq_powspctrm_full_unsmoothed', ...
+    'freq_powspctrm_early_unsmoothed', ...
+    'freq_powspctrm_late_unsmoothed', ...
+    'all_condition_peak_freq_full', ...
+    'all_condition_peak_freq_early', ...
+    'all_condition_peak_freq_late', ...
+    'scan_freqs', 'condLabels', 'subjects');
+fprintf('[GED] Subject-level freq (full/early/late GED spectra) saved to: %s\n', powspctrm_save_path);
 
 %% Save GED analysis cohort (subjects with valid gamma power)
 SubjID = str2double(string(subjects(:)));
@@ -1816,8 +1660,7 @@ save(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion',
 if do_tfr
     tfr_save_path = fullfile(gcp_feature_data_path, 'GCP_eeg_GED_TFR.mat');
     save(tfr_save_path, ...
-        'tfr_cond_trials', 'tfr_cond_avg', ...
-        'ged_filter_meta', ...
+        'tfr_cond_avg', ...
         'subjects', 'condNames', 'condLabels', ...
         'baseline_window', 'tfr_baseline_window', 'full_window', ...
         'tfr_foi', 'tfr_toi', 'tfr_win_sec', 'tfr_tapsmofrq', ...

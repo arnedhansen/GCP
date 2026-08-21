@@ -11,13 +11,9 @@ startup
 [subjects, paths, colors] = setup('GCP');
 subjects = gcp_subject_inclusion(subjects, paths);
 figDir = fullfile(paths.figures, 'eeg', 'ersd');
-if ~isfolder(figDir), mkdir(figDir); end
 addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 
 in_path = fullfile(paths.features, 'GCP_eeg_GED_TFR.mat');
-if ~isfile(in_path)
-    error('Missing GED TFR file: %s', in_path);
-end
 dat = load(in_path, 'tfr_cond_avg', 'subjects', 'condLabels');
 
 condLabelsPlot = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};

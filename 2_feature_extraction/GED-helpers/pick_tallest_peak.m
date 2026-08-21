@@ -4,8 +4,8 @@ peak_hz = NaN;
 peak_power = NaN;
 y = y(:)';
 x = x(:)';
-if ~isfinite(smooth_n) || smooth_n < 1
-    smooth_n = 1;
+if ~isfinite(smooth_n) || smooth_n < 0
+    smooth_n = 0;
 end
 if ~isfinite(peak_power_halfwidth_hz) || peak_power_halfwidth_hz < 0
     peak_power_halfwidth_hz = 0;
@@ -13,7 +13,11 @@ end
 if isempty(y) || numel(y) ~= numel(x)
     return;
 end
-y = movmean(y, max(1, round(smooth_n)), 'omitnan');
+% smooth_n <= 1 leaves the spectrum unchanged (used for confirmatory
+% condition-averaged peaks); larger windows smooth trial-level scans.
+if smooth_n > 1
+    y = movmean(y, max(1, round(smooth_n)), 'omitnan');
+end
 core_mask = x >= 30 & x <= 90 & isfinite(y) & isfinite(x);
 if any(core_mask)
     x_use = x(core_mask);

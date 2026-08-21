@@ -24,7 +24,7 @@ for i = 1:numel(var_names)
     if ~isnumeric(v)
         continue
     end
-    if strcmp(vn, 'ID') || strcmp(vn, 'Condition') || strcmp(vn, 'Include')
+    if strcmp(vn, 'ID') || strcmp(vn, 'Condition') || strcmp(vn, 'Include') || strcmp(vn, 'Age')
         continue
     end
 

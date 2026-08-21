@@ -31,6 +31,9 @@ if ispc
     % Master Matrices
     run('C:\Users\Administrator\Documents\GitHub\GCP\2_feature_extraction\GCP_master_matrix.m');
 
+    % Demographics
+    run('C:\Users\Administrator\Documents\GitHub\GCP\2_feature_extraction\GCP_demographics.m');
+
     %% 3 Visualization
 
     % EEG: power spectra, ERSD, topographies, TFRs
@@ -70,6 +73,9 @@ else
 
     % Master Matrices
     run('/Users/Arne/Documents/GitHub/GCP/2_feature_extraction/GCP_master_matrix.m');
+
+    % Demographics
+    run('/Users/Arne/Documents/GitHub/GCP/2_feature_extraction/GCP_demographics.m');
 
     %% 3 Visualization
 

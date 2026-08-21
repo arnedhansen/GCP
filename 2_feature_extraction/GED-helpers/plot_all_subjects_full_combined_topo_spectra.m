@@ -1,16 +1,23 @@
 function plot_all_subjects_full_combined_topo_spectra( ...
     save_dir, subjects, scan_freqs, analysis_freq_range, cfg_topo, ...
-    all_topo_labels, all_topos, all_combined_spectrum_full, all_combined_eigenvalue_full)
-% Group overview of combined GED topographies and spectra for the full window.
+    all_topo_labels, all_topos, all_combined_spectrum, all_combined_eigenvalue, window_tag)
+% Group overview of combined GED topographies and spectra for one analysis window.
 % Electrodes used in further analyses (occipital region) are marked on the topoplots.
+% all_combined_eigenvalue is accepted for call-site compatibility and unused here.
+if nargin < 10 || isempty(window_tag)
+    window_tag = 'full';
+end
+if nargin >= 9 && ~isempty(all_combined_eigenvalue)
+    % Kept so existing call signatures remain valid.
+end
 nSubj = numel(subjects);
 n_rows = 2;
 n_cols = 5;
 n_slots = n_rows * n_cols;
 if nSubj > n_slots
-    warning('GED:AllSubjectsFullOverview', ...
-        'More than %d subjects; only the first %d are shown in the FULL overview figure.', ...
-        n_slots, n_slots);
+    warning('GED:AllSubjectsOverview', ...
+        'More than %d subjects; only the first %d are shown in the %s overview figure.', ...
+        n_slots, n_slots, upper(window_tag));
 end
 n_plot = min(nSubj, n_slots);
 
@@ -34,8 +41,8 @@ for subj = 1:n_plot
     h_spec = cell_h * (1 - topo_frac) - inner_gap / 2;
     h_topo = cell_h * topo_frac - inner_gap / 2;
     has_component = ~(isempty(all_topos{subj}) || isempty(all_topo_labels{subj}) || ...
-        all(~isfinite(all_topos{subj}(:))) || isempty(all_combined_spectrum_full{subj}) || ...
-        all(~isfinite(all_combined_spectrum_full{subj}(:))));
+        all(~isfinite(all_topos{subj}(:))) || isempty(all_combined_spectrum{subj}) || ...
+        all(~isfinite(all_combined_spectrum{subj}(:))));
     subj_title = sprintf('Participant %s', subjects{subj});
 
     axes('Position', [x0, y0 + h_spec + inner_gap, cell_w, h_topo]);
@@ -59,17 +66,6 @@ for subj = 1:n_plot
         cfg_ci = cfg_topo;
         cfg_ci.zlim = [-topo_clim topo_clim];
 
-        % Highlight occipital electrodes used in further analyses
-        occ_mask = cellfun(@(l) ~isempty(regexp(l, '^(O|I|PO|PPO|P10|P9)', 'once')), topo_labels);
-        occ_highlight = topo_labels(occ_mask);
-        if ~isempty(occ_highlight)
-            cfg_ci.highlight          = {'on'};
-            cfg_ci.highlightchannel   = {occ_highlight};
-            cfg_ci.highlightsymbol    = {'.'};
-            cfg_ci.highlightsize      = {10};
-            cfg_ci.highlightcolor     = {[0 0 0]};
-        end
-
         try
             ft_topoplotER(cfg_ci, topo_data);
         catch
@@ -85,7 +81,7 @@ for subj = 1:n_plot
     if ~has_component
         axis off;
     else
-        spec_vec = all_combined_spectrum_full{subj};
+        spec_vec = all_combined_spectrum{subj};
         plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 1.5);
         xlim([analysis_freq_range(1) analysis_freq_range(2)]);
         spec_finite = spec_vec(isfinite(spec_vec));
@@ -109,6 +105,7 @@ for subj = 1:n_plot
     end
 end
 
-save_figure_png(fig, fullfile(save_dir, 'GCP_eeg_GED_components_full_allsubjects.png'));
+outName = sprintf('GCP_eeg_GED_components_%s_allsubjects.png', window_tag);
+save_figure_png(fig, fullfile(save_dir, outName));
 close(fig);
 end

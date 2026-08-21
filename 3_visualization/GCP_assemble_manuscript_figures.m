@@ -17,14 +17,14 @@ statsDir = fullfile(paths.figures, 'stats');
 fprintf('[VIZ MANUSCRIPT] Assembling GCP manuscript figures...\n');
 
 %% Figure 1: Contrast detection paradigm
-fig1 = figureSpec('Figure1', 1, 1, [0 0 1512 982]);
+fig1 = figureSpec('Figure1_paradigm', 1, 1, [0 0 1512 982]);
 fig1.titleFontSize = titleFontSize;
 fig1.overallTitle = 'Grating Task Paradigm';
 fig1.overallTitleFontSize = overallTitleFontSize;
 fig1.panels = {panelSpec(fullfile(paths.figures, 'paradigm', 'GCP_paradigm.png'), '', '')};
 
 %% Figure 2: Power analyses
-fig2 = figureSpec('Figure2', 2, 2, [0 0 1512 982]);
+fig2 = figureSpec('Figure2_power_analysis', 2, 2, [0 0 1512 982]);
 fig2.colGap = 0.035;
 fig2.rowGap = 0.02;
 fig2.forceFill = false;
@@ -46,105 +46,227 @@ for iPanel = 1:numel(fig2.panels)
     fig2.panels{iPanel}.trimWhite = true;
 end
 
-%% Figure 3: Gaze TCs and Boxplots
-fig3 = figureSpec('Figure3', 4, 2, ...
-    [0 0 1512 round(982 * 2)]);
+%% Figure 3: Pupil (TC + full / early / late boxplots)
+fig3 = figureSpec('Figure3_pupil', 2, 2, [0 0 1512 982]);
 fig3.titleFontSize = denseTitleFontSize;
-fig3.overallTitle = 'Gaze Measures Time Courses and Boxplots';
+fig3.overallTitle = 'Pupil Size';
 fig3.overallTitleFontSize = overallTitleFontSize;
 fig3.colGap = 0.018;
-fig3.rowGap = 0.015;
+fig3.rowGap = 0.025;
 fig3.packAdjacent = true;
 fig3.fixedColumnLayout = true;
 fig3.panels = {
     panelSpec(fullfile(gazeDir, 'pupil', 'GCP_gaze_pupil_size_TC.png'), ...
-        'A', 'Pupil Size Time Course', 1);
+        'A', 'Time Course', 1);
     panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_PupilSize_bl.png'), ...
-        'B', 'Pupil Size Boxplots', 2);
-    panelSpec(fullfile(gazeDir, 'microsaccades', 'GCP_gaze_microsaccades_rate.png'), ...
-        'C', 'Microsaccade Rate Time Course', 3);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_MSRate_bl.png'), ...
-        'D', 'Microsaccade Rate Boxplots', 4);
-    panelSpec(fullfile(gazeDir, 'bcea', 'GCP_gaze_BCEA_ellipses.png'), ...
-        'E', 'Gaze Dispersion Ellipses', 5);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_BCEA_bl.png'), ...
-        'F', 'Gaze Dispersion Boxplots', 6);
-    panelSpec(fullfile(gazeDir, 'velocity', 'GCP_gaze_velocity_Vel2D_TC.png'), ...
-        'G', 'Eye Velocity Time Course', 7);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl.png'), ...
-        'H', 'Eye Velocity Boxplots', 8)
+        'B', 'Full Window (0-2000 ms)', 2);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_PupilSize_bl_early.png'), ...
+        'C', 'Early Window (0-1000 ms)', 3);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_PupilSize_bl_late.png'), ...
+        'D', 'Late Window (1000-2000 ms)', 4)
     };
 for iPanel = 1:numel(fig3.panels)
     fig3.panels{iPanel}.trimWhite = true;
 end
 
-%% Figure 4: F-tests on Gaze Measures
-fig4 = figureSpec('Figure4', 1, 1, [0 0 1512 982]);
-fig4.titleFontSize = titleFontSize;
-fig4.overallTitle = 'F-tests on Gaze Measure Time Courses';
+%% Figure 4: Microsaccades (TC + full / early / late boxplots)
+fig4 = figureSpec('Figure4_microsaccades', 2, 2, [0 0 1512 982]);
+fig4.titleFontSize = denseTitleFontSize;
+fig4.overallTitle = 'Microsaccade Rate';
 fig4.overallTitleFontSize = overallTitleFontSize;
+fig4.colGap = 0.018;
+fig4.rowGap = 0.025;
+fig4.packAdjacent = true;
+fig4.fixedColumnLayout = true;
 fig4.panels = {
-    panelSpec(fullfile(statsDir, 'f-tests', 'GCP_stats_gaze_ftests.png'), ...
-        '', '')
+    panelSpec(fullfile(gazeDir, 'microsaccades', 'GCP_gaze_microsaccades_rate.png'), ...
+        'A', 'Time Course', 1);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_MSRate_bl.png'), ...
+        'B', 'Full Window (0-2000 ms)', 2);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_MSRate_bl_early.png'), ...
+        'C', 'Early Window (0-1000 ms)', 3);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_MSRate_bl_late.png'), ...
+        'D', 'Late Window (1000-2000 ms)', 4)
     };
+for iPanel = 1:numel(fig4.panels)
+    fig4.panels{iPanel}.trimWhite = true;
+end
 
-%% Figure 5: Power Spectrum
-fig5 = figureSpec('Figure5', 1, 1, [0 0 1512 982]);
-fig5.titleFontSize = titleFontSize;
-fig5.overallTitle = 'Power Spectrum';
+%% Figure 5: BCEA (ellipses + boxplots per window; 3 rows x 2 columns)
+fig5 = figureSpec('Figure5_bcea', 3, 2, [0 0 1512 round(982 * 1.5)]);
+fig5.titleFontSize = denseTitleFontSize;
+fig5.overallTitle = 'Gaze Dispersion (BCEA)';
 fig5.overallTitleFontSize = overallTitleFontSize;
+fig5.colGap = 0.018;
+fig5.rowGap = 0.020;
+fig5.packAdjacent = true;
+fig5.fixedColumnLayout = true;
 fig5.panels = {
-    panelSpec(fullfile(eegDir, 'powspctrm', 'GCP_eeg_GED_powspctrm_grand_average.png'), ...
-        '', '')
+    panelSpec(fullfile(gazeDir, 'bcea', 'GCP_gaze_BCEA_ellipses.png'), ...
+        'A', 'Ellipses Full Window (0-2000 ms)', 1);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_BCEA_bl.png'), ...
+        'B', 'Boxplots Full Window (0-2000 ms)', 2);
+    panelSpec(fullfile(gazeDir, 'bcea', 'GCP_gaze_BCEA_ellipses_early.png'), ...
+        'C', 'Ellipses Early Window (0-1000 ms)', 3);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_BCEA_bl_early.png'), ...
+        'D', 'Boxplots Early Window (0-1000 ms)', 4);
+    panelSpec(fullfile(gazeDir, 'bcea', 'GCP_gaze_BCEA_ellipses_late.png'), ...
+        'E', 'Ellipses Late Window (1000-2000 ms)', 5);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_BCEA_bl_late.png'), ...
+        'F', 'Boxplots Late Window (1000-2000 ms)', 6)
     };
+for iPanel = 1:numel(fig5.panels)
+    fig5.panels{iPanel}.trimWhite = true;
+end
 
-%% Figure 6: Gamma power and frequency boxplots
-fig6 = figureSpec('Figure6', 1, 2, [0 0 1512 982]);
-fig6.titleFontSize = titleFontSize;
-fig6.overallTitle = 'Gamma Power and Frequency Boxplots';
+%% Figure 6: Eye velocity (TC + full / early / late boxplots)
+fig6 = figureSpec('Figure6_velocity', 2, 2, [0 0 1512 982]);
+fig6.titleFontSize = denseTitleFontSize;
+fig6.overallTitle = 'Eye Velocity';
 fig6.overallTitleFontSize = overallTitleFontSize;
+fig6.colGap = 0.018;
+fig6.rowGap = 0.025;
+fig6.packAdjacent = true;
+fig6.fixedColumnLayout = true;
 fig6.panels = {
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Power.png'), ...
-        'A', 'Gamma Power', 1);
-    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Frequency.png'), ...
-        'B', 'Gamma Peak Frequency', 2)
+    panelSpec(fullfile(gazeDir, 'velocity', 'GCP_gaze_velocity_Vel2D_TC.png'), ...
+        'A', 'Time Course', 1);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl.png'), ...
+        'B', 'Full Window (0-2000 ms)', 2);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl_early.png'), ...
+        'C', 'Early Window (0-1000 ms)', 3);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Vel2D_bl_late.png'), ...
+        'D', 'Late Window (1000-2000 ms)', 4)
     };
 for iPanel = 1:numel(fig6.panels)
     fig6.panels{iPanel}.trimWhite = true;
 end
 
-%% Figure 7: Gamma GED time frequency representation
-fig7 = figureSpec('Figure7', 1, 1, [0 0 1512 982]);
+%% Figure 7: F-tests on Gaze Measures
+fig7 = figureSpec('Figure7_gaze_ftests', 1, 1, [0 0 1512 982]);
 fig7.titleFontSize = titleFontSize;
-fig7.overallTitle = 'Time-Frequency Representations';
+fig7.overallTitle = 'F-tests on Gaze Measure Time Courses';
 fig7.overallTitleFontSize = overallTitleFontSize;
 fig7.panels = {
+    panelSpec(fullfile(statsDir, 'f-tests', 'GCP_stats_gaze_ftests.png'), ...
+        '', '')
+    };
+
+%% Figure 8: Power Spectrum (full / early / late)
+fig8 = figureSpec('Figure8_powspctrm', 1, 3, [0 0 1512 982]);
+fig8.titleFontSize = denseTitleFontSize;
+fig8.overallTitle = 'GED Power Spectra';
+fig8.overallTitleFontSize = overallTitleFontSize;
+fig8.colWidths = [1 1 1];
+fig8.colGap = 0.025;
+fig8.rowGap = 0.02;
+fig8.forceFill = false;
+fig8.panels = {
+    panelSpec(fullfile(eegDir, 'powspctrm', 'GCP_eeg_GED_powspctrm_grand_average.png'), ...
+        'A', 'Full Window (0-2000 ms)', 1);
+    panelSpec(fullfile(eegDir, 'powspctrm', 'GCP_eeg_GED_powspctrm_grand_average_early.png'), ...
+        'B', 'Early Window (0-1000 ms)', 2);
+    panelSpec(fullfile(eegDir, 'powspctrm', 'GCP_eeg_GED_powspctrm_grand_average_late.png'), ...
+        'C', 'Late Window (1000-2000 ms)', 3)
+    };
+for iPanel = 1:numel(fig8.panels)
+    fig8.panels{iPanel}.trimWhite = true;
+end
+
+%% Figure 9: Gamma power and frequency boxplots (power | freq x full / early / late)
+fig9 = figureSpec('Figure9_gamma_boxplots', 3, 2, [0 0 1512 round(982 * 1.5)]);
+fig9.titleFontSize = denseTitleFontSize;
+fig9.overallTitle = 'Gamma Power and Peak Frequency';
+fig9.overallTitleFontSize = overallTitleFontSize;
+fig9.colGap = 0.025;
+fig9.rowGap = 0.020;
+fig9.packAdjacent = true;
+fig9.fixedColumnLayout = true;
+fig9.panels = {
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Power.png'), ...
+        'A', 'Power Full Window (0-2000 ms)', 1);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Frequency.png'), ...
+        'B', 'Frequency Full Window (0-2000 ms)', 2);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Power_early.png'), ...
+        'C', 'Power Early Window (0-1000 ms)', 3);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Frequency_early.png'), ...
+        'D', 'Frequency Early Window (0-1000 ms)', 4);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Power_late.png'), ...
+        'E', 'Power Late Window (1000-2000 ms)', 5);
+    panelSpec(fullfile(boxplotDir, 'GCP_stats_boxplot_Frequency_late.png'), ...
+        'F', 'Frequency Late Window (1000-2000 ms)', 6)
+    };
+for iPanel = 1:numel(fig9.panels)
+    fig9.panels{iPanel}.trimWhite = true;
+end
+
+%% Figure 10: Gamma GED time frequency representation
+fig10 = figureSpec('Figure10_tfr', 1, 1, [0 0 1512 982]);
+fig10.titleFontSize = titleFontSize;
+fig10.overallTitle = 'Time-Frequency Representations';
+fig10.overallTitleFontSize = overallTitleFontSize;
+fig10.panels = {
     panelSpec(fullfile(eegDir, 'tfr', 'GCP_eeg_tfr_GED.png'), ...
         '', '')
     };
 
-%% Supplementary Figure S1: Combined GED components
-figS1 = figureSpec('FigureS1', 1, 1, [0 0 1512 982]);
-figS1.titleFontSize = titleFontSize;
-figS1.titleGap = 0.05;
-figS1.panels = {
-    panelSpec(fullfile(eegDir, 'ged', 'component_selection', ...
-        'GCP_eeg_GED_components_full_allsubjects.png'), ...
-        '', 'Combined GED Components')
+%% Supplementary Figure S1a-c: Combined GED components by window
+gedCompDir = fullfile(eegDir, 'ged', 'component_selection');
+figS1a = figureSpec('FigureS1a_ged_components_full', 1, 1, [0 0 1512 982]);
+figS1a.titleFontSize = titleFontSize;
+figS1a.titleGap = 0.05;
+figS1a.panels = {
+    panelSpec(fullfile(gedCompDir, 'GCP_eeg_GED_components_full_allsubjects.png'), ...
+        'A', 'Combined GED Components Full Window (0-2000 ms)')
     };
 
-%% Supplementary Figure S2: Single participant power spectra
-figS2 = figureSpec('FigureS2', 1, 1, [0 0 1512 982]);
-figS2.titleFontSize = titleFontSize;
-figS2.titleGap = 0.005;
-figS2.panels = {
+figS1b = figureSpec('FigureS1b_ged_components_early', 1, 1, [0 0 1512 982]);
+figS1b.titleFontSize = titleFontSize;
+figS1b.titleGap = 0.05;
+figS1b.panels = {
+    panelSpec(fullfile(gedCompDir, 'GCP_eeg_GED_components_early_allsubjects.png'), ...
+        'A', 'Combined GED Components Early Window (0-1000 ms)')
+    };
+
+figS1c = figureSpec('FigureS1c_ged_components_late', 1, 1, [0 0 1512 982]);
+figS1c.titleFontSize = titleFontSize;
+figS1c.titleGap = 0.05;
+figS1c.panels = {
+    panelSpec(fullfile(gedCompDir, 'GCP_eeg_GED_components_late_allsubjects.png'), ...
+        'A', 'Combined GED Components Late Window (1000-2000 ms)')
+    };
+
+%% Supplementary Figure S2a-c: Single participant power spectra by window
+figS2a = figureSpec('FigureS2a_powspctrm_subjects_full', 1, 1, [0 0 1512 982]);
+figS2a.titleFontSize = titleFontSize;
+figS2a.titleGap = 0.005;
+figS2a.panels = {
     panelSpec(fullfile(eegDir, 'powspctrm', ...
         'GCP_eeg_GED_powspctrm_overview_subjects.png'), ...
-        '', 'Single Subject Powerspectra')
+        'A', 'Single-Subject Power Spectra Full Window (0-2000 ms)')
+    };
+
+figS2b = figureSpec('FigureS2b_powspctrm_subjects_early', 1, 1, [0 0 1512 982]);
+figS2b.titleFontSize = titleFontSize;
+figS2b.titleGap = 0.005;
+figS2b.panels = {
+    panelSpec(fullfile(eegDir, 'powspctrm', ...
+        'GCP_eeg_GED_powspctrm_overview_subjects_early.png'), ...
+        'A', 'Single-Subject Power Spectra Early Window (0-1000 ms)')
+    };
+
+figS2c = figureSpec('FigureS2c_powspctrm_subjects_late', 1, 1, [0 0 1512 982]);
+figS2c.titleFontSize = titleFontSize;
+figS2c.titleGap = 0.005;
+figS2c.panels = {
+    panelSpec(fullfile(eegDir, 'powspctrm', ...
+        'GCP_eeg_GED_powspctrm_overview_subjects_late.png'), ...
+        'A', 'Single-Subject Power Spectra Late Window (1000-2000 ms)')
     };
 
 %% Assemble all figures
-figSpecs = {fig1, fig2, fig3, fig4, fig5, fig6, fig7, figS1, figS2};
+figSpecs = {fig1, fig2, fig3, fig4, fig5, fig6, fig7, fig8, fig9, fig10, ...
+    figS1a, figS1b, figS1c, figS2a, figS2b, figS2c};
 for iFig = 1:numel(figSpecs)
     spec = figSpecs{iFig};
     outPng = fullfile(outDir, ['GCP_manuscript_' spec.name '.png']);

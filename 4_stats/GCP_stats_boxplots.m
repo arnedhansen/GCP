@@ -28,9 +28,6 @@ xtickLabs = {'25%', '50%', '75%', '100%'};
 winNames = {'full', 'early', 'late'};
 
 out_dir = fullfile(paths.figures, 'stats', 'boxplots');
-if ~isfolder(out_dir)
-    mkdir(out_dir);
-end
 
 %% Aesthetics
 fontSize       = 50;
@@ -208,7 +205,7 @@ for iMetric = 1:size(plotSpecs, 1)
     end
 end
 
-fprintf('\n[STATS BOX] Done. Boxplots in:\n  %s\n', out_dir);
+print(datestr(now));
 
 %% Local functions
 function idx = match_subjects(allSubjects, keepSubjects)

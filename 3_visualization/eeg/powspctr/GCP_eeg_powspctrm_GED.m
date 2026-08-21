@@ -1,10 +1,16 @@
 %% GCP GED Power Spectrum Visualizations
+% Grand-average and single-subject condition spectra for full / early / late
+% analysis windows. Panel PNG names are consumed by
+% GCP_assemble_manuscript_figures.m (Figure 8; Supplementary S2a–c).
 
 %% Setup
 startup
 [subjects, paths, colors, ~] = setup('GCP');
 data_path = fullfile(paths.features, 'GCP_eeg_powspctrm_GED.mat');
 fig_dir = fullfile(paths.figures, 'eeg', 'powspctrm');
+if ~exist(fig_dir, 'dir')
+    mkdir(fig_dir);
+end
 
 %% Load data
 dat = load(data_path);
@@ -14,15 +20,51 @@ scan_freqs = dat.scan_freqs;
 analysis_freq_range = [scan_freqs(1), scan_freqs(end)];
 condLabels = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
 nCond = numel(condLabels);
-peak_hz = dat.all_condition_peak_freq_full;
 fontSize = 50;
 
-%% Grand average powerspectrum
+windows = { ...
+    'full',  'freq_powspctrm_full_unsmoothed',  'all_condition_peak_freq_full',  ''; ...
+    'early', 'freq_powspctrm_early_unsmoothed', 'all_condition_peak_freq_early', '_early'; ...
+    'late',  'freq_powspctrm_late_unsmoothed',  'all_condition_peak_freq_late',  '_late'};
+
+for iWin = 1:size(windows, 1)
+    winTag = windows{iWin, 1};
+    freqField = windows{iWin, 2};
+    peakField = windows{iWin, 3};
+    nameSuffix = windows{iWin, 4};
+
+    if ~isfield(dat, freqField)
+        error('GCP_eeg_powspctrm_GED:MissingField', ...
+            ['Field %s is missing from %s. Re-run GCP_eeg_fex_GED.m so ' ...
+            'full/early/late freq spectra are saved.'], freqField, data_path);
+    end
+    freqCell = dat.(freqField);
+    if isfield(dat, peakField)
+        peak_hz = dat.(peakField);
+    else
+        peak_hz = nan(nCond, size(freqCell, 2));
+    end
+
+    fprintf('[VIZ EEG POWSPCTRM] Window %s\n', winTag);
+    plotGrandAverageSpectrum(freqCell, subj_idx, condLabels, colors, ...
+        analysis_freq_range, fontSize, ...
+        fullfile(fig_dir, sprintf('GCP_eeg_GED_powspctrm_grand_average%s.png', nameSuffix)));
+    plotSubjectOverviewSpectra(freqCell, peak_hz, subjects, subj_idx, ...
+        condLabels, colors, scan_freqs, analysis_freq_range, nCond, ...
+        fullfile(fig_dir, sprintf('GCP_eeg_GED_powspctrm_overview_subjects%s.png', nameSuffix)));
+end
+
+disp(datestr(now))
+
+%% Local functions
+function plotGrandAverageSpectrum(freqCell, subj_idx, condLabels, colors, ...
+    analysis_freq_range, fontSize, outPath)
 close all
 fig_grand = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
 leg_p = gobjects(0);
 leg_lbl = {};
+nCond = numel(condLabels);
 for cond = 1:nCond
     cfg = [];
     cfg.keepindividual = 'yes';
@@ -30,8 +72,8 @@ for cond = 1:nCond
     pow_per_subj = cell(1, numel(subj_idx));
     for i = 1:numel(subj_idx)
         si = subj_idx(i);
-        if si <= size(dat.freq_powspctrm_full_unsmoothed, 2)
-            pow_per_subj{i} = dat.freq_powspctrm_full_unsmoothed{cond, si};
+        if si <= size(freqCell, 2)
+            pow_per_subj{i} = freqCell{cond, si};
         end
     end
     pow_per_subj = pow_per_subj(~cellfun(@isempty, pow_per_subj));
@@ -54,8 +96,8 @@ for cond = 1:nCond
     set(eb.edge(1), 'Color', 'none');
     set(eb.edge(2), 'Color', 'none');
     leg_p(end + 1) = patch(nan, nan, colors(cond, :), 'FaceAlpha', 0.25, ...
-        'EdgeColor', colors(cond, :), 'LineWidth', 1.5);
-    leg_lbl{end + 1} = condLabels{cond};
+        'EdgeColor', colors(cond, :), 'LineWidth', 1.5); %#ok<AGROW>
+    leg_lbl{end + 1} = condLabels{cond}; %#ok<AGROW>
 end
 xlim(analysis_freq_range);
 ylim([0 4]);
@@ -67,11 +109,16 @@ legend(leg_p, leg_lbl, 'Location', 'best', 'FontSize', fontSize * 0.6, 'Box', 'o
 box off
 drawnow; pause(0.05);
 set(fig_grand, 'PaperPositionMode', 'auto');
-print(fig_grand, fullfile(fig_dir, 'GCP_eeg_GED_powspctrm_grand_average.png'), '-dpng', '-r600');
+print(fig_grand, outPath, '-dpng', '-r600');
+fprintf('[VIZ EEG POWSPCTRM] Saved %s\n', outPath);
+close(fig_grand);
+end
 
-%% Single subjects powerspectra overview
+function plotSubjectOverviewSpectra(freqCell, peak_hz, subjects, subj_idx, ...
+    condLabels, colors, scan_freqs, analysis_freq_range, nCond, outPath)
 close all
 fig_subj = figure('Position', [0 0 1512 982], 'Color', 'w');
+nSubj = numel(subjects);
 nRows = ceil(nSubj / 5);
 for i = 1:nSubj
     subj = subj_idx(i);
@@ -81,8 +128,8 @@ for i = 1:nSubj
     panel_max = -inf;
     plotted_any = false;
     for cond = 1:nCond
-        fq = dat.freq_powspctrm_full_unsmoothed{cond, subj};
-        if any(isnan(fq.powspctrm))
+        fq = freqCell{cond, subj};
+        if isempty(fq) || any(isnan(fq.powspctrm))
             continue;
         end
         curv = squeeze(fq.powspctrm(1, :));
@@ -137,4 +184,7 @@ for i = 1:nSubj
 end
 drawnow; pause(0.05);
 set(fig_subj, 'PaperPositionMode', 'auto');
-print(fig_subj, fullfile(fig_dir, 'GCP_eeg_GED_powspctrm_overview_subjects.png'), '-dpng', '-r600');
+print(fig_subj, outPath, '-dpng', '-r600');
+fprintf('[VIZ EEG POWSPCTRM] Saved %s\n', outPath);
+close(fig_subj);
+end
