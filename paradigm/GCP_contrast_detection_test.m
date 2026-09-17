@@ -1,7 +1,7 @@
 %% GCP Contrast Detection Test
 % Screening task run before training. Participants judge whether contrast
 % increased or decreased relative to the previous grating (arrow keys).
-% Adjacent gratings differ by exactly one contrast step.
+% Contrast levels are sampled at random, excluding immediate repeats.
 % No EEG or eye tracking.
 %
 % Template: GCP_gratingsTask.m
@@ -175,18 +175,11 @@ while ~passed
     attempt = attempt + 1;
     timing.startTime = datestr(now, 'dd/mm/yy-HH:MM:SS');
 
-    % Build one-step-adjacent random sequence
+    % Build random sequence across all four contrasts, no immediate repeats
     gratingSequence = zeros(1, exp.nTrials);
     gratingSequence(1) = randi(4);
     for iSeq = 2:exp.nTrials
-        prev = gratingSequence(iSeq - 1);
-        candidates = [];
-        if prev > 1
-            candidates(end + 1) = prev - 1; %#ok<AGROW>
-        end
-        if prev < 4
-            candidates(end + 1) = prev + 1; %#ok<AGROW>
-        end
+        candidates = setdiff(1:4, gratingSequence(iSeq - 1));
         gratingSequence(iSeq) = candidates(randi(numel(candidates)));
     end
 
