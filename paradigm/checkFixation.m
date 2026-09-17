@@ -15,7 +15,7 @@ function noFixation = checkFixation(screenCentreX, screenCentreY, fixCheckDurati
     sampleInterval = 0.004; % 4 ms between samples (~250 Hz effective polling)
     numSamples = ceil(fixCheckDuration / sampleInterval);
     fixThresh = 0.80; % 80% of valid samples must be within fixation window
-    distOK = 90; % Fixation window radius in pixels (~1.8 dva at 50 ppd)
+    distOK = 90; % Fixation window radius in pixels (~3.76 dva at physical ~23.95 ppd)
 
     noFixation = 0;
     samples = NaN(numSamples, 2);

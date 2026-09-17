@@ -1,20 +1,19 @@
-%% GCP Stats Boxplots (Full / Early / Late)
+%% GCP Stats Boxplots (Full Window)
 %
 % Subject-level boxplots across contrast for gamma and gaze metrics.
-% Windows: full (0-2 s), early (0-1 s), late (1-2 s).
+% Window: full stimulus interval (0-2 s).
 %
-% Metrics (all windows):
+% Metrics:
 %   Frequency, Power  (GED peaks from condition-averaged spectra)
 %   MSRate_bl, BCEA_bl, Vel2D_bl, PupilSize_bl
 %   Blinks_bl, Fixations_bl, Saccades_bl
 %
 % Data (precomputed; no window recomputation here):
-%   GCP_eeg_GED.mat  (all_condition_peak_freq/power_*)
+%   GCP_eeg_GED.mat  (all_condition_peak_freq/power_full)
 %   GCP_gaze_window_summaries.mat  (from GCP_gaze_fex.m)
 %
 % Output: figures/stats/boxplots/
-%   Full window: GCP_stats_boxplot_<Metric>.png (assembly-compatible)
-%   Early/late:  GCP_stats_boxplot_<Metric>_<early|late>.png
+%   GCP_stats_boxplot_<Metric>.png (assembly-compatible)
 
 %% Setup
 startup
@@ -25,7 +24,7 @@ fprintf('[STATS BOX] Included GED cohort: N = %d (%s)\n', nSubj, strjoin(subject
 
 nCond = 4;
 xtickLabs = {'25%', '50%', '75%', '100%'};
-winNames = {'full', 'early', 'late'};
+winNames = {'full'};
 
 out_dir = fullfile(paths.figures, 'stats', 'boxplots');
 
@@ -42,18 +41,14 @@ boxWidth       = 0.55;
 
 %% Load gamma data
 ged = load(fullfile(paths.features, 'GCP_eeg_GED.mat'), ...
-    'all_condition_peak_freq_full', 'all_condition_peak_freq_early', 'all_condition_peak_freq_late', ...
-    'all_condition_peak_power_full', 'all_condition_peak_power_early', 'all_condition_peak_power_late', ...
+    'all_condition_peak_freq_full', ...
+    'all_condition_peak_power_full', ...
     'subjects');
 ged_idx = match_subjects(ged.subjects, subjects);
 
 gamma = struct();
 gamma.Frequency.full  = pick_matrix(ged.all_condition_peak_freq_full, ged_idx);
-gamma.Frequency.early = pick_matrix(ged.all_condition_peak_freq_early, ged_idx);
-gamma.Frequency.late  = pick_matrix(ged.all_condition_peak_freq_late, ged_idx);
 gamma.Power.full      = pick_matrix(ged.all_condition_peak_power_full, ged_idx);
-gamma.Power.early     = pick_matrix(ged.all_condition_peak_power_early, ged_idx);
-gamma.Power.late      = pick_matrix(ged.all_condition_peak_power_late, ged_idx);
 
 %% Gaze
 gazePath = fullfile(paths.features, 'GCP_gaze_window_summaries.mat');

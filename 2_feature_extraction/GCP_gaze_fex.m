@@ -4,15 +4,15 @@
 %   BCEA (Bivariate Contour Ellipse Area, k=5.991, 95%)
 %   BCEA_Direction (polar angle of gaze centroid vs fixation [400 300];
 %                   deg; 0 = right, 90 = up; y flipped screen coords)
-%   BCEA_Eccentricity (|centroid - fixation| in dva; ppd = 50)
+%   BCEA_Eccentricity (|centroid - fixation| in dva; physical ppd)
 %   Pupil size (raw + baselined % change; subject scalars = mean of trial %)
 %   Microsaccades (Engbert count rates; subject scalars = mean of trial %)
 %   Eye velocity (raw + baselined % change; subject scalars = mean of trial %)
 %   EyeLink blinks, fixations, saccades (rates from preprocessing gaze_metrics; baselined % change)
 %
-% Subject x condition scalars are saved for full [0 2], early [0 1], and
-% late [1 2] windows: features/GCP_gaze_window_summaries.mat
-% Confirmatory *_bl / *_bl_early / *_bl_late scalars = mean of trial-level
+% Subject x condition scalars are saved for the full [0 2] window:
+% features/GCP_gaze_window_summaries.mat
+% Confirmatory *_bl scalars = mean of trial-level
 % percentage change (same aggregation for MS, BCEA, pupil, and velocity).
 
 %% Setup
@@ -25,18 +25,17 @@ gaze_data = struct([]);
 % time‐windows
 baseline_period   = [-1.5, -0.5];
 analysis_period   = [0 2];          % full
-analysis_early    = [0 1];
-analysis_late     = [1 2];
 analysis_periodTS = [-1 2];
 pupil_store_window = [-1.5, 2.5];
 vel_store_window   = [-1.5, 2.5];  % extend past 2 s so t=2 is not a kernel edge
 vel_smooth_s       = 0.050;        % light smoothing of eye speed TC
 ms_min_rate_hz     = 0.1;          % exclude trials below this in baseline or stimulus
-win_size          = 25;    % blink‐removal window (samples)
+win_size          = 25;    % blink pad +/-50 ms (25 samples at 500 Hz)
 fsample           = 500;   % eye‐tracker sampling rate
 fixX              = 400;   % fixation cross X (screen gaze space)
 fixY              = 300;   % fixation cross Y (after 600 - rawY flip)
-ppd               = 50;    % pixels per degree (GCP_gratingsTask gaze space)
+% Physical ppd from GCP_gratingsTask monitor geometry (48 cm width, 80 cm, 800 px)
+ppd               = 800 / (2 * atan(48 / (2 * 80)) * (180 / pi)); % ~23.95
 
 % prepare raw gaze storage across all subjects
 gaze_x_c25   = {};  gaze_y_c25   = {};
@@ -65,6 +64,11 @@ for subj = 1:numel(subjects)
             case 'c75', dataET = dataET_c75;
             case 'c100',dataET = dataET_c100;
         end
+        if isempty(dataET) || ~isstruct(dataET) || ~isfield(dataET, 'trial') || ~isfield(dataET, 'fsample')
+            dataET = struct('trial', {{}}, 'time', {{}}, 'fsample', fsample, ...
+                'label', {{'L-GAZE-X', 'L-GAZE-Y', 'L-AREA', 'R-GAZE-X', 'R-GAZE-Y', 'R-AREA'}}, ...
+                'trialinfo', []);
+        end
 
         % initialise per‐trial arrays
         subject_id         = [];
@@ -72,16 +76,11 @@ for subj = 1:numel(subjects)
         condition          = [];
 
         bcea               = [];  baselineBcea      = [];
-        bcea_early         = [];  bcea_late         = [];
-        bceaDirection      = [];  bceaDirection_early = [];  bceaDirection_late = [];
-        bceaEccentricity   = [];  bceaEccentricity_early = [];  bceaEccentricity_late = [];
+        bceaDirection      = [];
+        bceaEccentricity   = [];
         centroidX          = [];  centroidY         = [];
-        centroidX_early    = [];  centroidY_early   = [];
-        centroidX_late     = [];  centroidY_late    = [];
         pupilSize          = [];  baselinePupilSize = [];
-        pupilSize_early    = [];  pupilSize_late    = [];
         microsaccadeRate   = [];  baselineMSRate    = [];
-        microsaccadeRate_early = [];  microsaccadeRate_late = [];
 
         % Prepare velocity time series container for this condition
         velocityData     = dataET;    % copy meta-info
@@ -96,16 +95,10 @@ for subj = 1:numel(subjects)
         vel_kernel_pad   = ceil(numel(vel_kernel) / 2);
         nTrials          = numel(dataET.trial);
 
-        % For linking baseline and trial-wise means (full / early / late)
+        % For linking baseline and trial-wise means (full window)
         velHorz        = nan(1, nTrials);
         velVert        = nan(1, nTrials);
         vel2D          = nan(1, nTrials);
-        velHorz_early  = nan(1, nTrials);
-        velVert_early  = nan(1, nTrials);
-        vel2D_early    = nan(1, nTrials);
-        velHorz_late   = nan(1, nTrials);
-        velVert_late   = nan(1, nTrials);
-        vel2D_late     = nan(1, nTrials);
         baselineVelH   = nan(1, nTrials);
         baselineVelV   = nan(1, nTrials);
         baselineVel2D  = nan(1, nTrials);
@@ -209,23 +202,25 @@ for subj = 1:numel(subjects)
 
             % BASELINE WINDOW (position-based metrics)
             bl_idx = tVec >= baseline_period(1) & tVec <= baseline_period(2);
-            bl_dat = raw(:,bl_idx);
-            valid  = bl_dat(1,:)>=0 & bl_dat(1,:)<=800 & bl_dat(2,:)>=0 & bl_dat(2,:)<=600;
-            bl_dat = bl_dat(1:3, valid);
+            bl_dat = raw(1:3, bl_idx);
             bl_dat(2,:) = 600 - bl_dat(2,:);
+            valid_bl = bl_dat(1,:) >= 0 & bl_dat(1,:) <= 800 & ...
+                       bl_dat(2,:) >= 0 & bl_dat(2,:) <= 600;
+            bl_dat(:, ~valid_bl) = NaN;
             bl_dat = remove_blinks(bl_dat, win_size);
 
             bl_x = bl_dat(1,:);  bl_y = bl_dat(2,:);
             baseline_std_x    = nanstd(bl_x);
             baseline_std_y    = nanstd(bl_y);
-            if numel(bl_x) > 2
-                rho_bl = corr(bl_x(:), bl_y(:));
+            keep_bl = isfinite(bl_x) & isfinite(bl_y);
+            if nnz(keep_bl) > 2
+                rho_bl = corr(bl_x(keep_bl)', bl_y(keep_bl)');
             else
                 rho_bl = 0;
             end
             baseline_bcea_val = 5.991 * pi * baseline_std_x * baseline_std_y * sqrt(1 - rho_bl^2);
             baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
-            [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
+            [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x), ppd);
 
             % Baseline eye velocity
             if ~isempty(velFT.time{trl})
@@ -240,12 +235,13 @@ for subj = 1:numel(subjects)
                 baselineVel2D(trl) = NaN;
             end
 
-            % ANALYSIS WINDOW [0.3, 2.0] (cleaned position, as before)
+            % ANALYSIS WINDOW [0 2] (cleaned position)
             an_idx = tVec >= analysis_period(1) & tVec <= analysis_period(2);
-            an_dat = raw(:,an_idx);
-            valid  = an_dat(1,:)>=0 & an_dat(1,:)<=800 & an_dat(2,:)>=0 & an_dat(2,:)<=600;
-            an_dat = an_dat(1:3, valid);
+            an_dat = raw(1:3, an_idx);
             an_dat(2,:) = 600 - an_dat(2,:);
+            valid_an = an_dat(1,:) >= 0 & an_dat(1,:) <= 800 & ...
+                       an_dat(2,:) >= 0 & an_dat(2,:) <= 600;
+            an_dat(:, ~valid_an) = NaN;
             an_dat = remove_blinks(an_dat, win_size);
 
             % extract the cleaned gaze trace
@@ -271,29 +267,18 @@ for subj = 1:numel(subjects)
             % BCEA, BCEA direction (centroid vs fixation), microsaccades
             std_x       = nanstd(x);
             std_y       = nanstd(y);
-            if numel(x) > 2
-                rho_an = corr(x(:), y(:));
+            keep_an = isfinite(x) & isfinite(y);
+            if nnz(keep_an) > 2
+                rho_an = corr(x(keep_an)', y(keep_an)');
             else
                 rho_an = 0;
             end
             bcea_val    = 5.991 * pi * std_x * std_y * sqrt(1 - rho_an^2);
-            bcea_early_val = bcea_in_window(raw, tVec, analysis_early, win_size);
-            bcea_late_val  = bcea_in_window(raw, tVec, analysis_late, win_size);
             bcea_dir_val = bcea_direction_from_xy(x, y, fixX, fixY);
             [cx_full, cy_full] = bcea_centroid_from_xy(x, y);
             bcea_ecc_val = bcea_eccentricity_from_centroid(cx_full, cy_full, fixX, fixY, ppd);
-            [bcea_dir_early_val, cx_early, cy_early] = bcea_direction_in_window( ...
-                raw, tVec, analysis_early, win_size, fixX, fixY);
-            [bcea_dir_late_val, cx_late, cy_late] = bcea_direction_in_window( ...
-                raw, tVec, analysis_late, win_size, fixX, fixY);
-            bcea_ecc_early_val = bcea_eccentricity_from_centroid(cx_early, cy_early, fixX, fixY, ppd);
-            bcea_ecc_late_val = bcea_eccentricity_from_centroid(cx_late, cy_late, fixX, fixY, ppd);
             pupil       = mean(an_dat(3,:),'omitnan')/1000;
-            pupil_early = pupil_in_window(raw, tVec, analysis_early, win_size);
-            pupil_late  = pupil_in_window(raw, tVec, analysis_late, win_size);
-            [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
-            msrate_early = ms_rate_in_window(raw, tVec, analysis_early, win_size, fsample);
-            msrate_late  = ms_rate_in_window(raw, tVec, analysis_late, win_size, fsample);
+            [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x), ppd);
 
             % Analysis window eye velocity from the full regular trace
             if ~isempty(velFT.time{trl})
@@ -302,14 +287,10 @@ for subj = 1:numel(subjects)
                 velocityData.trial{trl} = velFT.trial{trl}(:, vel_an_idx);
                 velocityData.time{trl}  = velFT.time{trl}(vel_an_idx);
 
-                % Trial-wise mean velocities (full / early / late scalars)
+                % Trial-wise mean velocities (full window)
                 velHorz(trl) = mean(velocityData.trial{trl}(1,:), 'omitnan');
                 velVert(trl) = mean(velocityData.trial{trl}(2,:), 'omitnan');
                 vel2D(trl)   = mean(velocityData.trial{trl}(3,:), 'omitnan');
-                [velHorz_early(trl), velVert_early(trl), vel2D_early(trl)] = ...
-                    vel_means_in_window(velFT.trial{trl}, velFT.time{trl}, analysis_early);
-                [velHorz_late(trl), velVert_late(trl), vel2D_late(trl)] = ...
-                    vel_means_in_window(velFT.trial{trl}, velFT.time{trl}, analysis_late);
 
                 % Baseline-normalised velocity time series (% change, scalar baseline)
                 pct_vx = compute_pct_baseline( ...
@@ -347,25 +328,21 @@ for subj = 1:numel(subjects)
 
             x_full = raw(1, full_idx);
             y_full = raw(2, full_idx);
+            p_ms = raw(3, full_idx);
 
             % Apply same screen-coordinate flip as elsewhere
             y_full = 600 - y_full;
 
-            % Validity mask (match your position pipeline)
             valid_full = x_full>=0 & x_full<=800 & y_full>=0 & y_full<=600;
-
-            x_val = x_full(valid_full);
-            y_val = y_full(valid_full);
-
-            % Blink removal (same function you already rely on)
-            full_dat = [x_val; y_val; nan(1, numel(x_val))];
+            full_dat = [x_full; y_full; p_ms];
+            full_dat(:, ~valid_full) = NaN;
             full_dat = remove_blinks(full_dat, win_size);
             x_val = full_dat(1,:);
             y_val = full_dat(2,:);
 
             % Trial-level QC before constructing msFT traces
             n_total_full = numel(t_full_ms);
-            n_valid_before = sum(isfinite(x_full(valid_full)) & isfinite(y_full(valid_full)));
+            n_valid_before = sum(valid_full);
             valid_clean = isfinite(x_val) & isfinite(y_val);
             n_valid_after = sum(valid_clean);
 
@@ -380,40 +357,33 @@ for subj = 1:numel(subjects)
                 ms_onsets_per_trial{trl} = [];
                 ms_offsets_per_trial{trl} = [];
             else
-                x_clean = x_val(valid_clean);
-                y_clean = y_val(valid_clean);
+                % Detect on the regular time axis (NaNs at blinks / invalid samples)
+                [~, ms_det] = detect_microsaccades(fsample, [x_val; y_val], n_total_full, ppd);
 
-                % Detect microsaccades in cleaned valid samples only
-                [~, ms_det] = detect_microsaccades(fsample, [x_clean; y_clean], numel(x_clean));
-
-                % Map Engbert sample indices (in x_clean) back to trial time (s)
-                idx_full_valid = find(valid_full);
-                idx_clean_in_full = idx_full_valid(valid_clean);
                 if ~isempty(ms_det.Onset) && ~isempty(ms_det.Offset)
                     nEv = min(numel(ms_det.Onset), numel(ms_det.Offset));
                     on_idx = ms_det.Onset(1:nEv);
                     off_idx = ms_det.Offset(1:nEv);
-                    keep_ev = on_idx >= 1 & on_idx <= numel(idx_clean_in_full) & ...
-                              off_idx >= 1 & off_idx <= numel(idx_clean_in_full);
+                    keep_ev = on_idx >= 1 & on_idx <= n_total_full & ...
+                              off_idx >= 1 & off_idx <= n_total_full;
                     on_idx = on_idx(keep_ev);
                     off_idx = off_idx(keep_ev);
-                    ms_onsets_per_trial{trl} = t_full_ms(idx_clean_in_full(on_idx))';
-                    ms_offsets_per_trial{trl} = t_full_ms(idx_clean_in_full(off_idx))';
+                    ms_onsets_per_trial{trl} = t_full_ms(on_idx)';
+                    ms_offsets_per_trial{trl} = t_full_ms(off_idx)';
                 else
                     ms_onsets_per_trial{trl} = [];
                     ms_offsets_per_trial{trl} = [];
                 end
 
-                % Impulse train on valid samples
-                ms_imp = zeros(1, numel(x_clean));
+                ms_imp = zeros(1, n_total_full);
                 onsets = [];
                 if ~isempty(ms_det.Onset)
                     onsets = ms_det.Onset(:)';
-                    onsets = onsets(onsets >= 1 & onsets <= numel(ms_imp));
+                    onsets = onsets(onsets >= 1 & onsets <= n_total_full);
                     ms_imp(onsets) = 1;
                 end
 
-                ms_rate_trial = numel(onsets) / (numel(x_clean) / fsample);
+                ms_rate_trial = numel(onsets) / (n_total_full / fsample);
                 if ~isfinite(ms_rate_trial) || ms_rate_trial > qc_max_ms_rate_hz
                     msFT.trial{trl} = nan(1, n_total_full);
                     msFT.time{trl}  = t_full_ms;
@@ -424,15 +394,8 @@ for subj = 1:numel(subjects)
                     % boundary samples are not artificially attenuated.
                     ms_kernel_mass = conv(ones(size(ms_imp)), ms_kernel, 'same');
                     ms_kernel_mass(ms_kernel_mass < eps) = NaN;
-                    ms_rate_clean = conv(ms_imp, ms_kernel, 'same') ./ ms_kernel_mass * fsample;
-
-                    % Expand back to full in-bounds vector (NaN at blink/invalid samples)
-                    ms_rate_val = nan(1, numel(x_val));
-                    ms_rate_val(valid_clean) = ms_rate_clean;
-
-                    % Map back to full continuous time axis (NaN for invalid samples)
-                    ms_rate_full = nan(1, numel(t_full_ms));
-                    ms_rate_full(valid_full) = ms_rate_val;
+                    ms_rate_full = conv(ms_imp, ms_kernel, 'same') ./ ms_kernel_mass * fsample;
+                    ms_rate_full(~valid_clean) = NaN;
 
                     % Store in FieldTrip struct with the original regular time axis
                     % (TC is for plotting only; boxplot scalars use direct counts)
@@ -457,28 +420,14 @@ for subj = 1:numel(subjects)
             trial_num(end+1)        = trl;
             condition(end+1)        = dataET.trialinfo(trl) - 60;
             bcea(end+1)             = bcea_val;
-            bcea_early(end+1)       = bcea_early_val;
-            bcea_late(end+1)        = bcea_late_val;
             bceaDirection(end+1)    = bcea_dir_val;
-            bceaDirection_early(end+1) = bcea_dir_early_val;
-            bceaDirection_late(end+1)  = bcea_dir_late_val;
             bceaEccentricity(end+1) = bcea_ecc_val;
-            bceaEccentricity_early(end+1) = bcea_ecc_early_val;
-            bceaEccentricity_late(end+1)  = bcea_ecc_late_val;
             centroidX(end+1)        = cx_full;
             centroidY(end+1)        = cy_full;
-            centroidX_early(end+1)  = cx_early;
-            centroidY_early(end+1)  = cy_early;
-            centroidX_late(end+1)   = cx_late;
-            centroidY_late(end+1)   = cy_late;
             baselineBcea(end+1)     = baseline_bcea_val;
             pupilSize(end+1)        = pupil;
-            pupilSize_early(end+1)  = pupil_early;
-            pupilSize_late(end+1)   = pupil_late;
             baselinePupilSize(end+1)= baseline_pupil;
             microsaccadeRate(end+1) = msrate;
-            microsaccadeRate_early(end+1) = msrate_early;
-            microsaccadeRate_late(end+1)  = msrate_late;
             baselineMSRate(end+1)   = baseline_msrate;
         end
 
@@ -566,23 +515,11 @@ for subj = 1:numel(subjects)
 
         % Trial-level baselined scalars (% change). Subject condition means use these.
         BCEA_bl          = compute_pct_baseline(bcea, baselineBcea);
-        BCEA_bl_early    = compute_pct_baseline(bcea_early, baselineBcea);
-        BCEA_bl_late     = compute_pct_baseline(bcea_late, baselineBcea);
         PupilSize_bl     = compute_pct_baseline(pupilSize, baselinePupilSize);
-        PupilSize_bl_early = compute_pct_baseline(pupilSize_early, baselinePupilSize);
-        PupilSize_bl_late  = compute_pct_baseline(pupilSize_late, baselinePupilSize);
         VelH_bl          = compute_pct_baseline(velHorz, baselineVelH);
         VelV_bl          = compute_pct_baseline(velVert, baselineVelV);
         Vel2D_bl         = compute_pct_baseline(vel2D, baselineVel2D);
-        VelH_bl_early    = compute_pct_baseline(velHorz_early, baselineVelH);
-        VelV_bl_early    = compute_pct_baseline(velVert_early, baselineVelV);
-        Vel2D_bl_early   = compute_pct_baseline(vel2D_early, baselineVel2D);
-        VelH_bl_late     = compute_pct_baseline(velHorz_late, baselineVelH);
-        VelV_bl_late     = compute_pct_baseline(velVert_late, baselineVelV);
-        Vel2D_bl_late    = compute_pct_baseline(vel2D_late, baselineVel2D);
         MSRate_bl        = compute_pct_baseline(microsaccadeRate, baselineMSRate);
-        MSRate_bl_early  = compute_pct_baseline(microsaccadeRate_early, baselineMSRate);
-        MSRate_bl_late   = compute_pct_baseline(microsaccadeRate_late, baselineMSRate);
 
         %% SUBJECT‐BY‐CONDITION AVERAGES
         switch cond
@@ -590,11 +527,7 @@ for subj = 1:numel(subjects)
                 c25_bcea      = mean(bcea,'omitnan');
                 c25_bl_bcea   = mean(baselineBcea,'omitnan');
                 c25_bcea_dir       = direction_from_trial_centroids(centroidX, centroidY, fixX, fixY);
-                c25_bcea_dir_early = direction_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY);
-                c25_bcea_dir_late  = direction_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY);
                 c25_bcea_ecc       = eccentricity_from_trial_centroids(centroidX, centroidY, fixX, fixY, ppd);
-                c25_bcea_ecc_early = eccentricity_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY, ppd);
-                c25_bcea_ecc_late  = eccentricity_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY, ppd);
                 c25_pups      = mean(pupilSize,'omitnan');
                 c25_bl_pups   = mean(baselinePupilSize,'omitnan');
                 c25_msrate    = mean(microsaccadeRate,'omitnan');
@@ -610,41 +543,21 @@ for subj = 1:numel(subjects)
 
                 % Condition scalars: mean of trial-level % change (all gaze DVs)
                 c25_bcea_bl         = mean(BCEA_bl, 'omitnan');
-                c25_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
-                c25_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
                 c25_pups_bl         = mean(PupilSize_bl, 'omitnan');
-                c25_pups_bl_early   = mean(PupilSize_bl_early, 'omitnan');
-                c25_pups_bl_late    = mean(PupilSize_bl_late, 'omitnan');
                 c25_msrate_bl       = mean(MSRate_bl, 'omitnan');
-                c25_msrate_bl_early = mean(MSRate_bl_early, 'omitnan');
-                c25_msrate_bl_late  = mean(MSRate_bl_late, 'omitnan');
                 c25_velHorz_bl       = mean(VelH_bl, 'omitnan');
-                c25_velHorz_bl_early = mean(VelH_bl_early, 'omitnan');
-                c25_velHorz_bl_late  = mean(VelH_bl_late, 'omitnan');
                 c25_velVert_bl       = mean(VelV_bl, 'omitnan');
-                c25_velVert_bl_early = mean(VelV_bl_early, 'omitnan');
-                c25_velVert_bl_late  = mean(VelV_bl_late, 'omitnan');
                 c25_vel2D_bl         = mean(Vel2D_bl, 'omitnan');
-                c25_vel2D_bl_early   = mean(Vel2D_bl_early, 'omitnan');
-                c25_vel2D_bl_late    = mean(Vel2D_bl_late, 'omitnan');
 
                 subj_data_gaze_trial_c25 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
-                    'BCEA_Direction',bceaDirection, 'BCEA_Direction_early',bceaDirection_early, 'BCEA_Direction_late',bceaDirection_late, ...
-                    'BCEA_Eccentricity',bceaEccentricity, 'BCEA_Eccentricity_early',bceaEccentricity_early, 'BCEA_Eccentricity_late',bceaEccentricity_late, ...
-                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
-                    'PupilSize',pupilSize, 'PupilSize_early',pupilSize_early, 'PupilSize_late',pupilSize_late, ...
-                    'BaselinePupilSize',baselinePupilSize, ...
-                    'PupilSize_bl', PupilSize_bl, 'PupilSize_bl_early', PupilSize_bl_early, 'PupilSize_bl_late', PupilSize_bl_late, ...
-                    'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
-                    'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, 'MSRate_bl_early', MSRate_bl_early, 'MSRate_bl_late', MSRate_bl_late, ...
-                    'VelH',velHorz, 'VelH_early',velHorz_early, 'VelH_late',velHorz_late, ...
-                    'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, 'VelH_bl_early', VelH_bl_early, 'VelH_bl_late', VelH_bl_late, ...
-                    'VelV',velVert, 'VelV_early',velVert_early, 'VelV_late',velVert_late, ...
-                    'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, 'VelV_bl_early', VelV_bl_early, 'VelV_bl_late', VelV_bl_late, ...
-                    'Vel2D',vel2D, 'Vel2D_early',vel2D_early, 'Vel2D_late',vel2D_late, ...
-                    'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl, 'Vel2D_bl_early', Vel2D_bl_early, 'Vel2D_bl_late', Vel2D_bl_late );
+                    'BCEA',bcea, 'BCEA_Direction',bceaDirection, 'BCEA_Eccentricity',bceaEccentricity, ...
+                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, ...
+                    'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
+                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, ...
+                    'VelH',velHorz, 'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, ...
+                    'VelV',velVert, 'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, ...
+                    'Vel2D',vel2D, 'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl );
 
                 % Store FieldTrip velocity for this condition
                 velTS_c25        = velTS_noBL;
@@ -670,11 +583,7 @@ for subj = 1:numel(subjects)
                 c50_bcea      = mean(bcea,'omitnan');
                 c50_bl_bcea   = mean(baselineBcea,'omitnan');
                 c50_bcea_dir       = direction_from_trial_centroids(centroidX, centroidY, fixX, fixY);
-                c50_bcea_dir_early = direction_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY);
-                c50_bcea_dir_late  = direction_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY);
                 c50_bcea_ecc       = eccentricity_from_trial_centroids(centroidX, centroidY, fixX, fixY, ppd);
-                c50_bcea_ecc_early = eccentricity_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY, ppd);
-                c50_bcea_ecc_late  = eccentricity_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY, ppd);
                 c50_pups      = mean(pupilSize,'omitnan');
                 c50_bl_pups   = mean(baselinePupilSize,'omitnan');
                 c50_msrate    = mean(microsaccadeRate,'omitnan');
@@ -690,41 +599,21 @@ for subj = 1:numel(subjects)
 
                 % Condition scalars: mean of trial-level % change (all gaze DVs)
                 c50_bcea_bl         = mean(BCEA_bl, 'omitnan');
-                c50_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
-                c50_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
                 c50_pups_bl         = mean(PupilSize_bl, 'omitnan');
-                c50_pups_bl_early   = mean(PupilSize_bl_early, 'omitnan');
-                c50_pups_bl_late    = mean(PupilSize_bl_late, 'omitnan');
                 c50_msrate_bl       = mean(MSRate_bl, 'omitnan');
-                c50_msrate_bl_early = mean(MSRate_bl_early, 'omitnan');
-                c50_msrate_bl_late  = mean(MSRate_bl_late, 'omitnan');
                 c50_velHorz_bl       = mean(VelH_bl, 'omitnan');
-                c50_velHorz_bl_early = mean(VelH_bl_early, 'omitnan');
-                c50_velHorz_bl_late  = mean(VelH_bl_late, 'omitnan');
                 c50_velVert_bl       = mean(VelV_bl, 'omitnan');
-                c50_velVert_bl_early = mean(VelV_bl_early, 'omitnan');
-                c50_velVert_bl_late  = mean(VelV_bl_late, 'omitnan');
                 c50_vel2D_bl         = mean(Vel2D_bl, 'omitnan');
-                c50_vel2D_bl_early   = mean(Vel2D_bl_early, 'omitnan');
-                c50_vel2D_bl_late    = mean(Vel2D_bl_late, 'omitnan');
 
                 subj_data_gaze_trial_c50 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
-                    'BCEA_Direction',bceaDirection, 'BCEA_Direction_early',bceaDirection_early, 'BCEA_Direction_late',bceaDirection_late, ...
-                    'BCEA_Eccentricity',bceaEccentricity, 'BCEA_Eccentricity_early',bceaEccentricity_early, 'BCEA_Eccentricity_late',bceaEccentricity_late, ...
-                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
-                    'PupilSize',pupilSize, 'PupilSize_early',pupilSize_early, 'PupilSize_late',pupilSize_late, ...
-                    'BaselinePupilSize',baselinePupilSize, ...
-                    'PupilSize_bl', PupilSize_bl, 'PupilSize_bl_early', PupilSize_bl_early, 'PupilSize_bl_late', PupilSize_bl_late, ...
-                    'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
-                    'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, 'MSRate_bl_early', MSRate_bl_early, 'MSRate_bl_late', MSRate_bl_late, ...
-                    'VelH',velHorz, 'VelH_early',velHorz_early, 'VelH_late',velHorz_late, ...
-                    'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, 'VelH_bl_early', VelH_bl_early, 'VelH_bl_late', VelH_bl_late, ...
-                    'VelV',velVert, 'VelV_early',velVert_early, 'VelV_late',velVert_late, ...
-                    'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, 'VelV_bl_early', VelV_bl_early, 'VelV_bl_late', VelV_bl_late, ...
-                    'Vel2D',vel2D, 'Vel2D_early',vel2D_early, 'Vel2D_late',vel2D_late, ...
-                    'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl, 'Vel2D_bl_early', Vel2D_bl_early, 'Vel2D_bl_late', Vel2D_bl_late );
+                    'BCEA',bcea, 'BCEA_Direction',bceaDirection, 'BCEA_Eccentricity',bceaEccentricity, ...
+                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, ...
+                    'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
+                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, ...
+                    'VelH',velHorz, 'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, ...
+                    'VelV',velVert, 'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, ...
+                    'Vel2D',vel2D, 'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl );
 
                 velTS_c50        = velTS_noBL;
                 velTS_c50_bl = velTS_BL;
@@ -746,11 +635,7 @@ for subj = 1:numel(subjects)
                 c75_bcea      = mean(bcea,'omitnan');
                 c75_bl_bcea   = mean(baselineBcea,'omitnan');
                 c75_bcea_dir       = direction_from_trial_centroids(centroidX, centroidY, fixX, fixY);
-                c75_bcea_dir_early = direction_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY);
-                c75_bcea_dir_late  = direction_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY);
                 c75_bcea_ecc       = eccentricity_from_trial_centroids(centroidX, centroidY, fixX, fixY, ppd);
-                c75_bcea_ecc_early = eccentricity_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY, ppd);
-                c75_bcea_ecc_late  = eccentricity_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY, ppd);
                 c75_pups      = mean(pupilSize,'omitnan');
                 c75_bl_pups   = mean(baselinePupilSize,'omitnan');
                 c75_msrate    = mean(microsaccadeRate,'omitnan');
@@ -766,41 +651,21 @@ for subj = 1:numel(subjects)
 
                 % Condition scalars: mean of trial-level % change (all gaze DVs)
                 c75_bcea_bl         = mean(BCEA_bl, 'omitnan');
-                c75_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
-                c75_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
                 c75_pups_bl         = mean(PupilSize_bl, 'omitnan');
-                c75_pups_bl_early   = mean(PupilSize_bl_early, 'omitnan');
-                c75_pups_bl_late    = mean(PupilSize_bl_late, 'omitnan');
                 c75_msrate_bl       = mean(MSRate_bl, 'omitnan');
-                c75_msrate_bl_early = mean(MSRate_bl_early, 'omitnan');
-                c75_msrate_bl_late  = mean(MSRate_bl_late, 'omitnan');
                 c75_velHorz_bl       = mean(VelH_bl, 'omitnan');
-                c75_velHorz_bl_early = mean(VelH_bl_early, 'omitnan');
-                c75_velHorz_bl_late  = mean(VelH_bl_late, 'omitnan');
                 c75_velVert_bl       = mean(VelV_bl, 'omitnan');
-                c75_velVert_bl_early = mean(VelV_bl_early, 'omitnan');
-                c75_velVert_bl_late  = mean(VelV_bl_late, 'omitnan');
                 c75_vel2D_bl         = mean(Vel2D_bl, 'omitnan');
-                c75_vel2D_bl_early   = mean(Vel2D_bl_early, 'omitnan');
-                c75_vel2D_bl_late    = mean(Vel2D_bl_late, 'omitnan');
 
                 subj_data_gaze_trial_c75 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
-                    'BCEA_Direction',bceaDirection, 'BCEA_Direction_early',bceaDirection_early, 'BCEA_Direction_late',bceaDirection_late, ...
-                    'BCEA_Eccentricity',bceaEccentricity, 'BCEA_Eccentricity_early',bceaEccentricity_early, 'BCEA_Eccentricity_late',bceaEccentricity_late, ...
-                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
-                    'PupilSize',pupilSize, 'PupilSize_early',pupilSize_early, 'PupilSize_late',pupilSize_late, ...
-                    'BaselinePupilSize',baselinePupilSize, ...
-                    'PupilSize_bl', PupilSize_bl, 'PupilSize_bl_early', PupilSize_bl_early, 'PupilSize_bl_late', PupilSize_bl_late, ...
-                    'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
-                    'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, 'MSRate_bl_early', MSRate_bl_early, 'MSRate_bl_late', MSRate_bl_late, ...
-                    'VelH',velHorz, 'VelH_early',velHorz_early, 'VelH_late',velHorz_late, ...
-                    'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, 'VelH_bl_early', VelH_bl_early, 'VelH_bl_late', VelH_bl_late, ...
-                    'VelV',velVert, 'VelV_early',velVert_early, 'VelV_late',velVert_late, ...
-                    'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, 'VelV_bl_early', VelV_bl_early, 'VelV_bl_late', VelV_bl_late, ...
-                    'Vel2D',vel2D, 'Vel2D_early',vel2D_early, 'Vel2D_late',vel2D_late, ...
-                    'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl, 'Vel2D_bl_early', Vel2D_bl_early, 'Vel2D_bl_late', Vel2D_bl_late );
+                    'BCEA',bcea, 'BCEA_Direction',bceaDirection, 'BCEA_Eccentricity',bceaEccentricity, ...
+                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, ...
+                    'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
+                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, ...
+                    'VelH',velHorz, 'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, ...
+                    'VelV',velVert, 'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, ...
+                    'Vel2D',vel2D, 'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl );
 
                 velTS_c75        = velTS_noBL;
                 velTS_c75_bl = velTS_BL;
@@ -822,11 +687,7 @@ for subj = 1:numel(subjects)
                 c100_bcea      = mean(bcea,'omitnan');
                 c100_bl_bcea   = mean(baselineBcea,'omitnan');
                 c100_bcea_dir       = direction_from_trial_centroids(centroidX, centroidY, fixX, fixY);
-                c100_bcea_dir_early = direction_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY);
-                c100_bcea_dir_late  = direction_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY);
                 c100_bcea_ecc       = eccentricity_from_trial_centroids(centroidX, centroidY, fixX, fixY, ppd);
-                c100_bcea_ecc_early = eccentricity_from_trial_centroids(centroidX_early, centroidY_early, fixX, fixY, ppd);
-                c100_bcea_ecc_late  = eccentricity_from_trial_centroids(centroidX_late, centroidY_late, fixX, fixY, ppd);
                 c100_pups      = mean(pupilSize,'omitnan');
                 c100_bl_pups   = mean(baselinePupilSize,'omitnan');
                 c100_msrate    = mean(microsaccadeRate,'omitnan');
@@ -842,41 +703,21 @@ for subj = 1:numel(subjects)
 
                 % Condition scalars: mean of trial-level % change (all gaze DVs)
                 c100_bcea_bl         = mean(BCEA_bl, 'omitnan');
-                c100_bcea_bl_early   = mean(BCEA_bl_early, 'omitnan');
-                c100_bcea_bl_late    = mean(BCEA_bl_late, 'omitnan');
                 c100_pups_bl         = mean(PupilSize_bl, 'omitnan');
-                c100_pups_bl_early   = mean(PupilSize_bl_early, 'omitnan');
-                c100_pups_bl_late    = mean(PupilSize_bl_late, 'omitnan');
                 c100_msrate_bl       = mean(MSRate_bl, 'omitnan');
-                c100_msrate_bl_early = mean(MSRate_bl_early, 'omitnan');
-                c100_msrate_bl_late  = mean(MSRate_bl_late, 'omitnan');
                 c100_velHorz_bl       = mean(VelH_bl, 'omitnan');
-                c100_velHorz_bl_early = mean(VelH_bl_early, 'omitnan');
-                c100_velHorz_bl_late  = mean(VelH_bl_late, 'omitnan');
                 c100_velVert_bl       = mean(VelV_bl, 'omitnan');
-                c100_velVert_bl_early = mean(VelV_bl_early, 'omitnan');
-                c100_velVert_bl_late  = mean(VelV_bl_late, 'omitnan');
                 c100_vel2D_bl         = mean(Vel2D_bl, 'omitnan');
-                c100_vel2D_bl_early   = mean(Vel2D_bl_early, 'omitnan');
-                c100_vel2D_bl_late    = mean(Vel2D_bl_late, 'omitnan');
 
                 subj_data_gaze_trial_c100 = struct( ...
                     'ID',subject_id,'Trial',trial_num,'Condition',condition, ...
-                    'BCEA',bcea, 'BCEA_early',bcea_early, 'BCEA_late',bcea_late, ...
-                    'BCEA_Direction',bceaDirection, 'BCEA_Direction_early',bceaDirection_early, 'BCEA_Direction_late',bceaDirection_late, ...
-                    'BCEA_Eccentricity',bceaEccentricity, 'BCEA_Eccentricity_early',bceaEccentricity_early, 'BCEA_Eccentricity_late',bceaEccentricity_late, ...
-                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, 'BCEA_bl_early', BCEA_bl_early, 'BCEA_bl_late', BCEA_bl_late, ...
-                    'PupilSize',pupilSize, 'PupilSize_early',pupilSize_early, 'PupilSize_late',pupilSize_late, ...
-                    'BaselinePupilSize',baselinePupilSize, ...
-                    'PupilSize_bl', PupilSize_bl, 'PupilSize_bl_early', PupilSize_bl_early, 'PupilSize_bl_late', PupilSize_bl_late, ...
-                    'MSRate',microsaccadeRate, 'MSRate_early',microsaccadeRate_early, 'MSRate_late',microsaccadeRate_late, ...
-                    'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, 'MSRate_bl_early', MSRate_bl_early, 'MSRate_bl_late', MSRate_bl_late, ...
-                    'VelH',velHorz, 'VelH_early',velHorz_early, 'VelH_late',velHorz_late, ...
-                    'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, 'VelH_bl_early', VelH_bl_early, 'VelH_bl_late', VelH_bl_late, ...
-                    'VelV',velVert, 'VelV_early',velVert_early, 'VelV_late',velVert_late, ...
-                    'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, 'VelV_bl_early', VelV_bl_early, 'VelV_bl_late', VelV_bl_late, ...
-                    'Vel2D',vel2D, 'Vel2D_early',vel2D_early, 'Vel2D_late',vel2D_late, ...
-                    'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl, 'Vel2D_bl_early', Vel2D_bl_early, 'Vel2D_bl_late', Vel2D_bl_late );
+                    'BCEA',bcea, 'BCEA_Direction',bceaDirection, 'BCEA_Eccentricity',bceaEccentricity, ...
+                    'BaselineBCEA',baselineBcea, 'BCEA_bl', BCEA_bl, ...
+                    'PupilSize',pupilSize, 'BaselinePupilSize',baselinePupilSize, 'PupilSize_bl', PupilSize_bl, ...
+                    'MSRate',microsaccadeRate, 'BaselineMSRate',baselineMSRate, 'MSRate_bl', MSRate_bl, ...
+                    'VelH',velHorz, 'BaselineVelH',baselineVelH, 'VelH_bl', VelH_bl, ...
+                    'VelV',velVert, 'BaselineVelV',baselineVelV, 'VelV_bl', VelV_bl, ...
+                    'Vel2D',vel2D, 'BaselineVel2D',baselineVel2D, 'Vel2D_bl', Vel2D_bl );
 
                 velTS_c100        = velTS_noBL;
                 velTS_c100_bl = velTS_BL;
@@ -900,39 +741,23 @@ for subj = 1:numel(subjects)
     savepath = fullfile(paths.features, subjects{subj}, 'gaze');
     if ~exist(savepath,'dir'); mkdir(savepath); end
 
-    % EyeLink event rates from preprocessing (full / early / late + baseline % change)
+    % EyeLink event rates from preprocessing (full window + baseline % change)
     load(fullfile(savepath, 'gaze_metrics'));
     c25_blinks_bl = c25_pct_blinks; c50_blinks_bl = c50_pct_blinks;
     c75_blinks_bl = c75_pct_blinks; c100_blinks_bl = c100_pct_blinks;
-    c25_blinks_bl_early = c25_pct_blinks_early; c50_blinks_bl_early = c50_pct_blinks_early;
-    c75_blinks_bl_early = c75_pct_blinks_early; c100_blinks_bl_early = c100_pct_blinks_early;
-    c25_blinks_bl_late = c25_pct_blinks_late; c50_blinks_bl_late = c50_pct_blinks_late;
-    c75_blinks_bl_late = c75_pct_blinks_late; c100_blinks_bl_late = c100_pct_blinks_late;
 
     c25_fixations_bl = c25_pct_fixations; c50_fixations_bl = c50_pct_fixations;
     c75_fixations_bl = c75_pct_fixations; c100_fixations_bl = c100_pct_fixations;
-    c25_fixations_bl_early = c25_pct_fixations_early; c50_fixations_bl_early = c50_pct_fixations_early;
-    c75_fixations_bl_early = c75_pct_fixations_early; c100_fixations_bl_early = c100_pct_fixations_early;
-    c25_fixations_bl_late = c25_pct_fixations_late; c50_fixations_bl_late = c50_pct_fixations_late;
-    c75_fixations_bl_late = c75_pct_fixations_late; c100_fixations_bl_late = c100_pct_fixations_late;
 
     c25_saccades_bl = c25_pct_saccades; c50_saccades_bl = c50_pct_saccades;
     c75_saccades_bl = c75_pct_saccades; c100_saccades_bl = c100_pct_saccades;
-    c25_saccades_bl_early = c25_pct_saccades_early; c50_saccades_bl_early = c50_pct_saccades_early;
-    c75_saccades_bl_early = c75_pct_saccades_early; c100_saccades_bl_early = c100_pct_saccades_early;
-    c25_saccades_bl_late = c25_pct_saccades_late; c50_saccades_bl_late = c50_pct_saccades_late;
-    c75_saccades_bl_late = c75_pct_saccades_late; c100_saccades_bl_late = c100_pct_saccades_late;
 
     subj_data_gaze = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
         'Condition', num2cell([1;2;3;4]), ...
         'BCEA',          num2cell([c25_bcea;   c50_bcea;   c75_bcea;   c100_bcea]), ...
         'BCEA_Direction',       num2cell([c25_bcea_dir;       c50_bcea_dir;       c75_bcea_dir;       c100_bcea_dir]), ...
-        'BCEA_Direction_early', num2cell([c25_bcea_dir_early; c50_bcea_dir_early; c75_bcea_dir_early; c100_bcea_dir_early]), ...
-        'BCEA_Direction_late',  num2cell([c25_bcea_dir_late;  c50_bcea_dir_late;  c75_bcea_dir_late;  c100_bcea_dir_late]), ...
         'BCEA_Eccentricity',       num2cell([c25_bcea_ecc;       c50_bcea_ecc;       c75_bcea_ecc;       c100_bcea_ecc]), ...
-        'BCEA_Eccentricity_early', num2cell([c25_bcea_ecc_early; c50_bcea_ecc_early; c75_bcea_ecc_early; c100_bcea_ecc_early]), ...
-        'BCEA_Eccentricity_late',  num2cell([c25_bcea_ecc_late;  c50_bcea_ecc_late;  c75_bcea_ecc_late;  c100_bcea_ecc_late]), ...
         'PupilSize',     num2cell([c25_pups;   c50_pups;   c75_pups;   c100_pups]), ...
         'MSRate',        num2cell([c25_msrate; c50_msrate; c75_msrate; c100_msrate]), ...
         'VelH',          num2cell([c25_velHorz;   c50_velHorz;   c75_velHorz;   c100_velHorz]), ...
@@ -951,32 +776,14 @@ for subj = 1:numel(subjects)
         'BaselineFixations',     num2cell([c25_bl_fixations; c50_bl_fixations; c75_bl_fixations; c100_bl_fixations]), ...
         'BaselineSaccades',      num2cell([c25_bl_saccades; c50_bl_saccades; c75_bl_saccades; c100_bl_saccades]), ...
         'BCEA_bl',          num2cell([c25_bcea_bl;   c50_bcea_bl;   c75_bcea_bl;   c100_bcea_bl]), ...
-        'BCEA_bl_early',    num2cell([c25_bcea_bl_early; c50_bcea_bl_early; c75_bcea_bl_early; c100_bcea_bl_early]), ...
-        'BCEA_bl_late',     num2cell([c25_bcea_bl_late;  c50_bcea_bl_late;  c75_bcea_bl_late;  c100_bcea_bl_late]), ...
         'PupilSize_bl',     num2cell([c25_pups_bl;   c50_pups_bl;   c75_pups_bl;   c100_pups_bl]), ...
-        'PupilSize_bl_early', num2cell([c25_pups_bl_early; c50_pups_bl_early; c75_pups_bl_early; c100_pups_bl_early]), ...
-        'PupilSize_bl_late',  num2cell([c25_pups_bl_late;  c50_pups_bl_late;  c75_pups_bl_late;  c100_pups_bl_late]), ...
         'MSRate_bl',        num2cell([c25_msrate_bl; c50_msrate_bl; c75_msrate_bl; c100_msrate_bl]), ...
-        'MSRate_bl_early',  num2cell([c25_msrate_bl_early; c50_msrate_bl_early; c75_msrate_bl_early; c100_msrate_bl_early]), ...
-        'MSRate_bl_late',   num2cell([c25_msrate_bl_late;  c50_msrate_bl_late;  c75_msrate_bl_late;  c100_msrate_bl_late]), ...
         'VelH_bl',          num2cell([c25_velHorz_bl;   c50_velHorz_bl;   c75_velHorz_bl;   c100_velHorz_bl]), ...
-        'VelH_bl_early',    num2cell([c25_velHorz_bl_early; c50_velHorz_bl_early; c75_velHorz_bl_early; c100_velHorz_bl_early]), ...
-        'VelH_bl_late',     num2cell([c25_velHorz_bl_late;  c50_velHorz_bl_late;  c75_velHorz_bl_late;  c100_velHorz_bl_late]), ...
         'VelV_bl',          num2cell([c25_velVert_bl;   c50_velVert_bl;   c75_velVert_bl;   c100_velVert_bl]), ...
-        'VelV_bl_early',    num2cell([c25_velVert_bl_early; c50_velVert_bl_early; c75_velVert_bl_early; c100_velVert_bl_early]), ...
-        'VelV_bl_late',     num2cell([c25_velVert_bl_late;  c50_velVert_bl_late;  c75_velVert_bl_late;  c100_velVert_bl_late]), ...
         'Vel2D_bl',         num2cell([c25_vel2D_bl;  c50_vel2D_bl;  c75_vel2D_bl;  c100_vel2D_bl]), ...
-        'Vel2D_bl_early',   num2cell([c25_vel2D_bl_early; c50_vel2D_bl_early; c75_vel2D_bl_early; c100_vel2D_bl_early]), ...
-        'Vel2D_bl_late',    num2cell([c25_vel2D_bl_late;  c50_vel2D_bl_late;  c75_vel2D_bl_late;  c100_vel2D_bl_late]), ...
         'Blinks_bl',        num2cell([c25_blinks_bl; c50_blinks_bl; c75_blinks_bl; c100_blinks_bl]), ...
-        'Blinks_bl_early',  num2cell([c25_blinks_bl_early; c50_blinks_bl_early; c75_blinks_bl_early; c100_blinks_bl_early]), ...
-        'Blinks_bl_late',   num2cell([c25_blinks_bl_late;  c50_blinks_bl_late;  c75_blinks_bl_late;  c100_blinks_bl_late]), ...
         'Fixations_bl',     num2cell([c25_fixations_bl; c50_fixations_bl; c75_fixations_bl; c100_fixations_bl]), ...
-        'Fixations_bl_early', num2cell([c25_fixations_bl_early; c50_fixations_bl_early; c75_fixations_bl_early; c100_fixations_bl_early]), ...
-        'Fixations_bl_late',  num2cell([c25_fixations_bl_late;  c50_fixations_bl_late;  c75_fixations_bl_late;  c100_fixations_bl_late]), ...
-        'Saccades_bl',      num2cell([c25_saccades_bl; c50_saccades_bl; c75_saccades_bl; c100_saccades_bl]), ...
-        'Saccades_bl_early', num2cell([c25_saccades_bl_early; c50_saccades_bl_early; c75_saccades_bl_early; c100_saccades_bl_early]), ...
-        'Saccades_bl_late',  num2cell([c25_saccades_bl_late;  c50_saccades_bl_late;  c75_saccades_bl_late;  c100_saccades_bl_late]) );
+        'Saccades_bl',      num2cell([c25_saccades_bl; c50_saccades_bl; c75_saccades_bl; c100_saccades_bl]) );
 
     subj_data_gaze_baseline = struct( ...
         'ID',        num2cell(subject_id(1:4))', ...
@@ -995,36 +802,16 @@ for subj = 1:numel(subjects)
         'ID',        num2cell(subject_id(1:4))', ...
         'Condition', num2cell([1;2;3;4]), ...
         'BCEA_bl',          num2cell([c25_bcea_bl;   c50_bcea_bl;   c75_bcea_bl;   c100_bcea_bl]), ...
-        'BCEA_bl_early',    num2cell([c25_bcea_bl_early; c50_bcea_bl_early; c75_bcea_bl_early; c100_bcea_bl_early]), ...
-        'BCEA_bl_late',     num2cell([c25_bcea_bl_late;  c50_bcea_bl_late;  c75_bcea_bl_late;  c100_bcea_bl_late]), ...
         'PupilSize_bl',     num2cell([c25_pups_bl;   c50_pups_bl;   c75_pups_bl;   c100_pups_bl]), ...
-        'PupilSize_bl_early', num2cell([c25_pups_bl_early; c50_pups_bl_early; c75_pups_bl_early; c100_pups_bl_early]), ...
-        'PupilSize_bl_late',  num2cell([c25_pups_bl_late;  c50_pups_bl_late;  c75_pups_bl_late;  c100_pups_bl_late]), ...
         'MSRate_bl',        num2cell([c25_msrate_bl; c50_msrate_bl; c75_msrate_bl; c100_msrate_bl]), ...
-        'MSRate_bl_early',  num2cell([c25_msrate_bl_early; c50_msrate_bl_early; c75_msrate_bl_early; c100_msrate_bl_early]), ...
-        'MSRate_bl_late',   num2cell([c25_msrate_bl_late;  c50_msrate_bl_late;  c75_msrate_bl_late;  c100_msrate_bl_late]), ...
         'VelH_bl',          num2cell([c25_velHorz_bl;   c50_velHorz_bl;   c75_velHorz_bl;   c100_velHorz_bl]), ...
-        'VelH_bl_early',    num2cell([c25_velHorz_bl_early; c50_velHorz_bl_early; c75_velHorz_bl_early; c100_velHorz_bl_early]), ...
-        'VelH_bl_late',     num2cell([c25_velHorz_bl_late;  c50_velHorz_bl_late;  c75_velHorz_bl_late;  c100_velHorz_bl_late]), ...
         'VelV_bl',          num2cell([c25_velVert_bl;   c50_velVert_bl;   c75_velVert_bl;   c100_velVert_bl]), ...
-        'VelV_bl_early',    num2cell([c25_velVert_bl_early; c50_velVert_bl_early; c75_velVert_bl_early; c100_velVert_bl_early]), ...
-        'VelV_bl_late',     num2cell([c25_velVert_bl_late;  c50_velVert_bl_late;  c75_velVert_bl_late;  c100_velVert_bl_late]), ...
         'Vel2D_bl',         num2cell([c25_vel2D_bl;  c50_vel2D_bl;  c75_vel2D_bl;  c100_vel2D_bl]), ...
-        'Vel2D_bl_early',   num2cell([c25_vel2D_bl_early; c50_vel2D_bl_early; c75_vel2D_bl_early; c100_vel2D_bl_early]), ...
-        'Vel2D_bl_late',    num2cell([c25_vel2D_bl_late;  c50_vel2D_bl_late;  c75_vel2D_bl_late;  c100_vel2D_bl_late]), ...
         'Blinks_bl',        num2cell([c25_blinks_bl; c50_blinks_bl; c75_blinks_bl; c100_blinks_bl]), ...
-        'Blinks_bl_early',  num2cell([c25_blinks_bl_early; c50_blinks_bl_early; c75_blinks_bl_early; c100_blinks_bl_early]), ...
-        'Blinks_bl_late',   num2cell([c25_blinks_bl_late;  c50_blinks_bl_late;  c75_blinks_bl_late;  c100_blinks_bl_late]), ...
         'Fixations_bl',     num2cell([c25_fixations_bl; c50_fixations_bl; c75_fixations_bl; c100_fixations_bl]), ...
-        'Fixations_bl_early', num2cell([c25_fixations_bl_early; c50_fixations_bl_early; c75_fixations_bl_early; c100_fixations_bl_early]), ...
-        'Fixations_bl_late',  num2cell([c25_fixations_bl_late;  c50_fixations_bl_late;  c75_fixations_bl_late;  c100_fixations_bl_late]), ...
-        'Saccades_bl',      num2cell([c25_saccades_bl; c50_saccades_bl; c75_saccades_bl; c100_saccades_bl]), ...
-        'Saccades_bl_early', num2cell([c25_saccades_bl_early; c50_saccades_bl_early; c75_saccades_bl_early; c100_saccades_bl_early]), ...
-        'Saccades_bl_late',  num2cell([c25_saccades_bl_late;  c50_saccades_bl_late;  c75_saccades_bl_late;  c100_saccades_bl_late]) );
-
+        'Saccades_bl',      num2cell([c25_saccades_bl; c50_saccades_bl; c75_saccades_bl; c100_saccades_bl]) );
 
     %% Save
-    save(fullfile(savepath,'gaze_matrix_trial'),  ...
         'subj_data_gaze_trial_c25',  'subj_data_gaze_trial_c50',  ...
         'subj_data_gaze_trial_c75',  'subj_data_gaze_trial_c100');
     save(fullfile(savepath,'gaze_matrix_subj'),   'subj_data_gaze');
@@ -1069,76 +856,6 @@ clc;
 fprintf('[GAZE FEX] Done. %d/%d subjects\n', subj, numel(subjects));
 
 
-function [vh, vv, v2] = vel_means_in_window(velTrial, t, tw)
-idx = t >= tw(1) & t <= tw(2);
-if ~any(idx)
-    vh = NaN;
-    vv = NaN;
-    v2 = NaN;
-    return
-end
-vh = mean(velTrial(1, idx), 'omitnan');
-vv = mean(velTrial(2, idx), 'omitnan');
-v2 = mean(velTrial(3, idx), 'omitnan');
-end
-
-
-function rate = ms_rate_in_window(raw, tVec, tw, win_size, fsample)
-idx = tVec >= tw(1) & tVec <= tw(2);
-dat = raw(1:3, idx);
-valid = dat(1,:) >= 0 & dat(1,:) <= 800 & dat(2,:) >= 0 & dat(2,:) <= 600;
-dat = dat(1:3, valid);
-if isempty(dat)
-    rate = NaN;
-    return
-end
-dat(2,:) = 600 - dat(2,:);
-dat = remove_blinks(dat, win_size);
-x = dat(1,:); y = dat(2,:);
-valid = isfinite(x) & isfinite(y);
-x = x(valid); y = y(valid);
-if numel(x) < 3
-    rate = NaN;
-    return
-end
-[rate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
-end
-
-function val = pupil_in_window(raw, tVec, tw, win_size)
-idx = tVec >= tw(1) & tVec <= tw(2);
-dat = raw(1:3, idx);
-valid = dat(1,:) >= 0 & dat(1,:) <= 800 & dat(2,:) >= 0 & dat(2,:) <= 600;
-dat = dat(1:3, valid);
-if isempty(dat)
-    val = NaN;
-    return
-end
-dat(2,:) = 600 - dat(2,:);
-dat = remove_blinks(dat, win_size);
-val = mean(dat(3,:), 'omitnan') / 1000;
-end
-
-function val = bcea_in_window(raw, tVec, tw, win_size)
-idx = tVec >= tw(1) & tVec <= tw(2);
-dat = raw(1:3, idx);
-valid = dat(1,:) >= 0 & dat(1,:) <= 800 & dat(2,:) >= 0 & dat(2,:) <= 600;
-dat = dat(1:3, valid);
-if isempty(dat)
-    val = NaN;
-    return
-end
-dat(2,:) = 600 - dat(2,:);
-dat = remove_blinks(dat, win_size);
-x = dat(1,:); y = dat(2,:);
-if numel(x) < 3
-    val = NaN;
-    return
-end
-sx = nanstd(x); sy = nanstd(y);
-rho = corr(x(:), y(:));
-val = 5.991 * pi * sx * sy * sqrt(1 - rho^2);
-end
-
 function theta = bcea_direction_from_xy(x, y, fixX, fixY)
 % Polar angle [deg] of mean gaze vs fixation. 0 = right, 90 = up.
 keep = isfinite(x) & isfinite(y);
@@ -1164,23 +881,6 @@ if nnz(keep) < 3
 end
 cx = mean(x(keep), 'omitnan');
 cy = mean(y(keep), 'omitnan');
-end
-
-function [theta, cx, cy] = bcea_direction_in_window(raw, tVec, tw, win_size, fixX, fixY)
-idx = tVec >= tw(1) & tVec <= tw(2);
-dat = raw(1:3, idx);
-valid = dat(1,:) >= 0 & dat(1,:) <= 800 & dat(2,:) >= 0 & dat(2,:) <= 600;
-dat = dat(1:3, valid);
-if isempty(dat)
-    theta = NaN;
-    cx = NaN;
-    cy = NaN;
-    return
-end
-dat(2,:) = 600 - dat(2,:);
-dat = remove_blinks(dat, win_size);
-[cx, cy] = bcea_centroid_from_xy(dat(1,:), dat(2,:));
-theta = bcea_direction_from_xy(dat(1,:), dat(2,:), fixX, fixY);
 end
 
 function theta = direction_from_trial_centroids(cx, cy, fixX, fixY)
@@ -1213,41 +913,34 @@ r = hypot(mean(cx(keep)) - fixX, mean(cy(keep)) - fixY) / ppd;
 end
 
 function save_gaze_window_summaries(featuresRoot, subjects, gaze_data)
-% Build cond x subject matrices for boxplots (no recomputation downstream).
+% Build cond x subject matrices for boxplots (full window only).
 metricBases = {'MSRate_bl','Vel2D_bl','PupilSize_bl','BCEA_bl', ...
         'BCEA_Direction','BCEA_Eccentricity', ...
         'Blinks_bl','Fixations_bl','Saccades_bl'};
-winSuffix = {'', '_early', '_late'};
-winName = {'full', 'early', 'late'};
 nSubj = numel(subjects);
 nCond = 4;
 out = struct();
 out.subjects = subjects;
-out.windows = winName;
-out.analysisWindows = struct('full', [0 2], 'early', [0 1], 'late', [1 2]);
+out.windows = {'full'};
+out.analysisWindows = struct('full', [0 2]);
 
 G = struct2table(gaze_data);
 for mi = 1:numel(metricBases)
     base = metricBases{mi};
-    S = struct();
-    for wi = 1:numel(winSuffix)
-        field = [base winSuffix{wi}];
-        M = nan(nCond, nSubj);
-        if ~ismember(field, G.Properties.VariableNames)
-            S.(winName{wi}) = M;
-            continue
-        end
+    M = nan(nCond, nSubj);
+    if ismember(base, G.Properties.VariableNames)
         for s = 1:nSubj
             sid = str2double(subjects{s});
             for c = 1:nCond
                 idx = G.ID == sid & G.Condition == c;
                 if any(idx)
-                    M(c, s) = G.(field)(find(idx, 1));
+                    M(c, s) = G.(base)(find(idx, 1));
                 end
             end
         end
-        S.(winName{wi}) = M;
     end
+    S = struct();
+    S.full = M;
     out.(base) = S;
 end
 

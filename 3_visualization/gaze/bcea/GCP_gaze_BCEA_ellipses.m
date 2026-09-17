@@ -1,6 +1,6 @@
 %% GCP Gaze BCEA Ellipses
 % Computes one gaze dispersion estimate per participant and condition.
-% Group mean BCEA95 ellipses are saved for full / early / late stimulus windows
+% Group mean BCEA95 ellipses are saved for the full stimulus window
 % (consumed by GCP_assemble_manuscript_figures.m Figure 6).
 % Figure 2: single-subject BCEA95 ellipses for the full window only.
 % (Mahalanobis radius sqrt(k) with k = 5.991 for 95% coverage)
@@ -30,9 +30,7 @@ lineW = 2;
 
 % Window tag, latency [s], and PNG name suffix (full keeps legacy unsuffixed name).
 winDefs = { ...
-    'full',  [0 2], ''; ...
-    'early', [0 1], '_early'; ...
-    'late',  [1 2], '_late'};
+    'full',  [0 2], ''};
 nWin = size(winDefs, 1);
 
 %% Participant and condition estimates (all windows)
@@ -101,7 +99,8 @@ ValidSamples = nan(nRows, 1);
 BaselineValidSamples = nan(nRows, 1);
 
 fixXY = [400 300];
-ppd = 50;
+% Physical ppd (same formula as GCP_gratingsTask / GCP_gaze_fex)
+ppd = 800 / (2 * atan(48 / (2 * 80)) * (180 / pi)); % ~23.95
 
 row = 0;
 for subj = 1:nSubj

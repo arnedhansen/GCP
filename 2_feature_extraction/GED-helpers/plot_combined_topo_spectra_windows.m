@@ -1,61 +1,52 @@
 function plot_combined_topo_spectra_windows(save_dir, subject_id, scan_freqs, cfg_topo, topo_labels, ...
     searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
-    searchTopos_early, searchMeanPrSpectrum_early, selected_idx_early, w_combined_early, ...
-    searchTopos_late, searchMeanPrSpectrum_late, selected_idx_late, w_combined_late, ...
-    analysis_freq_range)
-% Subject figure of combined GED topo and spectrum for early, full, and late windows.
+    analysis_freq_range, file_tag)
+% Subject figure of combined GED topo and spectrum for the full stimulus window.
+if nargin < 11 || isempty(file_tag)
+    file_tag = 'full';
+end
 fig = figure('Position', [0 0 1512 982], 'Color', 'w');
-win_names = {'early', 'full', 'late'};
-all_topos = {searchTopos_early, searchTopos_full, searchTopos_late};
-all_specs = {searchMeanPrSpectrum_early, searchMeanPrSpectrum_full, searchMeanPrSpectrum_late};
-all_idx = {selected_idx_early, selected_idx_full, selected_idx_late};
-all_w = {w_combined_early, w_combined_full, w_combined_late};
+[sel_idx, sel_w] = sanitize_selected_components( ...
+    selected_idx_full, w_combined_full, size(searchMeanPrSpectrum_full, 1));
 
-for wi = 1:3
-    subplot(2, 3, wi);
-    topo_mat = all_topos{wi};
-    spec_mat = all_specs{wi};
-    sel_idx = all_idx{wi};
-    sel_w = all_w{wi};
-    [sel_idx, sel_w] = sanitize_selected_components(sel_idx, sel_w, size(spec_mat, 1));
-    if isempty(sel_idx) || isempty(topo_mat)
-        axis off;
-        text(0.5, 0.5, sprintf('No combined components (%s)', upper(win_names{wi})), ...
-            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-            'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
-    else
-        topo_vec = topo_mat(:, sel_idx) * sel_w(:);
-        topo_data = [];
-        topo_data.label = topo_labels;
-        topo_data.avg = topo_vec;
-        topo_data.dimord = 'chan';
-        topo_vals = topo_vec(isfinite(topo_vec));
-        topo_clim = max(abs(topo_vals));
-        if ~isfinite(topo_clim) || topo_clim <= 0
-            topo_clim = 1;
-        end
-        cfg_ci = cfg_topo;
-        cfg_ci.zlim = [-topo_clim topo_clim];
-        try
-            ft_topoplotER(cfg_ci, topo_data);
-        catch
-            imagesc(topo_vec(:)); axis tight;
-            caxis([-topo_clim topo_clim]); colorbar;
-        end
-        title(sprintf('Combined Topography (%s, n=%d)', upper(win_names{wi}), numel(sel_idx)), ...
-            'FontSize', 11, 'Interpreter', 'none');
+subplot(1, 2, 1);
+if isempty(sel_idx) || isempty(searchTopos_full)
+    axis off;
+    text(0.5, 0.5, 'No combined components (FULL)', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+        'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+else
+    topo_vec = searchTopos_full(:, sel_idx) * sel_w(:);
+    topo_data = [];
+    topo_data.label = topo_labels;
+    topo_data.avg = topo_vec;
+    topo_data.dimord = 'chan';
+    topo_vals = topo_vec(isfinite(topo_vec));
+    topo_clim = max(abs(topo_vals));
+    if ~isfinite(topo_clim) || topo_clim <= 0
+        topo_clim = 1;
     end
-    set(gca, 'FontSize', 10);
+    cfg_ci = cfg_topo;
+    cfg_ci.zlim = [-topo_clim topo_clim];
+    try
+        ft_topoplotER(cfg_ci, topo_data);
+    catch
+        imagesc(topo_vec(:)); axis tight;
+        caxis([-topo_clim topo_clim]); colorbar;
+    end
+    title(sprintf('Combined Topography (FULL, n=%d)', numel(sel_idx)), ...
+        'FontSize', 11, 'Interpreter', 'none');
+end
+set(gca, 'FontSize', 10);
 
-    subplot(2, 3, wi + 3); hold on;
-    if isempty(sel_idx) || isempty(spec_mat)
-        axis off;
-        text(0.5, 0.5, sprintf('No combined spectrum (%s)', upper(win_names{wi})), ...
-            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-            'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
-        continue;
-    end
-    spec_vec = sel_w(:)' * spec_mat(sel_idx, :);
+subplot(1, 2, 2); hold on;
+if isempty(sel_idx) || isempty(searchMeanPrSpectrum_full)
+    axis off;
+    text(0.5, 0.5, 'No combined spectrum (FULL)', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+        'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
+else
+    spec_vec = sel_w(:)' * searchMeanPrSpectrum_full(sel_idx, :);
     [pf_score, pf_peak_hz] = compute_combined_powspctrm_form_metrics( ...
         spec_vec, scan_freqs, analysis_freq_range);
     plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0);
@@ -78,13 +69,13 @@ for wi = 1:3
         pf_score, pf_peak_hz), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
         'FontSize', 9, 'Interpreter', 'none', 'Color', [0.1 0.1 0.1]);
-    title(sprintf('Combined Spectrum (%s)', upper(win_names{wi})), ...
+    title('Combined Spectrum (FULL)', ...
         'FontSize', 11, 'Interpreter', 'none');
     set(gca, 'FontSize', 10);
 end
 
-sgtitle(sprintf('Combined GED Components: %s', subject_id), ...
+sgtitle(sprintf('Combined GED Components: %s (%s)', subject_id, file_tag), ...
     'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
-save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_components_combined.png', subject_id)));
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_components_combined_%s.png', subject_id, file_tag)));
 close(fig);
 end

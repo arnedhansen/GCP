@@ -1,8 +1,10 @@
 %% GCP Behavioral Feature Extraction
 %
 % Extracted features:
-%   Accuracy
+%   Accuracy (catch-hit rate only: space on white-fixation trials /
+%             all white-fixation trials)
 %   Reaction Times
+%   WhiteCross (trial table only)
 
 %% Setup
 startup
@@ -22,49 +24,48 @@ for subj = 1:length(subjects)
     condition = [];
     accuracy = [];
     reaction_time = [];
+    white_cross = [];
 
     %% Read blocks
     trial_counter = 1;
-    try
-        for block = 1:4
-            load(sprintf('%s_GCP_block%d.mat', subjects{subj}, block))
-            num_trials = length(saves.data.correct);
+    for block = 1:4
+        load(sprintf('%s_GCP_block%d.mat', subjects{subj}, block))
+        num_trials = length(saves.data.correct);
 
-            % Append data for this block
-            subject_id = [subject_id; repmat({saves.subjectID}, num_trials, 1)];
-            trial_num = [trial_num; (trial_counter:(trial_counter + num_trials - 1))'];
-            condition = [condition; saves.data.grating'];
-            accuracy = [accuracy; saves.data.correct'];
-            reaction_time = [reaction_time; saves.data.reactionTime'];
-            trial_counter = trial_counter + num_trials;
+        % Append data for this block
+        subject_id = [subject_id; repmat({saves.subjectID}, num_trials, 1)];
+        trial_num = [trial_num; (trial_counter:(trial_counter + num_trials - 1))'];
+        condition = [condition; saves.data.grating'];
+        accuracy = [accuracy; saves.data.correct(:)];
+        reaction_time = [reaction_time; saves.data.reactionTime(:)];
+        if ~isfield(saves.data, 'whiteCross')
+            error('GCP_behavioral_fex:MissingWhiteCross', ...
+                'whiteCross missing in %s_GCP_block%d.mat', subjects{subj}, block);
         end
+        white_cross = [white_cross; saves.data.whiteCross(:)];
+        trial_counter = trial_counter + num_trials;
     end
 
     %% Create a trial-by-trial structure array for this subject
     subj_data_behav_trial = struct('ID', subject_id, 'Trial', num2cell(trial_num), 'Condition', num2cell(condition), ...
-        'Accuracy', num2cell(accuracy), 'ReactionTime', num2cell(reaction_time));
+        'Accuracy', num2cell(accuracy), 'ReactionTime', num2cell(reaction_time), ...
+        'WhiteCross', num2cell(white_cross));
 
-    %% Calculate subject-specific data by condition (GazeDev, PupilSize, MSRate)
+    %% Catch-hit accuracy by condition (white-fixation trials only)
     c25 = subj_data_behav_trial(ismember([subj_data_behav_trial.Condition], 1));
-    c25_acc = sum([c25.Accuracy])/length(c25)*100;
-    % valid_reactions = ~isnan([c25.ReactionTime]); % Logical array of non-NaN ReactionTime
-    % correct_responses = [c25.Accuracy] == 1; % Logical array of Accuracy == 1
-    % c25_acc = sum(valid_reactions & correct_responses) / sum(valid_reactions) * 100; % Percentage of valid and correct instances
-    c25_rt = mean([c25.ReactionTime], 'omitnan'); 
+    c25_acc = catch_hit_rate(c25);
+    c25_rt = mean([c25.ReactionTime], 'omitnan');
 
     c50 = subj_data_behav_trial(ismember([subj_data_behav_trial.Condition], 2));
-    c50_acc = sum([c50.Accuracy])/length(c50)*100;
-    % valid_reactions = ~isnan([c50.ReactionTime]); % Logical array of non-NaN ReactionTime
-    % correct_responses = [c50.Accuracy] == 1; % Logical array of Accuracy == 1
-    % c50_acc = sum(valid_reactions & correct_responses) / sum(valid_reactions) * 100; % Percentage of valid and correct instances
+    c50_acc = catch_hit_rate(c50);
     c50_rt = mean([c50.ReactionTime], 'omitnan');
 
     c75 = subj_data_behav_trial(ismember([subj_data_behav_trial.Condition], 3));
-    c75_acc = sum([c75.Accuracy])/length(c75)*100;
+    c75_acc = catch_hit_rate(c75);
     c75_rt = mean([c75.ReactionTime], 'omitnan');
 
     c100 = subj_data_behav_trial(ismember([subj_data_behav_trial.Condition], 4));
-    c100_acc = sum([c100.Accuracy])/length(c100)*100;
+    c100_acc = catch_hit_rate(c100);
     c100_rt = mean([c100.ReactionTime], 'omitnan');
 
     %% Create across condition structure
@@ -88,3 +89,19 @@ for subj = 1:length(subjects)
 end
 save(fullfile(paths.features, 'GCP_behavioral_matrix.mat'), 'behav_data')
 fprintf('[BEHAV FEX] Done. %d/%d subjects\n', length(subjects), length(subjects))
+
+function acc = catch_hit_rate(trials)
+% Space bar on white-fixation trials / all white-fixation trials, in percent.
+if isempty(trials)
+    acc = NaN;
+    return
+end
+wc = [trials.WhiteCross];
+wc = wc ~= 0;
+n = sum(wc);
+if n == 0
+    acc = NaN;
+    return
+end
+acc = sum([trials(wc).Accuracy]) / n * 100;
+end

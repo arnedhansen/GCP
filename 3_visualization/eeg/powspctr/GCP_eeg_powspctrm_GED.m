@@ -1,7 +1,7 @@
 %% GCP GED Power Spectrum Visualizations
-% Grand-average and single-subject condition spectra for full / early / late
-% analysis windows. Panel PNG names are consumed by
-% GCP_assemble_manuscript_figures.m (Figure 8; Supplementary S2a–c).
+% Grand-average and single-subject condition spectra for the full
+% stimulus window (0-2000 ms). Panel PNG names are consumed by
+% GCP_assemble_manuscript_figures.m (Figure 8; Supplementary S2a-c).
 
 %% Setup
 startup
@@ -23,9 +23,7 @@ nCond = numel(condLabels);
 fontSize = 50;
 
 windows = { ...
-    'full',  'freq_powspctrm_full_unsmoothed',  'all_condition_peak_freq_full',  ''; ...
-    'early', 'freq_powspctrm_early_unsmoothed', 'all_condition_peak_freq_early', '_early'; ...
-    'late',  'freq_powspctrm_late_unsmoothed',  'all_condition_peak_freq_late',  '_late'};
+    'full',  'freq_powspctrm_full_unsmoothed',  'all_condition_peak_freq_full',  ''};
 
 for iWin = 1:size(windows, 1)
     winTag = windows{iWin, 1};
@@ -36,7 +34,7 @@ for iWin = 1:size(windows, 1)
     if ~isfield(dat, freqField)
         error('GCP_eeg_powspctrm_GED:MissingField', ...
             ['Field %s is missing from %s. Re-run GCP_eeg_fex_GED.m so ' ...
-            'full/early/late freq spectra are saved.'], freqField, data_path);
+            'full-window freq spectra are saved.'], freqField, data_path);
     end
     freqCell = dat.(freqField);
     if isfield(dat, peakField)
@@ -96,11 +94,11 @@ for cond = 1:nCond
     set(eb.edge(1), 'Color', 'none');
     set(eb.edge(2), 'Color', 'none');
     leg_p(end + 1) = patch(nan, nan, colors(cond, :), 'FaceAlpha', 0.25, ...
-        'EdgeColor', colors(cond, :), 'LineWidth', 1.5); %#ok<AGROW>
-    leg_lbl{end + 1} = condLabels{cond}; %#ok<AGROW>
+        'EdgeColor', colors(cond, :), 'LineWidth', 1.5);
+    leg_lbl{end + 1} = condLabels{cond};
 end
 xlim(analysis_freq_range);
-ylim([0 4]);
+ylim([0 4.5]);
 xlabel('Frequency [Hz]', 'FontSize', fontSize * 0.8);
 ylabel('Power [dB]', 'FontSize', fontSize * 0.8);
 title('');

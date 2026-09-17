@@ -150,11 +150,13 @@ screen.resolutionX               = 800; % Screen resolution width in pixels
 screen.resolutionY               = 600; % Screen resolution height in pixels
 screen.viewDist                  = 80; % Viewing distance in cm from participant on head rest to screen center
 
-% Calculate visual parameters
+% Calculate visual parameters (physical ppd from monitor geometry; ~23.95)
 screen.totVisDeg = 2*atan(screen.width / (2*screen.viewDist))*(180/pi); % Calculate degrees of visual angle
 screen.ppd       = screen.resolutionX / screen.totVisDeg; % Pixels per degree
-% MethLab 20.5761 ppd; estimated with MeasureDpi function: 20
-screen.ppd       = 50;
+% Keep on-screen pixel sizes matched to the prior ppd=50 setup (10 deg * 50 = 500 px
+% grating; 0.35 deg * 50 = 18 px fixation). Do not overwrite ppd.
+gratingSizePixTarget  = 500;
+fixationSizePixTarget = 18;
 
 % Get frame duration
 ifi              = Screen('GetFlipInterval', ptbWindow);
@@ -171,8 +173,8 @@ DrawFormattedText(ptbWindow,loadingText,'center','center',black);
 Screen('Flip',ptbWindow);
 
 %% Fixation cross parameters
-% Size
-fixationSize_dva      = .35;             % Size of fixation cross in degress of visual angle
+% Size (dva from physical ppd so pixel size stays at fixationSizePixTarget)
+fixationSize_dva      = fixationSizePixTarget / screen.ppd;
 fixationLineWidth     = 1.5;            % Line width of fixation cross
 
 % Color
@@ -195,15 +197,16 @@ timing.cfi_task       = 0.5;  % Duration of white fixation cross
 timing.fixCheckDuration = 0.5; % Pre-stimulus fixation check during last 500ms of CFI
 
 %% Settings for inward moving circular grating
-% Size
-visualAngleGrating    = 10; %7.1
+% Size (dva from physical ppd so pixel size stays at gratingSizePixTarget)
+visualAngleGrating    = gratingSizePixTarget / screen.ppd; % ~20.87 deg at ~23.95 ppd
 visualAngleLocation   = 15;
 gratingSize           = visualAngleGrating*screen.ppd; % Grating stimulus size in pixels
 gratingRadius         = round(gratingSize/2); % Grating can only exist of integers -> round
 gratingSize           = 2*gratingRadius; % To prevent consistency errors, redifine gratingSize
 
-% Frequency
-driftFreq             = 2; % Every pixel of the grating completes two cycles per second (black-white-black)
+% Spatial / temporal frequency: 3 cpd at physical ppd; 2 Hz inward drift
+targetCPD             = 3;
+driftFreq             = 2; % Hz temporal frequency (radial speed = driftFreq/targetCPD deg/s)
 nFramesInCycle        = round((1/driftFreq)/ifi); % Temporal period, in frames, of the drifting grating
 
 % Set duration
@@ -223,7 +226,8 @@ Priority(priorityLevel);
 %% Generate grating textures
 % Generate stimulus
 [x,y]                           = meshgrid(-gratingRadius:gratingRadius,-gratingRadius:gratingRadius);
-f                               = 0.55*2*pi; % Period of the grating
+% sin(r/f + phase): spatial period in pixels is 2*pi*f
+f                               = screen.ppd / (2 * pi * targetCPD);
 
 % Circular hanning mask
 L                               = 2*gratingRadius+1;
@@ -302,7 +306,6 @@ data.fixation(1:exp.nTrials)     = NaN; % Fixation check info
 data.trlDuration(1:exp.nTrials)  = NaN; % Trial duration in seconds
 data.isReplacement(1:exp.nTrials) = 0;  % Flag for replacement trials (0 = original, 1 = replacement)
 count5trials                     = NaN; % Initialize accuracy reminder loop variable
-maxExtraTrials                   = round(exp.nTrials * 0.15); % Cap replacement trials at 15% of block
 
 %% Show task instruction text
 DrawFormattedText(ptbWindow, startExperimentText, 'center', 'center', black);
@@ -457,8 +460,8 @@ while ~isempty(trialQueue)
         WaitSecs(1);
     end
 
-    % Queue replacement trial at end of block if fixation failed
-    if TRAINING == 0 && noFixation && nExtraTrials < maxExtraTrials
+    % Queue replacement trial at end of block if fixation failed (no cap)
+    if TRAINING == 0 && noFixation
         trialQueue(end+1) = currentGrating;
         nExtraTrials = nExtraTrials + 1;
     end
@@ -615,14 +618,20 @@ while ~isempty(trialQueue)
     else
         replLabel = '';
     end
+    % Denominator grows whenever a fixation-fail replacement is queued
     totalTrials = exp.nTrials + nExtraTrials;
     if TRAINING == 1
         blockStr = '0/0';
     else
         blockStr = sprintf('%d/4', BLOCK);
     end
-    fprintf('Response to Trial %3d/%d%-4s in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss | Fix: %s | %s)\n', ...
-        trl, totalTrials, replLabel, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, fixLabel, gratingForm);
+    if TRAINING == 0 && data.fixation(trl) == 0
+        appendNote = ' | fixation failed and appended';
+    else
+        appendNote = '';
+    end
+    fprintf('Response to Trial %3d/%d%-4s in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss | Fix: %s | %s)%s\n', ...
+        trl, totalTrials, replLabel, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, fixLabel, gratingForm, appendNote);
 
     % Save trial duration in seconds
     data.trlDuration(trl) = toc;

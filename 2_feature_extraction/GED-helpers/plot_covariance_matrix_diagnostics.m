@@ -3,12 +3,12 @@ function plot_covariance_matrix_diagnostics(save_dir, subject_id, chan_labels, c
 if isempty(covStim_per_win) || isempty(covBase_full)
     return;
 end
-nWins = min(3, numel(covStim_per_win));
+nWins = numel(covStim_per_win);
 if nWins < 1
     return;
 end
 if isempty(win_names_cap)
-    win_names_cap = {'Full', 'Early', 'Late'};
+    win_names_cap = arrayfun(@(k) sprintf('Win%d', k), 1:nWins, 'UniformOutput', false);
 end
 if isempty(lambdas)
     lambdas = repmat(0.05, 1, nWins);

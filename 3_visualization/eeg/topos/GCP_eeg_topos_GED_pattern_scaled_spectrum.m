@@ -1,6 +1,6 @@
 %% GCP GED pattern scaled by condition spectrum
 %
-% This legacy visualization multiplies each subject's fixed full-window GED
+% This visualization multiplies each subject's fixed full-window GED
 % activation pattern by the condition-specific GED power spectrum. Spatial
 % differences between conditions therefore reflect amplitude scaling only.
 
@@ -28,11 +28,14 @@ for subj = 1:numel(subjects)
     topo = topo ./ sqrt(mean(topo .^ 2));
 
     for cond = 1:4
+        spec = ged.all_condition_powspctrm_full{cond, sourceIndex};
+        if isempty(spec)
+            continue
+        end
         freqData = [];
         freqData.label = ged.all_topo_labels{sourceIndex}(:);
         freqData.freq = ged.scan_freqs(:)';
-        freqData.powspctrm = topo * ...
-            double(ged.all_condition_powspctrm_full{cond, sourceIndex}(:)');
+        freqData.powspctrm = topo * double(spec(:)');
         freqData.dimord = 'chan_freq';
         conditionPower{cond}{subj} = freqData;
     end

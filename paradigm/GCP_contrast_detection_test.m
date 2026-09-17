@@ -62,7 +62,9 @@ screen.viewDist    = 80;
 
 screen.totVisDeg = 2 * atan(screen.width / (2 * screen.viewDist)) * (180 / pi);
 screen.ppd       = screen.resolutionX / screen.totVisDeg;
-screen.ppd       = 50;
+% Keep pixel sizes matched to prior ppd=50 setup (500 px grating, 18 px cross)
+gratingSizePixTarget  = 500;
+fixationSizePixTarget = 18;
 
 ifi       = Screen('GetFlipInterval', ptbWindow);
 frameRate = Screen('FrameRate', screen.ID);
@@ -76,7 +78,7 @@ DrawFormattedText(ptbWindow, loadingText, 'center', 'center', black);
 Screen('Flip', ptbWindow);
 
 %% Fixation cross parameters (black only)
-fixationSize_dva   = .35;
+fixationSize_dva   = fixationSizePixTarget / screen.ppd;
 fixationLineWidth  = 1.5;
 fixationColorBlack = [0 0 0];
 
@@ -89,12 +91,13 @@ timing.cfilower = 1000; % 1-2 s jittered fixation
 timing.cfiupper = 2000;
 
 %% Settings for inward moving circular grating
-visualAngleGrating = 10;
+visualAngleGrating = gratingSizePixTarget / screen.ppd;
 gratingSize        = visualAngleGrating * screen.ppd;
 gratingRadius      = round(gratingSize / 2);
 gratingSize        = 2 * gratingRadius;
 
-driftFreq      = 2;
+targetCPD      = 3;
+driftFreq      = 2; % Hz
 nFramesInCycle = round((1 / driftFreq) / ifi);
 
 movieDurationSecs = 2;
@@ -110,7 +113,8 @@ Priority(priorityLevel);
 
 %% Generate grating textures
 [x, y] = meshgrid(-gratingRadius:gratingRadius, -gratingRadius:gratingRadius);
-f      = 0.55 * 2 * pi;
+% sin(r/f + phase): spatial period in pixels is 2*pi*f
+f = screen.ppd / (2 * pi * targetCPD);
 
 L                     = 2 * gratingRadius + 1;
 w1D                   = hann(L);

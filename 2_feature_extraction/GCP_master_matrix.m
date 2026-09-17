@@ -104,10 +104,10 @@ fprintf('[MASTER MATRIX] Rows loaded: behavior=%d, gaze=%d, ged=%d\n', n_behav, 
 fprintf('[MASTER MATRIX] Rows merged: %d\n', n_merge);
 
 %% Save outputs
-merged_table = tbl_merge; %#ok<NASGU>
-merged_data = table2struct(tbl_merge); %#ok<NASGU>
-GCP_merged_table = tbl_merge; %#ok<NASGU>
-GCP_merged_data = merged_data; %#ok<NASGU>
+merged_table = tbl_merge;
+merged_data = table2struct(tbl_merge);
+GCP_merged_table = tbl_merge;
+GCP_merged_data = merged_data;
 
 save(fullfile(features_root, 'GCP_merged_data.mat'), ...
     'merged_data', 'merged_table', 'GCP_merged_data', 'GCP_merged_table');
@@ -169,20 +169,13 @@ for s = 1:numel(subjects)
     G = standardize_id_condition(G);
 
     keep = {'ID','Condition', ...
-            'BCEA','BCEA_Direction','BCEA_Direction_early','BCEA_Direction_late', ...
-            'BCEA_Eccentricity','BCEA_Eccentricity_early','BCEA_Eccentricity_late', ...
+            'BCEA','BCEA_Direction','BCEA_Eccentricity', ...
             'PupilSize','MSRate', ...
             'VelH','VelV','Vel2D', ...
             'Blinks','Fixations','Saccades', ...
-            'BCEA_bl','BCEA_bl_early','BCEA_bl_late', ...
-            'PupilSize_bl','PupilSize_bl_early','PupilSize_bl_late', ...
-            'MSRate_bl','MSRate_bl_early','MSRate_bl_late', ...
-            'VelH_bl','VelH_bl_early','VelH_bl_late', ...
-            'VelV_bl','VelV_bl_early','VelV_bl_late', ...
-            'Vel2D_bl','Vel2D_bl_early','Vel2D_bl_late', ...
-            'Blinks_bl','Blinks_bl_early','Blinks_bl_late', ...
-            'Fixations_bl','Fixations_bl_early','Fixations_bl_late', ...
-            'Saccades_bl','Saccades_bl_early','Saccades_bl_late'};
+            'BCEA_bl','PupilSize_bl','MSRate_bl', ...
+            'VelH_bl','VelV_bl','Vel2D_bl', ...
+            'Blinks_bl','Fixations_bl','Saccades_bl'};
     keep = keep(ismember(keep, G.Properties.VariableNames));
     G = G(:, keep);
 
@@ -193,11 +186,7 @@ end
 function tbl_ged = load_subject_level_ged_table(features_root, subjects)
 tbl_ged = table();
 
-% Subject-level GED gamma metrics come from peaks of condition-averaged
-% power spectra (GCP_eeg_fex_GED.m -> all_condition_peak_*), not from
-% averaging per-trial peak values. Full-window Power/Frequency are primary;
-% early/late columns are secondary preregistered windows. Trial-level peaks
-% remain in GCP_eeg_GED.mat / GCP_merged_data_trials for trial analyses.
+% Subject-level GED gamma metrics come from peaks of condition-averaged power spectra
 ged_path = fullfile(features_root, 'GCP_eeg_GED.mat');
 if ~isfile(ged_path)
     warning('GCP_master_matrix:NoGED', ...
@@ -207,16 +196,10 @@ end
 
 dat = load(ged_path, ...
     'all_condition_peak_freq_full', 'all_condition_peak_power_full', ...
-    'all_condition_peak_freq_early', 'all_condition_peak_power_early', ...
-    'all_condition_peak_freq_late', 'all_condition_peak_power_late', ...
     'subjects');
 
 freq_full  = pick_first_numeric_matrix(dat, {'all_condition_peak_freq_full'});
 pow_full   = pick_first_numeric_matrix(dat, {'all_condition_peak_power_full'});
-freq_early = pick_first_numeric_matrix(dat, {'all_condition_peak_freq_early'});
-pow_early  = pick_first_numeric_matrix(dat, {'all_condition_peak_power_early'});
-freq_late  = pick_first_numeric_matrix(dat, {'all_condition_peak_freq_late'});
-pow_late   = pick_first_numeric_matrix(dat, {'all_condition_peak_power_late'});
 
 if isfield(dat, 'subjects') && ~isempty(dat.subjects)
     ged_subjects = dat.subjects;
@@ -224,15 +207,11 @@ else
     ged_subjects = subjects;
 end
 
-tbl_ged = build_ged_table_from_arrays( ...
-    pow_full, freq_full, pow_early, freq_early, pow_late, freq_late, ged_subjects);
+tbl_ged = build_ged_table_from_arrays(pow_full, freq_full, ged_subjects);
 
 % Keep only key GED fields expected in downstream stats
 if ~isempty(tbl_ged)
-    keep = {'ID','Condition', ...
-        'Power','Frequency', ...
-        'Power_early','Frequency_early', ...
-        'Power_late','Frequency_late'};
+    keep = {'ID','Condition', 'Power','Frequency'};
     keep = keep(ismember(keep, tbl_ged.Properties.VariableNames));
     if numel(keep) >= 2
         tbl_ged = tbl_ged(:, keep);
@@ -240,11 +219,10 @@ if ~isempty(tbl_ged)
 end
 end
 
-function tbl = build_ged_table_from_arrays( ...
-    pow_full, freq_full, pow_early, freq_early, pow_late, freq_late, subjects)
+function tbl = build_ged_table_from_arrays(pow_full, freq_full, subjects)
 tbl = table();
 
-mats = {pow_full, freq_full, pow_early, freq_early, pow_late, freq_late};
+mats = {pow_full, freq_full};
 if all(cellfun(@isempty, mats))
     return
 end
@@ -261,10 +239,6 @@ ID = nan(nCond * nSubj, 1);
 Condition = nan(nCond * nSubj, 1);
 Frequency = nan(nCond * nSubj, 1);
 Power = nan(nCond * nSubj, 1);
-Frequency_early = nan(nCond * nSubj, 1);
-Power_early = nan(nCond * nSubj, 1);
-Frequency_late = nan(nCond * nSubj, 1);
-Power_late = nan(nCond * nSubj, 1);
 
 row = 0;
 for s = 1:nSubj
@@ -275,15 +249,10 @@ for s = 1:nSubj
         Condition(row) = c;
         Frequency(row) = read_cond_subj(freq_full, c, s);
         Power(row) = read_cond_subj(pow_full, c, s);
-        Frequency_early(row) = read_cond_subj(freq_early, c, s);
-        Power_early(row) = read_cond_subj(pow_early, c, s);
-        Frequency_late(row) = read_cond_subj(freq_late, c, s);
-        Power_late(row) = read_cond_subj(pow_late, c, s);
     end
 end
 
-tbl = table(ID, Condition, Power, Frequency, ...
-    Power_early, Frequency_early, Power_late, Frequency_late);
+tbl = table(ID, Condition, Power, Frequency);
 end
 
 function v = read_cond_subj(M, c, s)

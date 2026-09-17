@@ -26,7 +26,7 @@ nComp = size(filters_w, 2);
 proxies = repmat(empty_proxy, nComp, 1);
 
 band_mask = scan_freqs >= 30 & scan_freqs <= 90;
-hf_mask = scan_freqs >= 70 & scan_freqs <= min(110, max(scan_freqs));
+hf_mask = scan_freqs >= 70 & scan_freqs <= 90;
 harm_mask = ismember(round(scan_freqs), [50 60 100]);
 if ~any(harm_mask)
     [~, idx50] = min(abs(scan_freqs - 50));

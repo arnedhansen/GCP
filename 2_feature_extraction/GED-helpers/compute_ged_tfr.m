@@ -4,7 +4,7 @@ function [tfr_cond_trials, tfr_cond_avg, ged_filter_meta] = compute_ged_tfr( ...
     baseline_window, ...
     tfr_foi, tfr_toi, tfr_win_sec, tfr_tapsmofrq, ...
     condNames, condCodes)
-% Project trials through each subject GED filter and compute condition TFRs in dB.
+% Project trials through each subject's pooled GED filter and compute condition TFRs in dB.
 % Prefer compute_ged_tfr_subject from the main loop to avoid reloading EEG.
 nSubj = numel(subjects);
 nCond = numel(condNames);
@@ -29,11 +29,17 @@ for subj = 1:nSubj
         continue;
     end
     saved_labels = all_topo_labels{subj};
-    if isempty(saved_labels) || isempty(dat_by_cond{1}) || ~isfield(dat_by_cond{1}, 'label')
+    current_labels = {};
+    for c = 1:nCond
+        if ~isempty(dat_by_cond{c}) && isstruct(dat_by_cond{c}) && isfield(dat_by_cond{c}, 'label')
+            current_labels = dat_by_cond{c}.label;
+            break
+        end
+    end
+    if isempty(saved_labels) || isempty(current_labels)
         warning('Missing channel labels for %s. Skipping subject.', subjects{subj});
         continue;
     end
-    current_labels = dat_by_cond{1}.label;
     [labels_found, filter_order] = ismember(current_labels, saved_labels);
     if ~all(labels_found) || numel(combined_filter) ~= numel(saved_labels)
         warning('GED filter channels do not match the EEG channels for %s. Skipping subject.', subjects{subj});
