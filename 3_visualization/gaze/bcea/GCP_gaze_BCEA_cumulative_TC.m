@@ -32,7 +32,7 @@ displayWindow = [-0.5 2];
 screenW = 800;
 screenH = 600;
 blinkWin = 25;
-bceaK95 = 2.291;
+bceaK95 = 5.991;  % k = -2*ln(1-P) for P = 0.95
 minValidSamples = 30;
 outlierMadThresh = 5;     % modified z = |x-median| / (1.4826*MAD)
 outlierAbsPct = 500;      % hard cap on trial peak |% change|
@@ -300,7 +300,7 @@ rho = corr(x(:), y(:));
 if ~isfinite(rho)
     rho = 0;
 end
-val = 2 * bceaK95 * pi * sx * sy * sqrt(max(0, 1 - rho^2));
+val = bceaK95 * pi * sx * sy * sqrt(max(0, 1 - rho^2));
 end
 
 function val = bceaFromMoments(n, sumX, sumY, sumX2, sumY2, sumXY, bceaK95, minValidSamples)
@@ -321,7 +321,7 @@ if ~isfinite(rho)
     rho = 0;
 end
 rho = max(-1, min(1, rho));
-val = 2 * bceaK95 * pi * sx * sy * sqrt(max(0, 1 - rho^2));
+val = bceaK95 * pi * sx * sy * sqrt(max(0, 1 - rho^2));
 end
 
 function idx = nearestTimeIndex(time, target)

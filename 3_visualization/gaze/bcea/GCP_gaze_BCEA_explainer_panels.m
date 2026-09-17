@@ -1,6 +1,6 @@
 %% GCP BCEA Explainer Panels
 % Real 100% contrast gaze data with BCEA95 ellipses
-% (Mahalanobis radius sqrt(2*k) with k = 2.291; same as GCP_gaze_fex).
+% (Mahalanobis radius sqrt(k) with k = 5.991; same as GCP_gaze_fex).
 % Figure 1 (1 x 3): 1 trial / 10 trials / all valid trials for one subject.
 % Figure 2 (2 x 5): one randomly chosen trial per included subject.
 % Stimulus window [0 2] s.
@@ -21,8 +21,8 @@ minValidSamples = 100;
 nTrialsMid = 10;
 condVar = 'dataET_c100';
 condValue = 100;
-bceaK95 = 2.291;  % same as GCP_gaze_fex / BCEA_ellipses
-bceaRadius = sqrt(2 * bceaK95);  % Mahalanobis radius ~2.14 SD
+bceaK95 = 5.991;  % same as GCP_gaze_fex / BCEA_ellipses (95%)
+bceaRadius = sqrt(bceaK95);  % Mahalanobis radius for 95% ellipse
 
 fontSize = 40;
 lineW = 2;

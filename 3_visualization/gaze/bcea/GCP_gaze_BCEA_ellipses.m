@@ -1,18 +1,15 @@
 %% GCP Gaze BCEA Ellipses
 % Computes one gaze dispersion estimate per participant and condition.
 % Group mean BCEA95 ellipses are saved for full / early / late stimulus windows
-% (consumed by GCP_assemble_manuscript_figures.m Figure 5).
+% (consumed by GCP_assemble_manuscript_figures.m Figure 6).
 % Figure 2: single-subject BCEA95 ellipses for the full window only.
-% (Mahalanobis radius sqrt(2*k) with k = 2.291, ~2.14 SD)
+% (Mahalanobis radius sqrt(k) with k = 5.991 for 95% coverage)
 
 %% Setup
 startup
 [subjects, paths, colors, ~] = setup('GCP', 0);
 subjects = gcp_subject_inclusion(subjects, paths);
 figpath = fullfile(paths.figures, 'gaze', 'bcea');
-if ~exist(figpath, 'dir')
-    mkdir(figpath);
-end
 
 %% Settings
 condVars = {'dataET_c25', 'dataET_c50', 'dataET_c75', 'dataET_c100'};
@@ -25,8 +22,8 @@ baselineWindow = [-1.5 -0.5];
 screenW = 800;
 screenH = 600;
 blinkWin = 25;
-bceaK95 = 2.291;
-bceaRadius = sqrt(2 * bceaK95);  % ~2.14 SD for k = 2.291 (Mahalanobis radius)
+bceaK95 = 5.991;  % k = -2*ln(1-P) for P = 0.95
+bceaRadius = sqrt(bceaK95);  % Mahalanobis radius for 95% ellipse
 
 fontSize = 40;
 lineW = 2;
@@ -48,7 +45,7 @@ nValidBase = zeros(nSubj, nCond);
 
 fprintf('\n[VIZ GAZE BCEA] Participant and condition estimates\n');
 fprintf('[VIZ GAZE BCEA] Baseline window: %.2f to %.2f s\n', baselineWindow);
-fprintf('[VIZ GAZE BCEA] BCEA95 formula: 2 x %.3f x pi x sqrt(det(covariance))\n', bceaK95);
+fprintf('[VIZ GAZE BCEA] BCEA95 formula: %.3f x pi x sqrt(det(covariance))\n', bceaK95);
 
 for subj = 1:nSubj
     gazePath = fullfile(paths.features, subjects{subj}, 'gaze');
@@ -64,7 +61,7 @@ for subj = 1:nSubj
             dat.(condVars{c}), baselineWindow, screenW, screenH, blinkWin);
         nValidBase(subj, c) = nBase;
         if all(isfinite(thisCovBase), 'all') && det(thisCovBase) >= 0
-            bceaBase(subj, c) = 2 * bceaK95 * pi * sqrt(det(thisCovBase));
+            bceaBase(subj, c) = bceaK95 * pi * sqrt(det(thisCovBase));
         end
 
         for iWin = 1:nWin
@@ -75,7 +72,7 @@ for subj = 1:nSubj
             covStim(:, :, subj, c, iWin) = thisCovStim;
             nValidStim(subj, c, iWin) = nStim;
             if all(isfinite(thisCovStim), 'all') && det(thisCovStim) >= 0
-                bceaStim(subj, c, iWin) = 2 * bceaK95 * pi * sqrt(det(thisCovStim));
+                bceaStim(subj, c, iWin) = bceaK95 * pi * sqrt(det(thisCovStim));
             end
         end
     end
@@ -164,7 +161,7 @@ for iWin = 1:nWin
         end
         groupCentroid(c, :) = squeeze(mean(centroidStim(validSubj, c, :, iWin), 1, 'omitnan'));
         groupCov(:, :, c) = mean(covStim(:, :, validSubj, c, iWin), 3, 'omitnan');
-        areaBCEA95(c) = 2 * bceaK95 * pi * sqrt(max(det(groupCov(:, :, c)), 0));
+        areaBCEA95(c) = bceaK95 * pi * sqrt(max(det(groupCov(:, :, c)), 0));
     end
 
     close all
@@ -215,7 +212,7 @@ for iWin = 1:nWin
     % Top-left screen overview inset inside the visible plot box
     drawnow;
     axMain.Units = 'normalized';
-    pos = [0.15 0.25 0.77 0.82];
+    pos = [0.15 0.2 0.77 0.82];
     dataAsp = diff(xlimMain) / diff(ylimMain);
     axAsp = pos(3) / pos(4);
     if axAsp > dataAsp
@@ -410,7 +407,7 @@ fprintf('[VIZ GAZE BCEA] Saved figure: %s\n', outFigureSubj);
 fprintf('[VIZ GAZE BCEA] Saved LMM table: %s\n', csvPath);
 fprintf('[VIZ GAZE BCEA] Valid participant estimates by condition (full): %s\n', ...
     mat2str(sum(isfinite(bceaStim(:, :, iFull)), 1)));
-fprintf('[VIZ GAZE BCEA] BCEA95 Mahalanobis radius: %.3f SD (neither 2 nor 3)\n', bceaRadius);
+fprintf('[VIZ GAZE BCEA] BCEA95 Mahalanobis radius: %.3f (sqrt(k), k = %.3f)\n', bceaRadius, bceaK95);
 fprintf('[VIZ GAZE BCEA] Median BCEA95 by condition [px^2]: %s\n', ...
     mat2str(median(bceaStim(:, :, iFull), 1, 'omitnan'), 5));
 fprintf('[VIZ GAZE BCEA] Median BCEA_bl by condition [%%]: %s\n', ...

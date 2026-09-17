@@ -1,7 +1,7 @@
 %% GCP Gaze Feature Extraction
 %
 % Extracted features:
-%   BCEA (Bivariate Contour Ellipse Area, k=2.291, 95%)
+%   BCEA (Bivariate Contour Ellipse Area, k=5.991, 95%)
 %   BCEA_Direction (polar angle of gaze centroid vs fixation [400 300];
 %                   deg; 0 = right, 90 = up; y flipped screen coords)
 %   BCEA_Eccentricity (|centroid - fixation| in dva; ppd = 50)
@@ -223,7 +223,7 @@ for subj = 1:numel(subjects)
             else
                 rho_bl = 0;
             end
-            baseline_bcea_val = 2 * 2.291 * pi * baseline_std_x * baseline_std_y * sqrt(1 - rho_bl^2);
+            baseline_bcea_val = 5.991 * pi * baseline_std_x * baseline_std_y * sqrt(1 - rho_bl^2);
             baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
             [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
 
@@ -276,7 +276,7 @@ for subj = 1:numel(subjects)
             else
                 rho_an = 0;
             end
-            bcea_val    = 2 * 2.291 * pi * std_x * std_y * sqrt(1 - rho_an^2);
+            bcea_val    = 5.991 * pi * std_x * std_y * sqrt(1 - rho_an^2);
             bcea_early_val = bcea_in_window(raw, tVec, analysis_early, win_size);
             bcea_late_val  = bcea_in_window(raw, tVec, analysis_late, win_size);
             bcea_dir_val = bcea_direction_from_xy(x, y, fixX, fixY);
@@ -1136,7 +1136,7 @@ if numel(x) < 3
 end
 sx = nanstd(x); sy = nanstd(y);
 rho = corr(x(:), y(:));
-val = 2 * 2.291 * pi * sx * sy * sqrt(1 - rho^2);
+val = 5.991 * pi * sx * sy * sqrt(1 - rho^2);
 end
 
 function theta = bcea_direction_from_xy(x, y, fixX, fixY)
