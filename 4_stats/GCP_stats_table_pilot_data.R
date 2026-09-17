@@ -2,6 +2,7 @@
 # Pilot descriptive statistics table (Gaze + EEG).
 # Loads GCP_merged_data.csv (Include == 1), computes Mdn (MAD) by contrast,
 # and writes CSV + Word table with AOC-matched flextable aesthetics.
+# Hierarchy: section -> measure (full stimulus window 0-2000 ms only).
 # MAD uses stats::mad() default constant (1.4826).
 
 suppressPackageStartupMessages({
@@ -30,6 +31,7 @@ FONT_SIZE <- 6
 RULE_WIDTH <- 0.75
 LINE_SPACING <- 0.75
 ROW_HEIGHT_IN <- 0.14
+PAD_MEASURE_IN <- 12
 
 ## Measure specs -----------------------------------------------------------
 
@@ -59,6 +61,18 @@ measure_specs <- data.frame(
 )
 
 ## Helpers -----------------------------------------------------------------
+
+empty_contrast_row <- function(measure_label) {
+  data.frame(
+    Measure = measure_label,
+    `25%` = "",
+    `50%` = "",
+    `75%` = "",
+    `100%` = "",
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+}
 
 fmt_mdn_mad <- function(mdn_val, mad_val, digits = 2L) {
   if (!is.finite(mdn_val) || !is.finite(mad_val)) {
@@ -130,7 +144,8 @@ if (nrow(dat) == 0) {
 n_subj <- length(unique(dat$ID))
 message(sprintf("[GCP PILOT TABLE] Include == 1: N = %d subjects, %d rows", n_subj, nrow(dat)))
 
-missing_cols <- setdiff(measure_specs$column, names(dat))
+needed_cols <- unique(measure_specs$column)
+missing_cols <- setdiff(needed_cols, names(dat))
 if (length(missing_cols) > 0) {
   stop("Missing measure columns: ", paste(missing_cols, collapse = ", "))
 }
@@ -143,22 +158,15 @@ row_i <- 0L
 
 for (sec in unique(measure_specs$section)) {
   row_i <- row_i + 1L
-  wide_rows[[row_i]] <- data.frame(
-    Measure = sec,
-    `25%` = "",
-    `50%` = "",
-    `75%` = "",
-    `100%` = "",
-    stringsAsFactors = FALSE,
-    check.names = FALSE
-  )
-  attr(wide_rows[[row_i]], "is_section") <- TRUE
+  wide_rows[[row_i]] <- empty_contrast_row(sec)
+  attr(wide_rows[[row_i]], "row_type") <- "section"
 
   specs_sec <- measure_specs[measure_specs$section == sec, , drop = FALSE]
   for (r in seq_len(nrow(specs_sec))) {
     col_name <- specs_sec$column[r]
     lab <- specs_sec$label[r]
     digits <- specs_sec$digits[r]
+
     formatted <- character(length(cond_levels))
     names(formatted) <- cond_labels
 
@@ -172,6 +180,7 @@ for (sec in unique(measure_specs$section)) {
       tidy_rows[[length(tidy_rows) + 1L]] <- data.frame(
         Section = sec,
         Measure = lab,
+        Window = "Full Window (0-2000 ms)",
         Column = col_name,
         Condition = cond_map[[as.character(cond)]],
         ConditionCode = cond,
@@ -193,14 +202,15 @@ for (sec in unique(measure_specs$section)) {
       stringsAsFactors = FALSE,
       check.names = FALSE
     )
-    attr(wide_rows[[row_i]], "is_section") <- FALSE
+    attr(wide_rows[[row_i]], "row_type") <- "measure"
   }
 }
 
 tidy_tbl <- do.call(rbind, tidy_rows)
 wide_tbl <- do.call(rbind, wide_rows)
-section_idx <- which(vapply(wide_rows, function(x) isTRUE(attr(x, "is_section")), logical(1)))
-measure_idx <- setdiff(seq_len(nrow(wide_tbl)), section_idx)
+row_types <- vapply(wide_rows, function(x) attr(x, "row_type"), character(1))
+section_idx <- which(row_types == "section")
+measure_idx <- which(row_types == "measure")
 
 ## Write CSV ---------------------------------------------------------------
 
@@ -224,14 +234,15 @@ ft <- add_header_row(
   values = c("", "25%", "50%", "75%", "100%"),
   top = TRUE
 )
-ft <- style_summary_ft(ft, col_widths = c(2.6, 0.975, 0.975, 0.975, 0.975))
+ft <- style_summary_ft(ft, col_widths = c(2.8, 0.925, 0.925, 0.925, 0.925))
 ft <- add_contrast_header_rule(ft, title_row = 1L, j_contrast = 2:5)
 
 if (length(section_idx) > 0) {
   ft <- bold(ft, i = section_idx, j = 1, part = "body")
 }
 if (length(measure_idx) > 0) {
-  ft <- padding(ft, i = measure_idx, j = 1, padding.left = 12, part = "body")
+  ft <- bold(ft, i = measure_idx, j = 1, part = "body")
+  ft <- padding(ft, i = measure_idx, j = 1, padding.left = PAD_MEASURE_IN, part = "body")
 }
 
 ## Write Word --------------------------------------------------------------
@@ -246,7 +257,10 @@ doc <- body_add_fpar(
   fpar(
     ftext("Note. ", fp_text(bold = TRUE, font.size = FONT_SIZE)),
     ftext(
-      "Values are median (Mdn) and median absolute deviation (MAD) across participants.",
+      paste(
+        "Values are median (Mdn) and median absolute deviation (MAD) across participants.",
+        "All measures are from the full stimulus window (0-2000 ms)."
+      ),
       fp_text(font.size = FONT_SIZE)
     )
   )
