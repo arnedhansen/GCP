@@ -30,21 +30,19 @@ Automagic-preprocessed EEG is merged with the corresponding ET files using `GCP_
 
 `GCP_behavioral_fex.m` extracts accuracy and reaction time per trial and per subject-condition mean. Outputs: `behavioral_matrix_trial.mat`, `behavioral_matrix_subj.mat`, and group-level `GCP_behavioral_matrix.mat`.
 
-`GCP_gaze_fex.m` extracts BCEA (k = 2.291, 95%), pupil size, microsaccade rate, eye velocity, and EyeLink event counts. Baselined (% change) scalars use suffix `_bl` (`MSRate_bl`, `BCEA_bl`, …) with `_bl_early` / `_bl_late` for [0, 1] and [1, 2] s. Subject×condition confirmatory scalars are the mean of trial-level percentage change for microsaccades, BCEA, pupil, and velocity. Group file: `GCP_gaze_window_summaries.mat`.
+`GCP_gaze_fex.m` extracts BCEA (k = 5.991, 95%), pupil size, microsaccade rate, eye velocity, and EyeLink event counts. Baselined (% change) scalars use suffix `_bl` (`MSRate_bl`, `BCEA_bl`, …) with `_bl_early` / `_bl_late` for [0, 1] and [1, 2] s. Subject×condition confirmatory scalars are the mean of trial-level percentage change for microsaccades, BCEA, pupil, and velocity. Group file: `GCP_gaze_window_summaries.mat`.
 
 `GCP_eeg_fex_GED.m` is the primary EEG analysis. Per subject, trials are pooled across conditions and gamma-band (30–90 Hz) covariances are computed for baseline [-1.5, -0.5] s and three stimulus windows (full [0, 2] s, early [0, 0.5] s, late [1, 2] s). Window-specific generalized eigendecomposition (GED) is solved with regularization; candidate components are ranked by eigenvalue and scored on occipital topography, spectral form, and artifact metrics. An eigenvalue-weighted combined component is built per subject. Each trial is projected to this component space and scanned on a 30–90 Hz grid (mtmfft, 3 Hz multitaper smoothing). Per-trial peak gamma frequency and peak power (mean power within peak ± 5 Hz) are extracted; unstable trials are flagged automatically. Outputs: `GCP_eeg_GED.mat` (trial-level and subject-level metrics, component diagnostics, outlier masks) and `GCP_eeg_powspctrm_GED.mat` (FieldTrip freq structs for grand-average spectra). Subject inclusion for downstream GED analyses is written to `controls/GCP_subject_inclusion.mat` (subjects with valid gamma power). When `do_tfr` is true in that script, GED-projected baseline-corrected TFRs (30–90 Hz) are also written to `GCP_eeg_GED_TFR.mat`.
 
-`GCP_master_matrix.m` merges subject-level behavioral, gaze, and GED tables into `GCP_merged_data.mat` / `.csv`. GED columns use median peak frequency and robust mean peak power from `GCP_eeg_GED.mat`.
+`GCP_master_matrix.m` merges subject-level behavioral, gaze, and GED tables into `GCP_merged_data.mat` / `.csv` (Include flag from `GCP_subject_inclusion.mat`). GED columns use condition-averaged full-window peak frequency and peak power from `GCP_eeg_GED.mat`.
 
-`GCP_master_matrix_trials.m` merges trial-level behavioral, gaze, and GED tables into `GCP_merged_data_trials.mat` / `.csv`. Both master matrices attach the `Include` flag from `GCP_subject_inclusion.mat`.
-
-**Run order:** `4_preprocessing` → behavioral → gaze → GED → master matrices. The trial-level CSV is the input for the Python raincloud script.
+**Run order:** `4_preprocessing` → behavioral → gaze → GED → master matrix.
 
 ## 3_visualization
 
 **Behavioral:** Accuracy by condition (`behavioral/GCP_behav.m`).
 
-**EEG (GED):** Grand-average and single-subject GED power spectra (`eeg/powspctrm/GCP_eeg_powspctrm_GED.m`); GED-projected TFRs and 100% − 25% difference maps (`eeg/tfr/GCP_TFR_GED.m`); pooled trial-level boxplots for gamma peak frequency and peak power (`eeg/GCP_eeg_GED_trial_boxplots.m`).
+**EEG (GED):** Grand-average and single-subject GED power spectra (`eeg/powspctrm/GCP_eeg_powspctrm_GED.m`); GED-projected TFRs with pairwise CBPT cluster outlines (`eeg/tfr/GCP_TFR_GED.m`; 2×2 GA, 100% vs 25%, and all six pairwise difference maps); pooled trial-level boxplots for gamma peak frequency and peak power (`eeg/GCP_eeg_GED_trial_boxplots.m`).
 
 **Gaze:** Baseline-normalized time courses with SEM shading for microsaccades (`gaze/microsaccades/GCP_gaze_microsaccades_TC.m`), pupil size (`gaze/pupilSize/GCP_gaze_pupilSize_TC.m`), eye velocity (`gaze/velocity/GCP_gaze_velocity_TC.m`), and fixation rate reconstructed from EyeLink fixation onsets (`gaze/fixations/GCP_gaze_fixations_TC.m`). Microsaccade, pupil, and velocity plots read dB-baselined time courses saved by `GCP_gaze_fex.m`.
 
@@ -58,19 +56,18 @@ All visualization scripts read from `data/features/` and write figures to `figur
 
 `GCP_stats_overview.m` loads `GCP_merged_data.mat` and produces a multi-panel overview of all numeric variables by contrast condition. `GCP_stats_boxplots.m` loads precomputed full/early/late subject×condition scalars from `GCP_eeg_GED.mat` and `GCP_gaze_window_summaries.mat` (no window recomputation). Output: `figures/stats/boxplots/`.
 
-### Hypothesis testing (MATLAB)
+### Confirmatory LMMs (Python)
 
-`GCP_hypotheses_trials.m` tests registered hypotheses on trial-level data with raincloud-style plots:
+`GCP_stats_lmm.py` fits full-window subject×contrast MixedLM models on `GCP_merged_data.csv` (`Include == 1`):
 
-- **Oculomotor (gaze):** H1 microsaccade rate decreases with contrast; H2 eye velocity increases with contrast; H3 pupil constriction amplitude increases with contrast; H4 BCEA increases with contrast.
-- **Gamma (GED):** H5 gamma peak frequency increases with contrast; H6 gamma peak amplitude peaks at 75% contrast (inverted U).
-- **Cross-modal:** H7 gamma frequency relates to oculomotor dynamics (subject-level means, since gaze and EEG trials are not matched trial-by-trial).
+- **Primary:** continuous linear contrast slope (`contrast_num_c`) for pupil, microsaccade rate, BCEA, eye velocity (Vel2D), gamma peak power, and gamma peak frequency.
+- **Follow-up:** categorical MixedLM with all six pairwise contrasts, FDR-BH within each DV.
 
-Trial outliers are excluded data-driven (median ± 3 MAD per variable).
+Writes AOC-style CSVs under `data/stats/` (`GCP_mixedlm_slope.csv`, `GCP_pairwise_mixedlm.csv`, per-DV fixed tables).
 
 ### Rainclouds (Python)
 
-`GCP_stats_rainclouds.py` produces trial-level raincloud figures (half-kernel densities, boxplots, jittered trials) for gamma peak frequency, gamma peak power, microsaccade rate (dB), pupil size (dB), gaze velocity Y (dB), and reaction time. GED trial metrics are reconstructed from `GCP_eeg_GED.mat` (same peak-power definition as the MATLAB pipeline). Inputs: `GCP_merged_data_trials.csv` and `GCP_eeg_GED.mat`. Optional MixedLM significance brackets are available but off by default. Python helpers (`stats_helpers`, `rainclouds_plotting_helpers`) come from [github.com/arnedhansen/functions](https://github.com/arnedhansen/functions). Adapt `base_dir` and input paths in the script to your setup.
+`GCP_stats_rainclouds.py` plots subject-level full-window rainclouds for the same confirmatory DVs. FDR pairwise asterisks annotate the figures; the primary slope is printed to the console. Prefers pairwise p-values from `GCP_stats_lmm.py` output when available. Python helpers (`stats_helpers`, `rainclouds_plotting_helpers`) come from [github.com/arnedhansen/functions](https://github.com/arnedhansen/functions).
 
 ## Additional Files
 
