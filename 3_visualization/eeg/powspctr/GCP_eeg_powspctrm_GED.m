@@ -1,6 +1,6 @@
 %% GCP GED Power Spectrum Visualizations
-% Grand-average and single-subject condition spectra for the full
-% stimulus window (0-2000 ms). Panel PNG names are consumed by
+% Grand-average and single-subject condition spectra for the
+% stimulus interval (0-2000 ms). Panel PNG names are consumed by
 % GCP_assemble_manuscript_figures.m (Figure 8; Supplementary S2a-c).
 
 %% Setup
@@ -22,35 +22,25 @@ condLabels = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast
 nCond = numel(condLabels);
 fontSize = 50;
 
-windows = { ...
-    'full',  'freq_powspctrm_full_unsmoothed',  'all_condition_peak_freq_full',  ''};
-
-for iWin = 1:size(windows, 1)
-    winTag = windows{iWin, 1};
-    freqField = windows{iWin, 2};
-    peakField = windows{iWin, 3};
-    nameSuffix = windows{iWin, 4};
-
-    if ~isfield(dat, freqField)
-        error('GCP_eeg_powspctrm_GED:MissingField', ...
-            ['Field %s is missing from %s. Re-run GCP_eeg_fex_GED.m so ' ...
-            'full-window freq spectra are saved.'], freqField, data_path);
-    end
-    freqCell = dat.(freqField);
-    if isfield(dat, peakField)
-        peak_hz = dat.(peakField);
-    else
-        peak_hz = nan(nCond, size(freqCell, 2));
-    end
-
-    fprintf('[VIZ EEG POWSPCTRM] Window %s\n', winTag);
-    plotGrandAverageSpectrum(freqCell, subj_idx, condLabels, colors, ...
-        analysis_freq_range, fontSize, ...
-        fullfile(fig_dir, sprintf('GCP_eeg_GED_powspctrm_grand_average%s.png', nameSuffix)));
-    plotSubjectOverviewSpectra(freqCell, peak_hz, subjects, subj_idx, ...
-        condLabels, colors, scan_freqs, analysis_freq_range, nCond, ...
-        fullfile(fig_dir, sprintf('GCP_eeg_GED_powspctrm_overview_subjects%s.png', nameSuffix)));
+if ~isfield(dat, 'freq_powspctrm_unsmoothed')
+    error('GCP_eeg_powspctrm_GED:MissingField', ...
+        ['Field freq_powspctrm_unsmoothed is missing from %s. Re-run GCP_eeg_fex_GED.m so ' ...
+        'GED freq spectra are saved.'], data_path);
 end
+freqCell = dat.freq_powspctrm_unsmoothed;
+if isfield(dat, 'all_condition_peak_freq')
+    peak_hz = dat.all_condition_peak_freq;
+else
+    peak_hz = nan(nCond, size(freqCell, 2));
+end
+
+fprintf('[VIZ EEG POWSPCTRM] GED spectra\n');
+plotGrandAverageSpectrum(freqCell, subj_idx, condLabels, colors, ...
+    analysis_freq_range, fontSize, ...
+    fullfile(fig_dir, 'GCP_eeg_GED_powspctrm_grand_average.png'));
+plotSubjectOverviewSpectra(freqCell, peak_hz, subjects, subj_idx, ...
+    condLabels, colors, scan_freqs, analysis_freq_range, nCond, ...
+    fullfile(fig_dir, 'GCP_eeg_GED_powspctrm_overview_subjects.png'));
 
 disp(datestr(now))
 

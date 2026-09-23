@@ -323,6 +323,9 @@ if ~isfield(S, 'saves') || ~isfield(S.saves, 'data')
     error('GCP_preprocessing:BehavFormat', 'No saves.data in %s', behav_file);
 end
 D = S.saves.data;
+if ~isfield(D, 'whiteCross') && isfield(D, 'redCross')
+    D.whiteCross = D.redCross;
+end
 need = {'whiteCross', 'fixation', 'grating'};
 for k = 1:numel(need)
     if ~isfield(D, need{k})

@@ -1,25 +1,24 @@
-function plot_subjects_combined_topo_spectra_windows_grid( ...
+function plot_subjects_combined_topo_spectra_grid( ...
     save_dir, subjects, subject_idx, scan_freqs, analysis_freq_range, cfg_topo, ...
-    all_topo_labels, all_topos_full, all_combined_spectrum_full, file_tag)
-% Grid overview of combined GED topographies and spectra (full window).
-% Rows: subjects in subject_idx.
+    all_topo_labels, all_topos, all_combined_spectrum, file_tag)
+% Grid overview of combined GED topographies and spectra.
+% Rows: subjects in subject_idx. Topography left, spectrum right.
 if nargin < 10 || isempty(file_tag)
     file_tag = 'batch';
 end
 
 n_rows = numel(subject_idx);
-n_cols = 1;
 fig = figure('Position', [0 0 1512 982], 'Color', 'w');
 left_m = 0.04;
-right_m = 0.99;
-bottom_m = 0.04;
-top_m = 0.96;
-gap_x = 0.03;
+right_m = 0.98;
+bottom_m = 0.05;
+top_m = 0.97;
 gap_y = 0.035;
 inner_gap = 0.012;
-topo_frac = 0.55;
-cell_w = (right_m - left_m - (n_cols - 1) * gap_x) / n_cols;
+topo_w = 0.13;
 cell_h = (top_m - bottom_m - (n_rows - 1) * gap_y) / n_rows;
+spec_x = left_m + topo_w + inner_gap;
+spec_w = right_m - spec_x;
 
 for ri = 1:n_rows
     subj = subject_idx(ri);
@@ -32,28 +31,22 @@ for ri = 1:n_rows
     end
     subj_title = sprintf('Participant %s', subjects{subj});
     y0 = bottom_m + (n_rows - ri) * (cell_h + gap_y);
-    x0 = left_m;
-    h_spec = cell_h * (1 - topo_frac) - inner_gap / 2;
-    h_topo = cell_h * topo_frac - inner_gap / 2;
 
     topo_vec = [];
     spec_vec = [];
-    if numel(all_topos_full) >= subj
-        topo_vec = all_topos_full{subj};
+    if numel(all_topos) >= subj
+        topo_vec = all_topos{subj};
     end
-    if numel(all_combined_spectrum_full) >= subj
-        spec_vec = all_combined_spectrum_full{subj};
+    if numel(all_combined_spectrum) >= subj
+        spec_vec = all_combined_spectrum{subj};
     end
     has_component = ~(isempty(topo_vec) || isempty(topo_labels) || ...
         all(~isfinite(topo_vec(:))) || isempty(spec_vec) || ...
         all(~isfinite(spec_vec(:))));
 
-    axes('Position', [x0, y0 + h_spec + inner_gap, cell_w, h_topo]);
+    axes('Position', [left_m, y0, topo_w, cell_h]);
     if ~has_component
         axis off;
-        text(0.5, 0.5, 'NO ELIGIBLE GED COMPONENT', ...
-            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-            'FontSize', 9, 'FontWeight', 'bold', 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
     else
         topo_data = [];
         topo_data.label = topo_labels;
@@ -73,16 +66,18 @@ for ri = 1:n_rows
             caxis([-topo_clim topo_clim]);
         end
     end
-    set(gca, 'FontSize', 7);
-    title(sprintf('%s | FULL', subj_title), ...
-        'FontSize', 11, 'FontWeight', 'bold', 'Interpreter', 'none');
+    set(gca, 'FontSize', 8);
+    title(subj_title, 'FontSize', 12, 'FontWeight', 'bold', 'Interpreter', 'none');
 
-    axes('Position', [x0, y0, cell_w, h_spec]);
+    axes('Position', [spec_x, y0, spec_w, cell_h]);
     hold on;
     if ~has_component
         axis off;
+        text(0.5, 0.5, 'NO ELIGIBLE GED COMPONENT', ...
+            'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+            'FontSize', 12, 'FontWeight', 'bold', 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
     else
-        plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 1.25);
+        plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 1.6);
         xlim([analysis_freq_range(1) analysis_freq_range(2)]);
         spec_finite = spec_vec(isfinite(spec_vec));
         if ~isempty(spec_finite)
@@ -94,16 +89,16 @@ for ri = 1:n_rows
             end
         end
         format_power_change_db_axis(gca);
-        ylabel('Power [dB]', 'FontSize', 7);
+        ylabel('Power [dB]', 'FontSize', 9);
         if ri == n_rows
-            xlabel('Frequency [Hz]', 'FontSize', 7);
+            xlabel('Frequency [Hz]', 'FontSize', 9);
         end
         box on;
-        set(gca, 'FontSize', 7);
+        set(gca, 'FontSize', 9);
     end
 end
 
-outName = sprintf('GCP_eeg_GED_components_windows_subjects_%s.png', file_tag);
+outName = sprintf('GCP_eeg_GED_components_subjects_%s.png', file_tag);
 save_figure_png(fig, fullfile(save_dir, outName));
 close(fig);
 end

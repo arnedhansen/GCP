@@ -1,12 +1,9 @@
-function plot_all_subjects_full_combined_topo_spectra( ...
+function plot_all_subjects_combined_topo_spectra( ...
     save_dir, subjects, scan_freqs, analysis_freq_range, cfg_topo, ...
-    all_topo_labels, all_topos, all_combined_spectrum, all_combined_eigenvalue, window_tag)
-% Group overview of combined GED topographies and spectra for one analysis window.
+    all_topo_labels, all_topos, all_combined_spectrum, all_combined_eigenvalue)
+% Group overview of combined GED topographies and spectra.
 % Electrodes used in further analyses (occipital region) are marked on the topoplots.
 % all_combined_eigenvalue is accepted for call-site compatibility and unused here.
-if nargin < 10 || isempty(window_tag)
-    window_tag = 'full';
-end
 if nargin >= 9 && ~isempty(all_combined_eigenvalue)
     % Kept so existing call signatures remain valid.
 end
@@ -16,8 +13,8 @@ n_cols = 5;
 n_slots = n_rows * n_cols;
 if nSubj > n_slots
     warning('GED:AllSubjectsOverview', ...
-        'More than %d subjects; only the first %d are shown in the %s overview figure.', ...
-        n_slots, n_slots, upper(window_tag));
+        'More than %d subjects; only the first %d are shown in the overview figure.', ...
+        n_slots, n_slots);
 end
 n_plot = min(nSubj, n_slots);
 
@@ -105,7 +102,6 @@ for subj = 1:n_plot
     end
 end
 
-outName = sprintf('GCP_eeg_GED_components_%s_allsubjects.png', window_tag);
-save_figure_png(fig, fullfile(save_dir, outName));
+save_figure_png(fig, fullfile(save_dir, 'GCP_eeg_GED_components_allsubjects.png'));
 close(fig);
 end

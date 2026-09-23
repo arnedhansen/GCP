@@ -1,7 +1,7 @@
-%% GCP Stats Boxplots (Full Window)
+%% GCP Stats Boxplots
 %
 % Subject-level boxplots across contrast for gamma and gaze metrics.
-% Window: full stimulus interval (0-2 s).
+% Stimulus interval: 0-2 s.
 %
 % Metrics:
 %   Frequency, Power  (GED peaks from condition-averaged spectra)
@@ -9,7 +9,7 @@
 %   Blinks_bl, Fixations_bl, Saccades_bl
 %
 % Data (precomputed; no window recomputation here):
-%   GCP_eeg_GED.mat  (all_condition_peak_freq/power_full)
+%   GCP_eeg_GED.mat  (all_condition_peak_freq/power)
 %   GCP_gaze_window_summaries.mat  (from GCP_gaze_fex.m)
 %
 % Output: figures/stats/boxplots/
@@ -41,14 +41,14 @@ boxWidth       = 0.55;
 
 %% Load gamma data
 ged = load(fullfile(paths.features, 'GCP_eeg_GED.mat'), ...
-    'all_condition_peak_freq_full', ...
-    'all_condition_peak_power_full', ...
+    'all_condition_peak_freq', ...
+    'all_condition_peak_power', ...
     'subjects');
 ged_idx = match_subjects(ged.subjects, subjects);
 
 gamma = struct();
-gamma.Frequency.full  = pick_matrix(ged.all_condition_peak_freq_full, ged_idx);
-gamma.Power.full      = pick_matrix(ged.all_condition_peak_power_full, ged_idx);
+gamma.Frequency.full  = pick_matrix(ged.all_condition_peak_freq, ged_idx);
+gamma.Power.full      = pick_matrix(ged.all_condition_peak_power, ged_idx);
 
 %% Gaze
 gazePath = fullfile(paths.features, 'GCP_gaze_window_summaries.mat');

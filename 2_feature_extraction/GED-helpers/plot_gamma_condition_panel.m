@@ -1,4 +1,4 @@
-function plot_gamma_window_panel(dat, condLabels, colors, nSubj)
+function plot_gamma_condition_panel(dat, condLabels, colors, nSubj)
 % Contrast panel with subject traces, scatter, median, and MAD error bars.
 med = nanmedian(dat, 2);
 madv = nan(4, 1);

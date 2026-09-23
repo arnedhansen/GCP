@@ -87,7 +87,7 @@ fig4.panels = {
         '', '')
     };
 
-%% Figure 5: Power Spectrum (full window)
+%% Figure 5: Power Spectrum
 fig5 = figureSpec('Figure5_powspctrm', 1, 1, [0 0 1512 982]);
 fig5.titleFontSize = titleFontSize;
 fig5.overallTitle = 'Power Spectrum';
@@ -122,17 +122,17 @@ fig7.panels = {
         '', '')
     };
 
-%% Supplementary Figure S1: Combined GED components (full window)
+%% Supplementary Figure S1: Combined GED components
 figS1 = figureSpec('FigureS1_ged_components', 1, 1, [0 0 1512 982]);
 figS1.titleFontSize = titleFontSize;
 figS1.titleGap = 0.05;
 figS1.panels = {
     panelSpec(fullfile(eegDir, 'ged', 'component_selection', ...
-        'GCP_eeg_GED_components_full_allsubjects.png'), ...
+        'GCP_eeg_GED_components_allsubjects.png'), ...
         '', 'Combined GED Components')
     };
 
-%% Supplementary Figure S2: Single participant power spectra (full window)
+%% Supplementary Figure S2: Single participant power spectra
 figS2 = figureSpec('FigureS2_powspctrm_subjects', 1, 1, [0 0 1512 982]);
 figS2.titleFontSize = titleFontSize;
 figS2.titleGap = 0.005;

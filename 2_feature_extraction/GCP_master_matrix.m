@@ -195,11 +195,11 @@ if ~isfile(ged_path)
 end
 
 dat = load(ged_path, ...
-    'all_condition_peak_freq_full', 'all_condition_peak_power_full', ...
+    'all_condition_peak_freq', 'all_condition_peak_power', ...
     'subjects');
 
-freq_full  = pick_first_numeric_matrix(dat, {'all_condition_peak_freq_full'});
-pow_full   = pick_first_numeric_matrix(dat, {'all_condition_peak_power_full'});
+freq_mat  = pick_first_numeric_matrix(dat, {'all_condition_peak_freq'});
+pow_mat   = pick_first_numeric_matrix(dat, {'all_condition_peak_power'});
 
 if isfield(dat, 'subjects') && ~isempty(dat.subjects)
     ged_subjects = dat.subjects;
@@ -207,7 +207,7 @@ else
     ged_subjects = subjects;
 end
 
-tbl_ged = build_ged_table_from_arrays(pow_full, freq_full, ged_subjects);
+tbl_ged = build_ged_table_from_arrays(pow_mat, freq_mat, ged_subjects);
 
 % Keep only key GED fields expected in downstream stats
 if ~isempty(tbl_ged)
@@ -219,10 +219,10 @@ if ~isempty(tbl_ged)
 end
 end
 
-function tbl = build_ged_table_from_arrays(pow_full, freq_full, subjects)
+function tbl = build_ged_table_from_arrays(pow_mat, freq_mat, subjects)
 tbl = table();
 
-mats = {pow_full, freq_full};
+mats = {pow_mat, freq_mat};
 if all(cellfun(@isempty, mats))
     return
 end
@@ -247,8 +247,8 @@ for s = 1:nSubj
         row = row + 1;
         ID(row) = sid;
         Condition(row) = c;
-        Frequency(row) = read_cond_subj(freq_full, c, s);
-        Power(row) = read_cond_subj(pow_full, c, s);
+        Frequency(row) = read_cond_subj(freq_mat, c, s);
+        Power(row) = read_cond_subj(pow_mat, c, s);
     end
 end
 

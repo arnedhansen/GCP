@@ -1,22 +1,19 @@
-function plot_combined_topo_spectra_windows(save_dir, subject_id, scan_freqs, cfg_topo, topo_labels, ...
-    searchTopos_full, searchMeanPrSpectrum_full, selected_idx_full, w_combined_full, ...
-    analysis_freq_range, file_tag)
-% Subject figure of combined GED topo and spectrum for the full stimulus window.
-if nargin < 11 || isempty(file_tag)
-    file_tag = 'full';
-end
+function plot_combined_topo_spectra(save_dir, subject_id, scan_freqs, cfg_topo, topo_labels, ...
+    searchTopos, searchMeanPrSpectrum, selected_idx, w_combined, ...
+    analysis_freq_range)
+% Subject figure of combined GED topography and spectrum.
 fig = figure('Position', [0 0 1512 982], 'Color', 'w');
 [sel_idx, sel_w] = sanitize_selected_components( ...
-    selected_idx_full, w_combined_full, size(searchMeanPrSpectrum_full, 1));
+    selected_idx, w_combined, size(searchMeanPrSpectrum, 1));
 
 subplot(1, 2, 1);
-if isempty(sel_idx) || isempty(searchTopos_full)
+if isempty(sel_idx) || isempty(searchTopos)
     axis off;
-    text(0.5, 0.5, 'No combined components (FULL)', ...
+    text(0.5, 0.5, 'No combined components', ...
         'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
         'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
 else
-    topo_vec = searchTopos_full(:, sel_idx) * sel_w(:);
+    topo_vec = searchTopos(:, sel_idx) * sel_w(:);
     topo_data = [];
     topo_data.label = topo_labels;
     topo_data.avg = topo_vec;
@@ -34,19 +31,19 @@ else
         imagesc(topo_vec(:)); axis tight;
         caxis([-topo_clim topo_clim]); colorbar;
     end
-    title(sprintf('Combined Topography (FULL, n=%d)', numel(sel_idx)), ...
+    title(sprintf('Combined Topography (n=%d)', numel(sel_idx)), ...
         'FontSize', 11, 'Interpreter', 'none');
 end
 set(gca, 'FontSize', 10);
 
 subplot(1, 2, 2); hold on;
-if isempty(sel_idx) || isempty(searchMeanPrSpectrum_full)
+if isempty(sel_idx) || isempty(searchMeanPrSpectrum)
     axis off;
-    text(0.5, 0.5, 'No combined spectrum (FULL)', ...
+    text(0.5, 0.5, 'No combined spectrum', ...
         'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
         'FontSize', 11, 'Color', [0.7 0.1 0.1], 'Interpreter', 'none');
 else
-    spec_vec = sel_w(:)' * searchMeanPrSpectrum_full(sel_idx, :);
+    spec_vec = sel_w(:)' * searchMeanPrSpectrum(sel_idx, :);
     [pf_score, pf_peak_hz] = compute_combined_powspctrm_form_metrics( ...
         spec_vec, scan_freqs, analysis_freq_range);
     plot(scan_freqs, spec_vec, '-', 'Color', [0 0 0], 'LineWidth', 2.0);
@@ -69,13 +66,13 @@ else
         pf_score, pf_peak_hz), ...
         'Units', 'normalized', 'HorizontalAlignment', 'left', 'VerticalAlignment', 'top', ...
         'FontSize', 9, 'Interpreter', 'none', 'Color', [0.1 0.1 0.1]);
-    title('Combined Spectrum (FULL)', ...
+    title('Combined Spectrum', ...
         'FontSize', 11, 'Interpreter', 'none');
     set(gca, 'FontSize', 10);
 end
 
-sgtitle(sprintf('Combined GED Components: %s (%s)', subject_id, file_tag), ...
+sgtitle(sprintf('Combined GED Components: %s', subject_id), ...
     'FontSize', 16, 'FontWeight', 'bold', 'Interpreter', 'none');
-save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_components_combined_%s.png', subject_id, file_tag)));
+save_figure_png(fig, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_components_combined.png', subject_id)));
 close(fig);
 end

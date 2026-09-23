@@ -1,7 +1,7 @@
 %% GCP condition-specific GED topographies
 %
 % Figure 1 shows condition-specific Haufe activation patterns for the
-% combined full-window GED signal. Each subject pattern is RMS-normalized
+% combined GED signal. Each subject pattern is RMS-normalized
 % before averaging, so these maps describe spatial shape rather than power.
 %
 % Figure 2 shows 30-90 Hz stimulus-to-baseline power change after
@@ -20,7 +20,7 @@ if ~isfolder(fig_dir), mkdir(fig_dir); end
 
 ged = load(fullfile(paths.features, 'GCP_eeg_GED.mat'), ...
     'subjects', 'condLabels', 'all_topo_labels', ...
-    'all_haufe_pattern_full', 'freq_reconstructed_multicomp_full');
+    'all_haufe_pattern', 'freq_reconstructed_multicomp');
 [subject_found, subject_index] = ismember(subjects, ged.subjects);
 if ~all(subject_found)
     warning('Some included subjects are absent from GCP_eeg_GED.mat and will be omitted.');
@@ -41,7 +41,7 @@ for cond = 1:n_cond
         end
         source_index = subject_index(subj);
 
-        pattern = ged.all_haufe_pattern_full{cond, source_index};
+        pattern = ged.all_haufe_pattern{cond, source_index};
         labels = ged.all_topo_labels{source_index};
         if ~isempty(pattern) && ~isempty(labels) && numel(pattern) == numel(labels)
             pattern = double(pattern(:));
@@ -57,7 +57,7 @@ for cond = 1:n_cond
             end
         end
 
-        freq_reconstructed = ged.freq_reconstructed_multicomp_full{cond, source_index};
+        freq_reconstructed = ged.freq_reconstructed_multicomp{cond, source_index};
         if ~isempty(freq_reconstructed)
             reconstructed_subject{cond}{end + 1} = freq_reconstructed; %#ok<SAGROW>
         end

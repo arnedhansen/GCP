@@ -1,6 +1,6 @@
 function [tfr_cond_trials, tfr_cond_avg, ged_filter_meta] = compute_ged_tfr( ...
-    subjects, paths, all_combined_filter_full, all_topo_labels, ...
-    all_component_selection_stats_full, ...
+    subjects, paths, all_combined_filter, all_topo_labels, ...
+    all_component_selection_stats, ...
     baseline_window, ...
     tfr_foi, tfr_toi, tfr_win_sec, tfr_tapsmofrq, ...
     condNames, condCodes)
@@ -23,7 +23,7 @@ for subj = 1:nSubj
     E = load(subj_eeg_path, 'dataEEG_c25', 'dataEEG_c50', 'dataEEG_c75', 'dataEEG_c100');
     dat_by_cond = {E.dataEEG_c25, E.dataEEG_c50, E.dataEEG_c75, E.dataEEG_c100};
 
-    combined_filter = all_combined_filter_full{subj};
+    combined_filter = all_combined_filter{subj};
     if isempty(combined_filter)
         warning('No valid combined GED filter for %s. Skipping subject.', subjects{subj});
         continue;
@@ -47,14 +47,14 @@ for subj = 1:nSubj
     end
     combined_filter = combined_filter(filter_order);
 
-    stat_full = all_component_selection_stats_full{subj};
-    if isempty(stat_full)
-        stat_full = struct();
+    stat_sel = all_component_selection_stats{subj};
+    if isempty(stat_sel)
+        stat_sel = struct();
     end
 
     [tfr_cond_trials(:, subj), tfr_cond_avg(:, subj), ged_filter_meta{subj}] = ...
         compute_ged_tfr_subject( ...
         dat_by_cond, combined_filter, current_labels, subjects{subj}, subj, ...
-        stat_full, baseline_window, tfr_foi, tfr_toi, tfr_win_sec, tfr_tapsmofrq, condCodes);
+        stat_sel, baseline_window, tfr_foi, tfr_toi, tfr_win_sec, tfr_tapsmofrq, condCodes);
 end
 end

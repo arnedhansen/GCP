@@ -39,8 +39,11 @@ for subj = 1:length(subjects)
         accuracy = [accuracy; saves.data.correct(:)];
         reaction_time = [reaction_time; saves.data.reactionTime(:)];
         if ~isfield(saves.data, 'whiteCross')
-            error('GCP_behavioral_fex:MissingWhiteCross', ...
-                'whiteCross missing in %s_GCP_block%d.mat', subjects{subj}, block);
+            if ~isfield(saves.data, 'redCross')
+                error('GCP_behavioral_fex:MissingWhiteCross', ...
+                    'whiteCross missing in %s_GCP_block%d.mat', subjects{subj}, block);
+            end
+            saves.data.whiteCross = saves.data.redCross;
         end
         white_cross = [white_cross; saves.data.whiteCross(:)];
         trial_counter = trial_counter + num_trials;
