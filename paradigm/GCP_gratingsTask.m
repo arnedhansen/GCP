@@ -90,8 +90,9 @@ else
     exp.nTrials = exp.nTrlTask;
 end
 
-% Enable (= 1) or disable (= 0) screenshots
-enableScreenshots = 1;
+% Enable (= 1) or disable (= 0) screenshots.
+% Keep at 0 during recording. Screen('GetImage') inside the grating loop breaks stimulus timing.
+enableScreenshots = 0;
 
 %% Set up text parameters
 % Define startExperimentText
@@ -99,12 +100,15 @@ startExperimentText = [
     'You will see a series of gratings. \n\n' ...
     'Between gratings, a fixation cross \n\n' ...
     'will appear on the screen. If the \n\n' ...
-    'fixation cross appers in WHITE, it is \n\n' ...
+    'fixation cross appears in WHITE, it is \n\n' ...
     'your task to press SPACE as soon as the next \n\n' ...
     'grating appears. Use your right hand. Please \n\n' ...
     'always look at the center of the screen. \n\n' ...
     '\n\n' ...
     'Press any key to continue...'];
+startDoorText = [
+    'As soon as the door is closed,\n\n' ...
+    'you may start the task by pressing any button.'];
 if TRAINING == 1
     loadingText = 'Loading TRAINING...';
 elseif TRAINING == 0
@@ -302,10 +306,10 @@ data.whiteCross(1, exp.nTrials)  = NaN; % Binary measure for task condition
 data.responses(1, exp.nTrials)   = NaN; % Binary measure for (no) response
 data.correct(1, exp.nTrials)     = NaN; % Binary measure for correct responses
 data.reactionTime(1:exp.nTrials) = NaN; % Reaction time
-data.fixation(1:exp.nTrials)     = NaN; % Fixation check info
+data.fixation(1:exp.nTrials)     = NaN; % 1 = fixated on a presented trial. Failed checks are withheld, not stored here.
 data.trlDuration(1:exp.nTrials)  = NaN; % Trial duration in seconds
-data.isReplacement(1:exp.nTrials) = 0;  % Flag for replacement trials (0 = original, 1 = replacement)
-count5trials                     = NaN; % Initialize accuracy reminder loop variable
+data.isReplacement(1:exp.nTrials) = 0;  % 1 = this presented grating was withheld earlier for a fixation failure
+% count5trials                     = NaN; % Initialize accuracy reminder loop variable
 
 %% Show task instruction text
 DrawFormattedText(ptbWindow, startExperimentText, 'center', 'center', black);
@@ -319,31 +323,35 @@ while waitResponse
     waitResponse = 0;
 end
 
-% Send triggers for start of task (ET cutting)
+% Last screen. The key from the instruction screen must be released first,
+% otherwise that press would start the task immediately.
+KbReleaseWait;
+DrawFormattedText(ptbWindow, startDoorText, 'center', 'center', black);
+Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
+Screen('Flip',ptbWindow);
+clc;
+disp('Waiting for the participant to start after the door is closed.');
+KbWait(-1, 2);
+
+% Training sends only BLOCK0 to EyeLink. EEG recording is not started.
+% Task blocks send EyeLink messages and EEG triggers, including TASK_START.
 if TRAINING == 1
-    Eyelink('Message', num2str(TASK_START));
-    Eyelink('command', 'record_status_message "START"');
+    Eyelink('Message', num2str(BLOCK0));
+    Eyelink('command', 'record_status_message "START TRAINING"');
 else
     Eyelink('Message', num2str(TASK_START));
     Eyelink('command', 'record_status_message "START"');
     sendtrigger(TASK_START,port,SITE,stayup);
-end
 
-% Send triggers for block and output
-if BLOCK == 1
-    TRIGGER = BLOCK1;
-elseif BLOCK == 2
-    TRIGGER = BLOCK2;
-elseif BLOCK == 3
-    TRIGGER = BLOCK3;
-elseif BLOCK == 4
-    TRIGGER = BLOCK4;
-end
-
-if TRAINING == 1
-    Eyelink('Message', num2str(TRIGGER));
-    Eyelink('command', 'record_status_message "START BLOCK"');
-else
+    if BLOCK == 1
+        TRIGGER = BLOCK1;
+    elseif BLOCK == 2
+        TRIGGER = BLOCK2;
+    elseif BLOCK == 3
+        TRIGGER = BLOCK3;
+    elseif BLOCK == 4
+        TRIGGER = BLOCK4;
+    end
     Eyelink('Message', num2str(TRIGGER));
     Eyelink('command', 'record_status_message "START BLOCK"');
     sendtrigger(TRIGGER,port,SITE,stayup);
@@ -357,12 +365,15 @@ timing.startTime = datestr(now, 'dd/mm/yy-HH:MM:SS'); % Measure duration
 clc;
 disp('GCP GRATING TASK...');
 trialQueue = gratingSequence;
-nExtraTrials = 0;
+replQueue = zeros(1, numel(gratingSequence));
+nFixSkipped = 0;
+withheldGratings = [];
 trl = 0;
 while ~isempty(trialQueue)
-    trl = trl + 1;
     currentGrating = trialQueue(1);
+    isRepl = replQueue(1);
     trialQueue(1) = [];
+    replQueue(1) = [];
     tic;
     % Add trial grating info
     if currentGrating == 1
@@ -375,51 +386,45 @@ while ~isempty(trialQueue)
         gratingForm = '100% contrast';
     end
 
-    % Randomized selection of task (white fication cross) trials (10%)
+    % Randomized selection of task (white fixation cross) trials (10% task, 33% training)
     if TRAINING == 0
         if randi(10) == 1
-            data.whiteCross(trl) = 1;
+            whiteCrossTrl = 1;
         else
-            data.whiteCross(trl) = 0;
+            whiteCrossTrl = 0;
         end
-    elseif TRAINING == 1
+    else
         if randi(3) == 1
-            data.whiteCross(trl) = 1;
+            whiteCrossTrl = 1;
         else
-            data.whiteCross(trl) = 0;
+            whiteCrossTrl = 0;
         end
     end
 
     %% Present fixation cross and check pre-stimulus fixation
     Screen('FillRect', ptbWindow, backgroundColorGray);
     Screen('Flip', ptbWindow);
-    timing.cfi(trl) = (randsample(timing.cfilower:timing.cfiupper, 1))/1000;
+    cfiDur = (randsample(timing.cfilower:timing.cfiupper, 1))/1000;
 
-    if data.whiteCross(trl) == 0 % No task condition
+    if whiteCrossTrl == 0 % No task condition
         Screen('DrawLines', ptbWindow, fixCoords, fixationLineWidth, fixationColorBlack, [screen.centerX screen.centerY], 2);
         Screen('Flip', ptbWindow);
         screenshot('GCP_screenshot_blackcross.png', ptbWindow, enableScreenshots);
-        TRIGGER = FIXCROSSB;
-        if TRAINING == 1
-            Eyelink('Message', num2str(TRIGGER));
-            Eyelink('command', 'record_status_message "FIXCROSS"');
-        else
+        if TRAINING == 0
+            TRIGGER = FIXCROSSB;
             Eyelink('Message', num2str(TRIGGER));
             Eyelink('command', 'record_status_message "FIXCROSS"');
             sendtrigger(TRIGGER, port, SITE, stayup);
         end
-        WaitSecs(timing.cfi(trl) - timing.fixCheckDuration);
+        WaitSecs(cfiDur - timing.fixCheckDuration);
         noFixation = checkFixation(screen.centerX, screen.centerY, timing.fixCheckDuration);
 
-    elseif data.whiteCross(trl) == 1 % Task condition
+    elseif whiteCrossTrl == 1 % Task condition
         Screen('DrawLines', ptbWindow, fixCoords, fixationLineWidth, fixationColorWhite, [screen.centerX screen.centerY], 2);
         Screen('Flip', ptbWindow);
-        TRIGGER = FIXCROSSR;
         screenshot('GCP_screenshot_whiteCross.png', ptbWindow, enableScreenshots);
-        if TRAINING == 1
-            Eyelink('Message', num2str(TRIGGER));
-            Eyelink('command', 'record_status_message "FIXCROSS"');
-        else
+        if TRAINING == 0
+            TRIGGER = FIXCROSSR;
             Eyelink('Message', num2str(TRIGGER));
             Eyelink('command', 'record_status_message "FIXCROSS"');
             sendtrigger(TRIGGER, port, SITE, stayup);
@@ -427,107 +432,97 @@ while ~isempty(trialQueue)
         WaitSecs(timing.cfi_task);
         Screen('DrawLines', ptbWindow, fixCoords, fixationLineWidth, fixationColorBlack, [screen.centerX screen.centerY], 2);
         Screen('Flip', ptbWindow);
-        TRIGGER = FIXCROSSB;
-        if TRAINING == 1
-            Eyelink('Message', num2str(TRIGGER));
-            Eyelink('command', 'record_status_message "FIXCROSS"');
-        else
+        if TRAINING == 0
+            TRIGGER = FIXCROSSB;
             Eyelink('Message', num2str(TRIGGER));
             Eyelink('command', 'record_status_message "FIXCROSS"');
             sendtrigger(TRIGGER, port, SITE, stayup);
         end
-        WaitSecs(timing.cfi(trl) - timing.cfi_task - timing.fixCheckDuration);
+        WaitSecs(cfiDur - timing.cfi_task - timing.fixCheckDuration);
         noFixation = checkFixation(screen.centerX, screen.centerY, timing.fixCheckDuration);
     end
 
-    % Store fixation result (1 = fixating, 0 = not fixating)
-    data.fixation(trl) = ~noFixation;
-
-    % Show fixation reminder if participant was not fixating
+    % Withhold the grating when pre-stimulus fixation failed, and repeat it later.
     if noFixation
         DrawFormattedText(ptbWindow, 'Please fixate on the cross!', 'center', 'center', black);
         Screen('DrawDots', ptbWindow, backPos, backDiameter, backColor, [], 1);
         Screen('Flip', ptbWindow);
-        TRIGGER = FIXATION_REMINDER;
-        if TRAINING == 1
-            Eyelink('Message', num2str(TRIGGER));
-            Eyelink('command', 'record_status_message "FIX_REMINDER"');
-        else
+        if TRAINING == 0
+            TRIGGER = FIXATION_REMINDER;
             Eyelink('Message', num2str(TRIGGER));
             Eyelink('command', 'record_status_message "FIX_REMINDER"');
             sendtrigger(TRIGGER, port, SITE, stayup);
         end
         WaitSecs(1);
-    end
-
-    % Queue replacement trial at end of block if fixation failed (no cap)
-    if TRAINING == 0 && noFixation
         trialQueue(end+1) = currentGrating;
-        nExtraTrials = nExtraTrials + 1;
+        replQueue(end+1) = 1;
+        nFixSkipped = nFixSkipped + 1;
+        withheldGratings(end+1) = currentGrating; %#ok<SAGROW>
+        fprintf('Fixation failed before %s. Grating withheld and moved to the end of the block. Withheld so far: %d\n', ...
+            strtrim(gratingForm), nFixSkipped);
+        continue
     end
 
-    % Mark replacement trials
-    if trl > exp.nTrials
-        data.isReplacement(trl) = 1;
-    end
-
-    %% Define grating depending on sequence number
+    trl = trl + 1;
+    data.whiteCross(trl) = whiteCrossTrl;
+    data.fixation(trl) = 1;
+    data.isReplacement(trl) = isRepl;
     data.grating(trl) = currentGrating;
+    timing.cfi(trl) = cfiDur;
     % grating = 1 is 25% contrast concentric dynamic inward
     % grating = 2 is 50% contrast concentric dynamic inward
     % grating = 3 is 75% contrast concentric dynamic inward
     % grating = 4 is 100% contrast concentric dynamic inward
 
     %% Present grating and get response
-    Screen('Flip', ptbWindow); % Preparatory flip
+    % The first Flip replaces the fixation cross with the grating. That Flip is stimulus onset.
     responseGiven = false;
     maxProbeDuration = 2; % Maximum time to show the grating
     frameDuration = maxProbeDuration / length(tex);
 
-    % Send presentation triggers
-    if currentGrating == 1 && data.whiteCross(trl) == 1
-        TRIGGER = PRESENTATION_C25_TASK;
-    elseif currentGrating == 2 && data.whiteCross(trl) == 1
-        TRIGGER = PRESENTATION_C50_TASK;
-    elseif currentGrating == 3 && data.whiteCross(trl) == 1
-        TRIGGER = PRESENTATION_C75_TASK;
-    elseif currentGrating == 4 && data.whiteCross(trl) == 1
-        TRIGGER = PRESENTATION_C100_TASK;
-    elseif currentGrating == 1 && data.whiteCross(trl) == 0
-        TRIGGER = PRESENTATION_C25_NOTASK;
-    elseif currentGrating == 2 && data.whiteCross(trl) == 0
-        TRIGGER = PRESENTATION_C50_NOTASK;
-    elseif currentGrating == 3 && data.whiteCross(trl) == 0
-        TRIGGER = PRESENTATION_C75_NOTASK;
-    elseif currentGrating == 4 && data.whiteCross(trl) == 0
-        TRIGGER = PRESENTATION_C100_NOTASK;
-    end
-
-    if TRAINING == 1
-        Eyelink('Message', num2str(TRIGGER));
-        Eyelink('command', 'record_status_message "PRESENTATION"');
-    else
-        Eyelink('Message', num2str(TRIGGER));
-        Eyelink('command', 'record_status_message "PRESENTATION"');
-        sendtrigger(TRIGGER,port,SITE,stayup);
+    if TRAINING == 0
+        if currentGrating == 1 && data.whiteCross(trl) == 1
+            TRIGGER = PRESENTATION_C25_TASK;
+        elseif currentGrating == 2 && data.whiteCross(trl) == 1
+            TRIGGER = PRESENTATION_C50_TASK;
+        elseif currentGrating == 3 && data.whiteCross(trl) == 1
+            TRIGGER = PRESENTATION_C75_TASK;
+        elseif currentGrating == 4 && data.whiteCross(trl) == 1
+            TRIGGER = PRESENTATION_C100_TASK;
+        elseif currentGrating == 1 && data.whiteCross(trl) == 0
+            TRIGGER = PRESENTATION_C25_NOTASK;
+        elseif currentGrating == 2 && data.whiteCross(trl) == 0
+            TRIGGER = PRESENTATION_C50_NOTASK;
+        elseif currentGrating == 3 && data.whiteCross(trl) == 0
+            TRIGGER = PRESENTATION_C75_NOTASK;
+        elseif currentGrating == 4 && data.whiteCross(trl) == 0
+            TRIGGER = PRESENTATION_C100_NOTASK;
+        end
     end
 
     probeStartTime = GetSecs;
     whileCount = 1;
+    onsetMarked = false;
     % Draw gratings depending on gratingSequence
     while (GetSecs - probeStartTime) < maxProbeDuration
         if currentGrating == 1 % 25% contrast grating
             Screen('DrawTexture', ptbWindow, tex_c25(whileCount), [], gratingPosition);
-            Screen('Flip', ptbWindow);
         elseif currentGrating == 2 % 50% contrast grating
             Screen('DrawTexture', ptbWindow, tex_c50(whileCount), [], gratingPosition);
-            Screen('Flip', ptbWindow);
         elseif currentGrating == 3 % 75% contrast grating
             Screen('DrawTexture', ptbWindow, tex_c75(whileCount), [], gratingPosition);
-            Screen('Flip', ptbWindow);
         elseif currentGrating == 4 % 100% contrast grating
             Screen('DrawTexture', ptbWindow, tex_c100(whileCount), [], gratingPosition);
-            Screen('Flip', ptbWindow);
+        end
+        vbl = Screen('Flip', ptbWindow);
+        if ~onsetMarked
+            probeStartTime = vbl;
+            onsetMarked = true;
+            if TRAINING == 0
+                Eyelink('Message', num2str(TRIGGER));
+                Eyelink('command', 'record_status_message "PRESENTATION"');
+                sendtrigger(TRIGGER, port, SITE, stayup);
+            end
         end
         screenshot(sprintf('GCP_screenshot_%s.png', gratingForm), ptbWindow, enableScreenshots);
 
@@ -538,6 +533,11 @@ while ~isempty(trialQueue)
                 responseGiven = true;
                 data.reactionTime(trl) = responseTime - probeStartTime;
                 data.responses(trl) = 1; % Response made
+                if TRAINING == 0
+                    Eyelink('Message', num2str(RESP_YES));
+                    Eyelink('command', 'record_status_message "RESP_YES"');
+                    sendtrigger(RESP_YES, port, SITE, stayup);
+                end
             end
         end
 
@@ -557,6 +557,11 @@ while ~isempty(trialQueue)
     if ~responseGiven
         data.responses(trl) = 0; % No response
         data.reactionTime(trl) = NaN;
+        if TRAINING == 0
+            Eyelink('Message', num2str(RESP_NO));
+            Eyelink('command', 'record_status_message "RESP_NO"');
+            sendtrigger(RESP_NO, port, SITE, stayup);
+        end
     end
 
     %% Check if response was correct
@@ -587,97 +592,75 @@ while ~isempty(trialQueue)
         WaitSecs(2);
     end
 
-    %% Dynamically compute accuracy for past 10 trials and remind participant if accuracy drops below threshhold of 90%
-    responsesLastTrials = 0;
-    if trl >= 10
-        responsesLastTrials = data.correct(trl-9 : trl);
-        percentLastTrialsCorrect = sum(responsesLastTrials)*10;
-        if percentLastTrialsCorrect < 90 && count5trials <= trl-5
-            count5trials = trl;
-            feedbackLastTrials = ['Your accuracy has declined!'...
-                '\n\n ' ...
-                '\n\n Please stay focused on the task!'];
-            disp(['Participant was made aware of low accuracy in the last 10 trials: ' num2str(percentLastTrialsCorrect) ' %. [' num2str(responsesLastTrials) ']']);
-            DrawFormattedText(ptbWindow,feedbackLastTrials,'center','center',black);
-            Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
-            Screen('Flip',ptbWindow);
-            WaitSecs(3);
-        end
-    end
+    %% Accuracy reminder (disabled). count5trials starts as NaN, so the comparison never fired.
+    % responsesLastTrials = 0;
+    % if trl >= 10
+    %     responsesLastTrials = data.correct(trl-9 : trl);
+    %     percentLastTrialsCorrect = sum(responsesLastTrials)*10;
+    %     if percentLastTrialsCorrect < 90 && count5trials <= trl-5
+    %         count5trials = trl;
+    %         feedbackLastTrials = ['Your accuracy has declined!'...
+    %             '\n\n ' ...
+    %             '\n\n Please stay focused on the task!'];
+    %         disp(['Participant was made aware of low accuracy in the last 10 trials: ' num2str(percentLastTrialsCorrect) ' %. [' num2str(responsesLastTrials) ']']);
+    %         DrawFormattedText(ptbWindow,feedbackLastTrials,'center','center',black);
+    %         Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
+    %         Screen('Flip',ptbWindow);
+    %         WaitSecs(3);
+    %     end
+    % end
 
     %% Trial Info CW output
     overall_accuracy = round((sum(data.correct(1:trl))/trl)*100);
     reactionTime = num2str(round(data.reactionTime(trl), 2), '%.2f');
-    if data.fixation(trl)
-        fixLabel = 'Y';
-    else
-        fixLabel = 'N';
-    end
-    if trl > exp.nTrials
+    if data.isReplacement(trl)
         replLabel = ' [R]';
     else
         replLabel = '';
     end
-    % Denominator grows whenever a fixation-fail replacement is queued
-    totalTrials = exp.nTrials + nExtraTrials;
     if TRAINING == 1
         blockStr = '0/0';
     else
         blockStr = sprintf('%d/4', BLOCK);
     end
-    if TRAINING == 0 && data.fixation(trl) == 0
-        appendNote = ' | fixation failed and appended';
-    else
-        appendNote = '';
-    end
-    fprintf('Response to Trial %3d/%d%-4s in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss | Fix: %s | %s)%s\n', ...
-        trl, totalTrials, replLabel, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, fixLabel, gratingForm, appendNote);
+    fprintf('Response to Trial %3d/%d%-4s in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss | %s)\n', ...
+        trl, exp.nTrials, replLabel, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, gratingForm);
 
     % Save trial duration in seconds
     data.trlDuration(trl) = toc;
 end
 exp.nTrialsTotal = trl;
-if nExtraTrials > 0
-    disp(['  --> ' num2str(nExtraTrials) ' replacement trials added for fixation failures.']);
-end
-nFixFails = sum(data.fixation(1:trl) == 0);
-disp(['Block summary: ' num2str(trl) ' trials total (' num2str(exp.nTrials) ' original + ' ...
-    num2str(nExtraTrials) ' replacement). Fixation failures: ' num2str(nFixFails) '.']);
+data.nFixationSkipped = nFixSkipped;
+data.withheldGrating = withheldGratings;
+nRepl = sum(data.isReplacement(1:trl) == 1);
+disp(['Block summary: ' num2str(trl) ' gratings presented (' num2str(nRepl) ...
+    ' after a withheld fixation failure). Fixation failures withheld: ' num2str(nFixSkipped) '.']);
 
 %% End task and save data
 
 % Send triggers to end task
 Screen('Flip',ptbWindow);
 
-% Send triggers for block and output
-if BLOCK == 1 && TRAINING == 1
-    TRIGGER = BLOCK0_END; % Training block
-elseif BLOCK == 1 && TRAINING == 0
-    TRIGGER = BLOCK1_END;
-elseif BLOCK == 2 && TRAINING == 0
-    TRIGGER = BLOCK2_END;
-elseif BLOCK == 3 && TRAINING == 0
-    TRIGGER = BLOCK3_END;
-elseif BLOCK == 4 && TRAINING == 0
-    TRIGGER = BLOCK4_END;
-end
-
+% Training sends only BLOCK0_END to EyeLink.
+% Task blocks send the block-end and task-end markers to EyeLink and EEG.
 if TRAINING == 1
-    Eyelink('Message', num2str(TRIGGER));
-    Eyelink('command', 'record_status_message "END BLOCK"');
+    Eyelink('Message', num2str(BLOCK0_END));
+    Eyelink('command', 'record_status_message "END TRAINING"');
     disp('End of Training Block.');
 else
+    if BLOCK == 1
+        TRIGGER = BLOCK1_END;
+    elseif BLOCK == 2
+        TRIGGER = BLOCK2_END;
+    elseif BLOCK == 3
+        TRIGGER = BLOCK3_END;
+    elseif BLOCK == 4
+        TRIGGER = BLOCK4_END;
+    end
     Eyelink('Message', num2str(TRIGGER));
     Eyelink('command', 'record_status_message "END BLOCK"');
     sendtrigger(TRIGGER,port,SITE,stayup);
     disp(['End of Block ' num2str(BLOCK)]);
-end
-
-% Send triggers for end of task (ET cutting)
-if TRAINING == 1
-    Eyelink('Message', num2str(TASK_END));
-    Eyelink('command', 'record_status_message "TASK_END"');
-else
     Eyelink('Message', num2str(TASK_END));
     Eyelink('command', 'record_status_message "TASK_END"');
     sendtrigger(TASK_END,port,SITE,stayup);
@@ -710,6 +693,7 @@ saves.data.reactionTime         = data.reactionTime;
 saves.experiment                = exp;
 saves.screen                    = screen;
 saves.startExperimentText       = startExperimentText;
+saves.startDoorText             = startDoorText;
 saves.subjectID                 = subjectID;
 saves.subject                   = subject;
 saves.timing                    = timing;
