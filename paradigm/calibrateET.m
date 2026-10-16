@@ -19,6 +19,8 @@ filePath = fullfile(DATA_PATH, subjectID);
 
 if strcmp(TASK, 'Resting')
     edfFile = [subjectID, '_Res.edf'];
+elseif strcmp(TASK, 'CD')
+    edfFile = [subjectID, '_cd.edf']; % Contrast detection (EyeLink names are limited to 8 characters)
 else
     if TRAINING == 0 && strcmp(TASK, 'GCP')
         edfFile = [subjectID,'_', num2str(BLOCK), '.edf']; % Naming files according to blocks
@@ -40,7 +42,11 @@ try
 
     EL_Calibrate
 
-    Eyelink('command', ['record_status_message "OCC' num2str(BLOCK) ' EEG"']);
+    if strcmp(TASK, 'CD')
+        Eyelink('command', 'record_status_message "CD"');
+    else
+        Eyelink('command', ['record_status_message "OCC' num2str(BLOCK) ' EEG"']);
+    end
 catch
     %window=Screen('OpenWindow', whichScreen, par.BGcolor);
     disp('No Eyetracker');
