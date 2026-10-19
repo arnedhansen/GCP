@@ -2,22 +2,12 @@
 % Screening task run before training. Participants judge whether contrast
 % increased or decreased relative to the previous grating (arrow keys).
 % Contrast levels are sampled at random, excluding immediate repeats.
-% EyeLink calibration and validation run first. No EEG.
-% Gaze during the task is saved as <ID>_cd.edf.
+% No EEG or eye tracking.
 %
 % Template: GCP_gratingsTask.m
 
 %% Start message
 disp('START OF CONTRAST DETECTION TEST');
-
-%% Calibrate and validate EyeLink
-% TASK = 'CD' selects <ID>_cd.edf in calibrateET (not the training file).
-disp('CALIBRATING ET...');
-TASK = 'CD';
-calibrateET;
-% calibrateET starts recording immediately. Stop here so the saved samples
-% cover the contrast detection task, not stimulus loading.
-Eyelink('StopRecording');
 
 %% Hide cursor on participant screen
 HideCursor(whichScreen);
@@ -51,18 +41,6 @@ KbName('UnifyKeyNames');
 
 upKeyCode = KbName('UpArrow');
 downKeyCode = KbName('DownArrow');
-
-% EyeLink messages. Distinct from the main-task trigger codes.
-CD_START     = 110;
-CD_FIX       = 117;
-CD_C25       = 121;
-CD_C50       = 122;
-CD_C75       = 123;
-CD_C100      = 124;
-CD_RESP_UP   = 131;
-CD_RESP_DOWN = 132;
-CD_RESP_NONE = 133;
-CD_END       = 190;
 
 %% Imaging set up
 screen.ID = whichScreen;
@@ -194,10 +172,6 @@ end
 
 HideCursor(whichScreen);
 
-%% Record gaze for the contrast detection task
-Eyelink('StartRecording');
-WaitSecs(0.1);
-
 %% Attempt loop until pass criterion
 passed = false;
 attempt = 0;
@@ -226,9 +200,6 @@ while ~passed
 
     clc;
     disp(['CONTRAST DETECTION TEST (attempt ' num2str(attempt) ')...']);
-    Eyelink('Message', num2str(CD_START));
-    Eyelink('command', 'record_status_message "CD START"');
-    Eyelink('Message', sprintf('ATTEMPT %d', attempt));
 
     for trl = 1:exp.nTrials
         tic;
@@ -252,8 +223,6 @@ while ~passed
         Screen('DrawLines', ptbWindow, fixCoords, fixationLineWidth, ...
             fixationColorBlack, [screen.centerX screen.centerY], 2);
         Screen('Flip', ptbWindow);
-        Eyelink('Message', num2str(CD_FIX));
-        Eyelink('command', 'record_status_message "FIXCROSS"');
         WaitSecs(data.cfi(trl));
 
         %% Present grating and collect response
@@ -262,19 +231,8 @@ while ~passed
         maxProbeDuration = movieDurationSecs;
         frameDuration = maxProbeDuration / nFramesInCycle;
 
-        if currentGrating == 1
-            gratingTrigger = CD_C25;
-        elseif currentGrating == 2
-            gratingTrigger = CD_C50;
-        elseif currentGrating == 3
-            gratingTrigger = CD_C75;
-        else
-            gratingTrigger = CD_C100;
-        end
-
         probeStartTime = GetSecs;
         whileCount = 1;
-        onsetMarked = false;
         while (GetSecs - probeStartTime) < maxProbeDuration
             if currentGrating == 1
                 Screen('DrawTexture', ptbWindow, tex_c25(whileCount), [], gratingPosition);
@@ -286,11 +244,6 @@ while ~passed
                 Screen('DrawTexture', ptbWindow, tex_c100(whileCount), [], gratingPosition);
             end
             Screen('Flip', ptbWindow);
-            if ~onsetMarked
-                onsetMarked = true;
-                Eyelink('Message', num2str(gratingTrigger));
-                Eyelink('command', 'record_status_message "PRESENTATION"');
-            end
 
             if trl > 1 && ~responseGiven
                 [keyIsDown, responseTime, keyCode] = KbCheck(-1);
@@ -299,14 +252,10 @@ while ~passed
                         responseGiven = true;
                         data.responses(trl) = 1;
                         data.reactionTime(trl) = responseTime - probeStartTime;
-                        Eyelink('Message', num2str(CD_RESP_UP));
-                        Eyelink('command', 'record_status_message "RESP_UP"');
                     elseif keyCode(downKeyCode)
                         responseGiven = true;
                         data.responses(trl) = -1;
                         data.reactionTime(trl) = responseTime - probeStartTime;
-                        Eyelink('Message', num2str(CD_RESP_DOWN));
-                        Eyelink('command', 'record_status_message "RESP_DOWN"');
                     end
                 end
             end
@@ -335,8 +284,6 @@ while ~passed
                 data.tooSlow(trl) = true;
                 data.correct(trl) = 0;
                 feedbackText = 'TOO SLOW!';
-                Eyelink('Message', num2str(CD_RESP_NONE));
-                Eyelink('command', 'record_status_message "RESP_NONE"');
                 DrawFormattedText(ptbWindow, 'TOO SLOW!', 'center', 'center', black);
                 Screen('Flip', ptbWindow);
                 WaitSecs(1);
@@ -397,8 +344,6 @@ while ~passed
 
     fprintf('CONTRAST DETECTION overall accuracy: %d%% (%d/%d). Attempt %d.\n', ...
         overall_accuracy, nCorrect, nScored, attempt);
-    Eyelink('Message', num2str(CD_END));
-    Eyelink('command', 'record_status_message "CD END"');
 
     %% End-of-attempt screen
     if overall_accuracy >= exp.passThreshold
@@ -441,17 +386,6 @@ while ~passed
     saves.timing             = timing;
     saves.passed             = passed;
     saves.gratingSequence    = gratingSequence;
-    saves.edfFile            = edfFile;
-    saves.trigger.CD_START     = CD_START;
-    saves.trigger.CD_FIX       = CD_FIX;
-    saves.trigger.CD_C25       = CD_C25;
-    saves.trigger.CD_C50       = CD_C50;
-    saves.trigger.CD_C75       = CD_C75;
-    saves.trigger.CD_C100      = CD_C100;
-    saves.trigger.CD_RESP_UP   = CD_RESP_UP;
-    saves.trigger.CD_RESP_DOWN = CD_RESP_DOWN;
-    saves.trigger.CD_RESP_NONE = CD_RESP_NONE;
-    saves.trigger.CD_END       = CD_END;
 
     if passed
         fileName = [subjectID, '_contrast_detection.mat'];
@@ -460,22 +394,6 @@ while ~passed
     end
     save(fullfile(filePath, fileName), 'saves');
     disp(['Saved: ' fullfile(filePath, fileName)]);
-end
-
-%% Close EyeLink so the training block can open its own file
-fprintf('Stop Recording Track\n');
-Eyelink('StopRecording');
-Eyelink('CloseFile');
-fprintf('Downloading File\n');
-EL_DownloadDataFile;
-EL_Cleanup;
-
-pathEdf2Asc = '/usr/bin/edf2asc';
-if isfile(pathEdf2Asc)
-    disp('CONVERTING EDF to ASCII...');
-    system([pathEdf2Asc ' "' fullfile(filePath, edfFile) '" -y']);
-else
-    disp('edf2asc not found. EDF left unconverted.');
 end
 
 %% Close Psychtoolbox window

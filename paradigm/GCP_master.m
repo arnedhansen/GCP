@@ -1,6 +1,6 @@
 %% Master script for the GCP (Gamma Contrast Perception) Study
 %
-% - EyeLink calibration and validation, then contrast detection screening (21 trials, >=80% to continue)
+% - Contrast detection screening (21 trials, >=80% to continue)
 % - Resting EEG
 % - Gratings Training (10 trials)
 % - Gratings (704 trials: 160x4 = 640 valid trials + 16x4 = 64 trials with task condition)
