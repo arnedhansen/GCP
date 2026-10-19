@@ -1,5 +1,5 @@
 % Create dialog box to record subject data
-defAns = {'999','XX','99','X', 'X', 'X'};
+defAns = {'','XX','99','X', 'X', 'X'};
 while true
     prompt = {'Subject Number', 'Subject Initials', 'Subject Age', 'Subject Gender', 'EEG Cap Size', 'Ocular Dominance'};
     box = inputdlg(prompt, 'Enter Subject Information', 1,defAns);

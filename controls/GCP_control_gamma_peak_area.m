@@ -6,11 +6,7 @@
 
 startup
 [subjects, paths, colors, ~] = setup('GCP');
-try
-    subjects = gcp_subject_inclusion(subjects, paths);
-catch
-    subjects = subjects(~ismember(str2double(string(subjects)), [602, 604, 608]));
-end
+subjects = gcp_subject_inclusion(subjects, paths);
 
 out_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/controls';
 if ~exist(out_dir, 'dir')
@@ -57,7 +53,8 @@ fprintf('[AREA] Saved pick_tallest median %.1f Hz. Median |area minus saved| %.2
     median(saved(:), 'omitnan'), median(abs(f_area(:) - saved(:)), 'omitnan'));
 
 fig = figure('Position', [0 0 1512 982], 'Color', 'w');
-examples = {'607', '603', '610', '606'};
+nExamples = min(4, numel(subjects));
+examples = subjects(1:nExamples);
 for e = 1:numel(examples)
     s = find(strcmp(subjects, examples{e}), 1);
     subplot(2, 2, e); hold on;

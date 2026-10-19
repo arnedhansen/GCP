@@ -1,10 +1,22 @@
 %% Empty ANT128 Neuro Topoplot for Channel Locations
 close all
-[~, paths] = setup('GCP', 0);
+[subjects, paths] = setup('GCP', 0);
+subjects = gcp_subject_inclusion(subjects, paths);
+specFile = '';
+for i = 1:numel(subjects)
+    candidate = fullfile(paths.features, subjects{i}, 'eeg', 'power_spectra.mat');
+    if isfile(candidate)
+        specFile = candidate;
+        break
+    end
+end
+if isempty(specFile)
+    error('No power_spectra.mat found for an included subject.');
+end
 figure('Position', [0 0 1512 982], 'Color', 'w');
 title('Electrodes ANT 128', 'FontSize', 25);
 load(fullfile(paths.base_students, 'toolboxes', 'headmodel', 'layANThead.mat'));
-load(fullfile(paths.features, '601', 'eeg', 'power_spectra'));
+load(specFile);
 channels = pow_c25_fooof_bl_smooth.label;
 pow_c25_fooof_bl_smooth.powspctrm(:, :) = 0;
 cfg = [];

@@ -2,7 +2,7 @@ function cutData(filePath)
 
 % ANT EEG data comes in 1 file containig all tasks (e.g. Resting & Grating).
 % This function cuts the data into distinct tasks, saves the tasks
-% to .mat files and moves the original file to filePath/archive
+% to .mat files and moves the original file to subjectDir/archive
 
 % EEGlab with 'pop_loadeep_v4' required
 
@@ -18,7 +18,7 @@ splitpath_str = strsplit(fileName, '_');
 %% Remove photodiode data and save to a file
 diode = pop_select(EEGorig, 'channel', 129);
 savename_pd = [subjectID, '_Photodiode.mat'];
-save(fullfile(filePath, savename_pd), 'diode', '-v7.3')
+save(fullfile(subjectDir, savename_pd), 'diode', '-v7.3')
 
 % Exclude photodiode data
 if EEGorig.nbchan > 128
@@ -59,7 +59,7 @@ i74 = find(ismember({EEGorig.event.type}, '74'));
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i10(1)).latency, EEGorig.event(i90(1)).latency]);
     task = [subjectID, '_GCP_Resting_EEG.mat'];
-    save(fullfile(filePath, task), 'EEG', '-v7.3')
+    save(fullfile(subjectDir, task), 'EEG', '-v7.3')
 catch ME
     ME.message
     warning('RESTING is missing...')
@@ -69,7 +69,7 @@ end
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i11(end)).latency, EEGorig.event(i71(end)).latency]);
     task = [subjectID, '_GCP_block1_task_EEG.mat'];
-    save(fullfile(filePath, task), 'EEG', '-v7.3')
+    save(fullfile(subjectDir, task), 'EEG', '-v7.3')
 catch ME
     ME.message
     warning('BLOCK 1 is missing...')
@@ -79,7 +79,7 @@ end
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i12(end)).latency, EEGorig.event(i72(end)).latency]);
     task = [subjectID, '_GCP_block2_task_EEG.mat'];
-    save(fullfile(filePath, task), 'EEG', '-v7.3')
+    save(fullfile(subjectDir, task), 'EEG', '-v7.3')
 catch ME
     ME.message
     warning('BLOCK 2 is missing...')
@@ -89,7 +89,7 @@ end
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i13(end)).latency, EEGorig.event(i73(end)).latency]);
     task = [subjectID, '_GCP_block3_task_EEG.mat'];
-    save(fullfile(filePath, task), 'EEG', '-v7.3')
+    save(fullfile(subjectDir, task), 'EEG', '-v7.3')
 catch ME
     ME.message
     warning('BLOCK 3 is missing...')
@@ -99,19 +99,19 @@ end
 try
     EEG = pop_select(EEGorig, 'point', [EEGorig.event(i14(end)).latency, EEGorig.event(i74(end)).latency]);
     task = [subjectID, '_GCP_block4_task_EEG.mat'];
-    save(fullfile(filePath, task), 'EEG', '-v7.3')
+    save(fullfile(subjectDir, task), 'EEG', '-v7.3')
 catch ME
     ME.message
     warning('BLOCK 4 is missing...')
 end
 
 %% mkdir archive and move the orig files there
-    source = fullfile(filePath, fileName);
-    destination = fullfile(fullfile(filePath, 'archive'));
+    source = fullfile(subjectDir, fileName);
+    destination = fullfile(fullfile(subjectDir, 'archive'));
     mkdir(destination)
     movefile(source,destination) % .cnt file
-    source = fullfile(filePath, [fileName(1:end-4), '.evt']);
+    source = fullfile(subjectDir, [fileName(1:end-4), '.evt']);
     movefile(source,destination) % .evt file
-    source = fullfile(filePath, [fileName(1:end-4), '.seg']);
+    source = fullfile(subjectDir, [fileName(1:end-4), '.seg']);
     movefile(source,destination) % .seg file
 end

@@ -14,12 +14,7 @@
 startup
 set(0, 'DefaultFigureVisible', 'off');
 [subjects, paths, colors, ~] = setup('GCP');
-try
-    subjects = gcp_subject_inclusion(subjects, paths);
-catch
-    subjects = subjects(~ismember(str2double(string(subjects)), [602, 604, 608]));
-    fprintf('[CTRL MS RB] Inclusion file was locked. Excluding 602, 604 and 608.\n');
-end
+subjects = gcp_subject_inclusion(subjects, paths);
 addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
 
 datapath = paths.features;

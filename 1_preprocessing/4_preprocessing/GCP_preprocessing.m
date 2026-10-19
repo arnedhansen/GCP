@@ -2,8 +2,12 @@
 
 %% Setup
 startup
-[subjects, paths] = setup('GCP');
+[~, paths] = setup('GCP');
 mergedPath = paths.merged;
+dMerged = dir(mergedPath);
+subjects = {dMerged([dMerged.isdir]).name};
+subjects = subjects(~ismember(subjects, {'.', '..'}));
+subjects = sort(subjects);
 runMode = askRunMode();
 
 % EyeLink event-rate windows (must match GCP_gaze_fex)

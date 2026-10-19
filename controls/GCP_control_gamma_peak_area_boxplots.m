@@ -6,11 +6,7 @@
 
 startup
 [subjects, paths, colors, ~] = setup('GCP', 0);
-try
-    subjects = gcp_subject_inclusion(subjects, paths);
-catch
-    subjects = subjects(~ismember(str2double(string(subjects)), [602, 604, 608]));
-end
+subjects = gcp_subject_inclusion(subjects, paths);
 nSubj = numel(subjects);
 nCond = 4;
 fprintf('[AREA BOX] N = %d (%s)\n', nSubj, strjoin(subjects, ', '));

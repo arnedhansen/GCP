@@ -84,7 +84,7 @@ Writes AOC-style CSVs under `data/stats/` (`GCP_mixedlm_slope.csv`, `GCP_pairwis
 
 ### controls
 
-`GCP_subject_inclusion.m` defines a manual seed/override for the analysis cohort (default exclusion of subjects 602, 604, 608). After `GCP_eeg_fex_GED.m` runs, inclusion is overwritten automatically based on valid gamma power. `GCP_et_cal_val.m` summarises EyeLink calibration and validation quality. `GCP_eeg_impedances.m` extracts and plots ANT impedances before and after recording.
+`GCP_subject_inclusion.m` seeds the analysis cohort with every subject included. After `GCP_eeg_fex_GED.m` runs, inclusion is overwritten from valid gamma power, so a subject with no eligible GED component is excluded. Pilot analysis outputs live in `_PILOT` on the students share. Pilot raw recordings live in `OCC/GCP/data_pilot` on the data share. The live raw folder is `OCC/GCP/data`. `GCP_et_cal_val.m` summarises EyeLink calibration and validation quality. `GCP_eeg_impedances.m` extracts and plots ANT impedances before and after recording.
 
 ### tests
 

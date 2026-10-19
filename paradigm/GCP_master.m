@@ -25,8 +25,7 @@ addpath(FUNS_PATH) % Add path to folder with functions
 screenSettings % Manage screens
 
 %% Collect ID and Age
-%dialogID;
-subject.ID = 991; %Set to 99X for tests
+dialogID;
 
 %% Protect Matlab code from participant keyboard input
 ListenChar(2);

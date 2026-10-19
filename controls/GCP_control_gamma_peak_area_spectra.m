@@ -7,11 +7,7 @@
 
 startup
 [subjects, paths, ~, ~] = setup('GCP');
-try
-    subjects = gcp_subject_inclusion(subjects, paths);
-catch
-    subjects = subjects(~ismember(str2double(string(subjects)), [602, 604, 608]));
-end
+subjects = gcp_subject_inclusion(subjects, paths);
 
 out_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/controls';
 if ~exist(out_dir, 'dir')

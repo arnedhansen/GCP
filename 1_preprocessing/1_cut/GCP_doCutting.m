@@ -47,7 +47,7 @@ for id = 1 : length(ids)
                     etfile = [id, '_Resting_ET.mat'];
                 else
                     task = 'Training';
-                    break
+                    continue
                 end
             else
                 task = 'GCP';
