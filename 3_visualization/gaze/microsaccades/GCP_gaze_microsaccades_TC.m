@@ -1,16 +1,14 @@
-%% GCP Gaze Microsaccade Suppression Contrast Conditions
-% Loads already processed microsaccade percentage-change time courses from
-% 2_feature_extraction/GCP_gaze_fex.m (msTS_cXX_bl) and plots
+%% GCP Gaze Microsaccade Rate Contrast Conditions
+% Loads the raw smoothed microsaccade rate in Hz from
+% 2_feature_extraction/GCP_gaze_fex.m (msTS_cXX) and plots
 % per-condition grand-average traces with SEM shading.
 %
-% Important:
-%   - Trials with MS rate < 0.1 Hz in the baseline or stimulus window are excluded.
-%   - Remaining trials use per-trial % change, then are averaged for the TC.
-%   - Subject boxplot scalars are the mean of trial-level % values per condition.
-%   - A light additional display smoothing is applied here.
+% Trials with no microsaccades remain in the average. A light additional
+% display smoothing is applied here.
 
 %% Setup
 startup
+set(0, 'DefaultFigureVisible', 'off');
 [subjects, paths, colors, ~] = setup('GCP');
 subjects = gcp_subject_inclusion(subjects, paths);
 addpath('/Volumes/g_psyplafor_methlab$/Students/Arne/toolboxes/shadedErrorBar')
@@ -34,7 +32,7 @@ lineW = 4;
 fontSize = 50;
 
 %% Condition definitions
-condFields = {'msTS_c25_bl', 'msTS_c50_bl', 'msTS_c75_bl', 'msTS_c100_bl'};
+condFields = {'msTS_c25', 'msTS_c50', 'msTS_c75', 'msTS_c100'};
 condLabels = {' 25% Contrast', ' 50% Contrast', ' 75% Contrast', ' 100% Contrast'};
 nConds     = length(condFields);
 
@@ -54,9 +52,17 @@ for subj = 1:nSubj
         ch = find(strcmp(msTS.label, 'MSRate'), 1, 'first');
         thisTime = msTS.time(:)';
         thisRate = msTS.avg(ch, :);
+        % The saved series extends past the plotted window. Smooth that
+        % longer series, then crop, so both ends of [-0.5, 2] use real samples.
+        pad_s = kHalf / fsample;
+        if thisTime(1) > t_win(1) - pad_s || thisTime(end) < t_win(2) + pad_s
+            error('GCP_gaze_microsaccades_TC:ShortSeries', ...
+                'Saved microsaccade series does not extend past the plotted window.');
+        end
+        thisRateSm = conv(thisRate, gKernel, 'same');
         idxDisp = thisTime >= t_win(1) & thisTime <= t_win(2);
         thisTimeDisp = thisTime(idxDisp);
-        thisRateDisp = conv(thisRate(idxDisp), gKernel, 'same');
+        thisRateDisp = thisRateSm(idxDisp);
 
         if isempty(t_vec)
             t_vec = thisTimeDisp;
@@ -82,7 +88,7 @@ grandSEM(nValid_ts < 2) = NaN;
 
 %% FIGURE % change MS rate time courses per condition
 close all
-figure('Position', [0 0 1512 982], 'Color', 'w');
+figure('Position', [0 0 1512 982], 'Color', 'w', 'Visible', 'off');
 hold on
 
 % Per-condition lines with SEM shading
@@ -98,11 +104,10 @@ for c = 1:nConds
 end
 
 xline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
-yline(0, 'Color', [0.5 0.5 0.5], 'LineWidth', 0.5, 'LineStyle', '--', 'HandleVisibility', 'off');
 xlim(t_win);
 %ylim([-1.75 1.25])
 xlabel('Time [s]', 'FontSize', fontSize*0.8);
-ylabel('Microsaccade Rate [%]', 'FontSize', fontSize*0.8);
+ylabel('Microsaccade Rate [Hz]', 'FontSize', fontSize*0.8);
 leg_p = gobjects(nConds, 1);
 for c = 1:nConds
     leg_p(c) = patch(nan, nan, colors(c, :), 'FaceAlpha', 0.33, ...

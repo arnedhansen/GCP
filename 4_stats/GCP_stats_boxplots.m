@@ -5,7 +5,7 @@
 %
 % Metrics:
 %   Frequency, Power  (GED peaks from condition-averaged spectra)
-%   MSRate_bl, BCEA_bl, Vel2D_bl, PupilSize_bl
+%   MSRate (Hz) and MSRate_bl (percent change)
 %   Blinks_bl, Fixations_bl, Saccades_bl
 %
 % Data (precomputed; no window recomputation here):
@@ -17,6 +17,7 @@
 
 %% Setup
 startup
+set(0, 'DefaultFigureVisible', 'off');
 [subjects, paths, colors, ~] = setup('GCP', 0);
 subjects = gcp_subject_inclusion(subjects, paths);
 nSubj = numel(subjects);
@@ -54,7 +55,7 @@ gamma.Power.full      = pick_matrix(ged.all_condition_peak_power, ged_idx);
 gazePath = fullfile(paths.features, 'GCP_gaze_window_summaries.mat');
 gazeSum = load(gazePath);
 gaze_idx = match_subjects(gazeSum.subjects, subjects);
-gazeMetrics = {'MSRate_bl','BCEA_bl','Vel2D_bl','PupilSize_bl', ...
+gazeMetrics = {'MSRate','MSRate_bl','BCEA_bl','Vel2D_bl','PupilSize_bl', ...
     'Blinks_bl','Fixations_bl','Saccades_bl'};
 gaze = struct();
 for mi = 1:numel(gazeMetrics)
@@ -69,6 +70,7 @@ end
 plotSpecs = {
     'Frequency',    gamma.Frequency,    'Frequency [Hz]',         false
     'Power',        gamma.Power,        'Power [dB]',             true
+    'MSRate',       gaze.MSRate,         'Microsaccade Rate [Hz]', false
     'MSRate_bl',    gaze.MSRate_bl,      'Microsaccade Rate [%]', true
     'BCEA_bl',      gaze.BCEA_bl,        'BCEA [%]',              true
     'Vel2D_bl',     gaze.Vel2D_bl,       'Eye Velocity [%]',      true
@@ -113,7 +115,7 @@ for iMetric = 1:size(plotSpecs, 1)
         end
 
         close all
-        figure('Position', [0 0 1512 982], 'Color', 'w');
+        figure('Position', [0 0 1512 982], 'Color', 'w', 'Visible', 'off');
         hold on
 
         xJit = nan(size(y));
@@ -200,7 +202,7 @@ for iMetric = 1:size(plotSpecs, 1)
     end
 end
 
-print(datestr(now));
+fprintf('[STATS BOX] Finished %s\n', datestr(now));
 
 %% Local functions
 function idx = match_subjects(allSubjects, keepSubjects)

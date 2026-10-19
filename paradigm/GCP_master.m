@@ -39,11 +39,11 @@ else
     disp('CONTRAST DETECTION DATA ALREADY EXISTS');
 end
 
-% if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_Resting.mat']])
-%     restingEEG
-% else
-%     disp('RESTING EEG DATA ALREADY EXISTS');
-% end
+if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_Resting.mat']])
+     restingEEG
+else
+     disp('RESTING EEG DATA ALREADY EXISTS');
+end
 
 if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])
     TRAINING = 1;

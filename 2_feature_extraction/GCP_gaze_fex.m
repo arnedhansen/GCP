@@ -6,14 +6,15 @@
 %                   deg; 0 = right, 90 = up; y flipped screen coords)
 %   BCEA_Eccentricity (|centroid - fixation| in dva; physical ppd)
 %   Pupil size (raw + baselined % change; subject scalars = mean of trial %)
-%   Microsaccades (Engbert count rates; subject scalars = mean of trial %)
+%   Microsaccades (Engbert count rate in Hz, all trials; time course is the
+%                  smoothed rate in Hz, with no percent baseline)
 %   Eye velocity (raw + baselined % change; subject scalars = mean of trial %)
 %   EyeLink blinks, fixations, saccades (rates from preprocessing gaze_metrics; baselined % change)
 %
 % Subject x condition scalars are saved for the full [0 2] window:
 % features/GCP_gaze_window_summaries.mat
-% Confirmatory *_bl scalars = mean of trial-level
-% percentage change (same aggregation for MS, BCEA, pupil, and velocity).
+% Confirmatory MSRate is the raw stimulus rate in Hz.
+% Other *_bl gaze scalars remain mean trial-level percentage change.
 
 %% Setup
 startup
@@ -29,7 +30,6 @@ analysis_periodTS = [-1 2];
 pupil_store_window = [-1.5, 2.5];
 vel_store_window   = [-1.5, 2.5];  % extend past 2 s so t=2 is not a kernel edge
 vel_smooth_s       = 0.050;        % light smoothing of eye speed TC
-ms_min_rate_hz     = 0.1;          % exclude trials below this in baseline or stimulus
 win_size          = 25;    % blink pad +/-50 ms (25 samples at 500 Hz)
 fsample           = 500;   % eye‐tracker sampling rate
 fixX              = 400;   % fixation cross X (screen gaze space)
@@ -323,7 +323,7 @@ for subj = 1:numel(subjects)
             pupFT.trial{trl} = p_full;
             pupFT.time{trl}  = t_full;
 
-            % Microsaccade rate time series in full window [-1.5, 2]
+            % Microsaccade rate on [-1.5, 2.5], wider than the plotted window.
             t_full_ms = tVec(full_idx);
 
             x_full = raw(1, full_idx);
@@ -397,21 +397,10 @@ for subj = 1:numel(subjects)
                     ms_rate_full = conv(ms_imp, ms_kernel, 'same') ./ ms_kernel_mass * fsample;
                     ms_rate_full(~valid_clean) = NaN;
 
-                    % Store in FieldTrip struct with the original regular time axis
-                    % (TC is for plotting only; boxplot scalars use direct counts)
+                    % Smoothed rate in Hz. Trials with no microsaccades stay in
+                    % the average so the time course matches the raw count rate.
                     msFT.trial{trl} = ms_rate_full;
                     msFT.time{trl}  = t_full_ms;
-
-                    % Drop sparse trials from the TC average only
-                    bl_ms_idx = t_full_ms >= baseline_period(1) & t_full_ms <= baseline_period(2);
-                    an_ms_idx = t_full_ms >= analysis_period(1) & t_full_ms <= analysis_period(2);
-                    bl_tc = mean(ms_rate_full(bl_ms_idx), 'omitnan');
-                    an_tc = mean(ms_rate_full(an_ms_idx), 'omitnan');
-                    if ~isfinite(bl_tc) || ~isfinite(an_tc) || ...
-                            bl_tc < ms_min_rate_hz || an_tc < ms_min_rate_hz
-                        msFT.trial{trl} = nan(1, n_total_full);
-                        msFT.time{trl}  = t_full_ms;
-                    end
                 end
             end
 
@@ -488,30 +477,19 @@ for subj = 1:numel(subjects)
         cfg.keeptrials = 'no';
         pupTS_BL = ft_timelockanalysis(cfg, pupFT_bl);
 
-        % Timelocked average without baseline
-        t_ms_common = baseline_period(1):(1 / fsample):analysis_period(2);
+        % Keep the full detection window. The plotted interval is [-0.5, 2];
+        % samples outside it give the rate kernel real data on both sides.
+        t_ms_common = vel_store_window(1):(1 / fsample):vel_store_window(2);
         msFT = force_common_timeaxis(msFT, t_ms_common);
 
         cfg = [];
-        cfg.latency    = analysis_periodTS;
+        cfg.latency    = vel_store_window;
         cfg.keeptrials = 'no';
         msTS_noBL = ft_timelockanalysis(cfg, msFT);
 
-        % Per-trial % TC for plotting (sparse trials already NaN in msFT)
-        msFT_bl = msFT;
-        for trl = 1:nTrials
-            if all(~isfinite(msFT.trial{trl}(:))) || ...
-                    ~isfinite(baselineMSRate(trl)) || baselineMSRate(trl) <= 0
-                continue
-            end
-            msFT_bl.trial{trl} = compute_pct_baseline(msFT.trial{trl}, baselineMSRate(trl));
-        end
-        msFT_bl = force_common_timeaxis(msFT_bl, t_ms_common);
-
-        cfg = [];
-        cfg.latency    = analysis_periodTS;
-        cfg.keeptrials = 'no';
-        msTS_BL = ft_timelockanalysis(cfg, msFT_bl);
+        % Same raw rate in Hz. The _bl name is kept so older loads do not
+        % pick up a percent trace.
+        msTS_BL = msTS_noBL;
 
         % Trial-level baselined scalars (% change). Subject condition means use these.
         BCEA_bl          = compute_pct_baseline(bcea, baselineBcea);
@@ -812,8 +790,9 @@ for subj = 1:numel(subjects)
         'Saccades_bl',      num2cell([c25_saccades_bl; c50_saccades_bl; c75_saccades_bl; c100_saccades_bl]) );
 
     %% Save
-        'subj_data_gaze_trial_c25',  'subj_data_gaze_trial_c50',  ...
-        'subj_data_gaze_trial_c75',  'subj_data_gaze_trial_c100');
+    save(fullfile(savepath, 'gaze_matrix_trial'), ...
+        'subj_data_gaze_trial_c25', 'subj_data_gaze_trial_c50', ...
+        'subj_data_gaze_trial_c75', 'subj_data_gaze_trial_c100');
     save(fullfile(savepath,'gaze_matrix_subj'),   'subj_data_gaze');
     save(fullfile(savepath,'gaze_matrix_baseline'),'subj_data_gaze_baseline');
     save(fullfile(savepath,'gaze_matrix_bl'),'subj_data_gaze_bl');
@@ -914,7 +893,7 @@ end
 
 function save_gaze_window_summaries(featuresRoot, subjects, gaze_data)
 % Build cond x subject matrices for boxplots (full window only).
-metricBases = {'MSRate_bl','Vel2D_bl','PupilSize_bl','BCEA_bl', ...
+metricBases = {'MSRate','MSRate_bl','Vel2D_bl','PupilSize_bl','BCEA_bl', ...
         'BCEA_Direction','BCEA_Eccentricity', ...
         'Blinks_bl','Fixations_bl','Saccades_bl'};
 nSubj = numel(subjects);

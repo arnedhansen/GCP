@@ -9,7 +9,7 @@
 % helpers as the confirmatory condition averages. The GED spatial filter
 % is not refit.
 %
-% Figures (paths.figures/split, also written to the volume path below):
+% Figures (figures/controls/ms_rate_median_split):
 %   Paired low vs high boxes: power, frequency, pupil size
 %   High minus low boxes: power, frequency
 %   Sanity check spectra: one panel per contrast
@@ -35,7 +35,7 @@ condTitles = {'25% Contrast', '50% Contrast', '75% Contrast', '100% Contrast'};
 min_trials_per_bin = 8;
 peak_halfwidth_hz = 5;
 
-fig_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/split';
+fig_dir = '/Volumes/g_psyplafor_methlab$/Students/Arne/GCP/figures/controls/ms_rate_median_split';
 if ~exist(fig_dir, 'dir')
     mkdir(fig_dir);
 end

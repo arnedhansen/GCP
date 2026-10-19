@@ -36,12 +36,11 @@ CONDITION_ORDER = ["25%", "50%", "75%", "100%"]
 COND_NUM_TO_LABEL = {1: "25%", 2: "50%", 3: "75%", 4: "100%"}
 COND_LABEL_TO_PCT = {"25%": 25.0, "50%": 50.0, "75%": 75.0, "100%": 100.0}
 CONTRAST_LEVELS = np.array([25.0, 50.0, 75.0, 100.0], dtype=float)
-CONTRAST_POP_SD = float(np.sqrt(np.mean((CONTRAST_LEVELS - CONTRAST_LEVELS.mean()) ** 2)))
 
 # Confirmatory full-window DVs (RR): pupil, MS rate, BCEA, Vel2D, GPP, GPF
 VARIABLES = [
     ("PupilSize_bl", "Pupil Size [%]", "pupil"),
-    ("MSRate_bl", "Microsaccade Rate [%]", "ms"),
+    ("MSRate", "Microsaccade Rate [Hz]", "ms"),
     ("BCEA_bl", "BCEA [%]", "bcea"),
     ("Vel2D_bl", "Eye Velocity [%]", "vel2d"),
     ("Power", "Peak Gamma Power [dB]", "gpp"),
@@ -54,21 +53,21 @@ PAIRWISE_COMPARISONS = [
     for j in range(i + 1, len(CONDITION_ORDER))
 ]
 
-# H7: Frequency and Power each with MSRate_bl, BCEA_bl, Vel2D_bl (not pupil)
+# H7: Frequency and Power each with MSRate (raw Hz), BCEA_bl, Vel2D_bl (not pupil)
 H7_PAIRS = [
-    ("Frequency", "MSRate_bl"),
+    ("Frequency", "MSRate"),
     ("Frequency", "BCEA_bl"),
     ("Frequency", "Vel2D_bl"),
-    ("Power", "MSRate_bl"),
+    ("Power", "MSRate"),
     ("Power", "BCEA_bl"),
     ("Power", "Vel2D_bl"),
 ]
 
 
 def contrast_num_c_from_labels(condition: pd.Series) -> np.ndarray:
-    """Centered/scaled contrast coding matching section 2.4 / power analysis."""
+    """Contrast in percentage points, centered at the mean of the four levels (62.5)."""
     pct = condition.map(COND_LABEL_TO_PCT).to_numpy(dtype=float)
-    return (pct - float(CONTRAST_LEVELS.mean())) / CONTRAST_POP_SD
+    return pct - float(CONTRAST_LEVELS.mean())
 
 
 def load_merged_subject_data(csv_path: str) -> pd.DataFrame:

@@ -8,7 +8,8 @@
 %   C  F-test on Combined Eye Velocity
 %
 % Null: condition means equal at each time point (25/50/75/100% contrast).
-% Data: baselined % change time courses (pupil, MS, Vel2D).
+% Data: pupil and velocity are baselined percent change.
+% Microsaccade rate is the raw smoothed rate in Hz.
 
 %% Setup
 startup
@@ -50,11 +51,11 @@ for subj = 1:nSubj
     allPup100{subj} = pup.pupTS_c100_bl;
 
     ms = load(fullfile(gazePath, 'gaze_microsaccade_timeseries.mat'), ...
-        'msTS_c25_bl', 'msTS_c50_bl', 'msTS_c75_bl', 'msTS_c100_bl');
-    allMs25{subj} = ms.msTS_c25_bl;
-    allMs50{subj} = ms.msTS_c50_bl;
-    allMs75{subj} = ms.msTS_c75_bl;
-    allMs100{subj} = ms.msTS_c100_bl;
+        'msTS_c25', 'msTS_c50', 'msTS_c75', 'msTS_c100');
+    allMs25{subj} = ms.msTS_c25;
+    allMs50{subj} = ms.msTS_c50;
+    allMs75{subj} = ms.msTS_c75;
+    allMs100{subj} = ms.msTS_c100;
 
     vel = load(fullfile(gazePath, 'gaze_velocity_timeseries.mat'), ...
         'velTS_c25_bl', 'velTS_c50_bl', 'velTS_c75_bl', 'velTS_c100_bl');

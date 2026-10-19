@@ -50,8 +50,13 @@ for i = 1:numel(var_names)
     end
 
     if is_gaze_metric
-        % Keep gaze only when baselined (full, early, or late windows)
-        if contains(vn, '_bl')
+        % Microsaccade rate is the raw rate in Hz. Other gaze metrics
+        % stay as percentage change.
+        if strcmp(vn_core, 'MSRate')
+            numeric_vars{end+1} = vn; %#ok<AGROW>
+        elseif startsWith(vn_core, 'MSRate')
+            continue
+        elseif contains(vn, '_bl')
             numeric_vars{end+1} = vn; %#ok<AGROW>
         end
     else
