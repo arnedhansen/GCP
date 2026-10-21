@@ -1,0 +1,251 @@
+%% GCP Stats Boxplots
+%
+% Subject-level boxplots across contrast for gamma and gaze metrics.
+% Stimulus interval: 0-2 s.
+%
+% Metrics:
+%   Frequency, Power  (GED peaks from condition-averaged spectra)
+%   MSRate (Hz) and MSRate_bl (percent change)
+%   Blinks_bl, Fixations_bl, Saccades_bl
+%
+% Data (precomputed; no window recomputation here):
+%   GCP_eeg_GED.mat  (all_condition_peak_freq/power)
+%   GCP_gaze_window_summaries.mat  (from GCP_gaze_fex.m)
+%
+% Output: figures/stats/boxplots/
+%   GCP_stats_boxplot_<Metric>.png (assembly-compatible)
+
+%% Setup
+startup
+set(0, 'DefaultFigureVisible', 'off');
+[subjects, paths, colors, ~] = setup('GCP', 0);
+if ispc
+    addpath('C:\Users\Administrator\Documents\GitHub\GCP\_BACKUP\_PILOT');
+else
+    addpath('/Users/Arne/Documents/GitHub/GCP/_BACKUP/_PILOT');
+end
+[paths, subjects] = gcp_pilot_paths(paths);
+subjects = gcp_subject_inclusion(subjects, paths);
+nSubj = numel(subjects);
+fprintf('[STATS BOX] Included GED cohort: N = %d (%s)\n', nSubj, strjoin(subjects, ', '));
+
+nCond = 4;
+xtickLabs = {'25%', '50%', '75%', '100%'};
+winNames = {'full'};
+
+out_dir = fullfile(paths.figures, 'stats', 'boxplots');
+
+%% Aesthetics
+fontSize       = 50;
+axisLabelSize  = fontSize * 0.9;
+yTickFontSize  = axisLabelSize;
+xLabelFontSize = axisLabelSize;
+xTickFontSize  = axisLabelSize * (1 - 0.33);
+dotSize        = 400;
+dotAlpha       = 0.85;
+jitter         = 0.4;
+boxWidth       = 0.55;
+
+%% Load gamma data
+ged = load(fullfile(paths.features, 'GCP_eeg_GED.mat'), ...
+    'all_condition_peak_freq', ...
+    'all_condition_peak_power', ...
+    'subjects');
+ged_idx = match_subjects(ged.subjects, subjects);
+
+gamma = struct();
+gamma.Frequency.full  = pick_matrix(ged.all_condition_peak_freq, ged_idx);
+gamma.Power.full      = pick_matrix(ged.all_condition_peak_power, ged_idx);
+
+%% Gaze
+gazePath = fullfile(paths.features, 'GCP_gaze_window_summaries.mat');
+gazeSum = load(gazePath);
+gaze_idx = match_subjects(gazeSum.subjects, subjects);
+gazeMetrics = {'MSRate','MSRate_bl','BCEA_bl','Vel2D_bl','PupilSize_bl', ...
+    'Blinks_bl','Fixations_bl','Saccades_bl'};
+gaze = struct();
+for mi = 1:numel(gazeMetrics)
+    name = gazeMetrics{mi};
+    for wi = 1:numel(winNames)
+        wn = winNames{wi};
+        gaze.(name).(wn) = pick_matrix(gazeSum.(name).(wn), gaze_idx);
+    end
+end
+
+%% Specs: {varName, windowsStruct, yLabel, drawZero}
+plotSpecs = {
+    'Frequency',    gamma.Frequency,    'Frequency [Hz]',         false
+    'Power',        gamma.Power,        'Power [dB]',             true
+    'MSRate',       gaze.MSRate,         'Microsaccade Rate [Hz]', false
+    'MSRate_bl',    gaze.MSRate_bl,      'Microsaccade Rate [%]', true
+    'BCEA_bl',      gaze.BCEA_bl,        'BCEA [%]',              true
+    'Vel2D_bl',     gaze.Vel2D_bl,       'Eye Velocity [%]',      true
+    'PupilSize_bl', gaze.PupilSize_bl,   'Pupil Size [%]',        true
+    'Blinks_bl',    gaze.Blinks_bl,      'Blinks [%]',            true
+    'Fixations_bl', gaze.Fixations_bl,   'Fixations [%]',         true
+    'Saccades_bl',  gaze.Saccades_bl,    'Saccades [%]',          true
+    };
+
+subjIDs = str2double(string(subjects(:)));
+
+%% Plot
+for iMetric = 1:size(plotSpecs, 1)
+    varName = plotSpecs{iMetric, 1};
+    winMats = plotSpecs{iMetric, 2};
+    ylabStr = plotSpecs{iMetric, 3};
+    drawZero = plotSpecs{iMetric, 4};
+
+    for iWin = 1:numel(winNames)
+        winName = winNames{iWin};
+        if ~isfield(winMats, winName) || isempty(winMats.(winName))
+            continue
+        end
+        M = winMats.(winName);
+        if ~any(isfinite(M(:)))
+            continue
+        end
+
+        y = nan(nCond * nSubj, 1);
+        condIdx = nan(nCond * nSubj, 1);
+        idVec = nan(nCond * nSubj, 1);
+        row = 0;
+        for s = 1:nSubj
+            for c = 1:nCond
+                row = row + 1;
+                idVec(row) = subjIDs(s);
+                condIdx(row) = c;
+                if c <= size(M, 1) && s <= size(M, 2)
+                    y(row) = M(c, s);
+                end
+            end
+        end
+
+        close all
+        figure('Position', [0 0 1512 982], 'Color', 'w', 'Visible', 'off');
+        hold on
+
+        xJit = nan(size(y));
+        for s = 1:nSubj
+            idxSubj = idVec == subjIDs(s);
+            for c = 1:nCond
+                idxPt = idxSubj & condIdx == c & isfinite(y);
+                if any(idxPt)
+                    xJit(idxPt) = c + jitter * (rand - 0.5);
+                end
+            end
+        end
+
+        for c = 1:nCond
+            idxC = condIdx == c & isfinite(y);
+            yC = y(idxC);
+            if isempty(yC)
+                continue
+            end
+            boxplot(yC, ones(numel(yC), 1), 'Positions', c, 'Symbol', '', ...
+                'Widths', boxWidth, 'Colors', 'k');
+        end
+        styleCurrentBoxplot(colors(1:nCond, :));
+
+        yl = ylim;
+        if drawZero && yl(1) <= 0 && yl(2) >= 0
+            yline(0, '--', 'Color', [0.6 0.6 0.6], 'LineWidth', 1);
+        end
+
+        for s = 1:nSubj
+            idxSubj = idVec == subjIDs(s);
+            xSubj = xJit(idxSubj);
+            ySubj = y(idxSubj);
+            condSubjIdx = condIdx(idxSubj);
+            valid = isfinite(ySubj) & isfinite(xSubj);
+            xSubj = xSubj(valid);
+            ySubj = ySubj(valid);
+            condSubjIdx = condSubjIdx(valid);
+            if numel(ySubj) < 2
+                continue
+            end
+            [~, sortIdx] = sort(condSubjIdx);
+            plot(xSubj(sortIdx), ySubj(sortIdx), '-', ...
+                'Color', [0.8 0.8 0.8], 'LineWidth', 1);
+        end
+
+        for c = 1:nCond
+            idxC = condIdx == c & isfinite(y);
+            scatter(xJit(idxC), y(idxC), dotSize, colors(c, :), 'filled', ...
+                'MarkerFaceAlpha', dotAlpha);
+        end
+
+        xlim([0.5 nCond + 0.5]);
+        yValid = y(isfinite(y));
+        if ~isempty(yValid)
+            yPad = 0.05 * range(yValid);
+            ylim([min(yValid) - yPad, max(yValid) + yPad]);
+        end
+        xticks(1:nCond);
+        xticklabels(xtickLabs);
+
+        hXlab = xlabel('Contrast', 'FontSize', xLabelFontSize);
+        hYlab = ylabel(ylabStr, 'Interpreter', 'none', 'FontSize', axisLabelSize);
+
+        ax = gca;
+        ax.XAxis.FontSize = xTickFontSize;
+        ax.YAxis.FontSize = yTickFontSize;
+        hXlab.FontSize = xLabelFontSize;
+        hYlab.FontSize = axisLabelSize;
+        set(ax, 'Box', 'off');
+        box off;
+        hold off;
+
+        if strcmp(winName, 'full')
+            outName = sprintf('GCP_stats_boxplot_%s.png', varName);
+        else
+            outName = sprintf('GCP_stats_boxplot_%s_%s.png', varName, winName);
+        end
+        outPath = fullfile(out_dir, outName);
+        drawnow; pause(0.05);
+        set(gcf, 'PaperPositionMode', 'auto');
+        print(gcf, outPath, '-dpng', '-r600');
+        fprintf('[STATS BOX] Saved %s\n', outPath);
+    end
+end
+
+fprintf('[STATS BOX] Finished %s\n', datestr(now));
+
+%% Local functions
+function idx = match_subjects(allSubjects, keepSubjects)
+idx = arrayfun(@(s) find(strcmp(allSubjects, keepSubjects{s}), 1), ...
+    1:numel(keepSubjects));
+if any(cellfun(@isempty, num2cell(idx)))
+    error('GCP_stats_boxplots:SubjectMismatch', ...
+        'One or more included subjects are missing from a data source.');
+end
+end
+
+function M = pick_matrix(src, subj_idx)
+M = nan(size(src, 1), numel(subj_idx));
+for s = 1:numel(subj_idx)
+    si = subj_idx(s);
+    if si <= size(src, 2)
+        M(:, s) = src(:, si);
+    end
+end
+end
+
+function styleCurrentBoxplot(boxColors)
+hBoxes = findobj(gca, 'Tag', 'Box');
+if isempty(hBoxes)
+    return
+end
+nB = numel(hBoxes);
+mx = zeros(nB, 1);
+for ii = 1:nB
+    xd = get(hBoxes(ii), 'XData');
+    mx(ii) = mean(xd(:), 'omitnan');
+end
+[~, ord] = sort(mx);
+hBoxes = hBoxes(ord);
+for bi = 1:min(numel(hBoxes), size(boxColors, 1))
+    patch(get(hBoxes(bi), 'XData'), get(hBoxes(bi), 'YData'), ...
+        boxColors(bi, :), 'FaceAlpha', 0.25, ...
+        'EdgeColor', boxColors(bi, :), 'LineWidth', 1.5);
+end
+end

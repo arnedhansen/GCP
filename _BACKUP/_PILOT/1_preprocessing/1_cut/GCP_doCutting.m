@@ -1,0 +1,83 @@
+%% Cutting of GCP EEG data for the GCP study
+% Automatically finds all not converted .cnt files
+
+%% EEGlab
+clear
+clc
+[~, paths] = setup('GCP');
+if ispc
+    addpath('C:\Users\Administrator\Documents\GitHub\GCP\_BACKUP\_PILOT');
+else
+    addpath('/Users/Arne/Documents/GitHub/GCP/_BACKUP/_PILOT');
+end
+[paths, subjects] = gcp_pilot_paths(paths);
+p = pwd;
+cd(paths.eeglab)
+eeglab
+close()
+cd(p)
+
+%% Define path, cut data and convert asc to mat files.
+d = dir(fullfile(paths.raw_occ, '*', '*cnt'));
+ids = {};
+for f = 1 : size(d, 1)
+    filePath = fullfile( d(f).folder, d(f).name);
+    GCP_cutData(filePath) % Perform cutting
+    id = strsplit(d(f).name, '_');
+    ids{f} = id{1};
+    fprintf('[CUT] Subject %s done\n', ids{f})
+end
+
+%% Load and synchronize EEG & Eyelink
+for id = 1 : length(ids) 
+    ID = ids{id};
+
+    filePath = fullfile(paths.raw_occ, ID);
+    d = dir(fullfile(filePath, '*.asc'));
+    
+    if not(isempty(d))
+        for f = 1 : size(d, 1)
+            % Convert ET asc to mat
+            inputFile = fullfile(d(f).folder, d(f).name);
+            
+            % Rename the files (EyeLink can't deal with long filenames, edf filenames has to be short)
+            x = strsplit(d(f).name, '_');
+            name = x{2};
+            id = x{end-1};
+            block = str2double(name(1));
+
+            if isnan(block)
+                if strcmp(name, 'Res.asc')
+                    task = 'Resting';
+                    eegfile = [id, '_Resting_EEG.mat'];
+                    etfile = [id, '_Resting_ET.mat'];
+                else
+                    task = 'Training';
+                    break
+                end
+            else
+                task = 'GCP';
+                etfile = [id, '_' task, '_block', num2str(block), '_task_ET.mat'];
+            end
+            outputFile = fullfile(d(f).folder, etfile);
+            ET = parseeyelink(inputFile, outputFile);
+        end
+    end
+
+    % Move asc files to archive
+    d = dir(fullfile(filePath, '*.asc'));
+    for f = 1 : size(d, 1)
+        source = fullfile(d(f).folder, d(f).name);
+        destination = fullfile(fullfile(filePath, 'archive'));
+        movefile(source,destination)
+    end
+
+    % Move edf files to archive
+    d = dir(fullfile(filePath, '*.edf'));
+    for f = 1 : size(d, 1)
+        source = fullfile(d(f).folder, d(f).name);
+        destination = fullfile(fullfile(filePath, 'archive'));
+        movefile(source,destination)
+    end
+end
+fprintf('[CUT] SYNCHRONIZATION COMPLETE\n')
