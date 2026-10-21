@@ -1,7 +1,7 @@
 %% Master script for the GCP (Gamma Contrast Perception) Study
 %
-% - Contrast detection screening (21 trials, >=80% to continue)
 % - Resting EEG
+% - Contrast detection screening (21 trials, >=80% to continue)
 % - Gratings Training (10 trials)
 % - Gratings (704 trials: 160x4 = 640 valid trials + 16x4 = 64 trials with task condition)
 %   - 176x contrast 25%
@@ -32,16 +32,16 @@ ListenChar(2);
 
 %% Check for existing files and start tasks
 
-if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_contrast_detection.mat']])
-    GCP_contrast_detection_test;
-else
-    disp('CONTRAST DETECTION DATA ALREADY EXISTS');
-end
-
 if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_Resting.mat']])
      restingEEG
 else
      disp('RESTING EEG DATA ALREADY EXISTS');
+end
+
+if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_contrast_detection.mat']])
+    GCP_contrast_detection_test;
+else
+    disp('CONTRAST DETECTION DATA ALREADY EXISTS');
 end
 
 if ~isfile([DATA_PATH, '/', num2str(subject.ID), '/', [num2str(subject.ID), '_training.mat']])

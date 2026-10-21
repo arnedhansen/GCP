@@ -306,7 +306,7 @@ data.whiteCross(1, exp.nTrials)  = NaN; % Binary measure for task condition
 data.responses(1, exp.nTrials)   = NaN; % Binary measure for (no) response
 data.correct(1, exp.nTrials)     = NaN; % Binary measure for correct responses
 data.reactionTime(1:exp.nTrials) = NaN; % Reaction time
-data.fixation(1:exp.nTrials)     = NaN; % 1 = fixated on a presented trial. Failed checks are withheld, not stored here.
+data.fixation(1:exp.nTrials)     = NaN; % 1 = held on a presented trial. Failed checks are withheld and not stored here.
 data.trlDuration(1:exp.nTrials)  = NaN; % Trial duration in seconds
 data.isReplacement(1:exp.nTrials) = 0;  % 1 = this presented grating was withheld earlier for a fixation failure
 % count5trials                     = NaN; % Initialize accuracy reminder loop variable
@@ -326,11 +326,18 @@ end
 % Last screen. The key from the instruction screen must be released first,
 % otherwise that press would start the task immediately.
 KbReleaseWait;
-DrawFormattedText(ptbWindow, startDoorText, 'center', 'center', black);
+if TRAINING == 1
+    startPromptText = 'Press any button to start.';
+    waitMsg = 'Waiting for the participant to start training.';
+else
+    startPromptText = startDoorText;
+    waitMsg = 'Waiting for the participant to start after the door is closed.';
+end
+DrawFormattedText(ptbWindow, startPromptText, 'center', 'center', black);
 Screen('DrawDots',ptbWindow, backPos, backDiameter, backColor,[],1);
 Screen('Flip',ptbWindow);
 clc;
-disp('Waiting for the participant to start after the door is closed.');
+disp(waitMsg);
 KbWait(-1, 2);
 
 % Training sends only BLOCK0 to EyeLink. EEG recording is not started.
@@ -442,7 +449,7 @@ while ~isempty(trialQueue)
         noFixation = checkFixation(screen.centerX, screen.centerY, timing.fixCheckDuration);
     end
 
-    % Withhold the grating when pre-stimulus fixation failed, and repeat it later.
+    % Withhold the grating whenever pre-stimulus fixation fails, including repeats.
     if noFixation
         DrawFormattedText(ptbWindow, 'Please fixate on the cross!', 'center', 'center', black);
         Screen('DrawDots', ptbWindow, backPos, backDiameter, backColor, [], 1);
@@ -458,8 +465,7 @@ while ~isempty(trialQueue)
         replQueue(end+1) = 1;
         nFixSkipped = nFixSkipped + 1;
         withheldGratings(end+1) = currentGrating; %#ok<SAGROW>
-        fprintf('Fixation failed before %s. Grating withheld and moved to the end of the block. Withheld so far: %d\n', ...
-            strtrim(gratingForm), nFixSkipped);
+        fprintf('Fixation FAILED. Moved to end of block. Withheld: %d\n', nFixSkipped);
         continue
     end
 
@@ -614,7 +620,7 @@ while ~isempty(trialQueue)
     overall_accuracy = round((sum(data.correct(1:trl))/trl)*100);
     reactionTime = num2str(round(data.reactionTime(trl), 2), '%.2f');
     if data.isReplacement(trl)
-        replLabel = ' [R]';
+        replLabel = ' | [R]';
     else
         replLabel = '';
     end
@@ -623,8 +629,8 @@ while ~isempty(trialQueue)
     else
         blockStr = sprintf('%d/4', BLOCK);
     end
-    fprintf('Response to Trial %3d/%d%-4s in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss | %s)\n', ...
-        trl, exp.nTrials, replLabel, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, gratingForm);
+    fprintf('Response to Trial %3d/%d in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss) | %s%s\n', ...
+        trl, exp.nTrials, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, strtrim(gratingForm), replLabel);
 
     % Save trial duration in seconds
     data.trlDuration(trl) = toc;

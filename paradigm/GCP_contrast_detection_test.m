@@ -1,8 +1,9 @@
 %% GCP Contrast Detection Test
-% Screening task run before training. Participants judge whether contrast
-% increased or decreased relative to the previous grating (arrow keys).
-% Contrast levels are sampled at random, excluding immediate repeats.
-% No EEG or eye tracking.
+% Screening task run after resting EEG and before training. Participants
+% judge whether contrast increased or decreased relative to the previous
+% grating (arrow keys). Contrast levels are sampled at random, excluding
+% immediate repeats. Responses that are too slow are shown on screen and
+% excluded from accuracy. No EEG or eye tracking.
 %
 % Template: GCP_gratingsTask.m
 
@@ -19,11 +20,13 @@ contrastPct = [25, 50, 75, 100];
 
 %% Set up text parameters
 startExperimentText = [
-    'You will see a series of gratings. \n\n' ...
-    'After the first grating, press the UP arrow \n\n' ...
-    'if contrast increased, or the DOWN arrow \n\n' ...
-    'if contrast decreased, compared to the previous grating. \n\n' ...
-    'Respond while the grating is on screen. \n\n' ...
+    'You will see gratings, one after another. \n\n' ...
+    'Compare each grating with the one before it. \n\n' ...
+    'Press the UP arrow if this grating \n\n' ...
+    'has MORE contrast. \n\n' ...
+    'Press the DOWN arrow if this grating \n\n' ...
+    'has LESS contrast. \n\n' ...
+    'Press while the grating is still on the screen. \n\n' ...
     'Always look at the center of the screen. \n\n' ...
     '\n\n' ...
     'Press any key to continue...'];
@@ -282,7 +285,7 @@ while ~passed
             if ~responseGiven
                 data.responses(trl) = 0;
                 data.tooSlow(trl) = true;
-                data.correct(trl) = 0;
+                data.correct(trl) = NaN; % excluded from accuracy
                 feedbackText = 'TOO SLOW!';
                 DrawFormattedText(ptbWindow, 'TOO SLOW!', 'center', 'center', black);
                 Screen('Flip', ptbWindow);
@@ -316,25 +319,32 @@ while ~passed
         if trl == 1
             changeStr = '---';
         elseif data.contrastChange(trl) > 0
-            changeStr = 'UP ';
+            changeStr = 'UP';
         else
             changeStr = 'DOWN';
         end
 
-        fprintf('Contrast trial %2d/%d | %s | change: %s | %s | Acc: %s | RT: %s\n', ...
+        fprintf('Contrast trial %2d/%d | %s | change: %-4s | %-11s | Acc: %s | RT: %s\n', ...
             trl, exp.nTrials, gratingForm, changeStr, feedbackText, accStr, rtStr);
 
         data.trlDuration(trl) = toc;
     end
 
-    %% Overall accuracy (exclude first trial)
+    %% Overall accuracy (exclude first trial and too-slow responses)
     scoredCorrect = data.correct(2:end);
+    scoredCorrect = scoredCorrect(~isnan(scoredCorrect));
     nScored = numel(scoredCorrect);
     nCorrect = sum(scoredCorrect == 1);
-    overall_accuracy = round((nCorrect / nScored) * 100);
+    nTooSlow = sum(data.tooSlow(2:end));
+    if nScored == 0
+        overall_accuracy = 0;
+    else
+        overall_accuracy = round((nCorrect / nScored) * 100);
+    end
     data.overallAccuracy = overall_accuracy;
     data.nCorrect = nCorrect;
     data.nScored = nScored;
+    data.nTooSlow = nTooSlow;
     data.attempt = attempt;
 
     timing.endTime = datestr(now, 'dd/mm/yy-HH:MM:SS');
@@ -342,8 +352,8 @@ while ~passed
     endTime = datetime(timing.endTime, 'InputFormat', 'dd/MM/yy-HH:mm:ss');
     timing.duration = seconds(endTime - startTime);
 
-    fprintf('CONTRAST DETECTION overall accuracy: %d%% (%d/%d). Attempt %d.\n', ...
-        overall_accuracy, nCorrect, nScored, attempt);
+    fprintf('CONTRAST DETECTION overall accuracy: %d%% (%d/%d). Too slow excluded: %d. Attempt %d.\n', ...
+        overall_accuracy, nCorrect, nScored, nTooSlow, attempt);
 
     %% End-of-attempt screen
     if overall_accuracy >= exp.passThreshold
@@ -351,14 +361,16 @@ while ~passed
         endText = sprintf([
             'Contrast detection finished.\n\n' ...
             'Accuracy: %d%% (%d/%d)\n\n' ...
+            'Too slow (not counted): %d\n\n' ...
             'Press any key to continue...'], ...
-            overall_accuracy, nCorrect, nScored);
+            overall_accuracy, nCorrect, nScored, nTooSlow);
     else
         endText = sprintf([
             'Accuracy: %d%% (%d/%d)\n\n' ...
+            'Too slow (not counted): %d\n\n' ...
             'At least %d%% correct is required.\n\n' ...
             'Press any key to retry...'], ...
-            overall_accuracy, nCorrect, nScored, exp.passThreshold);
+            overall_accuracy, nCorrect, nScored, nTooSlow, exp.passThreshold);
     end
 
     DrawFormattedText(ptbWindow, endText, 'center', 'center', black);
