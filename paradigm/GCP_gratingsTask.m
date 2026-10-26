@@ -651,7 +651,7 @@ while ~isempty(trialQueue)
         blockStr = sprintf('%d/4', BLOCK);
     end
     fprintf('Response to Trial %3d/%d in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss | %s%s)\n', ...
-        trl, exp.nTrials, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, strtrim(gratingForm), replLabel);
+        trl, exp.nTrials, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, gratingForm, replLabel);
 
     % Save trial duration in seconds
     data.trlDuration(trl) = toc;
