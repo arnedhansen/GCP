@@ -82,6 +82,7 @@ FIXATION_REMINDER        = 91; % Trigger for fixation reminder
 %% Set up experiment parameters
 % Block and Trial Number
 exp.nTrlTrain = 10; % n gratings per training block
+exp.trainPassThreshold = 80; % percent correct required to finish training
 exp.nTrlTask = 176; % n gratings per task block
 
 if TRAINING == 1
@@ -369,13 +370,33 @@ HideCursor(whichScreen); % Make sure to hide cursor from participant screen
 timing.startTime = datestr(now, 'dd/mm/yy-HH:MM:SS'); % Measure duration
 
 %% Experiment Loop %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+trainingAttempt = 0;
+repeatTraining = true;
+while repeatTraining
+trainingAttempt = trainingAttempt + 1;
 clc;
-disp('GCP GRATING TASK...');
+if TRAINING == 1
+    disp('[TRAINING] GCP GRATING TASK');
+    Eyelink('command', 'record_status_message "START TRAINING"');
+else
+    disp('GCP GRATING TASK...');
+end
 trialQueue = gratingSequence;
 replQueue = zeros(1, numel(gratingSequence));
 nFixSkipped = 0;
 withheldGratings = [];
 trl = 0;
+data.grating = nan(1, exp.nTrials);
+data.whiteCross = nan(1, exp.nTrials);
+data.responses = nan(1, exp.nTrials);
+data.correct = nan(1, exp.nTrials);
+data.reactionTime = nan(1, exp.nTrials);
+data.fixation = nan(1, exp.nTrials);
+data.trlDuration = nan(1, exp.nTrials);
+data.isReplacement = zeros(1, exp.nTrials);
+if isfield(timing, 'cfi')
+    timing = rmfield(timing, 'cfi');
+end
 while ~isempty(trialQueue)
     currentGrating = trialQueue(1);
     isRepl = replQueue(1);
@@ -629,7 +650,7 @@ while ~isempty(trialQueue)
     else
         blockStr = sprintf('%d/4', BLOCK);
     end
-    fprintf('Response to Trial %3d/%d in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss) | %s%s\n', ...
+    fprintf('Response to Trial %3d/%d in Block %s is %s (White FixCross: %d | Acc: %3d%% | RT: %4ss | %s%s)\n', ...
         trl, exp.nTrials, blockStr, feedbackText, data.whiteCross(trl), overall_accuracy, reactionTime, strtrim(gratingForm), replLabel);
 
     % Save trial duration in seconds
@@ -641,6 +662,34 @@ data.withheldGrating = withheldGratings;
 nRepl = sum(data.isReplacement(1:trl) == 1);
 disp(['Block summary: ' num2str(trl) ' gratings presented (' num2str(nRepl) ...
     ' after a withheld fixation failure). Fixation failures withheld: ' num2str(nFixSkipped) '.']);
+
+if TRAINING == 1
+    if trl == 0
+        overall_accuracy = 0;
+    else
+        overall_accuracy = round((sum(data.correct(1:trl)) / trl) * 100);
+    end
+    data.overallAccuracy = overall_accuracy;
+    data.trainingAttempt = trainingAttempt;
+    if overall_accuracy < exp.trainPassThreshold
+        retryText = ['Training unsuccessful.' ...
+            '\n\n Accuracy: ' num2str(overall_accuracy) '%.' ...
+            '\n\n At least ' num2str(exp.trainPassThreshold) '% correct is required.' ...
+            '\n\n Press any key to start training again.'];
+        DrawFormattedText(ptbWindow, retryText, 'center', 'center', black);
+        Screen('DrawDots', ptbWindow, backPos, backDiameter, backColor, [], 1);
+        Screen('Flip', ptbWindow);
+        Eyelink('command', 'record_status_message "TRAINING UNSUCCESSFUL"');
+        disp(['TRAINING UNSUCCESSFUL (' num2str(overall_accuracy) '%).']);
+        KbReleaseWait;
+        KbWait(-1, 2);
+    else
+        repeatTraining = false;
+    end
+else
+    repeatTraining = false;
+end
+end
 
 %% End task and save data
 
