@@ -385,9 +385,9 @@ function Invoke-EegUpload {
     foreach ($file in $stable) {
         $key = $file.Name.ToLowerInvariant()
         if (-not $byName.ContainsKey($key)) {
-            $byName[$key] = New-Object System.Collections.Generic.List[object]
+            $byName[$key] = New-Object System.Collections.ArrayList
         }
-        $byName[$key].Add($file)
+        [void]$byName[$key].Add($file)
     }
     $duplicates = @()
     $uniqueFiles = @()
@@ -406,9 +406,9 @@ function Invoke-EegUpload {
     foreach ($file in $uniqueFiles) {
         $id = Get-SubjectId -Name $file.Name
         if (-not $byId.ContainsKey($id)) {
-            $byId[$id] = New-Object System.Collections.Generic.List[object]
+            $byId[$id] = New-Object System.Collections.ArrayList
         }
-        $byId[$id].Add($file)
+        [void]$byId[$id].Add($file)
     }
     foreach ($id in @($byId.Keys)) {
         $subjectDir = Join-Path $serverRoot $id
