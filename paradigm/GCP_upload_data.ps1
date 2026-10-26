@@ -218,9 +218,9 @@ function Get-ServerSizes {
         foreach ($item in $items) {
             $key = $item.Name.ToLowerInvariant()
             if (-not $map.ContainsKey($key)) {
-                $map[$key] = New-Object System.Collections.Generic.List[int64]
+                $map[$key] = New-Object System.Collections.ArrayList
             }
-            $map[$key].Add([int64]$item.Length)
+            [void]$map[$key].Add([int64]$item.Length)
         }
     }
     Write-Output $map -NoEnumerate
@@ -232,7 +232,12 @@ function Test-SameSizeOnServer {
     if (-not $SizeMap.ContainsKey($key)) {
         return $false
     }
-    return ($SizeMap[$key] -contains $Length)
+    foreach ($size in @($SizeMap[$key])) {
+        if ([int64]$size -eq $Length) {
+            return $true
+        }
+    }
+    return $false
 }
 
 function Test-AnyCopyOnServer {
@@ -251,8 +256,12 @@ function Get-SubjectId {
 function Test-UnderRoot {
     param([string]$Root, [string]$Path)
     $rootFull = [System.IO.Path]::GetFullPath(($Root.TrimEnd('\') + '\'))
+    if (-not $rootFull.EndsWith('\')) {
+        $rootFull = $rootFull + '\'
+    }
     $pathFull = [System.IO.Path]::GetFullPath($Path)
-    return $pathFull.StartsWith($rootFull, [System.StringComparison]::OrdinalIgnoreCase)
+    # Windows PowerShell 5.1 rejects StartsWith(string, StringComparison).
+    return $pathFull.ToLowerInvariant().StartsWith($rootFull.ToLowerInvariant())
 }
 
 function Copy-ToTemp {
