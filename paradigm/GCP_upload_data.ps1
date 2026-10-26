@@ -1,7 +1,8 @@
 # Upload GCP EEG files from the eego export folder to methlab_data.
 #
 # Reads C:\Users\neuro\Documents\Eego\export for files named <ID>_GCP*.cnt,
-# <ID>_GCP*.evt, and <ID>_GCP*.seg. Each file is copied to
+# <ID>_GCP*.evt, and <ID>_GCP*.seg. Only subject IDs from 200 through 300
+# are uploaded. Each file is copied to
 # \\idnas37.d.uzh.ch\g_psyplafor_methlab_data$\OCC\GCP\data\<ID>\
 # which is V:\OCC\GCP\data\<ID> on the analysis computers.
 #
@@ -18,6 +19,8 @@ $localRoot = 'C:\Users\neuro\Documents\Eego\export'
 $shareUnc = '\\idnas37.d.uzh.ch\g_psyplafor_methlab_data$'
 $drive = 'Z:'
 $serverRel = 'OCC\GCP\data'
+$minSubjectId = 200
+$maxSubjectId = 300
 $script:shouldDisconnect = $false
 $script:stillMounted = $false
 
@@ -253,6 +256,15 @@ function Get-SubjectId {
     return ''
 }
 
+function Test-SubjectInRange {
+    param([Parameter(Mandatory = $true)][string]$Id)
+    $number = 0L
+    if (-not [int64]::TryParse($Id, [ref]$number)) {
+        return $false
+    }
+    return ($number -ge $minSubjectId -and $number -le $maxSubjectId)
+}
+
 function Test-UnderRoot {
     param([string]$Root, [string]$Path)
     $rootFull = [System.IO.Path]::GetFullPath(($Root.TrimEnd('\') + '\'))
@@ -349,14 +361,18 @@ function Invoke-EegUpload {
 
     $matched = @()
     $unrecognized = @()
+    $outsideIds = @{}
     foreach ($file in $found) {
         if ($null -eq $file -or $file.Name -notmatch 'GCP') {
             continue
         }
-        if (-not [string]::IsNullOrWhiteSpace((Get-SubjectId -Name $file.Name))) {
-            $matched += $file
-        } else {
+        $id = Get-SubjectId -Name $file.Name
+        if ([string]::IsNullOrWhiteSpace($id)) {
             $unrecognized += $file.FullName
+        } elseif (-not (Test-SubjectInRange -Id $id)) {
+            $outsideIds[$id] = $true
+        } else {
+            $matched += $file
         }
     }
 
@@ -433,6 +449,12 @@ function Invoke-EegUpload {
     }
 
     Write-Host ("Already on methlab_data: {0}" -f $already.Count)
+    if ($outsideIds.Count -gt 0) {
+        $outsideList = @($outsideIds.Keys | Sort-Object { [int64]$_ })
+        Write-Host ''
+        Write-Host ("These subject IDs are outside {0} to {1} and were left in the export folder." -f $minSubjectId, $maxSubjectId)
+        Show-NameList -Lines $outsideList
+    }
     if ($unrecognized.Count -gt 0) {
         Write-Host ''
         Write-Host 'These files contain GCP but are not named <ID>_GCP. They were left in the export folder.'
@@ -463,9 +485,9 @@ function Invoke-EegUpload {
     if ($toCopy.Count -eq 0) {
         Write-Host ''
         Write-Host 'Nothing new to upload.'
-        $problemCount = $sizeMismatch.Count + $busy.Count + $duplicates.Count + $empty.Count + $unrecognized.Count
+        $problemCount = $sizeMismatch.Count + $busy.Count + $duplicates.Count + $empty.Count + $unrecognized.Count + $outsideIds.Count
         if ($problemCount -eq 0) {
-            Write-Host 'Every GCP .cnt, .evt, and .seg file named <ID>_GCP is already in the subject folder or in archive.'
+            Write-Host ("Every GCP .cnt, .evt, and .seg file for subject IDs {0} to {1} is already in the subject folder or in archive." -f $minSubjectId, $maxSubjectId)
         }
         return 0
     }
