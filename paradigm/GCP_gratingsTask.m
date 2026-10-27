@@ -199,7 +199,7 @@ fixPos                = [screen.centerX, screen.centerY];
 timing.cfilower       = 2000; % Lower limit of CFI duration
 timing.cfiupper       = 3000; % Upper limit of CFI duration
 timing.cfi_task       = 0.5;  % Duration of white fixation cross
-timing.fixCheckDuration = 0.5; % Pre-stimulus fixation check during last 500ms of CFI
+timing.fixCheckDuration = 0.5; % Pre-stimulus fixation check during last 500ms of CFI (task blocks only)
 
 %% Settings for inward moving circular grating
 % Size (dva from physical ppd so pixel size stays at gratingSizePixTarget)
@@ -307,7 +307,7 @@ data.whiteCross(1, exp.nTrials)  = NaN; % Binary measure for task condition
 data.responses(1, exp.nTrials)   = NaN; % Binary measure for (no) response
 data.correct(1, exp.nTrials)     = NaN; % Binary measure for correct responses
 data.reactionTime(1:exp.nTrials) = NaN; % Reaction time
-data.fixation(1:exp.nTrials)     = NaN; % 1 = held on a presented trial. Failed checks are withheld and not stored here.
+data.fixation(1:exp.nTrials)     = NaN; % 1 = held on a presented task trial. Training does not check fixation. Failed checks are withheld and not stored here.
 data.trlDuration(1:exp.nTrials)  = NaN; % Trial duration in seconds
 data.isReplacement(1:exp.nTrials) = 0;  % 1 = this presented grating was withheld earlier for a fixation failure
 % count5trials                     = NaN; % Initialize accuracy reminder loop variable
@@ -444,8 +444,13 @@ while ~isempty(trialQueue)
             Eyelink('command', 'record_status_message "FIXCROSS"');
             sendtrigger(TRIGGER, port, SITE, stayup);
         end
-        WaitSecs(cfiDur - timing.fixCheckDuration);
-        noFixation = checkFixation(screen.centerX, screen.centerY, timing.fixCheckDuration);
+        if TRAINING == 1
+            WaitSecs(cfiDur);
+            noFixation = 0;
+        else
+            WaitSecs(cfiDur - timing.fixCheckDuration);
+            noFixation = checkFixation(screen.centerX, screen.centerY, timing.fixCheckDuration);
+        end
 
     elseif whiteCrossTrl == 1 % Task condition
         Screen('DrawLines', ptbWindow, fixCoords, fixationLineWidth, fixationColorWhite, [screen.centerX screen.centerY], 2);
@@ -466,8 +471,13 @@ while ~isempty(trialQueue)
             Eyelink('command', 'record_status_message "FIXCROSS"');
             sendtrigger(TRIGGER, port, SITE, stayup);
         end
-        WaitSecs(cfiDur - timing.cfi_task - timing.fixCheckDuration);
-        noFixation = checkFixation(screen.centerX, screen.centerY, timing.fixCheckDuration);
+        if TRAINING == 1
+            WaitSecs(cfiDur - timing.cfi_task);
+            noFixation = 0;
+        else
+            WaitSecs(cfiDur - timing.cfi_task - timing.fixCheckDuration);
+            noFixation = checkFixation(screen.centerX, screen.centerY, timing.fixCheckDuration);
+        end
     end
 
     % Withhold the grating whenever pre-stimulus fixation fails, including repeats.
@@ -492,7 +502,9 @@ while ~isempty(trialQueue)
 
     trl = trl + 1;
     data.whiteCross(trl) = whiteCrossTrl;
-    data.fixation(trl) = 1;
+    if TRAINING == 0
+        data.fixation(trl) = 1;
+    end
     data.isReplacement(trl) = isRepl;
     data.grating(trl) = currentGrating;
     timing.cfi(trl) = cfiDur;
