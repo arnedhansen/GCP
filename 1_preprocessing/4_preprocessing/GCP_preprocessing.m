@@ -349,7 +349,14 @@ grat_nc = grating(noncatch);
 
 n_ep = n_ft_trials(d25) + n_ft_trials(d50) + n_ft_trials(d75) + n_ft_trials(d100);
 n_nc = numel(fix_nc);
-if n_ep ~= n_nc
+% One extra behavioural trial is the last grating, whose epoch runs past the
+% block-end trigger. Later recordings wait 3 s after that grating.
+if n_nc == n_ep + 1
+    fprintf(['[PREP] Subject %s block %d: %d epochs (61-64) vs %d non-catch trials. ' ...
+        'Dropping the last trial.\n'], subj, block, n_ep, n_nc);
+    fix_nc(end) = [];
+    grat_nc(end) = [];
+elseif n_ep ~= n_nc
     error('GCP_preprocessing:EpochBehavMismatch', ...
         ['Subject %s block %d: %d epochs (61-64) vs %d non-catch behavioural trials. ' ...
         'Refusing silent misalignment.'], subj, block, n_ep, n_nc);

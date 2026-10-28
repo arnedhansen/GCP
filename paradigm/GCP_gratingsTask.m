@@ -709,12 +709,16 @@ end
 Screen('Flip',ptbWindow);
 
 % Training sends only BLOCK0_END to EyeLink.
-% Task blocks send the block-end and task-end markers to EyeLink and EEG.
+% Task blocks keep a fixation cross for 3 s after the last trial so that
+% grating still has 3.5 s of post-onset EEG before the block-end trigger.
 if TRAINING == 1
     Eyelink('Message', num2str(BLOCK0_END));
     Eyelink('command', 'record_status_message "END TRAINING"');
     disp('End of Training Block.');
 else
+    Screen('DrawLines', ptbWindow, fixCoords, fixationLineWidth, fixationColorBlack, [screen.centerX screen.centerY], 2);
+    Screen('Flip', ptbWindow);
+    WaitSecs(3);
     if BLOCK == 1
         TRIGGER = BLOCK1_END;
     elseif BLOCK == 2
