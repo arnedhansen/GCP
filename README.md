@@ -28,7 +28,7 @@ Automagic-preprocessed EEG is merged with the corresponding ET files using `GCP_
 
 Among non-catch trials (triggers 61 to 64), failed pre-stimulus fixation (`fixation == 0`) is dropped. Replacements with `fixation == 1` are kept. Epoch count is asserted against the block behavioural mat.
 
-EEG is average-rereferenced, then epochs with any channel beyond ±90 μV are rejected (`ft_artifact_threshold` / `ft_rejectartifact`). If more than 50% of the post-fixation epochs in a block are flagged, the whole block is discarded.
+EEG is average-rereferenced, then epochs with any channel beyond ±90 μV are rejected (`ft_artifact_threshold` / `ft_rejectartifact`). At least 50% of the post-fixation epochs in a block must remain. Otherwise that block is not used further. A participant with fewer than two remaining blocks is excluded in `controls/GCP_subject_inclusion.mat`, with the reason stored on that row.
 
 Baseline for gaze metric extraction: [−1.5, −0.5] s. Confirmatory analysis window for scalar gaze metrics: [0, 2] s. EyeLink blink, fixation, and saccade rates are counted on the same remaining epochs as saved `dataET`. Outputs go to `data/features/<subject>/eeg` (`dataEEG.mat`) and `.../gaze` (`dataET.mat`, `gaze_metrics.mat`).
 
@@ -84,7 +84,7 @@ Writes AOC-style CSVs under `data/stats/` (`GCP_mixedlm_slope.csv`, `GCP_pairwis
 
 ### controls
 
-`GCP_subject_inclusion.m` seeds the analysis cohort with every subject included. After `GCP_eeg_fex_GED.m` runs, inclusion is overwritten from valid gamma power, so a subject with no eligible GED component is excluded. Pilot analysis outputs live in `_PILOT` on the students share. Pilot raw recordings live in `OCC/GCP/data_pilot` on the data share. The live raw folder is `OCC/GCP/data`. `GCP_et_cal_val.m` summarises EyeLink calibration and validation quality. `GCP_eeg_impedances.m` extracts and plots ANT impedances before and after recording.
+`GCP_subject_inclusion.m` seeds the analysis cohort with every subject included, and keeps a preprocessing exclusion when fewer than two blocks remained. After `GCP_eeg_fex_GED.m` runs, inclusion is updated from valid gamma power. That update does not clear the two-block exclusion. A subject with no eligible GED component is excluded, with that reason stored on the row. Pilot analysis outputs live in `_PILOT` on the students share. Pilot raw recordings live in `OCC/GCP/data_pilot` on the data share. The live raw folder is `OCC/GCP/data`. `GCP_et_cal_val.m` summarises EyeLink calibration and validation quality. `GCP_eeg_impedances.m` extracts and plots ANT impedances before and after recording.
 
 ### tests
 
