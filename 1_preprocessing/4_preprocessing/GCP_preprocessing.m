@@ -122,6 +122,9 @@ for subj = 1:length(subjects)
         for ci = 1:4
             if isempty(data_b{ci}), continue; end
             dataET_b{ci} = ft_selectdata(cfg_et, data_b{ci});
+            if isfield(dataET_b{ci}, 'elec')
+                dataET_b{ci} = rmfield(dataET_b{ci}, 'elec');
+            end
             dataEEG_b{ci} = ft_selectdata(cfg_eeg, data_b{ci});
             dataEEG_b{ci} = ft_preprocessing(cfg_ref, dataEEG_b{ci});
         end
