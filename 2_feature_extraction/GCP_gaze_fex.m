@@ -220,7 +220,7 @@ for subj = 1:numel(subjects)
             end
             baseline_bcea_val = 5.991 * pi * baseline_std_x * baseline_std_y * sqrt(1 - rho_bl^2);
             baseline_pupil    = mean(bl_dat(3,:),'omitnan')/1000;
-            [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x), ppd);
+            [baseline_msrate, ~] = detect_microsaccades(fsample, [bl_x; bl_y], numel(bl_x));
 
             % Baseline eye velocity
             if ~isempty(velFT.time{trl})
@@ -278,7 +278,7 @@ for subj = 1:numel(subjects)
             [cx_full, cy_full] = bcea_centroid_from_xy(x, y);
             bcea_ecc_val = bcea_eccentricity_from_centroid(cx_full, cy_full, fixX, fixY, ppd);
             pupil       = mean(an_dat(3,:),'omitnan')/1000;
-            [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x), ppd);
+            [msrate, ~] = detect_microsaccades(fsample, [x; y], numel(x));
 
             % Analysis window eye velocity from the full regular trace
             if ~isempty(velFT.time{trl})
@@ -358,7 +358,7 @@ for subj = 1:numel(subjects)
                 ms_offsets_per_trial{trl} = [];
             else
                 % Detect on the regular time axis (NaNs at blinks / invalid samples)
-                [~, ms_det] = detect_microsaccades(fsample, [x_val; y_val], n_total_full, ppd);
+                [~, ms_det] = detect_microsaccades(fsample, [x_val; y_val], n_total_full);
 
                 if ~isempty(ms_det.Onset) && ~isempty(ms_det.Offset)
                     nEv = min(numel(ms_det.Onset), numel(ms_det.Offset));
