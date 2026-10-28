@@ -339,9 +339,8 @@ function Invoke-EegUpload {
     Write-Host 'GCP EEG upload to methlab_data'
     Write-Host ("Local folder:  {0}" -f $localRoot)
     Write-Host ("Server folder: {0}\{1}\<subject ID>" -f $shareUnc, $serverRel)
-    Write-Host ''
     Write-Host 'Connect this laptop to the UZH network. The EEG amplifier network is not enough.'
-    Read-Host 'Press Enter to continue' | Out-Null
+    Write-Host ''
 
     if (-not (Test-Path -LiteralPath $localRoot -PathType Container)) {
         throw "Local EEG folder not found: $localRoot. Nothing was copied."
