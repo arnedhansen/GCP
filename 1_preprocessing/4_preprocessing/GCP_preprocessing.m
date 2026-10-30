@@ -30,7 +30,15 @@ for subj = 1:length(subjects)
     eegFile = fullfile(paths.features, subjects{subj}, 'eeg', 'dataEEG.mat');
     processThis = strcmp(runMode, 'all') || isempty(dir(eegFile));
     if ~processThis
+        etFile = fullfile(paths.features, subjects{subj}, 'gaze', 'dataET.mat');
         fprintf('[PREP] Subject %s already has dataEEG.mat. Skipping (NEW mode).\n', subjects{subj});
+        if isfile(etFile)
+            nBlocksKept = count_saved_blocks(etFile);
+            gcp_inclusion_table('block', paths, subjects{subj}, nBlocksKept);
+            fprintf('[PREP] Subject %s: %d block(s) in the saved gaze file.\n', ...
+                subjects{subj}, nBlocksKept);
+            report_block_exclusion(subjects{subj}, nBlocksKept);
+        end
         continue
     end
 
@@ -150,6 +158,17 @@ for subj = 1:length(subjects)
         eeglab_c75{block} = EEG_b{3};
         eeglab_c100{block} = EEG_b{4};
     end
+
+    nBlocksKept = 0;
+    for block = 1:4
+        nLeft = n_ft_trials(dataEEG_c25{block}) + n_ft_trials(dataEEG_c50{block}) + ...
+            n_ft_trials(dataEEG_c75{block}) + n_ft_trials(dataEEG_c100{block});
+        if nLeft > 0
+            nBlocksKept = nBlocksKept + 1;
+        end
+    end
+    gcp_inclusion_table('block', paths, subjects{subj}, nBlocksKept);
+    report_block_exclusion(subjects{subj}, nBlocksKept);
 
     %% Remove empty blocks
     dataEEG_c25 = dataEEG_c25(~cellfun('isempty', dataEEG_c25));
@@ -392,24 +411,23 @@ data = ft_selectdata(cfg, data);
 end
 
 function [sets, keep] = reject_90uv_block(sets, n_initial, subj, block)
-% Flag after average rereference. Denominator is n_initial (post-fixation
-% epochs entering 90 uV), not the count after flagged trials are dropped.
+% Flag after average rereference. At least half of the post-fixation epochs
+% must remain. Otherwise the block is not used further.
 keep = {[], [], [], []};
-n_flagged = 0;
+n_kept = 0;
 for i = 1:4
     keep{i} = eeg_90uv_keep_mask(sets{i});
-    if isempty(keep{i})
-        n_flagged = n_flagged + n_ft_trials(sets{i});
-    else
-        n_flagged = n_flagged + sum(~keep{i});
+    if ~isempty(keep{i})
+        n_kept = n_kept + sum(keep{i});
     end
 end
 if n_initial == 0
     return
 end
-if (n_flagged / n_initial) > 0.5
-    fprintf(['[PREP] Subject %s block %d: %d/%d initial epochs exceed +/-90 uV ' ...
-        '(>50%%). Discarding block.\n'], subj, block, n_flagged, n_initial);
+if n_kept < 0.5 * n_initial
+    fprintf(['[PREP] Subject %s block %d: %d of %d trials remained ' ...
+        '(under 50%%). Block not used further.\n'], ...
+        subj, block, n_kept, n_initial);
     sets = {[], [], [], []};
     keep = {false(0, 1), false(0, 1), false(0, 1), false(0, 1)};
     return
@@ -417,10 +435,43 @@ end
 for i = 1:4
     sets{i} = select_ft_trials(sets{i}, keep{i});
 end
+n_flagged = n_initial - n_kept;
 if n_flagged > 0
     fprintf('[PREP] Subject %s block %d: dropped %d/%d initial epochs exceeding +/-90 uV.\n', ...
         subj, block, n_flagged, n_initial);
 end
+end
+
+function report_block_exclusion(subjectId, nBlocksKept)
+if nBlocksKept >= 2
+    return
+end
+fprintf('[PREP] Subject %s: %d block(s) remained. Excluded. %s\n', ...
+    subjectId, nBlocksKept, gcp_inclusion_table('reason'));
+end
+
+function nBlocks = count_saved_blocks(etFile)
+nBlocks = 0;
+if ~isfile(etFile)
+    return
+end
+S = load(etFile, 'dataET_c25', 'dataET_c50', 'dataET_c75', 'dataET_c100');
+names = {'dataET_c25', 'dataET_c50', 'dataET_c75', 'dataET_c100'};
+for i = 1:numel(names)
+    if ~isfield(S, names{i})
+        continue
+    end
+    nBlocks = max(nBlocks, n_appended_blocks(S.(names{i})));
+end
+end
+
+function n = n_appended_blocks(data)
+n = 0;
+if isempty(data) || ~isstruct(data) || ~isfield(data, 'sampleinfo') || isempty(data.sampleinfo)
+    return
+end
+starts = data.sampleinfo(:, 1);
+n = 1 + nnz(starts(2:end) < starts(1:end-1));
 end
 
 function keep = eeg_90uv_keep_mask(data)

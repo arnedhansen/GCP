@@ -51,10 +51,19 @@ for subj = 1:nSubj
     if ~isfile(dataPath)
         dataPath = fullfile(gazePath, 'dataET');
     end
-    clc; fprintf('[VIZ GAZE BCEA] Subject %d/%d: %s\n', subj, nSubj, subjects{subj});
-    dat = load(dataPath, condVars{:});
+    clc;
+    fprintf('[VIZ GAZE BCEA] Subject %d/%d: GCP%s\n', subj, nSubj, subjects{subj});
+    fileInfo = whos('-file', dataPath);
+    presentVars = intersect(condVars, {fileInfo.name}, 'stable');
+    if isempty(presentVars)
+        continue
+    end
+    dat = load(dataPath, presentVars{:});
 
     for c = 1:nCond
+        if ~isfield(dat, condVars{c}) || isempty(dat.(condVars{c}))
+            continue
+        end
         [~, thisCovBase, nBase] = conditionMoments( ...
             dat.(condVars{c}), baselineWindow, screenW, screenH, blinkWin);
         nValidBase(subj, c) = nBase;
@@ -78,6 +87,14 @@ end
 
 % Full-window baselined table (legacy export for LMM / QC)
 iFull = 1;
+[missSubj, missCond] = find(~isfinite(bceaStim(:, :, iFull)));
+if ~isempty(missSubj)
+    fprintf('[VIZ GAZE BCEA] Full window missing for %d subject/condition pairs. Those ellipses are omitted. Remaining conditions from the same participants stay in the summaries.\n', ...
+        numel(missSubj));
+    for k = 1:numel(missSubj)
+        fprintf('  Subject %s, %d%%\n', subjects{missSubj(k)}, condValues(missCond(k)));
+    end
+end
 BCEA_bl = 100 * (bceaStim(:, :, iFull) - bceaBase) ./ bceaBase;
 BCEA_bl(~isfinite(BCEA_bl) | bceaStim(:, :, iFull) <= 0 | bceaBase <= 0) = NaN;
 
@@ -152,15 +169,22 @@ for iWin = 1:nWin
     groupCentroid = nan(nCond, 2);
     groupCov = nan(2, 2, nCond);
     areaBCEA95 = nan(nCond, 1);
+    hasGroup = false(nCond, 1);
     for c = 1:nCond
-        validSubj = squeeze(all(isfinite(covStim(:, :, :, c, iWin)), [1 2]));
+        validSubj = validCovSubjects(covStim, c, iWin);
         if ~any(validSubj)
-            error('No valid covariance estimates for the %d%% condition (%s).', ...
+            fprintf('[VIZ GAZE BCEA] Skip group ellipse: no valid covariance for %d%% (%s).\n', ...
                 condValues(c), winTag);
+            continue
         end
-        groupCentroid(c, :) = squeeze(mean(centroidStim(validSubj, c, :, iWin), 1, 'omitnan'));
+        hasGroup(c) = true;
+        mu = mean(centroidStim(validSubj, c, :, iWin), 1, 'omitnan');
+        groupCentroid(c, :) = reshape(mu, 1, []);
         groupCov(:, :, c) = mean(covStim(:, :, validSubj, c, iWin), 3, 'omitnan');
         areaBCEA95(c) = bceaK95 * pi * sqrt(max(det(groupCov(:, :, c)), 0));
+    end
+    if ~any(hasGroup)
+        error('No valid covariance estimates for any condition (%s).', winTag);
     end
 
     close all
@@ -170,6 +194,9 @@ for iWin = 1:nWin
     theta = linspace(0, 2 * pi, 361);
     unitCircle = [cos(theta); sin(theta)];
     for c = 1:nCond
+        if ~hasGroup(c)
+            continue
+        end
         [vectors, values] = eig(groupCov(:, :, c));
         axisTransform = vectors * sqrt(max(values, 0));
         ellipse95 = groupCentroid(c, :)' + bceaRadius * axisTransform * unitCircle;
@@ -185,10 +212,17 @@ for iWin = 1:nWin
     plot(400, 300, '+', 'MarkerSize', 18, 'LineWidth', 2, ...
         'Color', 'k', 'HandleVisibility', 'off');
 
-    conditionHandles = gobjects(nCond, 1);
+    conditionHandles = gobjects(sum(hasGroup), 1);
+    legendLabels = cell(sum(hasGroup), 1);
+    iLegend = 0;
     for c = 1:nCond
-        conditionHandles(c) = patch(nan, nan, colors(c, :), ...
+        if ~hasGroup(c)
+            continue
+        end
+        iLegend = iLegend + 1;
+        conditionHandles(iLegend) = patch(nan, nan, colors(c, :), ...
             'FaceAlpha', 0.25, 'EdgeColor', colors(c, :), 'LineWidth', 1.5);
+        legendLabels{iLegend} = condLabels{c};
     end
 
     % Match manuscript sibling panel aspect (~1.83) while keeping true px geometry.
@@ -205,7 +239,7 @@ for iWin = 1:nWin
     xlabel('Screen Width [px]', 'FontSize', fontSize);
     ylabel('Screen Height [px]', 'FontSize', fontSize);
     axMain = gca;
-    legend(axMain, conditionHandles, condLabels, 'Location', 'northeast', ...
+    legend(axMain, conditionHandles, legendLabels, 'Location', 'northeast', ...
         'FontSize', fontSize * 0.75, 'Box', 'off');
 
     % Top-left screen overview inset inside the visible plot box
@@ -277,19 +311,13 @@ for iWin = 1:nWin
 end
 
 %% Single-subject BCEA95 ellipses (full window; one subplot per participant)
-nCols = 5;
-nRows = 2;
-nSubjTiles = 8;  % tiles 1-8 for subjects; tiles 9-10 combined = screen overview
+nCols = 4;
+nRows = ceil((nSubj + 1) / nCols);
 fontSizeSub = max(14, round(fontSize * 0.45));
 lineWSub = max(1, lineW * 0.75);
 limPad = 0.15;  % +/- 15% of ellipse span per axis
 theta = linspace(0, 2 * pi, 361);
 unitCircle = [cos(theta); sin(theta)];
-
-if nSubj > nSubjTiles
-    error('Subject layout reserves tiles 1-%d; nSubj = %d exceeds that.', ...
-        nSubjTiles, nSubj);
-end
 
 % Shared axis limits from all subject ellipses (+/- 15% of span)
 allEllipseX = [];
@@ -352,20 +380,26 @@ for subj = 1:nSubj
     box on
     set(gca, 'FontSize', fontSizeSub * 0.7);
     title(sprintf('Participant %s', subjects{subj}), 'FontSize', fontSizeSub);
-    if subj > 5
+    if subj > (nRows - 1) * nCols
         xlabel('Screen Width [px]', 'FontSize', fontSizeSub * 0.7);
     end
-    if mod(subj - 1, 5) == 0
+    if mod(subj - 1, nCols) == 0
         ylabel('Screen Height [px]', 'FontSize', fontSizeSub * 0.7);
     end
 end
 
-% Combined screen overview on remaining tiles
-axOverview = nexttile(nSubjTiles + 1, [1 2]);
+% Group overview on the remaining tile. Conditions with no covariance are omitted.
+axOverview = nexttile(nSubj + 1);
 hold(axOverview, 'on');
+overviewPlotted = false(nCond, 1);
 for c = 1:nCond
-    validSubj = squeeze(all(isfinite(covStim(:, :, :, c, iFull)), [1 2]));
-    groupCentroid = squeeze(mean(centroidStim(validSubj, c, :, iFull), 1, 'omitnan'));
+    validSubj = validCovSubjects(covStim, c, iFull);
+    if ~any(validSubj)
+        continue
+    end
+    overviewPlotted(c) = true;
+    mu = mean(centroidStim(validSubj, c, :, iFull), 1, 'omitnan');
+    groupCentroid = reshape(mu, 1, []);
     groupCov = mean(covStim(:, :, validSubj, c, iFull), 3, 'omitnan');
     [vectors, values] = eig(groupCov);
     axisTransform = vectors * sqrt(max(values, 0));
@@ -388,13 +422,20 @@ title(axOverview, 'Group overview', 'FontSize', fontSizeSub);
 xlabel(axOverview, 'Screen Width [px]', 'FontSize', fontSizeSub * 0.7);
 ylabel(axOverview, 'Screen Height [px]', 'FontSize', fontSizeSub * 0.7);
 
-conditionHandles = gobjects(nCond, 1);
-if nSubj >= nSubjTiles
+if any(overviewPlotted)
+    conditionHandles = gobjects(sum(overviewPlotted), 1);
+    legendLabels = cell(sum(overviewPlotted), 1);
+    iLegend = 0;
     for c = 1:nCond
-        conditionHandles(c) = patch(nan, nan, colors(c, :), ...
+        if ~overviewPlotted(c)
+            continue
+        end
+        iLegend = iLegend + 1;
+        conditionHandles(iLegend) = patch(axOverview, nan, nan, colors(c, :), ...
             'FaceAlpha', 0.25, 'EdgeColor', colors(c, :), 'LineWidth', 1.5);
+        legendLabels{iLegend} = condLabels{c};
     end
-    lgd = legend(conditionHandles, condLabels, 'Location', 'northeast', ...
+    lgd = legend(axOverview, conditionHandles, legendLabels, 'Location', 'northeast', ...
         'FontSize', fontSizeSub * 0.7, 'Box', 'off');
     lgd.ItemTokenSize = [12 12];
 end
@@ -414,7 +455,23 @@ fprintf('[VIZ GAZE BCEA] Median BCEA_bl by condition [%%]: %s\n', ...
 fprintf('[VIZ GAZE BCEA] Done.\n\n');
 
 %% Local functions
+function mask = validCovSubjects(covStim, condIdx, winIdx)
+nSubjLocal = size(covStim, 3);
+mask = false(nSubjLocal, 1);
+for subjLocal = 1:nSubjLocal
+    thisCov = covStim(:, :, subjLocal, condIdx, winIdx);
+    mask(subjLocal) = all(isfinite(thisCov), 'all');
+end
+end
+
 function [centroid, covariance, nValid] = conditionMoments(dataET, timeWindow, screenW, screenH, blinkWin)
+centroid = [NaN NaN];
+covariance = nan(2);
+nValid = 0;
+if isempty(dataET) || ~isstruct(dataET) || ~isfield(dataET, 'trial') || isempty(dataET.trial)
+    return
+end
+
 allX = cell(1, numel(dataET.trial));
 allY = cell(1, numel(dataET.trial));
 
@@ -427,9 +484,13 @@ for trl = 1:numel(dataET.trial)
 
     valid = raw(1, :) >= 0 & raw(1, :) <= screenW & ...
         raw(2, :) >= 0 & raw(2, :) <= screenH;
-    gaze = nan(3, size(raw, 2));
+    nChan = size(raw, 1);
+    gaze = nan(nChan, size(raw, 2));
     gaze(1, valid) = raw(1, valid);
     gaze(2, valid) = screenH - raw(2, valid);
+    if nChan >= 3
+        gaze(3, valid) = raw(3, valid);
+    end
     gaze = remove_blinks(gaze, blinkWin);
 
     keep = isfinite(gaze(1, :)) & isfinite(gaze(2, :));
