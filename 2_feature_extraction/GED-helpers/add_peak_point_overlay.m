@@ -12,13 +12,8 @@ end
 [x, sort_idx] = sort(x(:)');
 y = y(sort_idx);
 baseline_y = min(y);
-if ~isfinite(baseline_y)
+if ~isfinite(baseline_y) || ~isfinite(peak_hz)
     return;
-end
-
-if ~isfinite(peak_hz)
-    [~, idx_peak] = max(y);
-    peak_hz = x(idx_peak);
 end
 
 peak_power = interp1(x, y, peak_hz, 'linear', NaN);
