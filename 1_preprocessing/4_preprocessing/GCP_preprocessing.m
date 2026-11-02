@@ -488,24 +488,20 @@ cfg.artfctdef.threshold.bpfilter = 'no';
 cfg.artfctdef.threshold.min = -90;
 cfg.artfctdef.threshold.max = 90;
 [~, artifact] = ft_artifact_threshold(cfg, data);
+if istable(artifact)
+    artifact = table2array(artifact(:, 1:2));
+end
 if isempty(artifact)
     return
 end
-cfg_r = [];
-cfg_r.artfctdef.reject = 'complete';
-cfg_r.artfctdef.threshold.artifact = artifact;
-d_keep = ft_rejectartifact(cfg_r, data);
-n_kept = n_ft_trials(d_keep);
-if n_kept == 0
-    keep = false(n_t, 1);
-    return
-end
-if isfield(data, 'sampleinfo') && isfield(d_keep, 'sampleinfo') && ~isempty(d_keep.sampleinfo)
-    keep = ismember(data.sampleinfo, d_keep.sampleinfo, 'rows');
-else
-    keep = true(n_t, 1);
-    keep((n_kept + 1):end) = false;
-end
+% Do not call ft_rejectartifact. With reject='complete' and zero trials
+% left, trlnew has no columns and trlnew(:,1) throws. Artifact samples are
+% in the same sampleinfo frame ft_artifact_threshold just used, including
+% the consecutive reconstruction when sampleinfo was missing.
+checked = ft_checkdata(data, 'hassampleinfo', 'yes');
+trl = checked.sampleinfo(:, 1:2);
+overlaps = artifact(:, 1) <= trl(:, 2)' & artifact(:, 2) >= trl(:, 1)';
+keep = ~any(overlaps, 1).';
 end
 
 function ev = eyelink_event_rates_from_eeglab(eeg_c25, eeg_c50, eeg_c75, eeg_c100, stimWin, baselineWin)
