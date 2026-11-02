@@ -1090,22 +1090,6 @@ title('Gamma Peak Frequency Shift', ...
 cond_shift_freq_path = fullfile(fig_save_dir_ged, 'GCP_eeg_GED_condition_shift_frequency.png');
 save_figure_png(fig_condition_shift_freq, cond_shift_freq_path);
 
-%% Frequency figure: gamma frequency over contrast
-fig_main_gamma = figure('Position', [0 0 1512 982], 'Color', 'w');
-hold on;
-plot_gamma_condition_panel(all_condition_peak_freq, condLabels, colors, nSubj);
-ylabel('Gamma Frequency [Hz]');
-title('Gamma Frequency', 'FontWeight', 'bold');
-save_figure_png(fig_main_gamma, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_freq.png'));
-
-%% Power figure: gamma power over contrast
-fig_main_power = figure('Position', [0 0 1512 982], 'Color', 'w');
-hold on;
-plot_gamma_condition_panel(all_condition_peak_power, condLabels, colors, nSubj);
-ylabel('Gamma Peak Power [dB]');
-title('Gamma Peak Power', 'FontWeight', 'bold');
-save_figure_png(fig_main_power, fullfile(fig_save_dir_ged, 'GCP_eeg_GED_power.png'));
-
 %% Condition-shift figure: normalized peak power trajectories
 fig_condition_shift_power = figure('Position', [0 0 1512 982], 'Color', 'w');
 hold on;
@@ -1159,13 +1143,13 @@ plot_all_subjects_combined_topo_spectra( ...
     fig_save_dir_component_selection_root, subjects, scan_freqs, analysis_freq_range, cfg_topo_all, ...
     all_topo_labels, all_topos, all_combined_spectrum, all_combined_eigenvalue);
 
-plot_subjects_combined_topo_spectra_grid( ...
-    fig_save_dir_component_selection_root, subjects, 1:min(5, nSubj), scan_freqs, analysis_freq_range, cfg_topo_all, ...
-    all_topo_labels, all_topos, all_combined_spectrum, '01-05');
-if nSubj >= 6
+batch_size = 10;
+for batch_start = 1:batch_size:nSubj
+    batch_end = min(batch_start + batch_size - 1, nSubj);
+    file_tag = sprintf('%02d-%02d', batch_start, batch_end);
     plot_subjects_combined_topo_spectra_grid( ...
-        fig_save_dir_component_selection_root, subjects, 6:min(10, nSubj), scan_freqs, analysis_freq_range, cfg_topo_all, ...
-        all_topo_labels, all_topos, all_combined_spectrum, '06-10');
+        fig_save_dir_component_selection_root, subjects, batch_start:batch_end, scan_freqs, analysis_freq_range, cfg_topo_all, ...
+        all_topo_labels, all_topos, all_combined_spectrum, file_tag);
 end
 end % do_plots (group figures)
 

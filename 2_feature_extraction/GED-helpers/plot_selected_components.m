@@ -34,6 +34,20 @@ nCols = 5;
 nShowSel = min(nCols, numel(sel_idx));
 nShowRej = min(nCols, numel(rej_idx));
 figSel = figure('Position', [0 0 1512 982], 'Color', 'w');
+if nShowSel == 0
+    annotation(figSel, 'textbox', [0.15 0.42 0.70 0.16], ...
+        'String', 'NO ELIGIBLE COMPONENTS', 'EdgeColor', 'none', ...
+        'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
+        'FontWeight', 'bold', 'FontSize', 22, 'Color', [0.85 0.05 0.05], ...
+        'Interpreter', 'none');
+    sgtitle(sprintf('Selected and Rejected Components: %s', subject_id), ...
+        'FontSize', 14, 'FontWeight', 'bold');
+    drawnow;
+    pause(0.05);
+    save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_component_selection.png', subject_id)));
+    close(figSel);
+    return;
+end
 for k = 1:nCols
     % Row 1: selected topographies
     subplot(4, nCols, k);
@@ -44,11 +58,7 @@ for k = 1:nCols
         topo_data.avg = searchTopos(:, ci);
         topo_data.dimord = 'chan';
         cfg_ci = cfg_topo;
-        topo_vals = topo_data.avg(isfinite(topo_data.avg));
-        topo_clim_ci = max(abs(topo_vals));
-        if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
-            topo_clim_ci = 1;
-        end
+        topo_clim_ci = scalar_abs_max(topo_data.avg, 1);
         cfg_ci.zlim = [-topo_clim_ci topo_clim_ci];
         try
             ft_topoplotER(cfg_ci, topo_data);
@@ -70,8 +80,14 @@ for k = 1:nCols
         spec_data = searchMeanPrSpectrum(ci, :);
         plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
-        spec_min = min(spec_data(isfinite(spec_data)));
-        spec_max = max(spec_data(isfinite(spec_data)));
+        spec_finite = spec_data(isfinite(spec_data));
+        if ~isempty(spec_finite)
+            spec_min = min(spec_finite);
+            spec_max = max(spec_finite);
+        else
+            spec_min = NaN;
+            spec_max = NaN;
+        end
         if isfinite(spec_min) && isfinite(spec_max) && spec_min ~= spec_max
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
@@ -95,11 +111,7 @@ for k = 1:nCols
         topo_data.avg = searchTopos(:, ci);
         topo_data.dimord = 'chan';
         cfg_ci = cfg_topo;
-        topo_vals = topo_data.avg(isfinite(topo_data.avg));
-        topo_clim_ci = max(abs(topo_vals));
-        if ~isfinite(topo_clim_ci) || topo_clim_ci <= 0
-            topo_clim_ci = 1;
-        end
+        topo_clim_ci = scalar_abs_max(topo_data.avg, 1);
         cfg_ci.zlim = [-topo_clim_ci topo_clim_ci];
         try
             ft_topoplotER(cfg_ci, topo_data);
@@ -121,8 +133,14 @@ for k = 1:nCols
         spec_data = searchMeanPrSpectrum(ci, :);
         plot(scan_freqs, spec_data, '-', 'Color', [0 0 0], 'LineWidth', 1.4);
         yline(0, 'k--');
-        spec_min = min(spec_data(isfinite(spec_data)));
-        spec_max = max(spec_data(isfinite(spec_data)));
+        spec_finite = spec_data(isfinite(spec_data));
+        if ~isempty(spec_finite)
+            spec_min = min(spec_finite);
+            spec_max = max(spec_finite);
+        else
+            spec_min = NaN;
+            spec_max = NaN;
+        end
         if isfinite(spec_min) && isfinite(spec_max) && spec_min ~= spec_max
             spec_range = spec_max - spec_min;
             ylim([spec_min - 0.10 * spec_range, spec_max + 0.10 * spec_range]);
@@ -136,13 +154,6 @@ for k = 1:nCols
     else
         axis off;
     end
-end
-if nShowSel == 0
-    annotation(figSel, 'textbox', [0.25 0.77 0.50 0.06], ...
-        'String', 'NO ELIGIBLE COMPONENTS', 'EdgeColor', 'none', ...
-        'HorizontalAlignment', 'center', 'VerticalAlignment', 'middle', ...
-        'FontWeight', 'bold', 'FontSize', 16, 'Color', [0.85 0.05 0.05], ...
-        'Interpreter', 'none');
 end
 annotation(figSel, 'textbox', [0.010 0.56 0.040 0.34], ...
     'String', 'Selected Components', 'EdgeColor', 'none', ...
@@ -159,4 +170,16 @@ pause(0.05);
 save_figure_png(figSel, fullfile(save_dir, sprintf('GCP_eeg_GED_subj%s_component_selection.png', subject_id)));
 close(figSel);
 
+end
+
+function clim = scalar_abs_max(vals, fallback)
+finite_vals = abs(vals(isfinite(vals)));
+if isempty(finite_vals)
+    clim = fallback;
+    return;
+end
+clim = max(finite_vals);
+if ~isscalar(clim) || ~isfinite(clim) || clim <= 0
+    clim = fallback;
+end
 end

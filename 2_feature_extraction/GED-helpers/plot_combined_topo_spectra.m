@@ -18,9 +18,13 @@ else
     topo_data.label = topo_labels;
     topo_data.avg = topo_vec;
     topo_data.dimord = 'chan';
-    topo_vals = topo_vec(isfinite(topo_vec));
-    topo_clim = max(abs(topo_vals));
-    if ~isfinite(topo_clim) || topo_clim <= 0
+    topo_vals = abs(topo_vec(isfinite(topo_vec)));
+    if isempty(topo_vals)
+        topo_clim = 1;
+    else
+        topo_clim = max(topo_vals);
+    end
+    if ~isscalar(topo_clim) || ~isfinite(topo_clim) || topo_clim <= 0
         topo_clim = 1;
     end
     cfg_ci = cfg_topo;
