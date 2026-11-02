@@ -10,6 +10,7 @@ cd(paths.eeglab)
 eeglab
 close()
 cd(p)
+clc
 
 %% Define path, cut data and convert asc to mat files.
 d = dir(fullfile(paths.raw_occ, '*', '*cnt'));
