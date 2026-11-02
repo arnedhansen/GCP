@@ -31,7 +31,7 @@ for subj = 1:length(subjects)
     processThis = strcmp(runMode, 'all') || isempty(dir(eegFile));
     if ~processThis
         etFile = fullfile(paths.features, subjects{subj}, 'gaze', 'dataET.mat');
-        fprintf('[PREP] Subject %s already has dataEEG.mat. Skipping (NEW mode).\n', subjects{subj});
+        fprintf('[PREP] Subject %s already has dataEEG.mat. Skipping...\n', subjects{subj});
         if isfile(etFile)
             nBlocksKept = count_saved_blocks(etFile);
             fprintf('[PREP] Subject %s: %d block(s) in the saved gaze file.\n', ...
