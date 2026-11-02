@@ -27,7 +27,7 @@
 %       dataEEG_c25 / c50 / c75 / c100
 %   paths.features/<subj>/gaze/gaze_microsaccade_events.mat
 %       ms_events_*.Onset{trl} in seconds on the trial time axis
-%   controls/GCP_subject_inclusion.mat via gcp_subject_inclusion
+%   controls/GCP_exclusion_participants.rtf via gcp_subject_inclusion
 %
 % Spatial filter
 %   Do not use the gamma GED filter from GCP_eeg_GED.mat. That filter was

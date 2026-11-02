@@ -1,7 +1,8 @@
 %% GCP Demographics
 % Participant summary statistics from the merged subject-level table.
 % Output: console summary of N, age mean and SD, female percent, and
-% right-handed percent for the full sample and the GED-included subsample.
+% right-handed percent for the full merged table and the analysis sample
+% (IDs in GCP_exclusion_participants.rtf removed).
 
 startup
 [~, paths] = setup('GCP', 0);
@@ -15,10 +16,14 @@ end
 [~, idx] = unique(T.ID, 'stable');
 T = T(idx, :);
 
-print_demographics(T, 'Full sample');
-if ismember('Include', T.Properties.VariableNames)
-    print_demographics(T(T.Include == 1, :), 'GED-included sample');
+print_demographics(T, 'Full merged table');
+manual = gcp_manual_exclusions(paths);
+if isnumeric(T.ID)
+    idNum = double(T.ID);
+else
+    idNum = str2double(string(T.ID));
 end
+print_demographics(T(~ismember(idNum, manual), :), 'Analysis sample');
 
 function print_demographics(dat, label)
 if isempty(dat)

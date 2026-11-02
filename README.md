@@ -28,7 +28,7 @@ Automagic-preprocessed EEG is merged with the corresponding ET files using `GCP_
 
 Among non-catch trials (triggers 61 to 64), failed pre-stimulus fixation (`fixation == 0`) is dropped. Replacements with `fixation == 1` are kept. Epoch count is asserted against the block behavioural mat.
 
-EEG is average-rereferenced, then epochs with any channel beyond ±90 μV are rejected (`ft_artifact_threshold` / `ft_rejectartifact`). At least 50% of the post-fixation epochs in a block must remain. Otherwise that block is not used further. A participant with fewer than two remaining blocks is excluded in `controls/GCP_subject_inclusion.mat`, with the reason stored on that row.
+EEG is average-rereferenced, then epochs with any channel beyond ±90 μV are rejected (`ft_artifact_threshold` / `ft_rejectartifact`). At least 50% of the post-fixation epochs in a block must remain. Otherwise that block is not used further. A participant with fewer than two remaining blocks is reported at the console and stays in later analyses until that ID is added to `controls/GCP_exclusion_participants.rtf`.
 
 Baseline for gaze metric extraction: [−1.5, −0.5] s. Confirmatory analysis window for scalar gaze metrics: [0, 2] s. EyeLink blink, fixation, and saccade rates are counted on the same remaining epochs as saved `dataET`. Outputs go to `data/features/<subject>/eeg` (`dataEEG.mat`) and `.../gaze` (`dataET.mat`, `gaze_metrics.mat`).
 
@@ -38,9 +38,9 @@ Baseline for gaze metric extraction: [−1.5, −0.5] s. Confirmatory analysis w
 
 `GCP_gaze_fex.m` extracts BCEA (k = 5.991, 95%), pupil size, microsaccade rate, eye velocity, and EyeLink event counts. Blinks are invalid/missing gaze and/or pupil at floor, padded ±50 ms (25 samples at 500 Hz). Microsaccades are Engbert and Kliegl (2003) velocity events (6 times the median SD, minimum duration 12 ms at 500 Hz), with no amplitude cutoff. Baselined (% change) scalars use suffix `_bl` (`MSRate_bl`, `BCEA_bl`, …) for the full [0, 2] s window. Subject×condition confirmatory scalars are the mean of trial-level percentage change for microsaccades, BCEA, pupil, and velocity. Group file: `GCP_gaze_window_summaries.mat`.
 
-`GCP_eeg_fex_GED.m` is the primary EEG analysis. Per subject, trials are pooled across contrast and gamma-band (30 to 90 Hz) covariances are computed for baseline [−1.5, −0.5] s and the full stimulus window [0, 2] s. Generalized eigendecomposition (GED) is solved with regularization; candidate components are ranked by eigenvalue and scored on occipital topography, spectral form, and artifact metrics. An eigenvalue-weighted combined component is built per subject. Each trial is projected to this component space and scanned on a 30 to 90 Hz grid (mtmfft, 3 Hz multitaper smoothing). Per-trial peak gamma frequency and peak power (mean power within peak ± 5 Hz) are extracted; unstable trials are flagged automatically. Outputs: `GCP_eeg_GED.mat` and `GCP_eeg_powspctrm_GED.mat`. Subject inclusion is written to `controls/GCP_subject_inclusion.mat`. Optional GED-projected TFRs go to `GCP_eeg_GED_TFR.mat`.
+`GCP_eeg_fex_GED.m` is the primary EEG analysis. Per subject, trials are pooled across contrast and gamma-band (30 to 90 Hz) covariances are computed for baseline [−1.5, −0.5] s and the full stimulus window [0, 2] s. Generalized eigendecomposition (GED) is solved with regularization; candidate components are ranked by eigenvalue and scored on occipital topography, spectral form, and artifact metrics. An eigenvalue-weighted combined component is built per subject. Each trial is projected to this component space and scanned on a 30 to 90 Hz grid (mtmfft, 3 Hz multitaper smoothing). Per-trial peak gamma frequency and peak power (mean power within peak ± 5 Hz) are extracted; unstable trials are flagged automatically. Outputs: `GCP_eeg_GED.mat` and `GCP_eeg_powspctrm_GED.mat`. A subject with no eligible GED component is printed at the console and stays in later analyses until that ID is added to `controls/GCP_exclusion_participants.rtf`. Optional GED-projected TFRs go to `GCP_eeg_GED_TFR.mat`.
 
-`GCP_master_matrix.m` merges subject-level behavioral, gaze, and GED tables into `GCP_merged_data.mat` / `.csv` (Include flag from `GCP_subject_inclusion.mat`). Confirmatory GED columns are full-window `Power` and `Frequency`. Confirmatory gaze columns include `PupilSize_bl`, `MSRate_bl`, `BCEA_bl`, and `Vel2D_bl`.
+`GCP_master_matrix.m` merges subject-level behavioral, gaze, and GED tables into `GCP_merged_data.mat` / `.csv`. Confirmatory GED columns are full-window `Power` and `Frequency`. Confirmatory gaze columns include `PupilSize_bl`, `MSRate_bl`, `BCEA_bl`, and `Vel2D_bl`.
 
 **Run order:** `4_preprocessing` → behavioral → gaze → GED → master matrix.
 
@@ -54,7 +54,7 @@ Baseline for gaze metric extraction: [−1.5, −0.5] s. Confirmatory analysis w
 
 **Hypotheses:** Schematic gamma spectra by contrast (`hypotheses/GCP_hypotheses_plot.m`).
 
-All visualization scripts read from `data/features/` and write figures to `figures/`. GED-related plots apply the subject inclusion list via `gcp_subject_inclusion`. Run after feature extraction.
+All visualization scripts read from `data/features/` and write figures to `figures/`. Plots and MATLAB stats apply `controls/GCP_exclusion_participants.rtf` via `gcp_subject_inclusion`. Run after feature extraction.
 
 ## 4_stats
 
@@ -64,7 +64,7 @@ All visualization scripts read from `data/features/` and write figures to `figur
 
 ### Confirmatory LMMs (Python)
 
-`GCP_stats_lmm.py` fits full-window subject×contrast MixedLM models on `GCP_merged_data.csv` (`Include == 1`):
+`GCP_stats_lmm.py` fits full-window subject×contrast MixedLM models on `GCP_merged_data.csv`, after dropping IDs in `controls/GCP_exclusion_participants.rtf`:
 
 - **Primary (H1 to H6):** continuous linear contrast slope (`contrast_num_c`) for pupil, microsaccade rate, BCEA, eye velocity (Vel2D), gamma peak power, and gamma peak frequency.
 - **Follow-up:** categorical MixedLM with all six pairwise contrasts, FDR-BH within each DV.
@@ -84,7 +84,7 @@ Writes AOC-style CSVs under `data/stats/` (`GCP_mixedlm_slope.csv`, `GCP_pairwis
 
 ### controls
 
-`GCP_subject_inclusion.m` seeds the analysis cohort with every subject included, and keeps a preprocessing exclusion when fewer than two blocks remained. After `GCP_eeg_fex_GED.m` runs, inclusion is updated from valid gamma power. That update does not clear the two-block exclusion. A subject with no eligible GED component is excluded, with that reason stored on the row. Pilot analysis outputs live in `_PILOT` on the students share. Pilot raw recordings live in `OCC/GCP/data_pilot` on the data share. The live raw folder is `OCC/GCP/data`. `GCP_et_cal_val.m` summarises EyeLink calibration and validation quality. `GCP_eeg_impedances.m` extracts and plots ANT impedances before and after recording.
+`GCP_exclusion_participants.rtf` is the analysis exclusion list (one subject ID per line). `GCP_exclusion_participants_info.rtf` stores the reasons and is not read by code. `gcp_subject_inclusion` and the confirmatory Python models drop those IDs. A subject with fewer than two blocks, or with no eligible GED component, stays in the cohort until that ID is added to the rtf. `GCP_subject_inclusion.m` only prints the list. Pilot analysis outputs live in `_PILOT` on the students share. Pilot raw recordings live in `OCC/GCP/data_pilot` on the data share. The live raw folder is `OCC/GCP/data`. `GCP_et_cal_val.m` summarises EyeLink calibration and validation quality. `GCP_eeg_impedances.m` extracts and plots ANT impedances before and after recording.
 
 ### tests
 

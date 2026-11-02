@@ -16,6 +16,7 @@
 
 # %% Imports
 import os
+import re
 import sys
 import warnings
 
@@ -70,13 +71,32 @@ def contrast_num_c_from_labels(condition: pd.Series) -> np.ndarray:
     return pct - float(CONTRAST_LEVELS.mean())
 
 
+def manual_exclusion_ids(csv_path: str) -> set[str]:
+    """IDs in controls/GCP_exclusion_participants.rtf. RTF control words are ignored."""
+    rtf = os.path.join(
+        os.path.dirname(os.path.dirname(csv_path)),
+        "controls",
+        "GCP_exclusion_participants.rtf",
+    )
+    if not os.path.isfile(rtf):
+        return set()
+    with open(rtf, "r", encoding="latin-1") as handle:
+        raw = handle.read()
+    plain = re.sub(r"\\[a-zA-Z]+-?\d* ?", " ", raw)
+    plain = re.sub(r"[{}\\]", " ", plain)
+    return {str(int(tok)) for tok in re.findall(r"\d+", plain)}
+
+
 def load_merged_subject_data(csv_path: str) -> pd.DataFrame:
-    """Subject-level master matrix; filter Include == 1 when present."""
+    """Subject-level master matrix, with IDs on the exclusion rtf removed."""
     dat = pd.read_csv(csv_path)
     if "Include" in dat.columns:
-        dat = dat.loc[dat["Include"].astype(bool)].copy()
+        dat = dat.drop(columns=["Include"])
 
-    dat["ID"] = dat["ID"].astype(str)
+    dat["ID"] = dat["ID"].astype(str).str.replace(r"\.0$", "", regex=True)
+    excluded = manual_exclusion_ids(csv_path)
+    if excluded:
+        dat = dat.loc[~dat["ID"].isin(excluded)].copy()
     if np.issubdtype(dat["Condition"].dtype, np.number):
         dat["Condition"] = dat["Condition"].map(COND_NUM_TO_LABEL)
     else:

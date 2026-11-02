@@ -1,7 +1,7 @@
 %% GCP Master Matrix (Subject-Level)
 %
 % Builds subject-level merged table across behavioral, gaze, GED metrics,
-% GED inclusion, and VP demographics (Gender, Age, Handedness).
+% and VP demographics (Gender, Age, Handedness).
 %
 % Output:
 %   /Volumes/g_psyplafor_methlab$/Students/Arne/GCP/data/features/GCP_merged_data.mat
@@ -62,13 +62,13 @@ else
 end
 
 tbl_merge = sortrows(tbl_merge, {'ID','Condition'});
-inc = load(fullfile(paths.controls, 'GCP_subject_inclusion.mat'), 'subject_inclusion');
-inc = inc.subject_inclusion;
-inc_ids = to_numeric_col(inc.SubjID);
 merge_ids = to_numeric_col(tbl_merge.ID);
-[is_match, loc] = ismember(merge_ids, inc_ids);
-tbl_merge.Include = nan(height(tbl_merge), 1);
-tbl_merge.Include(is_match) = double(inc.Include(loc(is_match)));
+manual = gcp_manual_exclusions(paths);
+manual_rows = ismember(merge_ids, manual);
+if any(manual_rows)
+    fprintf('[MASTER MATRIX] On the exclusion list, kept in this table: %s\n', ...
+        strjoin(string(unique(merge_ids(manual_rows), 'stable')), ', '));
+end
 
 %% Demographics from VP table
 demog = readtable(paths.vp_table);

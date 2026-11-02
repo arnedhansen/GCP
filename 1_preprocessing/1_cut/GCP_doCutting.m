@@ -1,5 +1,6 @@
 %% Cutting of GCP EEG data for the GCP study
-% Automatically finds all not converted .cnt files
+% Finds .cnt files that are still in the subject folder.
+% Subjects that already have cut EEG files are left unchanged.
 
 %% EEGlab
 clear
@@ -12,19 +13,39 @@ close()
 cd(p)
 
 %% Define path, cut data and convert asc to mat files.
-d = dir(fullfile(paths.raw_occ, '*', '*cnt'));
+d = dir(fullfile(paths.raw_occ, '*', '*.cnt'));
+d = d(~[d.isdir]);
+nFiles = size(d, 1);
 ids = {};
-for f = 1 : size(d, 1)
-    filePath = fullfile( d(f).folder, d(f).name);
-    GCP_cutData(filePath) % Perform cutting
+for f = 1 : nFiles
+    filePath = fullfile(d(f).folder, d(f).name);
     id = strsplit(d(f).name, '_');
-    ids{f} = id{1};
-    fprintf('[CUT] Subject %s done\n', ids{f})
+    subjectID = id{1};
+    clc
+    fprintf('[CUTTING] Subject GCP%s (%d/%d)\n', subjectID, f, nFiles)
+    if subject_already_cut(d(f).folder, subjectID)
+        fprintf('[CUTTING] Subject GCP%s (%d/%d) already cut. Skipping.\n', subjectID, f, nFiles)
+        hasAsc = ~isempty(dir(fullfile(d(f).folder, '*.asc')));
+        hasEdf = ~isempty(dir(fullfile(d(f).folder, '*.edf')));
+        if hasAsc || hasEdf
+            ids{end + 1} = subjectID; %#ok<SAGROW>
+            fprintf('[CUTTING] Subject GCP%s (%d/%d) still has eye tracking files. Converting those.\n', ...
+                subjectID, f, nFiles)
+        end
+        continue
+    end
+    GCP_cutData(filePath) % Perform cutting
+    ids{end + 1} = subjectID; %#ok<SAGROW>
+    fprintf('[CUTTING] Subject GCP%s (%d/%d) done\n', subjectID, f, nFiles)
 end
+ids = unique(ids, 'stable');
 
 %% Load and synchronize EEG & Eyelink
-for id = 1 : length(ids) 
+nSync = length(ids);
+for id = 1 : nSync
     ID = ids{id};
+    clc
+    fprintf('[CUTTING] Subject GCP%s (%d/%d)\n', ID, id, nSync)
 
     filePath = fullfile(paths.raw_occ, ID);
     d = dir(fullfile(filePath, '*.asc'));
@@ -74,4 +95,22 @@ for id = 1 : length(ids)
         movefile(source,destination)
     end
 end
-fprintf('[CUT] SYNCHRONIZATION COMPLETE\n')
+fprintf('[CUTTING] SYNCHRONIZATION COMPLETE\n')
+
+function tf = subject_already_cut(subjectDir, subjectID)
+names = { ...
+    [subjectID '_GCP_Resting_EEG.mat'] ...
+    [subjectID '_GCP_block1_task_EEG.mat'] ...
+    [subjectID '_GCP_block2_task_EEG.mat'] ...
+    [subjectID '_GCP_block3_task_EEG.mat'] ...
+    [subjectID '_GCP_block4_task_EEG.mat']};
+tf = false;
+for k = 1:numel(names)
+    inFolder = isfile(fullfile(subjectDir, names{k}));
+    inArchive = isfile(fullfile(subjectDir, 'archive', names{k}));
+    if inFolder || inArchive
+        tf = true;
+        return
+    end
+end
+end

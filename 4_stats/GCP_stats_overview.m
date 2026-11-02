@@ -7,8 +7,15 @@ load(fullfile(paths.features, 'GCP_merged_data.mat'))
 T = struct2table(merged_data);
 
 if ismember('Include', T.Properties.VariableNames)
-    T = T(T.Include == 1, :);
+    T.Include = [];
 end
+manual = gcp_manual_exclusions(paths);
+if isnumeric(T.ID)
+    idNum = double(T.ID);
+else
+    idNum = str2double(string(T.ID));
+end
+T = T(~ismember(idNum, manual), :);
 
 % Keep all numeric variables, but exclude non baselined gaze measures.
 % Velocity: Vel2D only (drop axis components VelH/VelV and Baseline* scalars).
@@ -24,7 +31,7 @@ for i = 1:numel(var_names)
     if ~isnumeric(v)
         continue
     end
-    if strcmp(vn, 'ID') || strcmp(vn, 'Condition') || strcmp(vn, 'Include') || strcmp(vn, 'Age')
+    if strcmp(vn, 'ID') || strcmp(vn, 'Condition') || strcmp(vn, 'Age')
         continue
     end
 

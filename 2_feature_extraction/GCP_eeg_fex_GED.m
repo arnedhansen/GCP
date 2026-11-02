@@ -1196,9 +1196,12 @@ save(powspctrm_save_path, ...
     'scan_freqs', 'condLabels', 'subjects');
 fprintf('[GED] Subject-level freq (GED spectra) saved to: %s\n', powspctrm_save_path);
 
-%% Save GED analysis cohort (subjects with valid gamma power).
-% A preprocessing exclusion for fewer than two blocks is left in place.
-gcp_inclusion_table('ged', paths, subjects, any(isfinite(trials_gamma_power), 1)');
+noComp = find(~any(isfinite(trials_gamma_power), 1));
+if ~isempty(noComp)
+    fprintf(['[GED] No eligible component: %s. ' ...
+        'Add these IDs to GCP_exclusion_participants.rtf.\n'], ...
+        strjoin(subjects(noComp), ', '));
+end
 
 %% GED-projected TFR (computed in the subject loop when do_tfr is true)
 if do_tfr

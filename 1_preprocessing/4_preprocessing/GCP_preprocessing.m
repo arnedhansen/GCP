@@ -34,7 +34,6 @@ for subj = 1:length(subjects)
         fprintf('[PREP] Subject %s already has dataEEG.mat. Skipping (NEW mode).\n', subjects{subj});
         if isfile(etFile)
             nBlocksKept = count_saved_blocks(etFile);
-            gcp_inclusion_table('block', paths, subjects{subj}, nBlocksKept);
             fprintf('[PREP] Subject %s: %d block(s) in the saved gaze file.\n', ...
                 subjects{subj}, nBlocksKept);
             report_block_exclusion(subjects{subj}, nBlocksKept);
@@ -167,7 +166,6 @@ for subj = 1:length(subjects)
             nBlocksKept = nBlocksKept + 1;
         end
     end
-    gcp_inclusion_table('block', paths, subjects{subj}, nBlocksKept);
     report_block_exclusion(subjects{subj}, nBlocksKept);
 
     %% Remove empty blocks
@@ -446,8 +444,9 @@ function report_block_exclusion(subjectId, nBlocksKept)
 if nBlocksKept >= 2
     return
 end
-fprintf('[PREP] Subject %s: %d block(s) remained. Excluded. %s\n', ...
-    subjectId, nBlocksKept, gcp_inclusion_table('reason'));
+fprintf(['[PREP] Subject %s: %d block(s) remained. ' ...
+    'Add this ID to GCP_exclusion_participants.rtf to drop the subject later.\n'], ...
+    subjectId, nBlocksKept);
 end
 
 function nBlocks = count_saved_blocks(etFile)

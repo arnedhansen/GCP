@@ -1,5 +1,6 @@
 # %% GCP Stats Rainclouds — confirmatory full-window subject x contrast
-# One point per subject x condition from GCP_merged_data.csv (Include == 1).
+# One point per subject x condition from GCP_merged_data.csv.
+# IDs in controls/GCP_exclusion_participants.rtf are dropped.
 # Asterisks: FDR-BH pairwise MixedLM (follow-up). Slope printed to console (primary).
 #
 # Prefer running GCP_stats_lmm.py first so brackets can load saved pairwise CSV;
