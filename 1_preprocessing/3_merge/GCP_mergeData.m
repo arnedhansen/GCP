@@ -13,6 +13,7 @@ path = paths.automagic;
 dirs = dir(path);
 folders = dirs([dirs.isdir] & ~ismember({dirs.name}, {'.', '..'}));
 subjectIDs = {folders.name};
+clc; disp('Loaded subjects:'); disp(str2double(string(subjectIDs)));
 
 %% Merge data
 tic;

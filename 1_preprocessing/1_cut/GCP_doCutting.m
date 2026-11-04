@@ -14,6 +14,9 @@ cd(p)
 clc
 
 %% Define path, cut data and convert asc to mat files.
+dRaw = dir(paths.raw_occ);
+rawSubjects = sort({dRaw([dRaw.isdir] & ~ismember({dRaw.name}, {'.', '..'})).name});
+clc; disp('Loaded subjects:'); disp(str2double(string(rawSubjects)));
 d = dir(fullfile(paths.raw_occ, '*', '*.cnt'));
 d = d(~[d.isdir]);
 nFiles = size(d, 1);
