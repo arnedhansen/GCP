@@ -8,6 +8,7 @@ dMerged = dir(mergedPath);
 subjects = {dMerged([dMerged.isdir]).name};
 subjects = subjects(~ismember(subjects, {'.', '..'}));
 subjects = sort(subjects);
+clc; disp('Loaded subjects:'); disp(str2double(string(subjects)));
 runMode = askRunMode();
 
 % EyeLink event-rate windows (must match GCP_gaze_fex)
