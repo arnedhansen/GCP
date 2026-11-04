@@ -77,8 +77,10 @@ for subjects = 1 : length(subjectIDs)
                 end
                 save(fullfile(resultFolder, fileName), 'EEG', '-v7.3')
                 if isResting
+                    clc
                     fprintf('[MERGE] Subject %s: Resting done\n', char(subjectID))
                 else
+                    clc
                     fprintf('[MERGE] Subject %s: block %s done\n', char(subjectID), block)
                 end
             end
@@ -87,5 +89,6 @@ for subjects = 1 : length(subjectIDs)
         end
     end
 end
+clc
 fprintf('[MERGE] SYNCHRONIZATION COMPLETE\n')
 toc
